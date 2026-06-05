@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."  # -> native/
 APP_NAME="NotchTutor"
 BUNDLE_ID="com.rottesya.notchtutor"
 VERSION="1.0"
+ICON_FILE="NotchTutor.icns"
 OUT="dist"
 STAGING="$OUT/staging"
 
@@ -29,6 +30,7 @@ APP="$STAGING/$APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
+cp "Resources/$ICON_FILE" "$APP/Contents/Resources/$ICON_FILE"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,6 +41,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleIconFile</key><string>$ICON_FILE</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
