@@ -63,6 +63,10 @@ final class NotchController: NSObject {
     }
 
     private func showSettings() {
+        buildSettingsMenu().popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private func buildSettingsMenu() -> NSMenu {
         let menu = NSMenu()
 
         let cliHeader = NSMenuItem(title: "后端 (CLI)", action: nil, keyEquivalent: "")
@@ -89,6 +93,20 @@ final class NotchController: NSObject {
         }
         menu.addItem(.separator())
 
+        let savedID = Settings.shared.captureTargetBundleID
+        let savedName = Settings.shared.captureTargetName ?? savedID ?? ""
+        let targetItem = NSMenuItem(
+            title: "截图目标：\(savedID == nil ? "整个屏幕" : savedName)",
+            action: nil, keyEquivalent: ""
+        )
+        // Submenu fills lazily in menuNeedsUpdate when it opens, keeping window
+        // enumeration off the popUp path entirely.
+        let targetMenu = NSMenu()
+        targetMenu.delegate = self
+        targetItem.submenu = targetMenu
+        menu.addItem(targetItem)
+        menu.addItem(.separator())
+
         let hint = NSMenuItem(title: "截屏讲题  ⌘⇧1      显示/隐藏  ⌘⇧Space", action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
@@ -102,7 +120,17 @@ final class NotchController: NSObject {
         quit.target = self
         menu.addItem(quit)
 
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        return menu
+    }
+
+    @objc private func pickTarget(_ sender: NSMenuItem) {
+        if let app = sender.representedObject as? ScreenCapture.AppInfo {
+            Settings.shared.captureTargetBundleID = app.bundleID
+            Settings.shared.captureTargetName = app.name
+        } else {
+            Settings.shared.captureTargetBundleID = nil
+            Settings.shared.captureTargetName = nil
+        }
     }
 
     @objc private func pickCLI(_ sender: NSMenuItem) {
@@ -269,19 +297,27 @@ final class NotchController: NSObject {
                 return
             }
 
-            // Hide the panel so it isn't in its own screenshot, then capture.
-            self.panel.orderOut(nil)
-            try? await Task.sleep(nanoseconds: 130_000_000)
-            let shot = await ScreenCapture.capture()
+            // Hide the panel only for full-screen shots, so it isn't in its own
+            // screenshot; a target window can't contain our panel.
+            let target = Settings.shared.captureTarget
+            if target == .fullScreen {
+                self.panel.orderOut(nil)
+                try? await Task.sleep(nanoseconds: 130_000_000)
+            }
+            let result = await ScreenCapture.capture(target: target)
             self.panel.orderFrontRegardless()
 
-            guard let shot else {
-                self.finishError("截屏失败。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor，然后重启应用。")
-                return
-            }
-            if shot.blank {
-                try? FileManager.default.removeItem(atPath: shot.path)
-                self.finishError("画面为空，通常是缺少屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor 并重启应用。")
+            let shot: ScreenCapture.Shot
+            switch result {
+            case .success(let s):
+                if s.blank {
+                    try? FileManager.default.removeItem(atPath: s.path)
+                    self.finishError("画面为空，通常是缺少屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor 并重启应用。")
+                    return
+                }
+                shot = s
+            case .failure(let error):
+                self.finishError(Self.message(for: error))
                 return
             }
 
@@ -316,6 +352,19 @@ final class NotchController: NSObject {
         }
     }
 
+    private static func message(for error: CaptureError) -> String {
+        switch error {
+        case .noPermission:
+            return "截屏失败。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor，然后重启应用。"
+        case .appNotRunning(let name):
+            return "截图目标「\(name)」未在运行。请先打开它，或在设置中切回「整个屏幕」。"
+        case .noCapturableWindow(let name):
+            return "「\(name)」当前没有可截取的窗口。"
+        case .captureFailed:
+            return "截屏失败，目标窗口可能刚被关闭，请重试。"
+        }
+    }
+
     private func finishError(_ msg: String) {
         model.answer = msg
         model.status = .error
@@ -324,5 +373,42 @@ final class NotchController: NSObject {
         running = false
         pinned = false
         if !hovering { scheduleCollapse(after: 14) }
+    }
+}
+
+// MARK: - Capture-target submenu (lazily populated as it opens)
+
+extension NotchController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let savedID = Settings.shared.captureTargetBundleID
+
+        let full = NSMenuItem(title: "整个屏幕", action: #selector(pickTarget(_:)), keyEquivalent: "")
+        full.target = self
+        full.state = savedID == nil ? .on : .off
+        menu.addItem(full)
+        menu.addItem(.separator())
+
+        let apps = ScreenCapture.capturableApps()
+        for app in apps {
+            let item = NSMenuItem(title: app.name, action: #selector(pickTarget(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = app
+            item.state = (app.bundleID == savedID) ? .on : .off
+            if let icon = app.icon?.copy() as? NSImage {
+                icon.size = NSSize(width: 16, height: 16)
+                item.image = icon
+            }
+            menu.addItem(item)
+        }
+        if let savedID, !apps.contains(where: { $0.bundleID == savedID }) {
+            let gone = NSMenuItem(
+                title: "\(Settings.shared.captureTargetName ?? savedID)（未运行）",
+                action: nil, keyEquivalent: ""
+            )
+            gone.isEnabled = false
+            gone.state = .on
+            menu.addItem(gone)
+        }
     }
 }

@@ -21,6 +21,28 @@ final class Settings {
         set { d.set(newValue, forKey: "depth") }
     }
 
+    // MARK: - Capture target
+
+    /// Bundle ID of the app whose window gets captured; nil = full screen.
+    var captureTargetBundleID: String? {
+        get {
+            let v = d.string(forKey: "captureTargetBundleID")
+            return (v?.isEmpty ?? true) ? nil : v
+        }
+        set { d.set(newValue ?? "", forKey: "captureTargetBundleID") }
+    }
+
+    /// Display name remembered for the picker UI (shown even when the app isn't running).
+    var captureTargetName: String? {
+        get { d.string(forKey: "captureTargetName") }
+        set { d.set(newValue ?? "", forKey: "captureTargetName") }
+    }
+
+    var captureTarget: CaptureTarget {
+        if let id = captureTargetBundleID { return .app(bundleID: id) }
+        return .fullScreen
+    }
+
     // MARK: - Hotkeys
 
     private static let defaultCapture = HotkeyCombo(keyCode: UInt32(kVK_ANSI_1), modifiers: UInt32(cmdKey | shiftKey), label: "1")
