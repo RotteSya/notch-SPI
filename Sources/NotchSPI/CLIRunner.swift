@@ -168,7 +168,7 @@ enum CLIRunner {
         p.arguments = args
         p.environment = augmentedEnv()
         p.currentDirectoryURL = URL(fileURLWithPath: wd) // isolated empty dir
-        print("[NotchTutor] run \(cliId) cwd=\(wd) argc=\(args.count)")
+        print("[NotchSPI] run \(cliId) cwd=\(wd) argc=\(args.count)")
         let o = Pipe()
         let e = Pipe()
         p.standardOutput = o
@@ -220,9 +220,9 @@ enum CLIRunner {
             if let s = String(data: h.availableData, encoding: .utf8) { stderrBuf += s }
         }
         p.terminationHandler = { proc in
-            print("[NotchTutor] \(cliId) exited \(proc.terminationStatus) sawText=\(sawText) stderrLen=\(stderrBuf.count)")
+            print("[NotchSPI] \(cliId) exited \(proc.terminationStatus) sawText=\(sawText) stderrLen=\(stderrBuf.count)")
             if proc.terminationStatus != 0 {
-                print("[NotchTutor] stderr tail: \(String(stderrBuf.suffix(500)))")
+                print("[NotchSPI] stderr tail: \(String(stderrBuf.suffix(500)))")
             }
             finish(proc.terminationStatus == 0 || sawText)
         }

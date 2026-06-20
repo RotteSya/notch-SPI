@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "NotchTutor",
+    name: "NotchSPI",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "NotchTutor",
-            path: "Sources/NotchTutor"
+            name: "NotchSPI",
+            path: "Sources/NotchSPI"
         )
     ]
 )

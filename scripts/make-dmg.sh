@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build a shareable NotchTutor.dmg: universal (arm64 + x86_64 when possible),
+# Build a shareable NotchSPI.dmg: universal (arm64 + x86_64 when possible),
 # wrapped in a .app bundle, ad-hoc code-signed. Not Apple-notarized.
 
 cd "$(dirname "$0")/.."  # -> native/
 
-APP_NAME="NotchTutor"
-BUNDLE_ID="com.rottesya.notchtutor"
+APP_NAME="NotchSPI"
+BUNDLE_ID="com.rottesya.notchspi"
 VERSION="1.1"
-ICON_FILE="NotchTutor.icns"
+ICON_FILE="NotchSPI.icns"
 OUT="dist"
 STAGING="$OUT/staging"
 
@@ -47,14 +47,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSHumanReadableCopyright</key><string>NotchTutor</string>
+  <key>NSHumanReadableCopyright</key><string>NotchSPI</string>
 </dict>
 </plist>
 PLIST
 
 # A "Developer ID Application" cert enables real signing + notarization.
 SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/')}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-notchtutor}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-notchspi}"
 
 if [ -n "$SIGN_ID" ]; then
   echo "==> Code signing (Developer ID + hardened runtime): $SIGN_ID"
@@ -67,16 +67,24 @@ codesign --verify --verbose "$APP" 2>&1 | sed 's/^/    /' || true
 
 echo "==> Staging DMG contents…"
 ln -s /Applications "$STAGING/Applications"
-cat > "$STAGING/使用说明.txt" <<'README'
-NotchTutor — 刘海 AI 学习辅导
+# README wording must match how this build is signed (see SIGN_ID above).
+if [ -n "$SIGN_ID" ]; then
+  OPEN_NOTE='2. 首次打开：双击打开即可；系统若弹出确认对话框，点「打开」。'
+  NOTARY_NOTE='- 本 App 已使用 Developer ID 签名并经 Apple 公证，可放心分享安装。'
+else
+  OPEN_NOTE='2. 首次打开：在「应用程序」里右键点 NotchSPI → 打开 →「打开」。
+   若提示“已损坏/无法打开”，打开「终端」执行下面这行后再打开：
+       xattr -dr com.apple.quarantine /Applications/NotchSPI.app'
+  NOTARY_NOTE='- 本 App 未经 Apple 公证，仅适合自己/朋友之间分享使用。'
+fi
+cat > "$STAGING/使用说明.txt" <<README
+NotchSPI — 刘海 AI 学习辅导
 
 【安装】
-1. 把 NotchTutor.app 拖到左边的「应用程序 / Applications」。
-2. 首次打开：在「应用程序」里右键点 NotchTutor → 打开 →「打开」。
-   若提示“已损坏/无法打开”，打开「终端」执行下面这行后再打开：
-       xattr -dr com.apple.quarantine /Applications/NotchTutor.app
+1. 把 NotchSPI.app 拖到左边的「应用程序 / Applications」。
+$OPEN_NOTE
 3. 第一次按快捷键截屏时，系统会要求「屏幕录制」权限：
-   到「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor，然后重新打开 App。
+   到「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI，然后重新打开 App。
 
 【使用】
 - 屏幕上放一道题，按 ⌘⇧1 → 刘海下方展开并开始讲解。
@@ -86,7 +94,7 @@ NotchTutor — 刘海 AI 学习辅导
 【前提 · 重要】
 - 需要本机已安装并登录 Codex 或 Claude Code 命令行工具，App 才能工作；
   没有的话，刘海里会提示“未找到 CLI”。
-- 本 App 未经 Apple 公证，仅适合自己/朋友之间分享使用。
+$NOTARY_NOTE
 - App 不做任何屏幕共享隐身 / 反监考——它对录屏完全可见，请用于自己的练习题。
 README
 

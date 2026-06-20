@@ -1,4 +1,4 @@
-# NotchTutor
+# NotchSPI
 
 A native macOS **notch-based AI study tutor**. Press a hotkey and a Dynamic‑Island‑style
 panel drops from the MacBook notch, reads the problem on your screen, and **streams a
@@ -31,11 +31,11 @@ Code**), run **read‑only**. No API key.
 
 ```sh
 swift build -c release
-.build/release/NotchTutor
+.build/release/NotchSPI
 ```
 
 (or `swift run`). On the first capture, macOS asks for **Screen Recording** permission —
-grant it to *NotchTutor*, then relaunch.
+grant it to *NotchSPI*, then relaunch.
 
 ## Notes
 
@@ -48,7 +48,7 @@ grant it to *NotchTutor*, then relaunch.
 ## Layout
 
 ```
-Sources/NotchTutor/
+Sources/NotchSPI/
   main.swift / AppDelegate.swift     app bootstrap (accessory app)
   NotchPanel.swift / NotchController.swift / NotchView.swift / NotchShape.swift   notch UI
   RoseLoader.swift                   animated math-curve indicator (Canvas)

@@ -116,7 +116,7 @@ final class NotchController: NSObject {
         hk.target = self
         menu.addItem(hk)
 
-        let quit = NSMenuItem(title: "退出 NotchTutor", action: #selector(quitApp), keyEquivalent: "")
+        let quit = NSMenuItem(title: "退出 NotchSPI", action: #selector(quitApp), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
 
@@ -164,7 +164,7 @@ final class NotchController: NSObject {
         settingsVM = vm
         let host = NSHostingController(rootView: HotkeySettingsView(vm: vm))
         let w = NSWindow(contentViewController: host)
-        w.title = "NotchTutor 设置"
+        w.title = "NotchSPI 设置"
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
         w.setContentSize(NSSize(width: 380, height: 200))
@@ -312,7 +312,7 @@ final class NotchController: NSObject {
             case .success(let s):
                 if s.blank {
                     try? FileManager.default.removeItem(atPath: s.path)
-                    self.finishError("画面为空，通常是缺少屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor 并重启应用。")
+                    self.finishError("画面为空，通常是缺少屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI 并重启应用。")
                     return
                 }
                 shot = s
@@ -355,7 +355,7 @@ final class NotchController: NSObject {
     private static func message(for error: CaptureError) -> String {
         switch error {
         case .noPermission:
-            return "截屏失败。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchTutor，然后重启应用。"
+            return "截屏失败。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI，然后重启应用。"
         case .appNotRunning(let name):
             return "截图目标「\(name)」未在运行。请先打开它，或在设置中切回「整个屏幕」。"
         case .noCapturableWindow(let name):
