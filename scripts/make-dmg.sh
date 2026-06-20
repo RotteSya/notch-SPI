@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."  # -> native/
 
 APP_NAME="NotchSPI"
 BUNDLE_ID="com.rottesya.notchspi"
-VERSION="1.1"
+VERSION="1.2"
 ICON_FILE="NotchSPI.icns"
 OUT="dist"
 STAGING="$OUT/staging"
@@ -44,7 +44,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>$ICON_FILE</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>NotchSPI</string>
@@ -54,7 +54,7 @@ PLIST
 
 # A "Developer ID Application" cert enables real signing + notarization.
 SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)".*/\1/')}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-notchspi}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-notchtutor}"
 
 if [ -n "$SIGN_ID" ]; then
   echo "==> Code signing (Developer ID + hardened runtime): $SIGN_ID"
