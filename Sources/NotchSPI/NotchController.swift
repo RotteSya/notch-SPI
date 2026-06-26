@@ -166,6 +166,7 @@ final class NotchController: NSObject {
         let w = NSWindow(contentViewController: host)
         w.title = "NotchSPI 设置"
         w.styleMask = [.titled, .closable]
+        w.sharingType = ScreenShareGuard.windowSharingType // keep settings out of screen capture too
         w.isReleasedWhenClosed = false
         w.setContentSize(NSSize(width: 380, height: 200))
         w.center()

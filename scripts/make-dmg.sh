@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."  # -> native/
 
 APP_NAME="NotchSPI"
 BUNDLE_ID="com.rottesya.notchspi"
-VERSION="1.2"
+VERSION="1.3"
 ICON_FILE="NotchSPI.icns"
 OUT="dist"
 STAGING="$OUT/staging"
@@ -44,7 +44,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>$ICON_FILE</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleVersion</key><string>4</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>NotchSPI</string>
@@ -95,7 +95,8 @@ $OPEN_NOTE
 - 需要本机已安装并登录 Codex 或 Claude Code 命令行工具，App 才能工作；
   没有的话，刘海里会提示“未找到 CLI”。
 $NOTARY_NOTE
-- App 不做任何屏幕共享隐身 / 反监考——它对录屏完全可见，请用于自己的练习题。
+- App 已对屏幕录制 / 屏幕共享隐身：刘海窗口不会被截图、录屏或 Zoom/Meet/Teams 屏幕共享
+  （含「共享整个屏幕」）捕获到；但对着屏幕的实体摄像头无法隐藏。
 README
 
 echo "==> Creating DMG…"
