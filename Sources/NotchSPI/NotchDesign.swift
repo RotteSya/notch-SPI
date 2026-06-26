@@ -1,0 +1,441 @@
+import AppKit
+import QuartzCore
+
+// The notch design system, in pure AppKit (ported from the notchmeet reference). The notch is a
+// single piece of machined obsidian that *lives* in the physical cutout and grows out of it.
+// Collapsed, it fuses with the hardware notch (pure black at the top seam). Expanded, its lower
+// face catches a whisper of the screen's light along a hairline edge, with a faint internal
+// volume — never a flat black decal. The slab is drawn with Core Graphics inside a flipped
+// `NotchSurfaceView`, so geometry math stays top-left (y down) exactly as the SwiftUI `Shape` was.
+
+// MARK: - Palette
+
+enum NotchPalette {
+    /// Pure black at the seam so the slab fuses with the physical notch; volume is added by
+    /// `NotchSurfaceView`, not by lightening this base.
+    static let background = NSColor.black
+
+    static let primary   = NSColor(white: 1, alpha: 0.96)
+    static let secondary = NSColor(white: 1, alpha: 0.60)
+    static let tertiary  = NSColor(white: 1, alpha: 0.34)
+
+    /// NotchSPI periwinkle accent (kept from the SwiftUI build), with a hi tint for live cues.
+    static let accent    = NSColor(srgbRed: 0.48, green: 0.63, blue: 1.00, alpha: 1)
+    static let accentHi  = NSColor(srgbRed: 0.64, green: 0.745, blue: 1.00, alpha: 1)
+
+    /// Warm red for the error state.
+    static let error     = NSColor(srgbRed: 0.97, green: 0.32, blue: 0.29, alpha: 1)
+
+    /// Cool, near-white with a breath of brand blue — screen light on glass, for the lower-face sheen.
+    static let sheen     = NSColor(srgbRed: 0.80, green: 0.86, blue: 1.00, alpha: 1)
+
+    static let rule      = NSColor(white: 1, alpha: 0.10)
+
+    // Motion durations (s). The single morph time is shared by the controller's panel-frame
+    // animation and the view's radius/content tween, so the whole instrument moves as one body.
+    static let morphDuration: CFTimeInterval   = 0.30
+    static let contentDuration: CFTimeInterval = 0.18
+    static let controlDuration: CFTimeInterval = 0.13
+}
+
+/// Layout metrics shared between the controller (panel frame) and the view (content inset), so
+/// the transparent margin that lets the expanded card cast a soft shadow stays in sync on both
+/// sides. The margin is applied **only when expanded** — collapsed keeps its exact menu-bar
+/// geometry, so nothing transparent ever overhangs the menu bar.
+enum NotchMetrics {
+    static let shadowMarginH: CGFloat = 22       // each side
+    static let shadowMarginBottom: CGFloat = 28
+}
+
+/// Vertical structure of the expanded card, shared by the controller (height math) and the view
+/// (subview layout) so the measured panel height always matches the laid-out content.
+/// `cardHeight = headerHeight + answerHeight + answerBottomPad`.
+enum NotchLayout {
+    static let headerHeight: CGFloat = 40     // rose + mode + status + controls row (incl. gap below)
+    static let contentInsetH: CGFloat = 16    // horizontal padding for header & answer
+    static let answerBottomPad: CGFloat = 14  // padding under the answer
+    static let headerRowCenterY: CGFloat = 18 // vertical center of the header row within the card
+}
+
+// MARK: - Small helpers
+
+@inline(__always) func notchLerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+
+/// A vertical CGGradient from `(color, location)` stops in sRGB.
+func notchGradient(_ stops: [(NSColor, CGFloat)]) -> CGGradient {
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let colors = stops.map { ($0.0.usingColorSpace(.sRGB) ?? $0.0).cgColor } as CFArray
+    let locations = stops.map { $0.1 }
+    return CGGradient(colorsSpace: space, colors: colors, locations: locations)!
+}
+
+/// A solid-tinted copy of an SF Symbol (template images don't tint when drawn into an arbitrary
+/// CGContext, so bake the colour in once).
+func notchTintedSymbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSImage? {
+    let cfg = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+    guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+        .withSymbolConfiguration(cfg) else { return nil }
+    let size = base.size
+    let img = NSImage(size: size)
+    img.lockFocus()
+    color.set()
+    let r = NSRect(origin: .zero, size: size)
+    base.draw(in: r)
+    r.fill(using: .sourceAtop)
+    img.unlockFocus()
+    img.isTemplate = false
+    return img
+}
+
+// MARK: - Answer typography
+
+/// Single source of truth for the answer's typography, used by BOTH the view (rendering) and the
+/// controller (height measurement), so the measured panel height always matches what is drawn —
+/// no last-line clip, no trailing gap. Non-empty answers render inline Markdown (bold / italic /
+/// code), matching the original SwiftUI `AttributedString(markdown:)` treatment.
+enum NotchType {
+    static let answerFontSize: CGFloat = 13
+
+    static func placeholder(mode: String) -> String {
+        if mode == "personality" {
+            return "按 \(Settings.displayString(Settings.shared.personalityCombo)) 截屏作答 · 悬停展开"
+        }
+        return "按 \(Settings.displayString(Settings.shared.captureCombo)) 截屏讲题 · 悬停展开"
+    }
+
+    static func answerString(_ answer: String, mode: String) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        if answer.isEmpty {
+            para.lineSpacing = 2
+            return NSAttributedString(string: placeholder(mode: mode), attributes: [
+                .font: NSFont.systemFont(ofSize: answerFontSize),
+                .foregroundColor: NotchPalette.secondary,
+                .paragraphStyle: para,
+            ])
+        }
+        para.lineSpacing = 3
+        let base = NSFont.systemFont(ofSize: answerFontSize)
+        let out = NSMutableAttributedString()
+        if let attributed = try? AttributedString(
+            markdown: answer,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            for run in attributed.runs {
+                let piece = String(attributed[run.range].characters)
+                var font = base
+                if let intent = run.inlinePresentationIntent {
+                    if intent.contains(.code) {
+                        font = .monospacedSystemFont(ofSize: answerFontSize - 0.5, weight: .regular)
+                    } else {
+                        let bold = intent.contains(.stronglyEmphasized)
+                        let italic = intent.contains(.emphasized)
+                        font = variant(base, bold: bold, italic: italic)
+                    }
+                }
+                out.append(NSAttributedString(string: piece, attributes: [
+                    .font: font, .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
+                ]))
+            }
+        } else {
+            out.append(NSAttributedString(string: answer, attributes: [
+                .font: base, .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
+            ]))
+        }
+        return out
+    }
+
+    static func answerHeight(_ answer: String, mode: String, width: CGFloat) -> CGFloat {
+        guard width > 1 else { return 0 }
+        return ceil(answerString(answer, mode: mode).boundingRect(
+            with: NSSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        ).height)
+    }
+
+    private static func variant(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {
+        var f = font
+        let fm = NSFontManager.shared
+        if bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
+        if italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
+        return f
+    }
+}
+
+// MARK: - Display-link tween
+
+/// A 0…1 (or arbitrary) value tweened over a duration on the display clock. Drives the morph
+/// (radii + content crossfade) so it stays glued to the controller's panel-frame animation. Uses
+/// a weak proxy as the display-link target to avoid a retain cycle.
+final class DisplayTween {
+    private(set) var value: CGFloat
+    private var from: CGFloat = 0
+    private var to: CGFloat = 0
+    private var startTime: CFTimeInterval = 0
+    private var duration: CFTimeInterval = NotchPalette.morphDuration
+    private var link: CADisplayLink?
+    private var proxy: TweenProxy?
+    private weak var host: NSView?
+
+    var onChange: ((CGFloat) -> Void)?
+    /// Out-cubic settle, matched to the controller's ease-out frame curve.
+    var ease: (CGFloat) -> CGFloat = { t in 1 - pow(1 - t, 3) }
+
+    init(host: NSView, value: CGFloat = 0) {
+        self.host = host
+        self.value = value
+    }
+
+    /// Jump to a value immediately (Reduce Motion).
+    func set(_ v: CGFloat) {
+        link?.isPaused = true
+        value = v
+        onChange?(v)
+    }
+
+    func animate(to target: CGFloat, duration: CFTimeInterval) {
+        guard let host else { set(target); return }
+        if value == target { return }
+        from = value
+        to = target
+        self.duration = max(0.001, duration)
+        startTime = CACurrentMediaTime()
+        if link == nil {
+            let p = TweenProxy(self)
+            proxy = p
+            link = host.displayLink(target: p, selector: #selector(TweenProxy.tick))
+            link?.add(to: .main, forMode: .common)
+        }
+        link?.isPaused = false
+    }
+
+    fileprivate func step() {
+        let elapsed = CACurrentMediaTime() - startTime
+        let t = min(1, max(0, elapsed / duration))
+        value = from + (to - from) * ease(CGFloat(t))
+        onChange?(value)
+        if t >= 1 {
+            value = to
+            onChange?(value)
+            link?.isPaused = true
+        }
+    }
+
+    deinit { link?.invalidate() }
+}
+
+private final class TweenProxy {
+    weak var owner: DisplayTween?
+    init(_ o: DisplayTween) { owner = o }
+    @objc func tick() { owner?.step() }
+}
+
+// MARK: - Obsidian surface
+
+/// The material treatment applied to the notch slab, drawn entirely within the shape so it never
+/// spills outside the card: a near-black body that stays pure black at the seam and lifts almost
+/// imperceptibly toward the lower face; a soft inner shadow seating it under the menu bar; a cool
+/// specular hairline along the lower edge; and a triangular-noise dither that keeps the gradients
+/// glassy rather than stepped. Flipped so geometry is top-left (y down).
+final class NotchSurfaceView: NSView {
+    /// The rect (within `bounds`) the slab is drawn in. `bounds` is the full panel — including the
+    /// transparent shadow margin — so the drop shadow has room to fall without clipping.
+    var cardRect: CGRect = .zero { didSet { needsDisplay = true } }
+    var topRadius: CGFloat = 8 { didSet { needsDisplay = true } }
+    var bottomRadius: CGFloat = 11 { didSet { needsDisplay = true } }
+    /// 0 = collapsed (seam-fused, minimal volume) … 1 = expanded (full lower-face volume).
+    var depth: CGFloat = 0 { didSet { needsDisplay = true } }
+    var showShadow: Bool = false { didSet { needsDisplay = true } }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil } // never intercept clicks
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext, cardRect.width > 1 else { return }
+        let rect = cardRect
+        let path = NotchShape.cgPath(in: rect, topRadius: topRadius, bottomRadius: bottomRadius)
+
+        // Grounded drop shadow (expanded only). Paint the opaque body twice with a CG shadow so it
+        // falls below the card — a tight contact shadow plus a soft ambient one. Offsets are
+        // positive-down because the flipped context has +y pointing toward the bottom of screen.
+        if showShadow {
+            ctx.saveGState()
+            ctx.setShadow(offset: CGSize(width: 0, height: 9), blur: 16,
+                          color: NSColor.black.withAlphaComponent(0.55).cgColor)
+            ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
+            ctx.restoreGState()
+            ctx.saveGState()
+            ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 5,
+                          color: NSColor.black.withAlphaComponent(0.38).cgColor)
+            ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
+            ctx.restoreGState()
+        }
+
+        // Base fill.
+        ctx.saveGState()
+        ctx.addPath(path); ctx.setFillColor(NotchPalette.background.cgColor); ctx.fillPath()
+        ctx.restoreGState()
+
+        // Interior overlays, clipped to the slab.
+        ctx.saveGState()
+        ctx.addPath(path); ctx.clip()
+
+        // bodyLight: a cool sheen reflecting screen light up onto the lower face — pure black at
+        // the top seam, lifting to a graphite whisper below. Additive so it only lifts.
+        ctx.saveGState()
+        ctx.setBlendMode(.plusLighter)
+        ctx.drawLinearGradient(
+            notchGradient([
+                (.clear, 0.0),
+                (.clear, 0.24),
+                (NotchPalette.sheen.withAlphaComponent(0.022 + 0.040 * depth), 1.0),
+            ]),
+            start: CGPoint(x: rect.midX, y: rect.minY),
+            end: CGPoint(x: rect.midX, y: rect.maxY),
+            options: []
+        )
+        ctx.restoreGState()
+
+        // seamShadow: darken just under the top seam so the slab reads as tucked beneath the bar.
+        ctx.drawLinearGradient(
+            notchGradient([
+                (NSColor.black.withAlphaComponent(0.55), 0.0),
+                (.clear, 0.18),
+                (.clear, 1.0),
+            ]),
+            start: CGPoint(x: rect.midX, y: rect.minY),
+            end: CGPoint(x: rect.midX, y: rect.maxY),
+            options: []
+        )
+
+        // dither: a fine static noise tile at very low opacity, additive, to break up banding.
+        if let tile = NotchDither.tileImage {
+            ctx.saveGState()
+            ctx.setBlendMode(.plusLighter)
+            ctx.setAlpha(0.025)
+            ctx.draw(tile, in: CGRect(x: 0, y: 0, width: 96, height: 96), byTiling: true)
+            ctx.restoreGState()
+        }
+        ctx.restoreGState() // end path clip
+
+        // edgeLight: a cool specular hairline riding the lower edge — screen light on a machined
+        // lip. Clip to the inner half of a thin stroke of the path so it reads as an inset border,
+        // fading out toward the fused seam.
+        ctx.saveGState()
+        ctx.addPath(path); ctx.clip()
+        let stroked = path.copy(strokingWithWidth: 1.5, lineCap: CGLineCap.round, lineJoin: CGLineJoin.round, miterLimit: 10)
+        ctx.addPath(stroked); ctx.clip()
+        ctx.setBlendMode(.plusLighter)
+        ctx.drawLinearGradient(
+            notchGradient([
+                (NSColor(white: 1, alpha: 0.0), 0.0),
+                (NSColor(white: 1, alpha: 0.0), 0.40),
+                (NotchPalette.accentHi.withAlphaComponent(0.12 + 0.11 * depth), 0.78),
+                (NSColor(white: 1, alpha: 0.22 + 0.16 * depth), 1.0),
+            ]),
+            start: CGPoint(x: rect.midX, y: rect.minY),
+            end: CGPoint(x: rect.midX, y: rect.maxY),
+            options: []
+        )
+        ctx.restoreGState()
+    }
+}
+
+// MARK: - Dither tile
+
+/// A static, cached fine-noise tile (a CGImage, generated once and tiled). Triangular-PDF-ish
+/// white noise — the anti-banding device for the obsidian gradients.
+enum NotchDither {
+    static let tileImage: CGImage? = makeTile(side: 96)
+
+    private static func makeTile(side: Int) -> CGImage? {
+        let bytesPerPixel = 4
+        let bytesPerRow = side * bytesPerPixel
+        var data = [UInt8](repeating: 0, count: side * bytesPerRow)
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> UInt8 {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17
+            return UInt8(truncatingIfNeeded: seed >> 24)
+        }
+        for i in stride(from: 0, to: data.count, by: bytesPerPixel) {
+            let v = next()
+            data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255
+        }
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(data: &data, width: side, height: side, bitsPerComponent: 8,
+                                  bytesPerRow: bytesPerRow, space: cs,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        return ctx.makeImage()
+    }
+}
+
+// MARK: - Control button
+
+/// A quiet hairline-glass control (the header gear). A soft chip fades in on hover; a small scale
+/// + dim on press. Drawn entirely in `draw(_:)` so there is no layer/cell ordering to fight, and
+/// it works as first-mouse inside the non-activating panel.
+final class NotchControlButton: NSControl {
+    private let onAction: () -> Void
+    private var baseImage: NSImage?
+    private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
+    private var pressed = false { didSet { if pressed != oldValue { needsDisplay = true } } }
+    private var trackingAreaRef: NSTrackingArea?
+
+    init(systemName: String, tint: NSColor, label: String, action: @escaping () -> Void) {
+        self.onAction = action
+        self.baseImage = notchTintedSymbol(systemName, pointSize: 12, weight: .semibold, color: tint)
+        super.init(frame: NSRect(x: 0, y: 0, width: 28, height: 24))
+        toolTip = label
+        setAccessibilityLabel(label)
+        setAccessibilityRole(.button)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var isFlipped: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: 28, height: 24) }
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let b = bounds
+
+        if hovering {
+            let r = NSBezierPath(roundedRect: b, xRadius: 7, yRadius: 7)
+            NSColor(white: 1, alpha: 0.10).setFill(); r.fill()
+            r.lineWidth = 0.75
+            NSColor(white: 1, alpha: 0.12).setStroke(); r.stroke()
+        }
+
+        guard let img = baseImage else { return }
+        let scale: CGFloat = pressed ? 0.94 : 1
+        let alpha: CGFloat = (pressed ? 0.72 : (hovering ? 1.0 : 0.82))
+        let s = NSSize(width: img.size.width * scale, height: img.size.height * scale)
+        let rect = NSRect(x: (b.width - s.width) / 2, y: (b.height - s.height) / 2,
+                          width: s.width, height: s.height)
+        img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: alpha)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = trackingAreaRef { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        trackingAreaRef = t
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false; pressed = false }
+
+    override func mouseDown(with event: NSEvent) { pressed = true }
+    override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        pressed = bounds.contains(p)
+    }
+    override func mouseUp(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let inside = bounds.contains(p)
+        pressed = false
+        if inside { onAction() }
+    }
+}

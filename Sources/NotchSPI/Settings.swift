@@ -66,11 +66,19 @@ final class Settings {
     // MARK: - Hotkeys
 
     private static let defaultCapture = HotkeyCombo(keyCode: UInt32(kVK_ANSI_1), modifiers: UInt32(cmdKey | shiftKey), label: "1")
+    private static let defaultPersonality = HotkeyCombo(keyCode: UInt32(kVK_ANSI_2), modifiers: UInt32(cmdKey | shiftKey), label: "2")
     private static let defaultToggle = HotkeyCombo(keyCode: UInt32(kVK_Space), modifiers: UInt32(cmdKey | shiftKey), label: "Space")
 
+    /// Capture-and-tutor (学习辅导). Bound to its own hotkey so the mode is chosen by which key
+    /// you press — no manual mode switching.
     var captureCombo: HotkeyCombo {
         get { combo("capture", Settings.defaultCapture) }
         set { setCombo("capture", newValue) }
+    }
+    /// Capture-and-personality-test (性格测试作答). The mode for this capture, by hotkey.
+    var personalityCombo: HotkeyCombo {
+        get { combo("personality", Settings.defaultPersonality) }
+        set { setCombo("personality", newValue) }
     }
     var toggleCombo: HotkeyCombo {
         get { combo("toggle", Settings.defaultToggle) }

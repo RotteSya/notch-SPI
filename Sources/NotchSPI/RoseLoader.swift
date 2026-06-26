@@ -1,10 +1,11 @@
-import SwiftUI
+import AppKit
+import QuartzCore
 
-/// Native port of the "Rose Two" math-curve loader (r = a·cos(2θ)): a rotating,
-/// breathing rose traced by a fading trail of particles. Drawn with Canvas.
-struct RoseLoader: View {
-    var color: Color
-    var size: CGFloat
+/// The "Rose Two" math-curve loader (r = a·cos(2θ)): a rotating, breathing rose traced by a
+/// fading trail of particles — NotchSPI's signature indicator. Pure AppKit: drawn with Core
+/// Graphics on a `CADisplayLink` clock (the AppKit port of the original SwiftUI `Canvas`).
+final class RoseLoaderView: NSView {
+    var color: NSColor = .white { didSet { needsDisplay = true } }
 
     // config (from the original)
     private let particleCount = 48
@@ -20,14 +21,34 @@ struct RoseLoader: View {
     private let roseScale = 3.25
     private let pathSteps = 160
 
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            Canvas { ctx, sz in
-                draw(ctx, sz, timeline.date.timeIntervalSinceReferenceDate * 1000)
-            }
-        }
-        .frame(width: size, height: size)
+    private var link: CADisplayLink?
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    override init(frame frameRect: NSRect) { super.init(frame: frameRect) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var isFlipped: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil } // decorative; never intercept clicks
+
+    // MARK: Display clock — runs only while on screen (and motion is allowed)
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { startLink() } else { stopLink() }
     }
+
+    private func startLink() {
+        guard link == nil, !reduceMotion else { needsDisplay = true; return }
+        let l = displayLink(target: self, selector: #selector(tick))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    private func stopLink() { link?.invalidate(); link = nil }
+    @objc private func tick() { needsDisplay = true }
+    deinit { link?.invalidate() }
+
+    // MARK: Geometry
 
     private func point(_ progress: Double, _ detail: Double) -> CGPoint {
         let t = progress * 2 * .pi
@@ -41,27 +62,39 @@ struct RoseLoader: View {
         return (m + 1).truncatingRemainder(dividingBy: 1)
     }
 
-    private func draw(_ ctx: GraphicsContext, _ sz: CGSize, _ timeMs: Double) {
+    // MARK: Draw
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let sz = bounds.size
+        guard sz.width > 1, sz.height > 1 else { return }
+        // Reduce Motion: render one static, pleasing pose instead of animating.
+        let timeMs = reduceMotion ? 1500.0 : CACurrentMediaTime() * 1000
+
         let scale = min(sz.width, sz.height) / 100
         let pulseAngle = (timeMs.truncatingRemainder(dividingBy: pulseDurationMs)) / pulseDurationMs * 2 * .pi
         let detail = 0.52 + ((sin(pulseAngle + 0.55) + 1) / 2) * 0.48
         let rotation = -((timeMs.truncatingRemainder(dividingBy: rotationDurationMs)) / rotationDurationMs) * 360
         let progress = (timeMs.truncatingRemainder(dividingBy: durationMs)) / durationMs
 
-        var c = ctx
-        c.translateBy(x: sz.width / 2, y: sz.height / 2)
-        c.rotate(by: .degrees(rotation))
-        c.scaleBy(x: scale, y: scale)
-        c.translateBy(x: -50, y: -50)
+        ctx.saveGState()
+        ctx.translateBy(x: sz.width / 2, y: sz.height / 2)
+        ctx.rotate(by: rotation * .pi / 180)
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: -50, y: -50)
 
         // faint full curve
-        var path = Path()
+        let path = CGMutablePath()
         for i in 0...pathSteps {
             let p = point(Double(i) / Double(pathSteps), detail)
             if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
         }
-        c.stroke(path, with: .color(color.opacity(0.12)),
-                 style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round, lineJoin: .round))
+        ctx.addPath(path)
+        ctx.setStrokeColor(color.withAlphaComponent(0.12).cgColor)
+        ctx.setLineWidth(strokeWidth)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.strokePath()
 
         // trailing particles
         for i in 0..<particleCount {
@@ -71,7 +104,9 @@ struct RoseLoader: View {
             let radius = 0.9 + fade * 2.7
             let opacity = 0.04 + fade * 0.96
             let rect = CGRect(x: p.x - radius, y: p.y - radius, width: radius * 2, height: radius * 2)
-            c.fill(Path(ellipseIn: rect), with: .color(color.opacity(opacity)))
+            ctx.setFillColor(color.withAlphaComponent(CGFloat(opacity)).cgColor)
+            ctx.fillEllipse(in: rect)
         }
+        ctx.restoreGState()
     }
 }

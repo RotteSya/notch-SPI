@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import Carbon.HIToolbox
 
 final class NotchController: NSObject {
@@ -11,11 +10,11 @@ final class NotchController: NSObject {
     private var visible = true
     private var collapseWork: DispatchWorkItem?
     private var settingsWindow: NSWindow?
-    private var settingsVM: SettingsViewModel?
+    private var settingsVC: HotkeySettingsViewController?
     private var personaWindow: NSWindow?
-    private var personaVM: PersonaViewModel?
+    private var personaVC: PersonaSettingsViewController?
 
-    private let expandedSize = CGSize(width: 600, height: 420)
+    private let expandedWidth: CGFloat = 600
 
     override init() {
         panel = NotchPanel(contentRect: .zero)
@@ -30,9 +29,8 @@ final class NotchController: NSObject {
             onEditPersona: { [weak self] in self?.openPersonaWindow() },
             onSettings: { [weak self] in self?.showSettings() }
         )
-        let host = NSHostingView(rootView: view)
-        host.layer?.backgroundColor = .clear
-        panel.contentView = host
+        view.autoresizingMask = [.width, .height]
+        panel.contentView = view
         panel.setFrame(frame(expanded: false), display: true)
 
         refreshModeLabels()
@@ -52,9 +50,13 @@ final class NotchController: NSObject {
     private func registerHotkeys() {
         HotKeyCenter.shared.unregisterAll()
         let cap = Settings.shared.captureCombo
+        let persona = Settings.shared.personalityCombo
         let tog = Settings.shared.toggleCombo
         HotKeyCenter.shared.register(keyCode: cap.keyCode, modifiers: cap.modifiers) { [weak self] in
-            self?.runTapped()
+            self?.runTapped(mode: "tutor")
+        }
+        HotKeyCenter.shared.register(keyCode: persona.keyCode, modifiers: persona.modifiers) { [weak self] in
+            self?.runTapped(mode: "personality")
         }
         HotKeyCenter.shared.register(keyCode: tog.keyCode, modifiers: tog.modifiers) { [weak self] in
             self?.toggleVisibility()
@@ -137,7 +139,10 @@ final class NotchController: NSObject {
         menu.addItem(targetItem)
         menu.addItem(.separator())
 
-        let hint = NSMenuItem(title: "截屏讲题  ⌘⇧1      显示/隐藏  ⌘⇧Space", action: nil, keyEquivalent: "")
+        let capStr = Settings.displayString(Settings.shared.captureCombo)
+        let perStr = Settings.displayString(Settings.shared.personalityCombo)
+        let togStr = Settings.displayString(Settings.shared.toggleCombo)
+        let hint = NSMenuItem(title: "讲题 \(capStr)    性格作答 \(perStr)    显示/隐藏 \(togStr)", action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
@@ -199,16 +204,15 @@ final class NotchController: NSObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let vm = SettingsViewModel()
-        vm.onChange = { [weak self] in self?.registerHotkeys() }
-        settingsVM = vm
-        let host = NSHostingController(rootView: HotkeySettingsView(vm: vm))
-        let w = NSWindow(contentViewController: host)
+        let vc = HotkeySettingsViewController()
+        vc.onChange = { [weak self] in self?.registerHotkeys() }
+        settingsVC = vc
+        let w = NSWindow(contentViewController: vc)
         w.title = "NotchSPI 设置"
         w.styleMask = [.titled, .closable]
         w.sharingType = ScreenShareGuard.windowSharingType // keep settings out of screen capture too
         w.isReleasedWhenClosed = false
-        w.setContentSize(NSSize(width: 380, height: 200))
+        w.setContentSize(NSSize(width: 380, height: 232))
         w.center()
         settingsWindow = w
         w.makeKeyAndOrderFront(nil)
@@ -221,11 +225,10 @@ final class NotchController: NSObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let vm = PersonaViewModel()
-        vm.onChange = { [weak self] in self?.refreshModeLabels() }
-        personaVM = vm
-        let host = NSHostingController(rootView: PersonaSettingsView(vm: vm))
-        let w = NSWindow(contentViewController: host)
+        let vc = PersonaSettingsViewController()
+        vc.onChange = { [weak self] in self?.refreshModeLabels() }
+        personaVC = vc
+        let w = NSWindow(contentViewController: vc)
         w.title = "性格测试 · 人物像"
         w.styleMask = [.titled, .closable]
         w.sharingType = ScreenShareGuard.windowSharingType // keep the persona out of screen capture too
@@ -254,9 +257,16 @@ final class NotchController: NSObject {
     private func frame(expanded: Bool) -> NSRect {
         let s = screen.frame
         if expanded {
-            let w = expandedSize.width
-            let h = expandedHeight()
-            return NSRect(x: (s.midX - w / 2).rounded(), y: (s.maxY - h).rounded(),
+            // The visible card is `expandedWidth × expandedCardHeight`; the panel is grown by a
+            // transparent margin (sides + bottom, never the top) so the obsidian card can cast a
+            // soft drop shadow without it being clipped at the panel edge.
+            let mH = NotchMetrics.shadowMarginH
+            let mB = NotchMetrics.shadowMarginBottom
+            let cardW = expandedWidth
+            let cardH = expandedCardHeight()
+            let w = cardW + mH * 2
+            let h = cardH + mB
+            return NSRect(x: (s.midX - cardW / 2 - mH).rounded(), y: (s.maxY - h).rounded(),
                           width: w.rounded(), height: h.rounded())
         }
         // Collapsed: within the menu-bar height; extend to the LEFT of the notch so the
@@ -286,16 +296,12 @@ final class NotchController: NSObject {
     private let minExpandedHeight: CGFloat = 76
     private let maxExpandedHeight: CGFloat = 460
 
-    private func expandedHeight() -> CGFloat {
-        let width = expandedSize.width - 32
-        let placeholder = model.mode == "personality" ? "按 ⌘⇧1 截屏作答 · 悬停展开" : "按 ⌘⇧1 截屏讲题 · 悬停展开"
-        let text = model.answer.isEmpty ? placeholder : model.answer
-        let attr = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13)])
-        let rect = attr.boundingRect(
-            with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        let total = ceil(rect.height) + 44 /* header */ + 28 /* paddings */
+    private func expandedCardHeight() -> CGFloat {
+        // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
+        // panel height always matches the drawn answer — no last-line clip, no trailing gap.
+        let width = expandedWidth - NotchLayout.contentInsetH * 2
+        let answerH = NotchType.answerHeight(model.answer, mode: model.mode, width: width)
+        let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
 
@@ -337,8 +343,14 @@ final class NotchController: NSObject {
 
     // MARK: - Pipeline: capture → CLI (read-only) → stream
 
-    private func runTapped() {
+    private func runTapped(mode: String) {
         guard !running else { return }
+        // The hotkey selects the mode for this capture, so the user never switches modes by hand:
+        // ⌘⇧1 → tutor, ⌘⇧2 → personality. Set it first so every downstream read agrees.
+        if Settings.shared.mode != mode {
+            Settings.shared.mode = mode
+            refreshModeLabels()
+        }
         // Personality mode needs a target persona to answer toward.
         if Settings.shared.mode == "personality",
            Settings.shared.personaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

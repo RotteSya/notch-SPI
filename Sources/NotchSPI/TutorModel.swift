@@ -1,5 +1,8 @@
-import SwiftUI
+import Combine
 
+/// Observable state the notch renders. Mutated on the main thread by the controller's pipeline.
+/// `ObservableObject` / `@Published` are Combine types — the notch is pure AppKit and observes
+/// this via `objectWillChange`, no SwiftUI involved.
 final class TutorModel: ObservableObject {
     enum Status {
         case idle, ready, running, streaming, error
@@ -14,12 +17,4 @@ final class TutorModel: ObservableObject {
     @Published var mode = "tutor"        // active mode id: "tutor" | "personality"
     @Published var modeLabel = "学习辅导" // header title for the active mode
     @Published var personaLabel = ""      // current persona name (empty = not set)
-
-    var dotColor: Color {
-        switch status {
-        case .idle, .ready: return Color(red: 0.25, green: 0.73, blue: 0.31)
-        case .running, .streaming: return Color(red: 0.48, green: 0.63, blue: 1.0)
-        case .error: return Color(red: 0.97, green: 0.32, blue: 0.29)
-        }
-    }
 }
