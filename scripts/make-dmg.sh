@@ -67,37 +67,6 @@ codesign --verify --verbose "$APP" 2>&1 | sed 's/^/    /' || true
 
 echo "==> Staging DMG contents…"
 ln -s /Applications "$STAGING/Applications"
-# README wording must match how this build is signed (see SIGN_ID above).
-if [ -n "$SIGN_ID" ]; then
-  OPEN_NOTE='2. 首次打开：双击打开即可；系统若弹出确认对话框，点「打开」。'
-  NOTARY_NOTE='- 本 App 已使用 Developer ID 签名并经 Apple 公证，可放心分享安装。'
-else
-  OPEN_NOTE='2. 首次打开：在「应用程序」里右键点 NotchSPI → 打开 →「打开」。
-   若提示“已损坏/无法打开”，打开「终端」执行下面这行后再打开：
-       xattr -dr com.apple.quarantine /Applications/NotchSPI.app'
-  NOTARY_NOTE='- 本 App 未经 Apple 公证，仅适合自己/朋友之间分享使用。'
-fi
-cat > "$STAGING/使用说明.txt" <<README
-NotchSPI — 刘海 AI 学习辅导
-
-【安装】
-1. 把 NotchSPI.app 拖到左边的「应用程序 / Applications」。
-$OPEN_NOTE
-3. 第一次按快捷键截屏时，系统会要求「屏幕录制」权限：
-   到「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI，然后重新打开 App。
-
-【使用】
-- 屏幕上放一道题，按 ⌘⇧1 → 刘海下方展开并开始讲解。
-- ⌘⇧Space 显示 / 隐藏。
-- 鼠标悬停刘海可展开；点 ⚙ 可切换后端(Codex/Claude)、讲解深度、修改快捷键、退出。
-
-【前提 · 重要】
-- 需要本机已安装并登录 Codex 或 Claude Code 命令行工具，App 才能工作；
-  没有的话，刘海里会提示“未找到 CLI”。
-$NOTARY_NOTE
-- App 已对屏幕录制 / 屏幕共享隐身：刘海窗口不会被截图、录屏或 Zoom/Meet/Teams 屏幕共享
-  （含「共享整个屏幕」）捕获到；但对着屏幕的实体摄像头无法隐藏。
-README
 
 echo "==> Creating DMG…"
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING" -ov -format UDZO "$OUT/$APP_NAME.dmg" >/dev/null
