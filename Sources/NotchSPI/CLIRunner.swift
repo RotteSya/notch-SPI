@@ -143,21 +143,25 @@ enum CLIRunner {
         binPath: String,
         imagePath: String,
         depth: String,
+        mode: String,
+        personaName: String,
+        personaText: String,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
     ) {
-        let sys = Prompts.tutorText(depth)
+        let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
+        let task = Prompts.taskInstruction(mode: mode)
         let isClaude = (cliId == "claude")
         let args: [String]
         if isClaude {
-            let prompt = sys + "\n\nThe screenshot is saved at this path: \(imagePath)\nOpen and read that image file, then tutor me on the problem it shows."
+            let prompt = sys + "\n\nThe screenshot is saved at this path: \(imagePath)\nOpen and read that image file, then \(task)"
             args = ["-p", prompt,
                     "--allowedTools", "Read",
                     "--disallowedTools", "Edit,Write,Bash,WebFetch,WebSearch",
                     "--permission-mode", "dontAsk",
                     "--output-format", "stream-json", "--verbose", "--include-partial-messages"]
         } else {
-            let prompt = sys + "\n\nAnalyze the attached screenshot image, then tutor me on the problem it shows."
+            let prompt = sys + "\n\nAnalyze the attached screenshot image, then \(task)"
             // Prompt BEFORE -i: --image is variadic and would otherwise eat the prompt.
             args = ["exec", "--sandbox", "read-only", "--skip-git-repo-check", prompt, "-i", imagePath]
         }

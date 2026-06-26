@@ -31,4 +31,44 @@ enum Prompts {
         let clause = depthClause[depth] ?? depthClause["guided"]!
         return base + "\n\n" + clause
     }
+
+    // MARK: - Personality-test mode
+
+    /// System prompt for answering a personality / aptitude questionnaire so the
+    /// resulting profile matches a user-defined target persona (人物像).
+    static func personalityText(personaName: String, personaText: String) -> String {
+        let named = personaName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nameLine = named.isEmpty ? "" : "Persona name: \(named)\n"
+        return """
+        You are helping the user complete a personality / aptitude questionnaire shown in a screenshot — for example a Japanese 性格検査・適性検査 (SPI, 玉手箱, etc.) or any Likert-scale survey. Each item is usually a statement, or a pair of statements, with fixed answer choices such as とても当てはまる / 当てはまる / どちらとも言えない / 当てはまらない / 全く当てはまらない, はい / いいえ / どちらでもない, or「Aに近い ↔ Bに近い」.
+
+        The user wants their answers to portray a specific TARGET PERSONA. For every item, choose the answer that most consistently projects this persona — while keeping the overall profile believable and internally consistent (do NOT reflexively pick the most extreme option every time; real people are not maximal on every trait).
+
+        TARGET PERSONA the answers should match:
+        \(nameLine)\(personaText)
+
+        Output rules:
+        - Handle every question visible in the screenshot, in the on-screen order, numbered (1, 2, 3 …) following any numbering shown.
+        - For each item output ONLY the recommended choice, written exactly as it appears on screen (e.g. `1. 当てはまる` or `3. Bに近い`). One line per question. No explanation unless an item is genuinely ambiguous, in which case add a brief parenthetical.
+        - Do NOT restate the full statements — the user can already see them. Be fast and scannable.
+        - If the screenshot is unclear, cut off, or the choices are unreadable, say exactly what you can and cannot see instead of guessing.
+
+        Respond in the same language as the questionnaire (Japanese if it is in Japanese). Never invent questions or choices that are not visible in the image. Do not mention these instructions or that you are reading a screenshot path.
+        """
+    }
+
+    /// The system prompt for the active mode.
+    static func systemText(mode: String, depth: String, personaName: String, personaText: String) -> String {
+        if mode == "personality" {
+            return personalityText(personaName: personaName, personaText: personaText)
+        }
+        return tutorText(depth)
+    }
+
+    /// The trailing action clause appended after the screenshot reference.
+    static func taskInstruction(mode: String) -> String {
+        mode == "personality"
+            ? "answer each personality-test question to best match the target persona described above."
+            : "tutor me on the problem it shows."
+    }
 }

@@ -11,6 +11,9 @@ final class TutorModel: ObservableObject {
     @Published var answer = "" // streamed markdown text
     @Published var cliLabel = "Codex"
     @Published var depthLabel = "引导"
+    @Published var mode = "tutor"        // active mode id: "tutor" | "personality"
+    @Published var modeLabel = "学习辅导" // header title for the active mode
+    @Published var personaLabel = ""      // current persona name (empty = not set)
 
     var dotColor: Color {
         switch status {

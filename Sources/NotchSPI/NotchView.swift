@@ -4,6 +4,7 @@ struct NotchView: View {
     @ObservedObject var model: TutorModel
     var onHover: (Bool) -> Void
     var onCycleDepth: () -> Void
+    var onEditPersona: () -> Void
     var onSettings: () -> Void
 
     private let accent = Color(red: 0.48, green: 0.63, blue: 1.0)
@@ -55,11 +56,13 @@ struct NotchView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 RoseLoader(color: roseColor, size: 16)
-                Text("学习辅导").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white)
+                Text(model.modeLabel).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white)
                 Text(model.statusText).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Button(action: onCycleDepth) {
-                    Text(model.depthLabel)
+                // Personality mode: capsule shows the persona name and opens its editor.
+                // Tutor mode: capsule shows the depth and cycles it.
+                Button(action: model.mode == "personality" ? onEditPersona : onCycleDepth) {
+                    Text(capsuleLabel)
                         .font(.system(size: 11))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -91,9 +94,18 @@ struct NotchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private var capsuleLabel: String {
+        if model.mode == "personality" {
+            return model.personaLabel.isEmpty ? "设置人物像" : model.personaLabel
+        }
+        return model.depthLabel
+    }
+
     private var rendered: AttributedString {
         if model.answer.isEmpty {
-            return AttributedString("按 ⌘⇧1 截屏讲题 · 悬停展开")
+            return AttributedString(model.mode == "personality"
+                ? "按 ⌘⇧1 截屏作答 · 悬停展开"
+                : "按 ⌘⇧1 截屏讲题 · 悬停展开")
         }
         if let a = try? AttributedString(
             markdown: model.answer,

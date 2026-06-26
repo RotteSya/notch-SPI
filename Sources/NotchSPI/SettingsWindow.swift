@@ -104,3 +104,55 @@ struct HotkeySettingsView: View {
         }
     }
 }
+
+// MARK: - Personality-test persona editor
+
+final class PersonaViewModel: ObservableObject {
+    @Published var name: String
+    @Published var text: String
+    var onChange: (() -> Void)?
+
+    init() {
+        name = Settings.shared.personaName
+        text = Settings.shared.personaText
+    }
+
+    /// Persist immediately so the next ⌘⇧1 uses the latest persona.
+    func commit() {
+        Settings.shared.personaName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        Settings.shared.personaText = text
+        onChange?()
+    }
+}
+
+struct PersonaSettingsView: View {
+    @ObservedObject var vm: PersonaViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("性格测试 · 人物像").font(.headline)
+
+            Text("给这次的人物像起个名字")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            TextField("例如：A社 求める人物像", text: $vm.name)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: vm.name) { vm.commit() }
+
+            Text("人物像描述（截图作答时答案会尽量贴合）")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            TextEditor(text: $vm.text)
+                .font(.system(size: 12.5))
+                .frame(minHeight: 150)
+                .padding(6)
+                .background(Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .onChange(of: vm.text) { vm.commit() }
+
+            Text("例：●創意と挑戦心を持ち、主体的に行動できる方 ●変化を常とし、外的変化へ柔軟に適応できる方 ●チームワークを重要視し、協調性を発揮できる方")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: 440, height: 360, alignment: .topLeading)
+    }
+}

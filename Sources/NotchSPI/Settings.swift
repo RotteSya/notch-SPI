@@ -21,6 +21,26 @@ final class Settings {
         set { d.set(newValue, forKey: "depth") }
     }
 
+    // MARK: - Mode (tutor ↔ personality test)
+
+    /// "tutor" (default) or "personality".
+    var mode: String {
+        get { d.string(forKey: "mode") ?? "tutor" }
+        set { d.set(newValue, forKey: "mode") }
+    }
+
+    /// User-chosen display name for the current target persona (人物像).
+    var personaName: String {
+        get { d.string(forKey: "personaName") ?? "" }
+        set { d.set(newValue, forKey: "personaName") }
+    }
+
+    /// The desired persona / 人物像 description that personality-test answers should match.
+    var personaText: String {
+        get { d.string(forKey: "personaText") ?? "" }
+        set { d.set(newValue, forKey: "personaText") }
+    }
+
     // MARK: - Capture target
 
     /// Bundle ID of the app whose window gets captured; nil = full screen.
@@ -95,5 +115,10 @@ final class Settings {
         }
     }
 
+    static func label(forMode mode: String) -> String {
+        mode == "personality" ? "性格测试" : "学习辅导"
+    }
+
     static let depthCycle = ["brief", "hint", "guided", "full"]
+    static let modeCycle = ["tutor", "personality"]
 }

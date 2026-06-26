@@ -12,6 +12,8 @@ final class NotchController: NSObject {
     private var collapseWork: DispatchWorkItem?
     private var settingsWindow: NSWindow?
     private var settingsVM: SettingsViewModel?
+    private var personaWindow: NSWindow?
+    private var personaVM: PersonaViewModel?
 
     private let expandedSize = CGSize(width: 600, height: 420)
 
@@ -25,6 +27,7 @@ final class NotchController: NSObject {
             model: model,
             onHover: { [weak self] in self?.hover($0) },
             onCycleDepth: { [weak self] in self?.cycleDepth() },
+            onEditPersona: { [weak self] in self?.openPersonaWindow() },
             onSettings: { [weak self] in self?.showSettings() }
         )
         let host = NSHostingView(rootView: view)
@@ -32,7 +35,16 @@ final class NotchController: NSObject {
         panel.contentView = host
         panel.setFrame(frame(expanded: false), display: true)
 
+        refreshModeLabels()
         registerHotkeys()
+    }
+
+    /// Push the active mode + persona name into the model so the notch header reflects them.
+    private func refreshModeLabels() {
+        let m = Settings.shared.mode
+        model.mode = m
+        model.modeLabel = Settings.label(forMode: m)
+        model.personaLabel = Settings.shared.personaName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func show() { panel.orderFrontRegardless() }
@@ -81,17 +93,35 @@ final class NotchController: NSObject {
         }
         menu.addItem(.separator())
 
-        let depthHeader = NSMenuItem(title: "讲解深度", action: nil, keyEquivalent: "")
-        depthHeader.isEnabled = false
-        menu.addItem(depthHeader)
-        for id in Settings.depthCycle {
-            let item = NSMenuItem(title: Settings.label(forDepth: id), action: #selector(pickDepth(_:)), keyEquivalent: "")
+        let modeHeader = NSMenuItem(title: "模式", action: nil, keyEquivalent: "")
+        modeHeader.isEnabled = false
+        menu.addItem(modeHeader)
+        for id in Settings.modeCycle {
+            let item = NSMenuItem(title: Settings.label(forMode: id), action: #selector(pickMode(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = id
-            item.state = (Settings.shared.depth == id) ? .on : .off
+            item.state = (Settings.shared.mode == id) ? .on : .off
             menu.addItem(item)
         }
+        let persona = NSMenuItem(title: "编辑人物像…", action: #selector(openPersonaMenu), keyEquivalent: "")
+        persona.target = self
+        menu.addItem(persona)
         menu.addItem(.separator())
+
+        // Depth only applies to tutor mode; hide it in personality mode.
+        if Settings.shared.mode != "personality" {
+            let depthHeader = NSMenuItem(title: "讲解深度", action: nil, keyEquivalent: "")
+            depthHeader.isEnabled = false
+            menu.addItem(depthHeader)
+            for id in Settings.depthCycle {
+                let item = NSMenuItem(title: Settings.label(forDepth: id), action: #selector(pickDepth(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = id
+                item.state = (Settings.shared.depth == id) ? .on : .off
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
 
         let savedID = Settings.shared.captureTargetBundleID
         let savedName = Settings.shared.captureTargetName ?? savedID ?? ""
@@ -145,6 +175,16 @@ final class NotchController: NSObject {
         model.depthLabel = Settings.label(forDepth: id)
     }
 
+    @objc private func pickMode(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        Settings.shared.mode = id
+        refreshModeLabels()
+        // Switching into personality mode is the moment to capture the target persona.
+        if id == "personality" { openPersonaWindow() }
+    }
+
+    @objc private func openPersonaMenu() { openPersonaWindow() }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
@@ -171,6 +211,28 @@ final class NotchController: NSObject {
         w.setContentSize(NSSize(width: 380, height: 200))
         w.center()
         settingsWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openPersonaWindow() {
+        if let w = personaWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let vm = PersonaViewModel()
+        vm.onChange = { [weak self] in self?.refreshModeLabels() }
+        personaVM = vm
+        let host = NSHostingController(rootView: PersonaSettingsView(vm: vm))
+        let w = NSWindow(contentViewController: host)
+        w.title = "性格测试 · 人物像"
+        w.styleMask = [.titled, .closable]
+        w.sharingType = ScreenShareGuard.windowSharingType // keep the persona out of screen capture too
+        w.isReleasedWhenClosed = false
+        w.setContentSize(NSSize(width: 440, height: 360))
+        w.center()
+        personaWindow = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -226,7 +288,8 @@ final class NotchController: NSObject {
 
     private func expandedHeight() -> CGFloat {
         let width = expandedSize.width - 32
-        let text = model.answer.isEmpty ? "按 ⌘⇧1 截屏讲题 · 悬停展开" : model.answer
+        let placeholder = model.mode == "personality" ? "按 ⌘⇧1 截屏作答 · 悬停展开" : "按 ⌘⇧1 截屏讲题 · 悬停展开"
+        let text = model.answer.isEmpty ? placeholder : model.answer
         let attr = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13)])
         let rect = attr.boundingRect(
             with: NSSize(width: width, height: .greatestFiniteMagnitude),
@@ -276,6 +339,15 @@ final class NotchController: NSObject {
 
     private func runTapped() {
         guard !running else { return }
+        // Personality mode needs a target persona to answer toward.
+        if Settings.shared.mode == "personality",
+           Settings.shared.personaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !visible { visible = true; panel.orderFrontRegardless() }
+            setExpanded(true)
+            finishError("性格测试模式还没有人物像。请在齿轮菜单 →「编辑人物像…」填写本次要贴合的人物像。")
+            openPersonaWindow()
+            return
+        }
         running = true
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
@@ -322,14 +394,19 @@ final class NotchController: NSObject {
                 return
             }
 
-            self.model.statusText = "正在用 \(self.model.cliLabel) 讲解…"
+            let mode = Settings.shared.mode
+            let verb = mode == "personality" ? "作答" : "讲解"
+            self.model.statusText = "正在用 \(self.model.cliLabel) \(verb)…"
             CLIRunner.run(
                 cliId: cliId, binPath: binPath, imagePath: shot.path, depth: Settings.shared.depth,
+                mode: mode,
+                personaName: Settings.shared.personaName,
+                personaText: Settings.shared.personaText,
                 onDelta: { [weak self] delta in
                     guard let self else { return }
                     self.model.answer += delta
                     self.model.status = .streaming
-                    self.model.statusText = "讲解中…"
+                    self.model.statusText = "\(verb)中…"
                     self.resizeToFit()
                 },
                 onDone: { [weak self] ok, stderr in
