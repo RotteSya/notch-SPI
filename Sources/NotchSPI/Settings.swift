@@ -128,5 +128,4 @@ final class Settings {
     }
 
     static let depthCycle = ["brief", "hint", "guided", "full"]
-    static let modeCycle = ["tutor", "personality"]
 }

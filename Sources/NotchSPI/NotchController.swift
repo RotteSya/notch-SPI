@@ -12,7 +12,7 @@ final class NotchController: NSObject {
     private var settingsWindow: NSWindow?
     private var settingsVC: HotkeySettingsViewController?
     private var personaWindow: NSWindow?
-    private var personaVC: PersonaSettingsViewController?
+    private var personaVC: PersonaManagerViewController?
 
     private let expandedWidth: CGFloat = 600
 
@@ -38,11 +38,13 @@ final class NotchController: NSObject {
     }
 
     /// Push the active mode + persona name into the model so the notch header reflects them.
+    /// Reads the active persona from `PersonaStore` (which also keeps `Settings` mirrored for the
+    /// capture pipeline). Touching the store here on launch performs the one-time legacy migration.
     private func refreshModeLabels() {
         let m = Settings.shared.mode
         model.mode = m
         model.modeLabel = Settings.label(forMode: m)
-        model.personaLabel = Settings.shared.personaName.trimmingCharacters(in: .whitespacesAndNewlines)
+        model.personaLabel = PersonaStore.shared.active?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     func show() { panel.orderFrontRegardless() }
@@ -95,20 +97,9 @@ final class NotchController: NSObject {
         }
         menu.addItem(.separator())
 
-        let modeHeader = NSMenuItem(title: "模式", action: nil, keyEquivalent: "")
-        modeHeader.isEnabled = false
-        menu.addItem(modeHeader)
-        for id in Settings.modeCycle {
-            let item = NSMenuItem(title: Settings.label(forMode: id), action: #selector(pickMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = id
-            item.state = (Settings.shared.mode == id) ? .on : .off
-            menu.addItem(item)
-        }
-        let persona = NSMenuItem(title: "编辑人物像…", action: #selector(openPersonaMenu), keyEquivalent: "")
-        persona.target = self
-        menu.addItem(persona)
-        menu.addItem(.separator())
+        // Mode (学习辅导 / 性格测试) is chosen by which hotkey you press — ⌘⇧1 vs ⌘⇧2 — so it isn't a
+        // manual menu choice; the hotkey hint row below shows the bindings. The persona switch +
+        // manage entries are grouped together at the bottom near 快捷键设置.
 
         // Depth only applies to tutor mode; hide it in personality mode.
         if Settings.shared.mode != "personality" {
@@ -151,6 +142,26 @@ final class NotchController: NSObject {
         hk.target = self
         menu.addItem(hk)
 
+        // Persona quick-switch (only when personas exist) + manage, grouped here at the bottom.
+        let personas = PersonaStore.shared.all
+        if !personas.isEmpty {
+            let switchItem = NSMenuItem(title: "切换人物像", action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            for p in personas {
+                let it = NSMenuItem(title: p.name.isEmpty ? "未命名人物像" : p.name, action: #selector(pickPersona(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = p.id
+                it.state = (PersonaStore.shared.activeID == p.id) ? .on : .off
+                sub.addItem(it)
+            }
+            switchItem.submenu = sub
+            menu.addItem(switchItem)
+        }
+
+        let persona = NSMenuItem(title: "管理人物像…", action: #selector(openPersonaMenu), keyEquivalent: "")
+        persona.target = self
+        menu.addItem(persona)
+
         let quit = NSMenuItem(title: "退出 NotchSPI", action: #selector(quitApp), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
@@ -180,12 +191,11 @@ final class NotchController: NSObject {
         model.depthLabel = Settings.label(forDepth: id)
     }
 
-    @objc private func pickMode(_ sender: NSMenuItem) {
+    @objc private func pickPersona(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        Settings.shared.mode = id
+        PersonaStore.shared.setActive(id)
         refreshModeLabels()
-        // Switching into personality mode is the moment to capture the target persona.
-        if id == "personality" { openPersonaWindow() }
+        personaVC?.reloadFromStore() // keep an open manager window in sync
     }
 
     @objc private func openPersonaMenu() { openPersonaWindow() }
@@ -221,11 +231,12 @@ final class NotchController: NSObject {
 
     private func openPersonaWindow() {
         if let w = personaWindow {
+            personaVC?.reloadFromStore() // resync in case the gear menu switched personas while closed
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let vc = PersonaSettingsViewController()
+        let vc = PersonaManagerViewController()
         vc.onChange = { [weak self] in self?.refreshModeLabels() }
         personaVC = vc
         let w = NSWindow(contentViewController: vc)
@@ -233,7 +244,7 @@ final class NotchController: NSObject {
         w.styleMask = [.titled, .closable]
         w.sharingType = ScreenShareGuard.windowSharingType // keep the persona out of screen capture too
         w.isReleasedWhenClosed = false
-        w.setContentSize(NSSize(width: 440, height: 360))
+        w.setContentSize(NSSize(width: 640, height: 450))
         w.center()
         personaWindow = w
         w.makeKeyAndOrderFront(nil)
