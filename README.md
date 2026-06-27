@@ -17,7 +17,9 @@ Code**), run **read‑only**. No API key.
   **read‑only** → streams the answer into the panel.
 - **Depth modes:** 简略 (answer only) · 提示 · 引导 · 完整.
 - **Global hotkeys (customizable):** `⌘⇧1` capture, `⌘⇧Space` show/hide.
-- **Settings menu (⚙):** switch backend (Codex/Claude), depth, edit hotkeys, quit.
+- **Settings menu (⚙):** switch backend (Codex/Claude), depth, edit hotkeys, check for updates (检查更新), quit.
+- **Check for updates (检查更新):** compares the running version against the latest GitHub release;
+  also checks quietly on launch (≤ once/day) and points you to the download page when one is newer.
 
 ## Requirements
 

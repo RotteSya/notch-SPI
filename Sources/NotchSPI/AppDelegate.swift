@@ -12,6 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NotchController()
         controller.show()
         self.controller = controller
+
+        // Quietly check GitHub for a newer release (≤ once/day; only surfaces if an update exists).
+        // Delayed so the notch UI settles first and the alert never races app launch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            UpdateChecker.autoCheckIfDue()
+        }
     }
 
     private static func makeMainMenu() -> NSMenu {

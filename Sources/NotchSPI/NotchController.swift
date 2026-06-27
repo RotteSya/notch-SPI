@@ -162,6 +162,12 @@ final class NotchController: NSObject {
         persona.target = self
         menu.addItem(persona)
 
+        menu.addItem(.separator())
+
+        let update = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+        update.target = self
+        menu.addItem(update)
+
         let quit = NSMenuItem(title: "退出 NotchSPI", action: #selector(quitApp), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
@@ -199,6 +205,8 @@ final class NotchController: NSObject {
     }
 
     @objc private func openPersonaMenu() { openPersonaWindow() }
+
+    @objc private func checkForUpdates() { UpdateChecker.checkForUpdatesManually() }
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
