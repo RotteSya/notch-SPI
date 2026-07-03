@@ -261,20 +261,21 @@ final class NotchController: NSObject {
 
     // MARK: - Geometry (NSScreen coords are bottom-left origin)
 
-    private var screen: NSScreen { NSScreen.main ?? NSScreen.screens.first! }
+    private var screen: NSScreen? { NSScreen.main ?? NSScreen.screens.first }
 
     private var notchWidth: CGFloat {
-        let s = screen
+        guard let s = screen else { return 200 }
         if let l = s.auxiliaryTopLeftArea?.width, let r = s.auxiliaryTopRightArea?.width, l > 0, r > 0 {
             return max(150, s.frame.width - l - r)
         }
         return 200
     }
 
-    private var notchHeight: CGFloat { max(28, screen.safeAreaInsets.top) }
+    private var notchHeight: CGFloat { max(28, screen?.safeAreaInsets.top ?? 0) }
 
     private func frame(expanded: Bool) -> NSRect {
-        let s = screen.frame
+        // No display (truly headless) — nothing sensible to place; a harmless default avoids a crash.
+        guard let s = screen?.frame else { return NSRect(x: 0, y: 0, width: expandedWidth, height: 100) }
         if expanded {
             // The visible card is `expandedWidth × expandedCardHeight`; the panel is grown by a
             // transparent margin (sides + bottom, never the top) so the obsidian card can cast a

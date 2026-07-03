@@ -65,8 +65,14 @@ enum CLIRunner {
         p.standardError = FileHandle.nullDevice
         p.standardInput = FileHandle.nullDevice
         do { try p.run() } catch { return [:] }
+        // Guard against a slow or hanging shell rc so detection never blocks indefinitely.
+        // `-i` is intentional (PATH additions for nvm/asdf/etc. usually live in an interactive
+        // `.zshrc`), but it also runs arbitrary user startup code — cap it at a few seconds.
+        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 4, execute: killer)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
+        killer.cancel()
         var map: [String: String] = [:]
         if let s = String(data: data, encoding: .utf8) {
             for line in s.split(separator: "\n") {
@@ -172,7 +178,9 @@ enum CLIRunner {
         p.arguments = args
         p.environment = augmentedEnv()
         p.currentDirectoryURL = URL(fileURLWithPath: wd) // isolated empty dir
+        #if DEBUG
         print("[NotchSPI] run \(cliId) cwd=\(wd) argc=\(args.count)")
+        #endif
         let o = Pipe()
         let e = Pipe()
         p.standardOutput = o
@@ -184,51 +192,97 @@ enum CLIRunner {
         var sawText = false
         var resultText = ""
         var finished = false
-        let lock = NSLock()
+        // All stream state above is confined to this serial queue, so the stdout, stderr, and
+        // termination callbacks never mutate it concurrently. Each callback reads its pipe *inside*
+        // a queued block, so pulling bytes and processing them is atomic and strictly ordered.
+        let ioQueue = DispatchQueue(label: "com.rottesya.notchspi.cli-io")
 
-        func finish(_ ok: Bool) {
-            lock.lock(); defer { lock.unlock() }
-            if finished { return }
-            finished = true
-            o.fileHandleForReading.readabilityHandler = nil
-            e.fileHandleForReading.readabilityHandler = nil
-            if !sawText && !resultText.isEmpty {
-                let r = resultText
-                DispatchQueue.main.async { onDelta(r) }
+        // Parse one line of Claude stream-json (delta → onDelta, result → resultText). On ioQueue.
+        func handleClaudeLine(_ line: String) {
+            if let t = parseClaudeDelta(line) {
+                sawText = true
+                DispatchQueue.main.async { onDelta(t) }
+            } else if let r = parseClaudeResult(line) {
+                resultText = r
             }
-            DispatchQueue.main.async { onDone(ok, stderrBuf) }
         }
 
-        o.fileHandleForReading.readabilityHandler = { h in
-            let data = h.availableData
-            if data.isEmpty { return }
-            guard let chunk = String(data: data, encoding: .utf8) else { return }
+        // Feed a chunk of stdout through the parser. On ioQueue.
+        func ingest(_ chunk: String) {
             if isClaude {
                 lineBuf += chunk
                 while let nl = lineBuf.firstIndex(of: "\n") {
                     let line = String(lineBuf[..<nl])
                     lineBuf.removeSubrange(lineBuf.startIndex...nl)
-                    if let t = parseClaudeDelta(line) {
-                        sawText = true
-                        DispatchQueue.main.async { onDelta(t) }
-                    } else if let r = parseClaudeResult(line) {
-                        resultText = r
-                    }
+                    handleClaudeLine(line)
                 }
             } else {
                 sawText = true
                 DispatchQueue.main.async { onDelta(chunk) }
             }
         }
+
+        // On ioQueue. Idempotent via `finished`.
+        func finish(_ ok: Bool) {
+            if finished { return }
+            finished = true
+            o.fileHandleForReading.readabilityHandler = nil
+            e.fileHandleForReading.readabilityHandler = nil
+
+            // Drain whatever is still buffered in the pipes: the process can exit before the last
+            // readability callback fires, which would otherwise drop the tail — for Claude, the
+            // final `result` line, surfacing as a spurious "（没有输出）" on a successful run.
+            if let rest = try? o.fileHandleForReading.readToEnd(),
+               let chunk = String(data: rest, encoding: .utf8), !chunk.isEmpty {
+                ingest(chunk)
+            }
+            if let rest = try? e.fileHandleForReading.readToEnd(),
+               let s = String(data: rest, encoding: .utf8), !s.isEmpty {
+                stderrBuf += s
+            }
+            // A trailing Claude line with no newline terminator stays in lineBuf — flush it.
+            if isClaude, !lineBuf.isEmpty {
+                handleClaudeLine(lineBuf)
+                lineBuf = ""
+            }
+
+            if !sawText, !resultText.isEmpty {
+                let r = resultText
+                DispatchQueue.main.async { onDelta(r) }
+            }
+            let errOut = stderrBuf
+            DispatchQueue.main.async { onDone(ok, errOut) }
+        }
+
+        o.fileHandleForReading.readabilityHandler = { h in
+            ioQueue.async {
+                guard !finished else { return }
+                let data = h.availableData
+                if data.isEmpty { return }
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
+                ingest(chunk)
+            }
+        }
         e.fileHandleForReading.readabilityHandler = { h in
-            if let s = String(data: h.availableData, encoding: .utf8) { stderrBuf += s }
+            ioQueue.async {
+                guard !finished else { return }
+                let data = h.availableData
+                if data.isEmpty { return }
+                guard let s = String(data: data, encoding: .utf8) else { return }
+                stderrBuf += s
+            }
         }
         p.terminationHandler = { proc in
-            print("[NotchSPI] \(cliId) exited \(proc.terminationStatus) sawText=\(sawText) stderrLen=\(stderrBuf.count)")
-            if proc.terminationStatus != 0 {
-                print("[NotchSPI] stderr tail: \(String(stderrBuf.suffix(500)))")
+            ioQueue.async {
+                let status = proc.terminationStatus
+                #if DEBUG
+                print("[NotchSPI] \(cliId) exited \(status) sawText=\(sawText) stderrLen=\(stderrBuf.count)")
+                if status != 0 {
+                    print("[NotchSPI] stderr tail: \(String(stderrBuf.suffix(500)))")
+                }
+                #endif
+                finish(status == 0 || sawText)
             }
-            finish(proc.terminationStatus == 0 || sawText)
         }
 
         do {
@@ -238,9 +292,13 @@ enum CLIRunner {
             return
         }
 
-        // Safety timeout
+        // Safety timeout: SIGTERM after 120s, then SIGKILL if the process ignores it.
         DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
-            if p.isRunning { p.terminate() }
+            guard p.isRunning else { return }
+            p.terminate() // SIGTERM
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            }
         }
     }
 

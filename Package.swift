@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "NotchSPI",
             path: "Sources/NotchSPI"
+        ),
+        .testTarget(
+            name: "NotchSPITests",
+            dependencies: ["NotchSPI"],
+            path: "Tests/NotchSPITests"
         )
     ]
 )

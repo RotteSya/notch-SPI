@@ -19,7 +19,10 @@ final class HotKeyCenter {
         handlers[id] = handler
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: OSType(0x4E544348), id: id) // 'NTCH'
-        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        if status != noErr {
+            NSLog("[NotchSPI] hotkey registration failed (status=\(status)); combo may be taken by another app")
+        }
         refs.append(ref)
     }
 

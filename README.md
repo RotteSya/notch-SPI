@@ -5,8 +5,10 @@ panel drops from the MacBook notch, reads the problem on your screen, and **stre
 tutoring explanation** — powered by the AI CLIs you already have (**Codex** / **Claude
 Code**), run **read‑only**. No API key.
 
-> **Honest study tool.** It deliberately has **no** screen‑share evasion / anti‑proctoring —
-> the panel is fully visible to screen recording. Use it on your own practice material.
+> **Capture exclusion.** The notch panel and NotchSPI's own windows are excluded from all
+> **software** screen capture — screenshots, screen recording, and Zoom/Meet/Teams screen share
+> (including "share entire screen") — via `NSWindow.sharingType = .none`. This blocks software
+> capture only; it does **not** hide the panel from a camera pointed at the physical display.
 
 ## Features
 
@@ -16,7 +18,7 @@ Code**), run **read‑only**. No API key.
 - **Capture → CLI → stream:** ScreenCaptureKit grabs the screen → drives `codex` or `claude`
   **read‑only** → streams the answer into the panel.
 - **Depth modes:** 简略 (answer only) · 提示 · 引导 · 完整.
-- **Global hotkeys (customizable):** `⌘⇧1` capture, `⌘⇧Space` show/hide.
+- **Global hotkeys (customizable):** `⌘⇧1` 讲题 (tutor), `⌘⇧2` 性格作答 (personality test), `⌘⇧Space` show/hide.
 - **Settings menu (⚙):** switch backend (Codex/Claude), depth, edit hotkeys, check for updates (检查更新), quit.
 - **Check for updates (检查更新):** compares the running version against the latest GitHub release;
   also checks quietly on launch (≤ once/day) and points you to the download page when one is newer.

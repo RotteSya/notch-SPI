@@ -27,7 +27,7 @@ enum UpdateChecker {
 
     /// Dev-only fallback for `swift run` (the real .app reads its Info.plist). Keep roughly in sync
     /// with `VERSION` in `scripts/make-dmg.sh`, which is the source of truth for releases.
-    private static let devFallbackVersion = "1.5"
+    private static let devFallbackVersion = "1.6"
 
     struct Release {
         let version: String   // normalized numeric core, e.g. "1.6"
@@ -139,7 +139,8 @@ enum UpdateChecker {
     private static let appLogo: NSImage? = {
         if let url = Bundle.main.url(forResource: "NotchSPI", withExtension: "icns"),
            let img = NSImage(contentsOf: url) { return img }
-        let devURL = URL(fileURLWithPath: #filePath)   // Sources/NotchSPI/UpdateChecker.swift
+        let devURL = URL(fileURLWithPath: #filePath)   // Sources/NotchSPI/Update/UpdateChecker.swift
+            .deletingLastPathComponent()                // Sources/NotchSPI/Update
             .deletingLastPathComponent()                // Sources/NotchSPI
             .deletingLastPathComponent()                // Sources
             .deletingLastPathComponent()                // package root

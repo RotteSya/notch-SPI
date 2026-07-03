@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # Build a shareable NotchSPI.dmg: universal (arm64 + x86_64 when possible),
-# wrapped in a .app bundle, ad-hoc code-signed. Not Apple-notarized.
+# wrapped in a .app bundle. If a "Developer ID Application" cert is present, the app + DMG are
+# signed with a hardened runtime and Apple-notarized + stapled; otherwise it falls back to
+# ad-hoc signing (NOT notarizable — recipients must bypass Gatekeeper manually).
 
 cd "$(dirname "$0")/.."  # -> native/
 
