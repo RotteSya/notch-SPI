@@ -27,7 +27,7 @@ enum UpdateChecker {
 
     /// Dev-only fallback for `swift run` (the real .app reads its Info.plist). Keep roughly in sync
     /// with `VERSION` in `scripts/make-dmg.sh`, which is the source of truth for releases.
-    private static let devFallbackVersion = "1.6"
+    private static let devFallbackVersion = "1.7"
 
     struct Release {
         let version: String   // normalized numeric core, e.g. "1.6"
