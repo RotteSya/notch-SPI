@@ -198,6 +198,21 @@ final class OfficialAPITests: XCTestCase {
         XCTAssertEqual(url?.absoluteString, "https://api.notchspi.app/topup?device=dev_123")
     }
 
+    func testEndpointURLIsCrashSafeAndPreservesBasePath() {
+        // A path-bearing self-hosted base keeps its path segment.
+        XCTAssertEqual(
+            OfficialAPI.endpointURL(base: "https://host/api", path: "v1/devices").absoluteString,
+            "https://host/api/v1/devices")
+        // An unparseable override falls back to the production default instead of crashing.
+        XCTAssertEqual(
+            OfficialAPI.endpointURL(base: "", path: "v1/devices").absoluteString,
+            "https://api.notchspi.app/v1/devices")
+        // Leading slashes in the path don't clobber the base.
+        XCTAssertEqual(
+            OfficialAPI.endpointURL(base: "https://host/api", path: "/topup").absoluteString,
+            "https://host/api/topup")
+    }
+
     func testCaptureRequestShape() {
         let req = OfficialAPI.makeCaptureRequest(
             baseURL: "https://api.notchspi.app", deviceToken: "dev_123",

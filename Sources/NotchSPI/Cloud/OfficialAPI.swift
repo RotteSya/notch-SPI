@@ -121,12 +121,21 @@ enum OfficialAPI {
         return String(format: "%@%.2f", symbol, Double(cents) / 100)
     }
 
+    /// Resolved endpoint under the configured base. Never force-unwraps user input: a
+    /// hand-typed `official.baseURL` override that doesn't parse falls back to the production
+    /// default instead of crashing. Path components are appended WITHOUT a leading slash so a
+    /// path-bearing base ("https://host/api") is preserved.
+    static func endpointURL(base: String, path: String) -> URL {
+        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let url = URL(string: base) ?? URL(string: defaultBaseURL)! // default is a compile-time constant
+        return url.appendingPathComponent(clean)
+    }
+
     /// The web top-up page for this device (账户与额度面板的「充值」按钮). Appends to the
     /// base URL's path (same as the API endpoints) so self-hosted bases like
     /// "https://host/api" keep working.
     static func topUpURL(baseURL: String, deviceToken: String?) -> URL? {
-        guard let base = URL(string: baseURL) else { return nil }
-        var comps = URLComponents(url: base.appendingPathComponent("topup"), resolvingAgainstBaseURL: false)
+        var comps = URLComponents(url: endpointURL(base: baseURL, path: "topup"), resolvingAgainstBaseURL: false)
         if let t = deviceToken, !t.isEmpty {
             comps?.queryItems = [URLQueryItem(name: "device", value: t)]
         }
@@ -167,7 +176,7 @@ enum OfficialAPI {
     }
 
     static func makeRegisterRequest(baseURL: String, appVersion: String) -> URLRequest {
-        var req = URLRequest(url: URL(string: baseURL)!.appendingPathComponent("/v1/devices"))
+        var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/devices"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 30
@@ -179,7 +188,7 @@ enum OfficialAPI {
     }
 
     static func makeAccountRequest(baseURL: String, deviceToken: String) -> URLRequest {
-        var req = URLRequest(url: URL(string: baseURL)!.appendingPathComponent("/v1/account"))
+        var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/account"))
         req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 30
         return req
@@ -189,7 +198,7 @@ enum OfficialAPI {
         baseURL: String, deviceToken: String,
         systemText: String, taskText: String, imageBase64: String
     ) -> URLRequest {
-        var req = URLRequest(url: URL(string: baseURL)!.appendingPathComponent("/v1/captures"))
+        var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
         req.httpMethod = "POST"
         req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
