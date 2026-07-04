@@ -35,13 +35,21 @@ enum OfficialAPI {
 
     private static var d: UserDefaults { .standard }
 
+    /// Bearer credential for the paid service — Keychain-backed. A token from the
+    /// pre-Keychain plaintext storage migrates (and its UserDefaults copy is removed)
+    /// on first read.
     static var deviceToken: String? {
         get {
-            let v = d.string(forKey: "official.deviceToken") ?? ""
-            return v.isEmpty ? nil : v
+            if let v = KeychainStore.read("official.deviceToken") { return v }
+            let legacy = d.string(forKey: "official.deviceToken") ?? ""
+            guard !legacy.isEmpty else { return nil }
+            KeychainStore.write(legacy, account: "official.deviceToken")
+            d.removeObject(forKey: "official.deviceToken")
+            return legacy
         }
         set {
-            d.set(newValue ?? "", forKey: "official.deviceToken")
+            KeychainStore.write(newValue, account: "official.deviceToken")
+            d.removeObject(forKey: "official.deviceToken") // never leave a plaintext copy behind
             notifyAccountChanged()
         }
     }
@@ -86,7 +94,8 @@ enum OfficialAPI {
     /// The server said our device token is no longer valid — drop the local account state so
     /// the UI falls back to the "初始化账户" path instead of dead-ending on generic errors.
     private static func handleInvalidToken() {
-        d.set("", forKey: "official.deviceToken")
+        KeychainStore.write(nil, account: "official.deviceToken")
+        d.removeObject(forKey: "official.deviceToken") // clear any legacy plaintext copy too
         d.removeObject(forKey: "official.balanceCents")
         notifyAccountChanged()
     }

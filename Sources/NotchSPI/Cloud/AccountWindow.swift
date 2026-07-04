@@ -123,6 +123,9 @@ final class AccountViewController: NSViewController {
             ? "当前使用官方服务，每次截屏按实际 Token 用量从余额扣费。"
             : "当前使用「\(Settings.label(forServiceMode: mode))」，不产生官方服务扣费。可在齿轮菜单切回官方服务。"
         initButton.isHidden = registered
+        // Re-enable whenever the button is shown again — after a 401 clears the token, the
+        // button reappears and must be clickable (it was left disabled by a prior initTapped).
+        if !registered { initButton.isEnabled = true }
         refreshButton.isEnabled = registered
         topUpButton.isEnabled = registered
     }

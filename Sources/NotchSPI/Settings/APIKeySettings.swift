@@ -34,7 +34,7 @@ final class APIKeySettingsViewController: NSViewController, NSTextFieldDelegate 
         root.addSubview(title)
 
         let hint = Self.makeLabel(
-            "填写后，截图会直连官方 API（优先于本机 CLI）；留空则自动回退到 codex / claude CLI，原有用法完全不受影响。Key 仅保存在本机。",
+            "填写后，截图会直连官方 API（优先于本机 CLI）；留空则自动回退到 codex / claude CLI，原有用法完全不受影响。Key 安全保存在本机钥匙串中。",
             size: 11, weight: .regular, color: .secondaryLabelColor)
         hint.frame = NSRect(x: 20, y: 44, width: 420, height: 44)
         hint.maximumNumberOfLines = 3

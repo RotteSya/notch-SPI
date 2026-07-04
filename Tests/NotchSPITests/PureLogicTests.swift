@@ -262,16 +262,21 @@ final class ChannelRoutingTests: XCTestCase {
 final class FirstRunBootstrapTests: XCTestCase {
     private let keys = ["serviceMode", "onboardingDone", "cli", "depth", "captureKeyCode",
                         "apiKey.claude", "apiKey.codex", "personaName"]
+    private let keychainAccounts = ["apiKey.claude", "apiKey.codex"]
 
-    /// Run `body` against a clean slate of the involved defaults, restoring afterwards.
+    /// Run `body` against a clean slate of the involved defaults AND keychain items
+    /// (a developer machine may hold real keys), restoring both afterwards.
     private func withCleanDefaults(_ body: () -> Void) {
         let d = UserDefaults.standard
         let saved = keys.map { ($0, d.object(forKey: $0)) }
+        let savedSecrets = keychainAccounts.map { ($0, KeychainStore.read($0)) }
         keys.forEach { d.removeObject(forKey: $0) }
+        keychainAccounts.forEach { KeychainStore.write(nil, account: $0) }
         defer {
             for (k, v) in saved {
                 if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) }
             }
+            for (account, v) in savedSecrets { KeychainStore.write(v, account: account) }
         }
         body()
     }
@@ -311,5 +316,36 @@ final class FirstRunBootstrapTests: XCTestCase {
     func testTokenTruncationForDisplay() {
         XCTAssertEqual(AccountViewController.truncatedToken("dev_1234567890abcdef"), "dev_1234…cdef")
         XCTAssertEqual(AccountViewController.truncatedToken("short"), "short")
+    }
+}
+
+/// Keychain-backed secret storage and the one-time migration off plaintext UserDefaults.
+final class KeychainStoreTests: XCTestCase {
+    func testWriteReadDeleteRoundTrip() {
+        let account = "test.keychain.\(UUID().uuidString)"
+        XCTAssertNil(KeychainStore.read(account))
+        KeychainStore.write("secret-1", account: account)
+        XCTAssertEqual(KeychainStore.read(account), "secret-1")
+        KeychainStore.write("secret-2", account: account) // upsert overwrites
+        XCTAssertEqual(KeychainStore.read(account), "secret-2")
+        KeychainStore.write(nil, account: account) // nil deletes
+        XCTAssertNil(KeychainStore.read(account))
+    }
+
+    func testLegacyPlaintextAPIKeyMigratesToKeychain() {
+        let account = "apiKey.claude"
+        let d = UserDefaults.standard
+        let savedSecret = KeychainStore.read(account)
+        let savedDefault = d.object(forKey: account)
+        defer {
+            KeychainStore.write(savedSecret, account: account)
+            if let savedDefault { d.set(savedDefault, forKey: account) } else { d.removeObject(forKey: account) }
+        }
+
+        KeychainStore.write(nil, account: account)
+        d.set("sk-legacy", forKey: account) // pre-Keychain plaintext storage
+        XCTAssertEqual(Settings.shared.apiKey(for: "claude"), "sk-legacy") // first read migrates
+        XCTAssertNil(d.object(forKey: account), "plaintext copy must be removed after migration")
+        XCTAssertEqual(KeychainStore.read(account), "sk-legacy")
     }
 }

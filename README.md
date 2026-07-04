@@ -25,7 +25,8 @@ Code**), run **read‑only**. No API key required — or bring your own key to g
 - **Custom API key (optional):** in ⚙ →「自定义 API Key…」paste your own Anthropic / OpenAI key to
   send captures **straight to the official API** instead of the local CLI. When a key is set for the
   selected backend it takes priority; when it's empty the app **falls back to the CLI** exactly as
-  before, so both channels coexist. Keys live only in local `UserDefaults`; an optional model field
+  before, so both channels coexist. Keys are stored in the local **Keychain** (never plaintext
+  defaults; pre-existing plaintext values migrate automatically); an optional model field
   overrides the default. The header shows `Claude · API` while a key is active.
 - **Depth modes:** 简略 (answer only) · 提示 · 引导 · 完整.
 - **Global hotkeys (customizable):** `⌘⇧1` 讲题 (tutor), `⌘⇧2` 性格作答 (personality test), `⌘⇧Space` show/hide.

@@ -102,12 +102,24 @@ final class Settings {
 
     /// User-supplied API key for a backend ("claude" → Anthropic, "codex" → OpenAI).
     /// Non-empty ⇒ captures go straight to the vendor API; empty ⇒ fall back to the local CLI.
+    /// Stored in the Keychain; a value from the pre-Keychain plaintext storage is migrated
+    /// (and its UserDefaults copy removed) on first read.
     func apiKey(for cli: String) -> String {
-        (d.string(forKey: "apiKey.\(cli)") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let account = "apiKey.\(cli)"
+        if let v = KeychainStore.read(account) {
+            return v.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let legacy = (d.string(forKey: account) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !legacy.isEmpty {
+            KeychainStore.write(legacy, account: account)
+            d.removeObject(forKey: account)
+        }
+        return legacy
     }
 
     func setAPIKey(_ key: String, for cli: String) {
-        d.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiKey.\(cli)")
+        KeychainStore.write(key.trimmingCharacters(in: .whitespacesAndNewlines), account: "apiKey.\(cli)")
+        d.removeObject(forKey: "apiKey.\(cli)") // never leave a plaintext copy behind
     }
 
     func usesCustomKey(for cli: String) -> Bool { !apiKey(for: cli).isEmpty }
