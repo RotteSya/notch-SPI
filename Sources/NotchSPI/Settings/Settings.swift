@@ -41,6 +41,99 @@ final class Settings {
         set { d.set(newValue, forKey: "personaText") }
     }
 
+    // MARK: - Service mode (官方按量计费 / 自定义 Key / 本机 CLI)
+
+    /// The user's chosen channel. Until explicitly set, the default is computed per install:
+    /// fresh installs → official service (开箱即用); installs that predate the official service
+    /// keep their old behavior (custom key if one is saved, otherwise CLI).
+    var serviceMode: String {
+        get {
+            if let v = d.string(forKey: "serviceMode"), ServiceMode.all.contains(v) { return v }
+            return ServiceRouting.defaultMode(
+                isExistingInstall: isExistingInstall,
+                hasCustomKey: usesCustomKey(for: cli)
+            )
+        }
+        set { d.set(newValue, forKey: "serviceMode") }
+    }
+
+    /// Any pre-official-service footprint in defaults means this install predates the feature.
+    /// Only meaningful BEFORE launch-time subsystems run: PersonaStore's migration writes
+    /// persona keys during controller init, which would make a fresh install look existing.
+    /// That's why `bootstrapFirstRunState()` must be the first thing the app does.
+    var isExistingInstall: Bool {
+        ["cli", "depth", "captureKeyCode", "apiKey.claude", "apiKey.codex", "personaName"]
+            .contains { d.object(forKey: $0) != nil }
+    }
+
+    /// One-time first-run bootstrap — call as the FIRST line of app launch, before any other
+    /// subsystem touches UserDefaults. Pins `serviceMode` (fresh install → official; existing
+    /// install → its previous behavior) and marks onboarding done for existing installs so an
+    /// update never interrupts or reroutes a working setup. Idempotent: a no-op once
+    /// `serviceMode` has been persisted.
+    func bootstrapFirstRunState() {
+        guard d.string(forKey: "serviceMode") == nil else { return }
+        let existing = isExistingInstall
+        serviceMode = ServiceRouting.defaultMode(
+            isExistingInstall: existing,
+            hasCustomKey: usesCustomKey(for: cli)
+        )
+        if existing { onboardingDone = true }
+    }
+
+    /// Whether the first-launch onboarding has been shown (existing installs skip it silently).
+    var onboardingDone: Bool {
+        get { d.bool(forKey: "onboardingDone") }
+        set { d.set(newValue, forKey: "onboardingDone") }
+    }
+
+    static func label(forServiceMode mode: String) -> String {
+        switch mode {
+        case ServiceMode.customKey: return "自定义 API Key"
+        case ServiceMode.cli: return "本机 CLI"
+        default: return "官方服务（按量计费）"
+        }
+    }
+
+    // MARK: - Custom API keys (direct-API mode)
+
+    /// Default model per backend when the user hasn't overridden it in the API Key settings.
+    static let defaultAPIModels = ["claude": "claude-opus-4-8", "codex": "gpt-5"]
+
+    /// User-supplied API key for a backend ("claude" → Anthropic, "codex" → OpenAI).
+    /// Non-empty ⇒ captures go straight to the vendor API; empty ⇒ fall back to the local CLI.
+    /// Stored in the Keychain; a value from the pre-Keychain plaintext storage is migrated
+    /// (and its UserDefaults copy removed) on first read.
+    func apiKey(for cli: String) -> String {
+        let account = "apiKey.\(cli)"
+        if let v = KeychainStore.read(account) {
+            return v.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let legacy = (d.string(forKey: account) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !legacy.isEmpty {
+            KeychainStore.write(legacy, account: account)
+            d.removeObject(forKey: account)
+        }
+        return legacy
+    }
+
+    func setAPIKey(_ key: String, for cli: String) {
+        KeychainStore.write(key.trimmingCharacters(in: .whitespacesAndNewlines), account: "apiKey.\(cli)")
+        d.removeObject(forKey: "apiKey.\(cli)") // never leave a plaintext copy behind
+    }
+
+    func usesCustomKey(for cli: String) -> Bool { !apiKey(for: cli).isEmpty }
+
+    /// Model ID used in direct-API mode; falls back to the per-backend default when unset.
+    func apiModel(for cli: String) -> String {
+        let v = (d.string(forKey: "apiModel.\(cli)") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? (Settings.defaultAPIModels[cli] ?? "") : v
+    }
+
+    func setAPIModel(_ model: String, for cli: String) {
+        d.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiModel.\(cli)")
+    }
+
     // MARK: - Capture target
 
     /// Bundle ID of the app whose window gets captured; nil = full screen.
@@ -112,6 +205,12 @@ final class Settings {
 
     static func label(forCLI cli: String) -> String {
         cli == "claude" ? "Claude" : "Codex"
+    }
+
+    /// Header label reflecting the active channel for a backend: "Claude · API" when a custom
+    /// key routes captures straight to the vendor API, plain "Claude" in CLI mode.
+    static func label(forCLI cli: String, usingCustomKey: Bool) -> String {
+        usingCustomKey ? label(forCLI: cli) + " · API" : label(forCLI: cli)
     }
 
     static func label(forDepth depth: String) -> String {

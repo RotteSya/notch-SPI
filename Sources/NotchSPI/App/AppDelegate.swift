@@ -4,6 +4,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: NotchController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // MUST run before NotchController init: PersonaStore's migration writes persona keys
+        // during controller construction, which would misclassify a fresh install as existing
+        // (skipping onboarding and mis-defaulting the service mode to CLI).
+        Settings.shared.bootstrapFirstRunState()
+
         // Even though this is an accessory app with no persistent menu bar, AppKit dispatches the
         // standard editing shortcuts (⌘X/⌘C/⌘V/⌘A/⌘Z) through the main menu's key equivalents. Without
         // a main menu, the text fields in the settings / 人物像 windows can't cut, copy, or paste.
@@ -12,6 +17,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NotchController()
         controller.show()
         self.controller = controller
+
+        // First-launch onboarding: fresh installs pick a service mode (official pay-as-you-go
+        // is the recommended default); existing installs are skipped silently inside.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            controller.showOnboardingIfNeeded()
+        }
 
         // Quietly check GitHub for a newer release (≤ once/day; only surfaces if an update exists).
         // Delayed so the notch UI settles first and the alert never races app launch.
