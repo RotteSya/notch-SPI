@@ -15,6 +15,9 @@ final class NotchController: NSObject {
     private var personaVC: PersonaManagerViewController?
     private var apiKeyWindow: NSWindow?
     private var apiKeyVC: APIKeySettingsViewController?
+    private var accountWindow: NSWindow?
+    private var accountVC: AccountViewController?
+    private var onboardingWindow: NSWindow?
 
     private let expandedWidth: CGFloat = 600
 
@@ -39,10 +42,42 @@ final class NotchController: NSObject {
         registerHotkeys()
     }
 
-    /// Reflect the selected backend and its active channel (CLI vs custom API key) in the header.
+    /// The channel the NEXT capture will use, resolved from the current settings.
+    private func currentChannel() -> ServiceChannel {
+        ServiceRouting.resolve(
+            mode: Settings.shared.serviceMode,
+            customKey: Settings.shared.apiKey(for: Settings.shared.cli)
+        )
+    }
+
+    /// Reflect the active channel (官方服务 / 自定义 Key / CLI) in the notch header.
     private func refreshCLILabel() {
-        let cli = Settings.shared.cli
-        model.cliLabel = Settings.label(forCLI: cli, usingCustomKey: Settings.shared.usesCustomKey(for: cli))
+        model.cliLabel = ServiceRouting.headerLabel(channel: currentChannel(), backend: Settings.shared.cli)
+    }
+
+    // MARK: - Onboarding (first launch only)
+
+    /// Present the first-launch onboarding. Installs that predate the official service are
+    /// marked done silently so an update never interrupts (or reroutes) an existing setup.
+    func showOnboardingIfNeeded() {
+        guard !Settings.shared.onboardingDone else { return }
+        if Settings.shared.isExistingInstall {
+            Settings.shared.onboardingDone = true
+            return
+        }
+        let vc = OnboardingViewController()
+        vc.onFinished = { [weak self] in self?.refreshCLILabel() }
+        vc.onOpenCustomKeySettings = { [weak self] in self?.openAPIKeyWindow() }
+        let w = NSWindow(contentViewController: vc)
+        w.title = "欢迎"
+        w.styleMask = [.titled, .closable]
+        w.sharingType = ScreenShareGuard.windowSharingType
+        w.isReleasedWhenClosed = false
+        w.setContentSize(OnboardingViewController.contentSize)
+        w.center()
+        onboardingWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Push the active mode + persona name into the model so the notch header reflects them.
@@ -93,25 +128,48 @@ final class NotchController: NSObject {
     private func buildSettingsMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let cliHeader = NSMenuItem(title: "后端 (CLI)", action: nil, keyEquivalent: "")
-        cliHeader.isEnabled = false
-        menu.addItem(cliHeader)
-        for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
-            let usesKey = Settings.shared.usesCustomKey(for: id)
+        // 服务模式：官方按量计费（默认）/ 自定义 Key / 本机 CLI，三种并存、自由切换。
+        let modeHeader = NSMenuItem(title: "服务模式", action: nil, keyEquivalent: "")
+        modeHeader.isEnabled = false
+        menu.addItem(modeHeader)
+        for id in ServiceMode.all {
             let item = NSMenuItem(
-                title: usesKey ? "\(label)（API Key 直连）" : label,
-                action: #selector(pickCLI(_:)), keyEquivalent: ""
+                title: Settings.label(forServiceMode: id),
+                action: #selector(pickServiceMode(_:)), keyEquivalent: ""
             )
             item.target = self
             item.representedObject = id
-            item.state = (Settings.shared.cli == id) ? .on : .off
+            item.state = (Settings.shared.serviceMode == id) ? .on : .off
             menu.addItem(item)
         }
+
+        let accountItem = NSMenuItem(title: "账户与额度…", action: #selector(openAccountMenu), keyEquivalent: "")
+        accountItem.target = self
+        menu.addItem(accountItem)
 
         let apiKeyItem = NSMenuItem(title: "自定义 API Key…", action: #selector(openAPIKeyMenu), keyEquivalent: "")
         apiKeyItem.target = self
         menu.addItem(apiKeyItem)
         menu.addItem(.separator())
+
+        // 后端选择只影响自定义 Key / CLI 两种模式；官方模式下由服务端选择模型，故隐藏。
+        if Settings.shared.serviceMode != ServiceMode.official {
+            let cliHeader = NSMenuItem(title: "后端 (CLI)", action: nil, keyEquivalent: "")
+            cliHeader.isEnabled = false
+            menu.addItem(cliHeader)
+            for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
+                let usesKey = Settings.shared.usesCustomKey(for: id)
+                let item = NSMenuItem(
+                    title: usesKey ? "\(label)（API Key 直连）" : label,
+                    action: #selector(pickCLI(_:)), keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = id
+                item.state = (Settings.shared.cli == id) ? .on : .off
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
 
         // Mode (学习辅导 / 性格测试) is chosen by which hotkey you press — ⌘⇧1 vs ⌘⇧2 — so it isn't a
         // manual menu choice; the hotkey hint row below shows the bindings. The persona switch +
@@ -205,6 +263,34 @@ final class NotchController: NSObject {
         guard let id = sender.representedObject as? String else { return }
         Settings.shared.cli = id
         refreshCLILabel()
+    }
+
+    @objc private func pickServiceMode(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        Settings.shared.serviceMode = id
+        refreshCLILabel()
+    }
+
+    @objc private func openAccountMenu() { openAccountWindow() }
+
+    private func openAccountWindow() {
+        if let w = accountWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let vc = AccountViewController()
+        accountVC = vc
+        let w = NSWindow(contentViewController: vc)
+        w.title = "账户与额度"
+        w.styleMask = [.titled, .closable]
+        w.sharingType = ScreenShareGuard.windowSharingType // keep account info out of screen capture
+        w.isReleasedWhenClosed = false
+        w.setContentSize(AccountViewController.contentSize)
+        w.center()
+        accountWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func openAPIKeyMenu() { openAPIKeyWindow() }
@@ -430,19 +516,40 @@ final class NotchController: NSObject {
 
         Task { @MainActor in
             let cliId = Settings.shared.cli
-            // Routing: a custom API key takes priority and goes straight to the vendor API —
-            // no CLI detection needed. With no key, the original CLI path runs unchanged.
-            let apiKey = Settings.shared.apiKey(for: cliId)
+            // Routing: the chosen 服务模式 decides the channel. Official (pay-as-you-go) is the
+            // default for fresh installs; custom key and CLI behave exactly as before.
+            let channel = self.currentChannel()
+
+            // 计费鉴权拦截：BillingGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
+            // 不读取任何账户或余额状态（见 BillingGate.preflight 的第一行守卫）。
+            if case .official = channel {
+                if OfficialAPI.deviceToken == nil {
+                    self.model.statusText = "正在初始化官方服务…"
+                    _ = await OfficialAPI.registerIfNeeded()
+                }
+                let verdict = BillingGate.preflight(
+                    channel: channel,
+                    hasDeviceToken: OfficialAPI.deviceToken != nil,
+                    balanceCents: OfficialAPI.balanceCents
+                )
+                if case .deny(let reason) = verdict {
+                    self.finishError(reason)
+                    self.openAccountWindow()
+                    return
+                }
+            }
+
+            // CLI mode is the only channel that needs a local binary; detection is untouched.
             var binPath: String?
-            if apiKey.isEmpty {
+            if case .cli = channel {
                 let det = await CLIRunner.detect()
                 guard let info = det[cliId], info.installed, let path = info.path else {
-                    self.finishError("未找到 \(cliId)，请安装并登录后重试；或在齿轮菜单 →「自定义 API Key…」填入你自己的 API Key 直连使用。")
+                    self.finishError("未找到 \(cliId)，请安装并登录后重试；也可以在齿轮菜单切换到官方服务或自定义 API Key。")
                     return
                 }
                 if info.loggedIn == false {
                     let cmd = cliId == "codex" ? "`codex login`" : "`claude`"
-                    self.finishError("\(cliId) 未登录。请在终端运行 \(cmd) 后重试；或在齿轮菜单 →「自定义 API Key…」填入你自己的 API Key 直连使用。")
+                    self.finishError("\(cliId) 未登录。请在终端运行 \(cmd) 后重试；也可以在齿轮菜单切换到官方服务或自定义 API Key。")
                     return
                 }
                 binPath = path
@@ -502,7 +609,12 @@ final class NotchController: NSObject {
                 if !self.hovering { self.scheduleCollapse(after: 9) }
             }
 
-            if let binPath {
+            switch channel {
+            case .cli:
+                guard let binPath else {
+                    onDone(false, "内部错误：CLI 路径缺失")
+                    return
+                }
                 CLIRunner.run(
                     cliId: cliId, binPath: binPath, imagePath: shot.path, depth: Settings.shared.depth,
                     mode: mode,
@@ -510,9 +622,17 @@ final class NotchController: NSObject {
                     personaText: Settings.shared.personaText,
                     onDelta: onDelta, onDone: onDone
                 )
-            } else {
+            case .customKey(let apiKey):
                 APIKeyRunner.run(
                     cliId: cliId, apiKey: apiKey, imagePath: shot.path, depth: Settings.shared.depth,
+                    mode: mode,
+                    personaName: Settings.shared.personaName,
+                    personaText: Settings.shared.personaText,
+                    onDelta: onDelta, onDone: onDone
+                )
+            case .official:
+                OfficialAPI.run(
+                    imagePath: shot.path, depth: Settings.shared.depth,
                     mode: mode,
                     personaName: Settings.shared.personaName,
                     personaText: Settings.shared.personaText,

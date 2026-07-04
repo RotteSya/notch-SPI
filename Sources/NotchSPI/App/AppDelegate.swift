@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
         self.controller = controller
 
+        // First-launch onboarding: fresh installs pick a service mode (official pay-as-you-go
+        // is the recommended default); existing installs are skipped silently inside.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            controller.showOnboardingIfNeeded()
+        }
+
         // Quietly check GitHub for a newer release (≤ once/day; only surfaces if an update exists).
         // Delayed so the notch UI settles first and the alert never races app launch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

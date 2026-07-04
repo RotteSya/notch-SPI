@@ -41,6 +41,42 @@ final class Settings {
         set { d.set(newValue, forKey: "personaText") }
     }
 
+    // MARK: - Service mode (官方按量计费 / 自定义 Key / 本机 CLI)
+
+    /// The user's chosen channel. Until explicitly set, the default is computed per install:
+    /// fresh installs → official service (开箱即用); installs that predate the official service
+    /// keep their old behavior (custom key if one is saved, otherwise CLI).
+    var serviceMode: String {
+        get {
+            if let v = d.string(forKey: "serviceMode"), ServiceMode.all.contains(v) { return v }
+            return ServiceRouting.defaultMode(
+                isExistingInstall: isExistingInstall,
+                hasCustomKey: usesCustomKey(for: cli)
+            )
+        }
+        set { d.set(newValue, forKey: "serviceMode") }
+    }
+
+    /// Any pre-official-service footprint in defaults means this install predates the feature.
+    var isExistingInstall: Bool {
+        ["cli", "depth", "captureKeyCode", "apiKey.claude", "apiKey.codex", "personaName"]
+            .contains { d.object(forKey: $0) != nil }
+    }
+
+    /// Whether the first-launch onboarding has been shown (existing installs skip it silently).
+    var onboardingDone: Bool {
+        get { d.bool(forKey: "onboardingDone") }
+        set { d.set(newValue, forKey: "onboardingDone") }
+    }
+
+    static func label(forServiceMode mode: String) -> String {
+        switch mode {
+        case ServiceMode.customKey: return "自定义 API Key"
+        case ServiceMode.cli: return "本机 CLI"
+        default: return "官方服务（按量计费）"
+        }
+    }
+
     // MARK: - Custom API keys (direct-API mode)
 
     /// Default model per backend when the user hasn't overridden it in the API Key settings.

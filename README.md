@@ -17,6 +17,11 @@ Code**), run **read‑only**. No API key required — or bring your own key to g
   panel **auto‑sizes to the answer**.
 - **Capture → CLI → stream:** ScreenCaptureKit grabs the screen → drives `codex` or `claude`
   **read‑only** → streams the answer into the panel.
+- **Official pay‑as‑you‑go service (default for new installs):** zero-setup onboarding — first
+  launch registers an anonymous device and grants trial credits; captures are proxied and metered
+  server‑side (contract in `docs/official-api.md`). An in‑app 账户与额度 panel shows balance,
+  lifetime token usage, and a top‑up link. Existing installs keep their previous mode; all three
+  modes (官方服务 / 自定义 Key / CLI) coexist and switch freely in the ⚙ menu.
 - **Custom API key (optional):** in ⚙ →「自定义 API Key…」paste your own Anthropic / OpenAI key to
   send captures **straight to the official API** instead of the local CLI. When a key is set for the
   selected backend it takes priority; when it's empty the app **falls back to the CLI** exactly as
@@ -66,5 +71,7 @@ Sources/NotchSPI/
   ScreenCapture.swift                ScreenCaptureKit → temp JPEG
   CLIRunner.swift                    detect + run codex/claude, stream stdout
   APIKeyRunner.swift                 custom-key path: stream straight from Anthropic/OpenAI API
+  Cloud/                             official pay-as-you-go service: routing + billing gate,
+                                     API client, onboarding, 账户与额度 panel (docs/official-api.md)
   Hotkeys.swift / SettingsWindow.swift / APIKeySettings.swift / Settings.swift / Prompts.swift
 ```

@@ -112,6 +112,105 @@ final class APIKeyRunnerTests: XCTestCase {
     }
 }
 
+/// Three-mode routing (official / customKey / cli) and the billing gate. The single most
+/// important invariant: the billing interceptor can NEVER stop a custom-key or CLI capture.
+final class ServiceRoutingTests: XCTestCase {
+    func testResolveMatrix() {
+        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: ""), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: "sk-x"), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "cli", customKey: "sk-x"), .cli)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "sk-x"), .customKey("sk-x"))
+        // customKey mode without a key falls back to the CLI — the pre-official behavior.
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "   "), .cli)
+        // Unknown/corrupt mode strings resolve to the default.
+        XCTAssertEqual(ServiceRouting.resolve(mode: "banana", customKey: ""), .official)
+    }
+
+    func testBillingGateNeverBlocksNonOfficialChannels() {
+        // Even with the worst possible account state (no token, zero balance), custom-key
+        // and CLI captures must pass through untouched.
+        for balance in [nil, 0, -500] as [Int?] {
+            XCTAssertEqual(
+                BillingGate.preflight(channel: .customKey("sk-x"), hasDeviceToken: false, balanceCents: balance),
+                .allow)
+            XCTAssertEqual(
+                BillingGate.preflight(channel: .cli, hasDeviceToken: false, balanceCents: balance),
+                .allow)
+        }
+    }
+
+    func testBillingGateOfficialChannel() {
+        // No device token → deny with guidance.
+        if case .allow = BillingGate.preflight(channel: .official, hasDeviceToken: false, balanceCents: nil) {
+            XCTFail("un-registered official capture must be denied")
+        }
+        // Zero / negative balance → deny.
+        if case .allow = BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: 0) {
+            XCTFail("zero balance must be denied")
+        }
+        // Positive balance → allow.
+        XCTAssertEqual(BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: 500), .allow)
+        // Unknown balance → allow; the server (402) is the source of truth.
+        XCTAssertEqual(BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: nil), .allow)
+    }
+
+    func testDefaultModeMigration() {
+        // Fresh installs land on the official service.
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: false), "official")
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: true), "official")
+        // Existing installs keep their previous behavior — never silently rerouted.
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: true), "customKey")
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: false), "cli")
+    }
+
+    func testHeaderLabels() {
+        XCTAssertEqual(ServiceRouting.headerLabel(channel: .official, backend: "claude"), "官方服务")
+        XCTAssertEqual(ServiceRouting.headerLabel(channel: .customKey("k"), backend: "claude"), "Claude · API")
+        XCTAssertEqual(ServiceRouting.headerLabel(channel: .cli, backend: "codex"), "Codex")
+    }
+}
+
+/// The official service's SSE protocol and account helpers.
+final class OfficialAPITests: XCTestCase {
+    func testStreamEventParsing() {
+        XCTAssertEqual(
+            OfficialAPI.parseStreamLine(#"data: {"type":"delta","text":"你好"}"#),
+            .delta("你好"))
+        XCTAssertEqual(
+            OfficialAPI.parseStreamLine(#"data: {"type":"usage","input_tokens":120,"output_tokens":45,"cost_cents":3,"balance_cents":497}"#),
+            .usage(inputTokens: 120, outputTokens: 45, costCents: 3, balanceCents: 497))
+        XCTAssertEqual(
+            OfficialAPI.parseStreamLine(#"data: {"type":"error","error":{"message":"boom"}}"#),
+            .error("boom"))
+        XCTAssertEqual(OfficialAPI.parseStreamLine("data: [DONE]"), .done)
+        XCTAssertNil(OfficialAPI.parseStreamLine("event: ping"))
+        XCTAssertNil(OfficialAPI.parseStreamLine(""))
+    }
+
+    func testBalanceFormatting() {
+        XCTAssertEqual(OfficialAPI.formatBalance(cents: 1234, currency: "CNY"), "¥12.34")
+        XCTAssertEqual(OfficialAPI.formatBalance(cents: 500, currency: "USD"), "$5.00")
+        XCTAssertEqual(OfficialAPI.formatBalance(cents: nil, currency: "CNY"), "—")
+    }
+
+    func testTopUpURL() {
+        let url = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: "dev_123")
+        XCTAssertEqual(url?.absoluteString, "https://api.notchspi.app/topup?device=dev_123")
+    }
+
+    func testCaptureRequestShape() {
+        let req = OfficialAPI.makeCaptureRequest(
+            baseURL: "https://api.notchspi.app", deviceToken: "dev_123",
+            systemText: "SYS", taskText: "tutor me.", imageBase64: "QUJD")
+        XCTAssertEqual(req.url?.absoluteString, "https://api.notchspi.app/v1/captures")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer dev_123")
+        let body = try! JSONSerialization.jsonObject(with: req.httpBody!) as! [String: Any]
+        XCTAssertEqual(body["system"] as? String, "SYS")
+        XCTAssertEqual(body["stream"] as? Bool, true)
+        XCTAssertEqual(body["image_media_type"] as? String, "image/jpeg")
+    }
+}
+
 /// The CLI ↔ custom-key coexistence: labels and routing gates read from Settings.
 final class ChannelRoutingTests: XCTestCase {
     func testLabelReflectsChannel() {
