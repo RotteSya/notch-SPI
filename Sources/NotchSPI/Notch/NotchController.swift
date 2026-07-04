@@ -13,13 +13,15 @@ final class NotchController: NSObject {
     private var settingsVC: HotkeySettingsViewController?
     private var personaWindow: NSWindow?
     private var personaVC: PersonaManagerViewController?
+    private var apiKeyWindow: NSWindow?
+    private var apiKeyVC: APIKeySettingsViewController?
 
     private let expandedWidth: CGFloat = 600
 
     override init() {
         panel = NotchPanel(contentRect: .zero)
         super.init()
-        model.cliLabel = Settings.label(forCLI: Settings.shared.cli)
+        refreshCLILabel()
         model.depthLabel = Settings.label(forDepth: Settings.shared.depth)
 
         let view = NotchView(
@@ -35,6 +37,12 @@ final class NotchController: NSObject {
 
         refreshModeLabels()
         registerHotkeys()
+    }
+
+    /// Reflect the selected backend and its active channel (CLI vs custom API key) in the header.
+    private func refreshCLILabel() {
+        let cli = Settings.shared.cli
+        model.cliLabel = Settings.label(forCLI: cli, usingCustomKey: Settings.shared.usesCustomKey(for: cli))
     }
 
     /// Push the active mode + persona name into the model so the notch header reflects them.
@@ -89,12 +97,20 @@ final class NotchController: NSObject {
         cliHeader.isEnabled = false
         menu.addItem(cliHeader)
         for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
-            let item = NSMenuItem(title: label, action: #selector(pickCLI(_:)), keyEquivalent: "")
+            let usesKey = Settings.shared.usesCustomKey(for: id)
+            let item = NSMenuItem(
+                title: usesKey ? "\(label)（API Key 直连）" : label,
+                action: #selector(pickCLI(_:)), keyEquivalent: ""
+            )
             item.target = self
             item.representedObject = id
             item.state = (Settings.shared.cli == id) ? .on : .off
             menu.addItem(item)
         }
+
+        let apiKeyItem = NSMenuItem(title: "自定义 API Key…", action: #selector(openAPIKeyMenu), keyEquivalent: "")
+        apiKeyItem.target = self
+        menu.addItem(apiKeyItem)
         menu.addItem(.separator())
 
         // Mode (学习辅导 / 性格测试) is chosen by which hotkey you press — ⌘⇧1 vs ⌘⇧2 — so it isn't a
@@ -188,7 +204,30 @@ final class NotchController: NSObject {
     @objc private func pickCLI(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         Settings.shared.cli = id
-        model.cliLabel = Settings.label(forCLI: id)
+        refreshCLILabel()
+    }
+
+    @objc private func openAPIKeyMenu() { openAPIKeyWindow() }
+
+    private func openAPIKeyWindow() {
+        if let w = apiKeyWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let vc = APIKeySettingsViewController()
+        vc.onChange = { [weak self] in self?.refreshCLILabel() }
+        apiKeyVC = vc
+        let w = NSWindow(contentViewController: vc)
+        w.title = "自定义 API Key"
+        w.styleMask = [.titled, .closable]
+        w.sharingType = ScreenShareGuard.windowSharingType // keep keys out of screen capture too
+        w.isReleasedWhenClosed = false
+        w.setContentSize(APIKeySettingsViewController.contentSize)
+        w.center()
+        apiKeyWindow = w
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func pickDepth(_ sender: NSMenuItem) {
@@ -386,20 +425,27 @@ final class NotchController: NSObject {
         model.answer = ""
         model.status = .running
         model.statusText = "正在准备…"
-        model.cliLabel = Settings.label(forCLI: Settings.shared.cli)
+        refreshCLILabel()
         setExpanded(true) // expands to a small empty panel; grows as the answer streams
 
         Task { @MainActor in
             let cliId = Settings.shared.cli
-            let det = await CLIRunner.detect()
-            guard let info = det[cliId], info.installed, let binPath = info.path else {
-                self.finishError("未找到 \(cliId)，请安装并登录后重试。")
-                return
-            }
-            if info.loggedIn == false {
-                let cmd = cliId == "codex" ? "`codex login`" : "`claude`"
-                self.finishError("\(cliId) 未登录。请在终端运行 \(cmd) 后重试。")
-                return
+            // Routing: a custom API key takes priority and goes straight to the vendor API —
+            // no CLI detection needed. With no key, the original CLI path runs unchanged.
+            let apiKey = Settings.shared.apiKey(for: cliId)
+            var binPath: String?
+            if apiKey.isEmpty {
+                let det = await CLIRunner.detect()
+                guard let info = det[cliId], info.installed, let path = info.path else {
+                    self.finishError("未找到 \(cliId)，请安装并登录后重试；或在齿轮菜单 →「自定义 API Key…」填入你自己的 API Key 直连使用。")
+                    return
+                }
+                if info.loggedIn == false {
+                    let cmd = cliId == "codex" ? "`codex login`" : "`claude`"
+                    self.finishError("\(cliId) 未登录。请在终端运行 \(cmd) 后重试；或在齿轮菜单 →「自定义 API Key…」填入你自己的 API Key 直连使用。")
+                    return
+                }
+                binPath = path
             }
 
             // Hide the panel only for full-screen shots, so it isn't in its own
@@ -429,36 +475,50 @@ final class NotchController: NSObject {
             let mode = Settings.shared.mode
             let verb = mode == "personality" ? "作答" : "讲解"
             self.model.statusText = "正在用 \(self.model.cliLabel) \(verb)…"
-            CLIRunner.run(
-                cliId: cliId, binPath: binPath, imagePath: shot.path, depth: Settings.shared.depth,
-                mode: mode,
-                personaName: Settings.shared.personaName,
-                personaText: Settings.shared.personaText,
-                onDelta: { [weak self] delta in
-                    guard let self else { return }
-                    self.model.answer += delta
-                    self.model.status = .streaming
-                    self.model.statusText = "\(verb)中…"
-                    self.resizeToFit()
-                },
-                onDone: { [weak self] ok, stderr in
-                    guard let self else { return }
-                    if self.model.answer.isEmpty {
-                        self.model.answer = ok
-                            ? "（没有输出）"
-                            : "出错了：\n\n```\n\(String(stderr.suffix(600)))\n```"
-                        self.model.status = ok ? .idle : .error
-                    } else {
-                        self.model.status = .idle
-                    }
-                    self.model.statusText = ok ? "完成" : "出错"
-                    self.resizeToFit()
-                    self.running = false
-                    self.pinned = false
-                    try? FileManager.default.removeItem(atPath: shot.path)
-                    if !self.hovering { self.scheduleCollapse(after: 9) }
+
+            // Shared by both channels so CLI mode and direct-API mode render identically.
+            let onDelta: (String) -> Void = { [weak self] delta in
+                guard let self else { return }
+                self.model.answer += delta
+                self.model.status = .streaming
+                self.model.statusText = "\(verb)中…"
+                self.resizeToFit()
+            }
+            let onDone: (Bool, String) -> Void = { [weak self] ok, stderr in
+                guard let self else { return }
+                if self.model.answer.isEmpty {
+                    self.model.answer = ok
+                        ? "（没有输出）"
+                        : "出错了：\n\n```\n\(String(stderr.suffix(600)))\n```"
+                    self.model.status = ok ? .idle : .error
+                } else {
+                    self.model.status = .idle
                 }
-            )
+                self.model.statusText = ok ? "完成" : "出错"
+                self.resizeToFit()
+                self.running = false
+                self.pinned = false
+                try? FileManager.default.removeItem(atPath: shot.path)
+                if !self.hovering { self.scheduleCollapse(after: 9) }
+            }
+
+            if let binPath {
+                CLIRunner.run(
+                    cliId: cliId, binPath: binPath, imagePath: shot.path, depth: Settings.shared.depth,
+                    mode: mode,
+                    personaName: Settings.shared.personaName,
+                    personaText: Settings.shared.personaText,
+                    onDelta: onDelta, onDone: onDone
+                )
+            } else {
+                APIKeyRunner.run(
+                    cliId: cliId, apiKey: apiKey, imagePath: shot.path, depth: Settings.shared.depth,
+                    mode: mode,
+                    personaName: Settings.shared.personaName,
+                    personaText: Settings.shared.personaText,
+                    onDelta: onDelta, onDone: onDone
+                )
+            }
         }
     }
 

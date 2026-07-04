@@ -41,6 +41,33 @@ final class Settings {
         set { d.set(newValue, forKey: "personaText") }
     }
 
+    // MARK: - Custom API keys (direct-API mode)
+
+    /// Default model per backend when the user hasn't overridden it in the API Key settings.
+    static let defaultAPIModels = ["claude": "claude-opus-4-8", "codex": "gpt-5"]
+
+    /// User-supplied API key for a backend ("claude" → Anthropic, "codex" → OpenAI).
+    /// Non-empty ⇒ captures go straight to the vendor API; empty ⇒ fall back to the local CLI.
+    func apiKey(for cli: String) -> String {
+        (d.string(forKey: "apiKey.\(cli)") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func setAPIKey(_ key: String, for cli: String) {
+        d.set(key.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiKey.\(cli)")
+    }
+
+    func usesCustomKey(for cli: String) -> Bool { !apiKey(for: cli).isEmpty }
+
+    /// Model ID used in direct-API mode; falls back to the per-backend default when unset.
+    func apiModel(for cli: String) -> String {
+        let v = (d.string(forKey: "apiModel.\(cli)") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? (Settings.defaultAPIModels[cli] ?? "") : v
+    }
+
+    func setAPIModel(_ model: String, for cli: String) {
+        d.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiModel.\(cli)")
+    }
+
     // MARK: - Capture target
 
     /// Bundle ID of the app whose window gets captured; nil = full screen.
@@ -112,6 +139,12 @@ final class Settings {
 
     static func label(forCLI cli: String) -> String {
         cli == "claude" ? "Claude" : "Codex"
+    }
+
+    /// Header label reflecting the active channel for a backend: "Claude · API" when a custom
+    /// key routes captures straight to the vendor API, plain "Claude" in CLI mode.
+    static func label(forCLI cli: String, usingCustomKey: Bool) -> String {
+        usingCustomKey ? label(forCLI: cli) + " · API" : label(forCLI: cli)
     }
 
     static func label(forDepth depth: String) -> String {
