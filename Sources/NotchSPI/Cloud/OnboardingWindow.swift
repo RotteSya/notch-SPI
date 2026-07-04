@@ -32,8 +32,9 @@ final class OnboardingViewController: NSViewController {
         title.frame = NSRect(x: 24, y: 22, width: 422, height: 22)
         root.addSubview(title)
 
+        let hotkey = Settings.displayString(Settings.shared.captureCombo)
         let subtitle = Self.makeLabel(
-            "按下 ⌘⇧1 即可截屏讲题。先选择答案由谁来生成 —— 之后随时可以在齿轮菜单里切换：",
+            "按下 \(hotkey) 即可截屏讲题。先选择答案由谁来生成 —— 之后随时可以在齿轮菜单里切换：",
             size: 12, weight: .regular, color: .secondaryLabelColor)
         subtitle.frame = NSRect(x: 24, y: 52, width: 422, height: 34)
         subtitle.maximumNumberOfLines = 2
@@ -103,10 +104,10 @@ final class OnboardingViewController: NSViewController {
             switch result {
             case .success:
                 self.finish(mode: ServiceMode.official)
-            case .failure(let message):
+            case .failure(let error):
                 // Keep the choice — the account panel / first capture can retry registration.
                 // Surface the problem so the user isn't left wondering.
-                self.statusLabel.stringValue = "初始化未完成（\(message)）。已选择官方服务，可稍后在「账户与额度」中重试。"
+                self.statusLabel.stringValue = "初始化未完成（\(error.message)）。已选择官方服务，可稍后在「账户与额度」中重试。"
                 self.statusLabel.textColor = .systemOrange
                 self.officialButton.isEnabled = true
                 self.officialButton.title = "重试并继续使用官方服务"

@@ -240,11 +240,61 @@ final class ChannelRoutingTests: XCTestCase {
     }
 }
 
-/// Direct-API channel: SSE parsing, request building, and channel labeling. All pure logic —
-/// no network, no UserDefaults. Verifies "CLI 模式" and "自定义 Key 模式" route and render
-/// distinctly without touching each other's code paths.
-final class APIKeyRunnerTests: XCTestCase {
+/// First-run bootstrap: the launch-order regression guard. PersonaStore's migration writes
+/// persona keys during controller init, so the fresh/existing decision MUST be pinned before
+/// that (bootstrapFirstRunState is the first line of app launch) — and once pinned, later
+/// launch-time writes must not change the outcome.
+final class FirstRunBootstrapTests: XCTestCase {
+    private let keys = ["serviceMode", "onboardingDone", "cli", "depth", "captureKeyCode",
+                        "apiKey.claude", "apiKey.codex", "personaName"]
 
-    // MARK: - SSE line parsing
+    /// Run `body` against a clean slate of the involved defaults, restoring afterwards.
+    private func withCleanDefaults(_ body: () -> Void) {
+        let d = UserDefaults.standard
+        let saved = keys.map { ($0, d.object(forKey: $0)) }
+        keys.forEach { d.removeObject(forKey: $0) }
+        defer {
+            for (k, v) in saved {
+                if let v { d.set(v, forKey: k) } else { d.removeObject(forKey: k) }
+            }
+        }
+        body()
+    }
 
-    func testAnthropicTextDeltaIsEx
+    func testFreshInstallBootsToOfficialAndSurvivesLaunchWrites() {
+        withCleanDefaults {
+            Settings.shared.bootstrapFirstRunState()
+            XCTAssertEqual(Settings.shared.serviceMode, "official")
+            XCTAssertFalse(Settings.shared.onboardingDone)
+            // Simulate PersonaStore's launch-time migration write; the pinned mode must hold.
+            UserDefaults.standard.set("", forKey: "personaName")
+            Settings.shared.bootstrapFirstRunState() // idempotent second call
+            XCTAssertEqual(Settings.shared.serviceMode, "official")
+            XCTAssertFalse(Settings.shared.onboardingDone)
+        }
+    }
+
+    func testExistingCLIInstallKeepsCLIAndSkipsOnboarding() {
+        withCleanDefaults {
+            UserDefaults.standard.set("guided", forKey: "depth") // pre-official footprint
+            Settings.shared.bootstrapFirstRunState()
+            XCTAssertEqual(Settings.shared.serviceMode, "cli")
+            XCTAssertTrue(Settings.shared.onboardingDone)
+        }
+    }
+
+    func testExistingCustomKeyInstallKeepsCustomKey() {
+        withCleanDefaults {
+            UserDefaults.standard.set("codex", forKey: "cli")
+            UserDefaults.standard.set("sk-test", forKey: "apiKey.codex")
+            Settings.shared.bootstrapFirstRunState()
+            XCTAssertEqual(Settings.shared.serviceMode, "customKey")
+            XCTAssertTrue(Settings.shared.onboardingDone)
+        }
+    }
+
+    func testTokenTruncationForDisplay() {
+        XCTAssertEqual(AccountViewController.truncatedToken("dev_1234567890abcdef"), "dev_1234…cdef")
+        XCTAssertEqual(AccountViewController.truncatedToken("short"), "short")
+    }
+}

@@ -116,7 +116,7 @@ final class AccountViewController: NSViewController {
             cents: OfficialAPI.balanceCents, currency: OfficialAPI.currency)
         usageLabel.stringValue = "累计用量：输入 \(OfficialAPI.totalInputTokens) tokens · 输出 \(OfficialAPI.totalOutputTokens) tokens"
         deviceLabel.stringValue = registered
-            ? "设备 ID：\(OfficialAPI.deviceToken ?? "")"
+            ? "设备 ID：\(Self.truncatedToken(OfficialAPI.deviceToken ?? ""))"
             : "设备尚未注册 — 点击下方按钮领取试用额度"
         let mode = Settings.shared.serviceMode
         modeLabel.stringValue = mode == ServiceMode.official
@@ -135,8 +135,8 @@ final class AccountViewController: NSViewController {
             case .success:
                 self.statusLabel.stringValue = "余额已同步。"
                 self.statusLabel.textColor = .secondaryLabelColor
-            case .failure(let message):
-                self.statusLabel.stringValue = message
+            case .failure(let error):
+                self.statusLabel.stringValue = error.message
                 self.statusLabel.textColor = .systemOrange
             }
             self.reload()
@@ -160,13 +160,20 @@ final class AccountViewController: NSViewController {
             case .success:
                 self.statusLabel.stringValue = "注册成功，试用额度已到账。"
                 self.statusLabel.textColor = .systemGreen
-            case .failure(let message):
-                self.statusLabel.stringValue = message
+            case .failure(let error):
+                self.statusLabel.stringValue = error.message
                 self.statusLabel.textColor = .systemOrange
                 self.initButton.isEnabled = true
             }
             self.reload()
         }
+    }
+
+    /// The device token is a bearer credential — show just enough to identify it in support
+    /// requests, never the whole thing (shoulder-surfing / third-party screenshot tools).
+    static func truncatedToken(_ token: String) -> String {
+        guard token.count > 14 else { return token }
+        return "\(token.prefix(8))…\(token.suffix(4))"
     }
 
     private static func makeLabel(_ text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {

@@ -149,21 +149,23 @@ enum APIKeyRunner {
     ) {
         let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
         let task = Prompts.taskInstruction(mode: mode)
-        guard let imageData = FileManager.default.contents(atPath: imagePath) else {
-            DispatchQueue.main.async { onDone(false, "无法读取截图文件") }
-            return
-        }
-        let request = makeRequest(
-            cliId: cliId, apiKey: apiKey,
-            model: Settings.shared.apiModel(for: cliId),
-            systemText: sys, taskText: task,
-            imageBase64: imageData.base64EncodedString()
-        )
-        #if DEBUG
-        print("[NotchSPI] direct API run \(cliId) → \(request.url?.host ?? "?")")
-        #endif
+        let model = Settings.shared.apiModel(for: cliId)
 
         Task.detached(priority: .userInitiated) {
+            // File read + base64 of a multi-MB screenshot stays off the main thread.
+            guard let imageData = FileManager.default.contents(atPath: imagePath) else {
+                await MainActor.run { onDone(false, "无法读取截图文件") }
+                return
+            }
+            let request = makeRequest(
+                cliId: cliId, apiKey: apiKey,
+                model: model,
+                systemText: sys, taskText: task,
+                imageBase64: imageData.base64EncodedString()
+            )
+            #if DEBUG
+            print("[NotchSPI] direct API run \(cliId) → \(request.url?.host ?? "?")")
+            #endif
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
                 guard let http = response as? HTTPURLResponse else {

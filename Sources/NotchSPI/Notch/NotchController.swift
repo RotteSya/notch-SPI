@@ -57,16 +57,17 @@ final class NotchController: NSObject {
 
     // MARK: - Onboarding (first launch only)
 
-    /// Present the first-launch onboarding. Installs that predate the official service are
-    /// marked done silently so an update never interrupts (or reroutes) an existing setup.
+    /// Present the first-launch onboarding. `bootstrapFirstRunState()` (run at the very top of
+    /// launch, before PersonaStore's migration can write keys) already marked existing installs
+    /// as done — so reaching here with `onboardingDone == false` means a genuinely fresh install.
     func showOnboardingIfNeeded() {
+        Settings.shared.bootstrapFirstRunState() // defensive; no-op after AppDelegate ran it
         guard !Settings.shared.onboardingDone else { return }
-        if Settings.shared.isExistingInstall {
-            Settings.shared.onboardingDone = true
-            return
-        }
         let vc = OnboardingViewController()
-        vc.onFinished = { [weak self] in self?.refreshCLILabel() }
+        vc.onFinished = { [weak self] in
+            self?.refreshCLILabel()
+            self?.onboardingWindow = nil // one-shot window; don't keep it retained for the app's lifetime
+        }
         vc.onOpenCustomKeySettings = { [weak self] in self?.openAPIKeyWindow() }
         let w = NSWindow(contentViewController: vc)
         w.title = "欢迎"
@@ -602,6 +603,15 @@ final class NotchController: NSObject {
                     self.model.status = .idle
                 }
                 self.model.statusText = ok ? "完成" : "出错"
+                if case .official = channel {
+                    if ok, let cost = OfficialAPI.lastCaptureCostCents {
+                        // 让用户对"按量计费"心里有数：完成时直接显示本次消耗。
+                        self.model.statusText = "完成 · 本次 \(OfficialAPI.formatBalance(cents: cost, currency: OfficialAPI.currency))"
+                    } else if !ok, let balance = OfficialAPI.balanceCents, balance <= 0 {
+                        // 截屏中途遇到 402：直接打开账户面板引导充值，而不是让用户自己找入口。
+                        self.openAccountWindow()
+                    }
+                }
                 self.resizeToFit()
                 self.running = false
                 self.pinned = false

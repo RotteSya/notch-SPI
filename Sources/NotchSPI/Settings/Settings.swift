@@ -58,9 +58,27 @@ final class Settings {
     }
 
     /// Any pre-official-service footprint in defaults means this install predates the feature.
+    /// Only meaningful BEFORE launch-time subsystems run: PersonaStore's migration writes
+    /// persona keys during controller init, which would make a fresh install look existing.
+    /// That's why `bootstrapFirstRunState()` must be the first thing the app does.
     var isExistingInstall: Bool {
         ["cli", "depth", "captureKeyCode", "apiKey.claude", "apiKey.codex", "personaName"]
             .contains { d.object(forKey: $0) != nil }
+    }
+
+    /// One-time first-run bootstrap — call as the FIRST line of app launch, before any other
+    /// subsystem touches UserDefaults. Pins `serviceMode` (fresh install → official; existing
+    /// install → its previous behavior) and marks onboarding done for existing installs so an
+    /// update never interrupts or reroutes a working setup. Idempotent: a no-op once
+    /// `serviceMode` has been persisted.
+    func bootstrapFirstRunState() {
+        guard d.string(forKey: "serviceMode") == nil else { return }
+        let existing = isExistingInstall
+        serviceMode = ServiceRouting.defaultMode(
+            isExistingInstall: existing,
+            hasCustomKey: usesCustomKey(for: cli)
+        )
+        if existing { onboardingDone = true }
     }
 
     /// Whether the first-launch onboarding has been shown (existing installs skip it silently).
