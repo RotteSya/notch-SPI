@@ -1,6 +1,7 @@
 # NotchSPI 官方按量计费服务 — 服务端 API 契约
 
-客户端（`Sources/NotchSPI/Cloud/`）已按本契约实现完毕。服务端需要按下述端点部署；
+客户端（`Sources/NotchSPI/Cloud/`）已按本契约实现完毕。服务端参考实现见
+[`../server/`](../server/)（Node.js + TypeScript + Fastify + SQLite，`npm start` 开箱即跑）。
 上线后无需改动客户端代码（默认地址 `https://api.notchspi.app`，可用
 `defaults write com.rottesya.notchspi official.baseURL <url>` 指向测试环境）。
 
