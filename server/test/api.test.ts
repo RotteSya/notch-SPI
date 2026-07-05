@@ -88,6 +88,22 @@ test('missing image is 400 before streaming', async () => {
   assert.equal(res.status, 400);
 });
 
+test('missing system or task is 400 (contract-required fields)', async () => {
+  const token = await register();
+  const missingSystem = await fetch(`${base}/v1/captures`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ task: 't', image_base64: 'QUJD', image_media_type: 'image/jpeg' }),
+  });
+  assert.equal(missingSystem.status, 400);
+  const missingTask = await fetch(`${base}/v1/captures`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ system: 's', image_base64: 'QUJD', image_media_type: 'image/jpeg' }),
+  });
+  assert.equal(missingTask.status, 400);
+});
+
 test('balance drains to <=0 then the gate returns HTTP 402', async () => {
   const token = await register();
   let last402 = false;

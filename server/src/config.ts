@@ -57,9 +57,11 @@ export const config = {
 
   // Payment provider for the top-up page. "stub" credits the account via a dev-only endpoint
   // so the flow is testable; real providers (Stripe / Alipay / WeChat) plug in behind the same
-  // PaymentProvider interface. The stub is refused unless ALLOW_STUB_TOPUP is truthy.
+  // PaymentProvider interface. The stub top-up endpoint can arbitrarily credit balances and is
+  // unauthenticated, so it is DISABLED by default — a production deploy stays safe unless an
+  // operator explicitly sets ALLOW_STUB_TOPUP=1 for local development.
   paymentProvider: envStr('PAYMENT_PROVIDER', 'stub'),
-  allowStubTopUp: envStr('ALLOW_STUB_TOPUP', '1') === '1',
+  allowStubTopUp: envStr('ALLOW_STUB_TOPUP', '0') === '1',
 } as const;
 
 export type Config = typeof config;

@@ -6,6 +6,7 @@ import type { PaymentProvider } from './payments.ts';
 import { ApiError, errorBody, beginSSE, SSE_DONE } from './http.ts';
 import { requireAccount } from './auth.ts';
 import { costCents } from './pricing.ts';
+import { isValidTokenShape } from './payments.ts';
 
 export interface AppContext {
   config: Config;
@@ -77,6 +78,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       imageBase64: str(body.image_base64),
       imageMediaType: str(body.image_media_type, 'image/jpeg'),
     };
+    // Contract requires system, task, and image. Validate up front (JSON 400) rather than
+    // streaming with empty prompts and failing mid-stream inside the vendor call.
+    if (!captureReq.system) throw new ApiError(400, '缺少 system 提示词');
+    if (!captureReq.task) throw new ApiError(400, '缺少 task 文本');
     if (!captureReq.imageBase64) throw new ApiError(400, '缺少截图数据');
 
     // Pre-request gate: a non-positive balance is refused as JSON 402 BEFORE any streaming.
@@ -137,7 +142,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   // GET /topup?device=<token> — payment web page (not an API endpoint). No bearer auth.
   app.get('/topup', async (req, reply) => {
-    const device = str((req.query as { device?: unknown } | undefined)?.device);
+    const raw = str((req.query as { device?: unknown } | undefined)?.device);
+    // Only ever reflect a well-formed token; anything else renders as empty (belt-and-suspenders
+    // with jsStringLiteral, since this endpoint is unauthenticated).
+    const device = isValidTokenShape(raw) ? raw : '';
     const html = payment.renderTopUpPage({
       deviceToken: device,
       currency: config.currency,

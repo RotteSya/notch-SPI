@@ -58,9 +58,10 @@ SSE 事件序列：`data: {"type":"delta",…}` × N → `data: {"type":"usage",
 
 1. **厂商密钥**：设 `OFFICIAL_PROVIDER=anthropic`（或 `openai`）并注入对应 API Key（环境变量）。
    缺 Key 时会自动回退到 mock 并打印告警，服务始终能启动。模型、定价、`max_tokens` 全部 env 可配。
-2. **支付**：仓库只带一个**开发用支付桩**（点击即入账，`ALLOW_STUB_TOPUP=0` 可关闭）。接入
-   Stripe / 支付宝 / 微信时，实现 `src/payments.ts` 里的 `PaymentProvider` 接口、在支付成功的签名
-   回调里调用 `store.credit(...)` 入账即可，其余代码无需改动。
+2. **支付**：仓库只带一个**开发用支付桩**。该桩端点无认证、可任意充值，因此**默认禁用**
+   （生产安全）；本地联调充值流程时显式设 `ALLOW_STUB_TOPUP=1`。接入 Stripe / 支付宝 / 微信时，
+   实现 `src/payments.ts` 里的 `PaymentProvider` 接口、在支付成功的签名回调里调用
+   `store.credit(...)` 入账即可，其余代码无需改动。
 
 所有配置见 [`.env.example`](.env.example)。
 

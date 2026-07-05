@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { pathToFileURL } from 'node:url';
 import { config } from './config.ts';
 import { SqliteStore } from './db.ts';
 import { makeProvider } from './providers/index.ts';
@@ -20,8 +21,10 @@ export function buildApp() {
   return app;
 }
 
-// Only start listening when run directly (not when imported by a test).
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+// Only start listening when run directly (not when imported by a test). Compare via
+// pathToFileURL so a relative entry path (e.g. `node src/index.ts`) still matches.
+const entry = process.argv[1];
+const isMain = entry !== undefined && import.meta.url === pathToFileURL(entry).href;
 if (isMain) {
   const app = buildApp();
   app

@@ -46,7 +46,7 @@ export class StubPaymentProvider implements PaymentProvider {
   <div>${buttons}</div>
   <div id="status"></div>
 <script>
-  const token = ${JSON.stringify(input.deviceToken)};
+  const token = ${jsStringLiteral(input.deviceToken)};
   const statusEl = document.getElementById('status');
   for (const btn of document.querySelectorAll('.amt')) {
     btn.addEventListener('click', async () => {
@@ -80,4 +80,27 @@ export function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Encode a string as a JS string literal that is also safe to embed inside an inline
+ * `<script>` element — neutralizes `</script>`, HTML-special chars, and the U+2028/U+2029
+ * line separators that break inline scripts. Prevents reflected XSS from an untrusted
+ * `?device=` value on the unauthenticated top-up page.
+ */
+export function jsStringLiteral(s: string): string {
+  return JSON.stringify(s)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Device tokens are `dev_` + base64url. Reject anything else so the top-up page never reflects
+ * arbitrary attacker input (defense-in-depth alongside jsStringLiteral).
+ */
+export function isValidTokenShape(token: string): boolean {
+  return /^dev_[A-Za-z0-9_-]{1,128}$/.test(token);
 }
