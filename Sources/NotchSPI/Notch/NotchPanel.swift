@@ -35,14 +35,15 @@ final class NotchPanel: NSPanel {
 /// Single source of truth for excluding the app's own windows from screen capture.
 enum ScreenShareGuard {
     /// `.none` in Release: every app window stays out of all software capture. A DEBUG-only
-    /// escape hatch (`--visual-qa` arg or `NSPI_VISUAL_QA=1`) relaxes it to `.readOnly` so the
-    /// notch can be screenshotted during local QA. Release builds always remain excluded.
+    /// escape hatch (`--visual-qa` arg or `NSPI_VISUAL_QA=1`) fully re-enables capture so the
+    /// windows can be screenshotted during local QA (modern `screencapture` treats anything
+    /// below `.readWrite` as excluded). Release builds always remain excluded.
     static var windowSharingType: NSWindow.SharingType {
         #if DEBUG
         let process = ProcessInfo.processInfo
         let visualQA = process.environment["NSPI_VISUAL_QA"] == "1"
             || process.arguments.contains("--visual-qa")
-        return visualQA ? .readOnly : .none
+        return visualQA ? .readWrite : .none
         #else
         return .none
         #endif

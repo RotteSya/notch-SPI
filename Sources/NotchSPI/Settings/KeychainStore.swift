@@ -8,7 +8,18 @@ import Security
 enum KeychainStore {
     private static let service = "com.rottesya.notchspi"
 
+    #if DEBUG
+    /// Visual-QA escape hatch: with NSPI_QA_EPHEMERAL=1 all secrets live in this in-process
+    /// dictionary only. The real Keychain service is SHARED with the packaged app, so QA runs
+    /// must never read or write the user's actual device token / API keys.
+    private static var ephemeral: [String: String]? =
+        ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" ? [:] : nil
+    #endif
+
     static func read(_ account: String) -> String? {
+        #if DEBUG
+        if ephemeral != nil { return ephemeral?[account] }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -26,6 +37,12 @@ enum KeychainStore {
 
     /// Upsert; nil or empty deletes the item. Delete-then-add keeps it idempotent.
     static func write(_ value: String?, account: String) {
+        #if DEBUG
+        if ephemeral != nil {
+            ephemeral?[account] = (value?.isEmpty ?? true) ? nil : value
+            return
+        }
+        #endif
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

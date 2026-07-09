@@ -62,19 +62,19 @@ final class NotchController: NSObject {
     /// as done — so reaching here with `onboardingDone == false` means a genuinely fresh install.
     func showOnboardingIfNeeded() {
         Settings.shared.bootstrapFirstRunState() // defensive; no-op after AppDelegate ran it
-        guard !Settings.shared.onboardingDone else { return }
+        var forceForQA = false
+        #if DEBUG
+        // Visual-QA hook: `--qa-onboarding` shows the flow regardless of onboardingDone (pair
+        // with NSPI_QA_EPHEMERAL=1 so no real account state is touched).
+        forceForQA = ProcessInfo.processInfo.arguments.contains("--qa-onboarding")
+        #endif
+        guard !Settings.shared.onboardingDone || forceForQA else { return }
         let vc = OnboardingViewController()
         vc.onFinished = { [weak self] in
             self?.refreshCLILabel()
             self?.onboardingWindow = nil // one-shot window; don't keep it retained for the app's lifetime
         }
-        vc.onOpenCustomKeySettings = { [weak self] in self?.openAPIKeyWindow() }
-        let w = NSWindow(contentViewController: vc)
-        w.title = "欢迎"
-        w.styleMask = [.titled, .closable]
-        w.sharingType = ScreenShareGuard.windowSharingType
-        w.isReleasedWhenClosed = false
-        w.setContentSize(OnboardingViewController.contentSize)
+        let w = OnboardingWindow(contentViewController: vc)
         w.center()
         onboardingWindow = w
         w.makeKeyAndOrderFront(nil)
