@@ -27,7 +27,7 @@ final class NotchView: NSView {
     private let statusText = NotchView.makeLabel(size: 11, weight: .regular, color: NotchPalette.secondary)
     private let capsule = NotchCapsuleButton()
     private lazy var gearButton = NotchControlButton(
-        systemName: "gearshape", tint: NotchPalette.secondary, label: "设置",
+        systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
     private let answerScroll = NSScrollView()
     private let answerText = NSTextView()
@@ -123,7 +123,8 @@ final class NotchView: NSView {
         statusText.stringValue = model.statusText
 
         let isPersona = model.mode == "personality"
-        capsule.title = isPersona ? (model.personaLabel.isEmpty ? "设置人物像" : model.personaLabel)
+        capsule.title = isPersona
+            ? (model.personaLabel.isEmpty ? L10n.t("设置人物像", "人物像を設定", "Set persona") : model.personaLabel)
                                    : model.depthLabel
 
         answerText.textStorage?.setAttributedString(NotchType.answerString(model.answer, mode: model.mode))

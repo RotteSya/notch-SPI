@@ -90,14 +90,14 @@ enum UpdateChecker {
             let finish: (CheckResult) -> Void = { r in DispatchQueue.main.async { completion(r) } }
 
             if let error { finish(.failed(error.localizedDescription)); return }
-            guard let http = response as? HTTPURLResponse else { finish(.failed("无网络响应")); return }
+            guard let http = response as? HTTPURLResponse else { finish(.failed(L10n.t("无网络响应", "ネットワーク応答なし", "No network response"))); return }
             guard http.statusCode == 200, let data else {
-                finish(.failed("GitHub 返回 HTTP \(http.statusCode)")); return
+                finish(.failed("GitHub HTTP \(http.statusCode)")); return
             }
             guard
                 let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                 let tag = obj["tag_name"] as? String
-            else { finish(.failed("无法解析更新信息")); return }
+            else { finish(.failed(L10n.t("无法解析更新信息", "更新情報を解析できません", "Could not parse update info"))); return }
 
             let latest = normalize(tag)
             let pageURL = (obj["html_url"] as? String).flatMap(URL.init(string:)) ?? releasesPage
@@ -153,14 +153,14 @@ enum UpdateChecker {
         let alert = NSAlert()
         if let appLogo { alert.icon = appLogo }
         alert.alertStyle = .informational
-        alert.messageText = "发现新版本 NotchSPI \(r.version)"
-        var info = "当前版本 \(currentVersion)，最新版本 \(r.version)。是否前往下载页面更新？"
+        alert.messageText = L10n.t("发现新版本 NotchSPI \(r.version)", "新しいバージョン NotchSPI \(r.version)", "NotchSPI \(r.version) is available")
+        var info = L10n.t("当前版本 \(currentVersion)，最新版本 \(r.version)。是否前往下载页面更新？", "現在 \(currentVersion)、最新 \(r.version)。ダウンロードページを開きますか？", "You have \(currentVersion); the latest is \(r.version). Open the download page?")
         let notes = r.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !notes.isEmpty { info += "\n\n更新内容：\n\(notes)" }
+        if !notes.isEmpty { info += "\n\n" + L10n.t("更新内容：", "更新内容：", "What is new:") + "\n\(notes)" }
         alert.informativeText = String(info.prefix(800))
-        alert.addButton(withTitle: "前往下载")      // .alertFirstButtonReturn
-        alert.addButton(withTitle: "稍后")           // .alertSecondButtonReturn
-        if !manual { alert.addButton(withTitle: "跳过此版本") } // .alertThirdButtonReturn
+        alert.addButton(withTitle: L10n.t("前往下载", "ダウンロード", "Download"))      // .alertFirstButtonReturn
+        alert.addButton(withTitle: L10n.t("稍后", "あとで", "Later"))           // .alertSecondButtonReturn
+        if !manual { alert.addButton(withTitle: L10n.t("跳过此版本", "このバージョンをスキップ", "Skip This Version")) } // .alertThirdButtonReturn
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -177,9 +177,9 @@ enum UpdateChecker {
         let alert = NSAlert()
         if let appLogo { alert.icon = appLogo }
         alert.alertStyle = .informational
-        alert.messageText = "已是最新版本"
-        alert.informativeText = "NotchSPI \(version) 已是最新版本。"
-        alert.addButton(withTitle: "好")
+        alert.messageText = L10n.t("已是最新版本", "最新バージョンです", "You are up to date")
+        alert.informativeText = L10n.t("NotchSPI \(version) 已是最新版本。", "NotchSPI \(version) は最新です。", "NotchSPI \(version) is the latest version.")
+        alert.addButton(withTitle: L10n.ok)
         alert.runModal()
     }
 
@@ -188,10 +188,10 @@ enum UpdateChecker {
         let alert = NSAlert()
         if let appLogo { alert.icon = appLogo }
         alert.alertStyle = .warning
-        alert.messageText = "检查更新失败"
-        alert.informativeText = "无法获取更新信息：\(message)\n\n你也可以直接打开发布页查看。"
-        alert.addButton(withTitle: "打开发布页")
-        alert.addButton(withTitle: "好")
+        alert.messageText = L10n.t("检查更新失败", "更新の確認に失敗", "Update check failed")
+        alert.informativeText = L10n.t("无法获取更新信息：\(message)\n\n你也可以直接打开发布页查看。", "更新情報を取得できません：\(message)\n\nリリースページを直接開くこともできます。", "Could not fetch update info: \(message)\n\nYou can also open the releases page directly.")
+        alert.addButton(withTitle: L10n.t("打开发布页", "リリースページを開く", "Open Releases Page"))
+        alert.addButton(withTitle: L10n.ok)
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(releasesPage)
         }

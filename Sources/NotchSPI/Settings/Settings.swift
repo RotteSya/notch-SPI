@@ -87,14 +87,6 @@ final class Settings {
         set { d.set(newValue, forKey: "onboardingDone") }
     }
 
-    static func label(forServiceMode mode: String) -> String {
-        switch mode {
-        case ServiceMode.customKey: return "自定义 API Key"
-        case ServiceMode.cli: return "本机 CLI"
-        default: return "官方服务（按量计费）"
-        }
-    }
-
     // MARK: - Custom API keys (direct-API mode)
 
     /// Default model per backend when the user hasn't overridden it in the API Key settings.
@@ -211,19 +203,6 @@ final class Settings {
     /// key routes captures straight to the vendor API, plain "Claude" in CLI mode.
     static func label(forCLI cli: String, usingCustomKey: Bool) -> String {
         usingCustomKey ? label(forCLI: cli) + " · API" : label(forCLI: cli)
-    }
-
-    static func label(forDepth depth: String) -> String {
-        switch depth {
-        case "brief": return "简略"
-        case "hint": return "提示"
-        case "full": return "完整"
-        default: return "引导"
-        }
-    }
-
-    static func label(forMode mode: String) -> String {
-        mode == "personality" ? "性格测试" : "学习辅导"
     }
 
     static let depthCycle = ["brief", "hint", "guided", "full"]

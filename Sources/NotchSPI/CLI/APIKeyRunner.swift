@@ -116,12 +116,12 @@ enum APIKeyRunner {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let err = obj["error"] as? [String: Any],
            let msg = err["message"] as? String {
-            return "API 错误（HTTP \(statusCode)）：\(msg)"
+            return L10n.t("API 错误（HTTP \(statusCode)）：\(msg)", "APIエラー（HTTP \(statusCode)）：\(msg)", "API error (HTTP \(statusCode)): \(msg)")
         }
         let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty
-            ? "API 错误（HTTP \(statusCode)）"
-            : "API 错误（HTTP \(statusCode)）：\(String(text.prefix(300)))"
+            ? L10n.t("API 错误（HTTP \(statusCode)）", "APIエラー（HTTP \(statusCode)）", "API error (HTTP \(statusCode))")
+            : L10n.t("API 错误（HTTP \(statusCode)）：\(String(text.prefix(300)))", "APIエラー（HTTP \(statusCode)）：\(String(text.prefix(300)))", "API error (HTTP \(statusCode)): \(String(text.prefix(300)))")
     }
 
     private static func jsonObject(fromSSELine line: String) -> [String: Any]? {
@@ -154,7 +154,7 @@ enum APIKeyRunner {
         Task.detached(priority: .userInitiated) {
             // File read + base64 of a multi-MB screenshot stays off the main thread.
             guard let imageData = FileManager.default.contents(atPath: imagePath) else {
-                await MainActor.run { onDone(false, "无法读取截图文件") }
+                await MainActor.run { onDone(false, L10n.t("无法读取截图文件", "スクリーンショットを読み込めません", "Could not read the screenshot file")) }
                 return
             }
             let request = makeRequest(
@@ -169,7 +169,7 @@ enum APIKeyRunner {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
                 guard let http = response as? HTTPURLResponse else {
-                    await finish(onDone, ok: false, err: "无效的服务器响应")
+                    await finish(onDone, ok: false, err: L10n.t("无效的服务器响应", "サーバー応答が不正です", "Invalid server response"))
                     return
                 }
                 if http.statusCode != 200 {
@@ -191,7 +191,7 @@ enum APIKeyRunner {
                     }
                 }
                 if let streamError {
-                    await finish(onDone, ok: false, err: "API 流式响应中断：\(streamError)")
+                    await finish(onDone, ok: false, err: L10n.t("API 流式响应中断：\(streamError)", "APIストリームが中断：\(streamError)", "API stream interrupted: \(streamError)"))
                 } else {
                     await finish(onDone, ok: true, err: "")
                 }

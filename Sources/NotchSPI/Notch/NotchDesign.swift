@@ -19,9 +19,10 @@ enum NotchPalette {
     static let secondary = NSColor(white: 1, alpha: 0.60)
     static let tertiary  = NSColor(white: 1, alpha: 0.34)
 
-    /// NotchSPI periwinkle accent (kept from the SwiftUI build), with a hi tint for live cues.
-    static let accent    = NSColor(srgbRed: 0.48, green: 0.63, blue: 1.00, alpha: 1)
-    static let accentHi  = NSColor(srgbRed: 0.64, green: 0.745, blue: 1.00, alpha: 1)
+    /// The user's chosen accent theme (外观 → 强调色), flowing through the whole instrument.
+    /// Reads a cached theme — safe to call from every draw.
+    static var accent: NSColor { Appearance.theme.accent }
+    static var accentHi: NSColor { Appearance.theme.accentHi }
 
     /// Warm red for the error state.
     static let error     = NSColor(srgbRed: 0.97, green: 0.32, blue: 0.29, alpha: 1)
@@ -94,13 +95,20 @@ func notchTintedSymbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight
 /// no last-line clip, no trailing gap. Non-empty answers render inline Markdown (bold / italic /
 /// code), matching the original SwiftUI `AttributedString(markdown:)` treatment.
 enum NotchType {
-    static let answerFontSize: CGFloat = 13
+    /// User-adjustable in 设置 → 外观 (small / standard / large).
+    static var answerFontSize: CGFloat { Appearance.answerFontSize }
 
     static func placeholder(mode: String) -> String {
         if mode == "personality" {
-            return "按 \(Settings.displayString(Settings.shared.personalityCombo)) 截屏作答 · 悬停展开"
+            let key = Settings.displayString(Settings.shared.personalityCombo)
+            return L10n.t("按 \(key) 截屏作答 · 悬停展开",
+                          "\(key) で回答 · ホバーで展開",
+                          "Press \(key) to answer · hover to expand")
         }
-        return "按 \(Settings.displayString(Settings.shared.captureCombo)) 截屏讲题 · 悬停展开"
+        let key = Settings.displayString(Settings.shared.captureCombo)
+        return L10n.t("按 \(key) 截屏讲题 · 悬停展开",
+                      "\(key) で解説 · ホバーで展開",
+                      "Press \(key) for tutoring · hover to expand")
     }
 
     static func answerString(_ answer: String, mode: String) -> NSAttributedString {

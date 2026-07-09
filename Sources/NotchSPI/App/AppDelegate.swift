@@ -18,11 +18,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
         self.controller = controller
 
-        // First-launch onboarding: fresh installs pick a service mode (official pay-as-you-go
-        // is the recommended default); existing installs are skipped silently inside.
+        // First-launch onboarding: fresh installs get the five-page flow; existing installs
+        // are skipped silently inside.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             controller.showOnboardingIfNeeded()
         }
+
+        #if DEBUG
+        // Visual-QA hook: `--qa-settings-page N` opens the settings window at page N.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "--qa-settings-page"), i + 1 < args.count,
+           let n = Int(args[i + 1]),
+           let page = MainSettingsWindowController.Page(rawValue: n) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                controller.openSettings(page: page)
+            }
+        }
+        #endif
 
         // Quietly check GitHub for a newer release (≤ once/day; only surfaces if an update exists).
         // Delayed so the notch UI settles first and the alert never races app launch.
@@ -38,21 +50,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 NotchSPI", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L10n.quitApp, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 
         // Edit menu — routes clipboard / selection / undo to whichever text field is first responder.
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        let editMenu = NSMenu(title: L10n.t("编辑", "編集", "Edit"))
+        editMenu.addItem(withTitle: L10n.t("撤销", "取り消す", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: L10n.t("重做", "やり直す", "Redo"), action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: L10n.t("剪切", "カット", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: L10n.t("拷贝", "コピー", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L10n.t("粘贴", "ペースト", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L10n.t("全选", "すべて選択", "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
 
         return mainMenu

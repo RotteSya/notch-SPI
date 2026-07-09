@@ -342,8 +342,8 @@ final class FirstRunBootstrapTests: XCTestCase {
     }
 
     func testTokenTruncationForDisplay() {
-        XCTAssertEqual(AccountViewController.truncatedToken("dev_1234567890abcdef"), "dev_1234…cdef")
-        XCTAssertEqual(AccountViewController.truncatedToken("short"), "short")
+        XCTAssertEqual(OfficialAPI.truncatedToken("dev_1234567890abcdef"), "dev_1234…cdef")
+        XCTAssertEqual(OfficialAPI.truncatedToken("short"), "short")
     }
 }
 

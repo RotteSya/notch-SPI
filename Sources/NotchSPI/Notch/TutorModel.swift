@@ -8,13 +8,15 @@ final class TutorModel: ObservableObject {
         case idle, ready, running, streaming, error
     }
 
+    // Display strings start empty and are populated by NotchController from L10n on init,
+    // so no hardcoded-language defaults can ever flash on screen.
     @Published var expanded = false
     @Published var status: Status = .ready
-    @Published var statusText = "就绪"
+    @Published var statusText = ""
     @Published var answer = "" // streamed markdown text
-    @Published var cliLabel = "Codex"
-    @Published var depthLabel = "引导"
+    @Published var cliLabel = ""
+    @Published var depthLabel = ""
     @Published var mode = "tutor"        // active mode id: "tutor" | "personality"
-    @Published var modeLabel = "学习辅导" // header title for the active mode
+    @Published var modeLabel = ""        // header title for the active mode
     @Published var personaLabel = ""      // current persona name (empty = not set)
 }

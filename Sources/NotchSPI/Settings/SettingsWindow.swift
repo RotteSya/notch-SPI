@@ -47,20 +47,24 @@ final class HotkeySettingsViewController: NSViewController {
     private let toggleButton = HotkeySettingsViewController.makeRecordButton()
 
     override func loadView() {
-        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 380, height: 232))
+        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 420, height: 190))
 
-        let title = Self.makeLabel("快捷键", size: 15, weight: .semibold, color: .labelColor)
-        title.frame = NSRect(x: 20, y: 18, width: 340, height: 20)
-        root.addSubview(title)
-
-        addRow(into: root, y: 52, title: "截屏讲题（学习辅导）", button: captureButton, action: #selector(recordCapture))
-        addRow(into: root, y: 90, title: "截屏作答（性格测试）", button: personalityButton, action: #selector(recordPersonality))
-        addRow(into: root, y: 128, title: "显示 / 隐藏", button: toggleButton, action: #selector(recordToggle))
+        addRow(into: root, y: 8,
+               title: L10n.t("截屏讲题（学习辅导）", "解説キャプチャ（学習）", "Capture & tutor"),
+               button: captureButton, action: #selector(recordCapture))
+        addRow(into: root, y: 46,
+               title: L10n.t("截屏作答（性格测试）", "回答キャプチャ（性格検査）", "Capture & answer (personality)"),
+               button: personalityButton, action: #selector(recordPersonality))
+        addRow(into: root, y: 84,
+               title: L10n.t("显示 / 隐藏", "表示 / 非表示", "Show / hide"),
+               button: toggleButton, action: #selector(recordToggle))
 
         let hint = Self.makeLabel(
-            "点击右侧按钮，然后按下新的组合键（需包含 ⌘/⇧/⌥/⌃ 至少一个）。",
+            L10n.t("点击右侧按钮，然后按下新的组合键（需包含 ⌘/⇧/⌥/⌃ 至少一个）。",
+                   "右のボタンをクリックし、新しいキーの組み合わせを押してください（⌘/⇧/⌥/⌃ のいずれかが必要）。",
+                   "Click a button, then press the new combo (must include at least one of ⌘/⇧/⌥/⌃)."),
             size: 11, weight: .regular, color: .secondaryLabelColor)
-        hint.frame = NSRect(x: 20, y: 172, width: 340, height: 40)
+        hint.frame = NSRect(x: 20, y: 128, width: 380, height: 40)
         hint.maximumNumberOfLines = 2
         hint.lineBreakMode = .byWordWrapping
         root.addSubview(hint)
@@ -71,12 +75,12 @@ final class HotkeySettingsViewController: NSViewController {
 
     private func addRow(into root: NSView, y: CGFloat, title: String, button: NSButton, action: Selector) {
         let label = Self.makeLabel(title, size: 13, weight: .regular, color: .labelColor)
-        label.frame = NSRect(x: 20, y: y + 4, width: 160, height: 18)
+        label.frame = NSRect(x: 20, y: y + 4, width: 220, height: 18)
         root.addSubview(label)
 
         button.target = self
         button.action = action
-        button.frame = NSRect(x: 380 - 20 - 150, y: y, width: 150, height: 28)
+        button.frame = NSRect(x: 420 - 20 - 150, y: y, width: 150, height: 28)
         root.addSubview(button)
     }
 
@@ -117,9 +121,10 @@ final class HotkeySettingsViewController: NSViewController {
     }
 
     private func updateButtons() {
-        captureButton.title = recording == "capture" ? "按下快捷键…" : Settings.displayString(capture)
-        personalityButton.title = recording == "personality" ? "按下快捷键…" : Settings.displayString(personality)
-        toggleButton.title = recording == "toggle" ? "按下快捷键…" : Settings.displayString(toggle)
+        let recordingLabel = L10n.t("按下快捷键…", "キーを押す…", "Press keys…")
+        captureButton.title = recording == "capture" ? recordingLabel : Settings.displayString(capture)
+        personalityButton.title = recording == "personality" ? recordingLabel : Settings.displayString(personality)
+        toggleButton.title = recording == "toggle" ? recordingLabel : Settings.displayString(toggle)
     }
 
     deinit { stop() }
@@ -171,22 +176,18 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 640, height: 450))
 
         // Left: list + add/delete.
-        let title = Self.makeLabel("人物像", size: 15, weight: .semibold, color: .labelColor)
-        title.frame = NSRect(x: 20, y: 16, width: 200, height: 20)
-        root.addSubview(title)
-
         configureList()
         listScroll.frame = NSRect(x: 20, y: 46, width: 196, height: 344)
         root.addSubview(listScroll)
 
         configureBarButton(addButton, title: "＋", action: #selector(addPersona))
         addButton.frame = NSRect(x: 20, y: 396, width: 30, height: 24)
-        addButton.toolTip = "新建人物像"
+        addButton.toolTip = L10n.t("新建人物像", "人物像を新規作成", "New persona")
         root.addSubview(addButton)
 
         configureBarButton(deleteButton, title: "－", action: #selector(deletePersona))
         deleteButton.frame = NSRect(x: 52, y: 396, width: 30, height: 24)
-        deleteButton.toolTip = "删除所选人物像"
+        deleteButton.toolTip = L10n.t("删除所选人物像", "選択した人物像を削除", "Delete selected persona")
         root.addSubview(deleteButton)
 
         // Divider.
@@ -195,17 +196,21 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         root.addSubview(divider)
 
         // Right: editor for the selected persona.
-        let nameCaption = Self.makeLabel("名称", size: 11, weight: .regular, color: .secondaryLabelColor)
+        let nameCaption = Self.makeLabel(L10n.t("名称", "名前", "Name"), size: 11, weight: .regular, color: .secondaryLabelColor)
         nameCaption.frame = NSRect(x: 252, y: 16, width: 368, height: 16)
         root.addSubview(nameCaption)
 
         nameField.frame = NSRect(x: 252, y: 36, width: 368, height: 24)
-        nameField.placeholderString = "例如：A社 求める人物像"
+        nameField.placeholderString = L10n.t("例如：A社 求める人物像", "例：A社 求める人物像", "e.g. Company A ideal candidate")
         nameField.font = .systemFont(ofSize: 13)
         nameField.delegate = self
         root.addSubview(nameField)
 
-        let descCaption = Self.makeLabel("人物像描述（截图作答时答案会尽量贴合）", size: 11, weight: .regular, color: .secondaryLabelColor)
+        let descCaption = Self.makeLabel(
+            L10n.t("人物像描述（截图作答时答案会尽量贴合）",
+                   "人物像の説明（回答はこの像に沿うよう選ばれます）",
+                   "Persona description (answers will lean toward this profile)"),
+            size: 11, weight: .regular, color: .secondaryLabelColor)
         descCaption.frame = NSRect(x: 252, y: 72, width: 368, height: 16)
         root.addSubview(descCaption)
 
@@ -213,7 +218,7 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         descScroll.frame = NSRect(x: 252, y: 94, width: 368, height: 236)
         root.addSubview(descScroll)
 
-        setActiveButton.title = "设为当前人物像"
+        setActiveButton.title = L10n.t("设为当前人物像", "この人物像を使用", "Use this persona")
         setActiveButton.bezelStyle = .rounded
         setActiveButton.target = self
         setActiveButton.action = #selector(setActiveTapped)
@@ -221,7 +226,7 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         root.addSubview(setActiveButton)
 
         let example = Self.makeLabel(
-            "例：●創意と挑戦心を持ち、主体的に行動できる方 ●変化を常とし、外的変化へ柔軟に適応できる方 ●チームワークを重要視し、協調性を発揮できる方",
+            L10n.t("例：", "例：", "e.g. ") + "●創意と挑戦心を持ち、主体的に行動できる方 ●変化を常とし、外的変化へ柔軟に適応できる方 ●チームワークを重要視し、協調性を発揮できる方",
             size: 10.5, weight: .regular, color: .tertiaryLabelColor)
         example.frame = NSRect(x: 252, y: 382, width: 368, height: 52)
         example.maximumNumberOfLines = 3
@@ -230,7 +235,9 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
 
         editorViews = [nameCaption, nameField, descCaption, descScroll, setActiveButton, example]
 
-        emptyHint.stringValue = "还没有人物像。\n点击左下「＋」新建一个。"
+        emptyHint.stringValue = L10n.t("还没有人物像。\n点击左下「＋」新建一个。",
+                                       "人物像がまだありません。\n左下の「＋」で作成できます。",
+                                       "No personas yet.\nCreate one with + below.")
         emptyHint.font = .systemFont(ofSize: 12.5)
         emptyHint.textColor = .tertiaryLabelColor
         emptyHint.alignment = .center
@@ -292,7 +299,7 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
             ])
         }
         let isActive = persona.id == store.activeID
-        let name = persona.name.isEmpty ? "未命名人物像" : persona.name
+        let name = persona.name.isEmpty ? L10n.t("未命名人物像", "無題の人物像", "Untitled persona") : persona.name
         cell.textField?.stringValue = (isActive ? "✓ " : "") + name
         cell.textField?.font = .systemFont(ofSize: 13, weight: isActive ? .semibold : .regular)
         return cell
@@ -340,7 +347,9 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
 
     private func updateActiveButton() {
         let isActive = selectedID != nil && selectedID == store.activeID
-        setActiveButton.title = isActive ? "✓ 当前人物像" : "设为当前人物像"
+        setActiveButton.title = isActive
+            ? L10n.t("✓ 当前人物像", "✓ 使用中", "✓ In use")
+            : L10n.t("设为当前人物像", "この人物像を使用", "Use this persona")
         setActiveButton.isEnabled = selectedID != nil && !isActive
     }
 
@@ -364,7 +373,7 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
     // MARK: - Actions
 
     @objc private func addPersona() {
-        let id = store.add(name: "新的人物像", text: "")
+        let id = store.add(name: L10n.t("新的人物像", "新しい人物像", "New persona"), text: "")
         selectedID = id
         table.reloadData()
         reselectRow()
@@ -377,11 +386,12 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
     @objc private func deletePersona() {
         guard let id = selectedID, let persona = store.all.first(where: { $0.id == id }) else { return }
         let alert = NSAlert()
-        alert.messageText = "删除人物像「\(persona.name.isEmpty ? "未命名" : persona.name)」？"
-        alert.informativeText = "删除后无法恢复。"
+        let shownName = persona.name.isEmpty ? L10n.t("未命名", "無題", "Untitled") : persona.name
+        alert.messageText = L10n.t("删除人物像「\(shownName)」？", "人物像「\(shownName)」を削除しますか？", "Delete persona \"\(shownName)\"?")
+        alert.informativeText = L10n.t("删除后无法恢复。", "この操作は取り消せません。", "This cannot be undone.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.delete)
+        alert.addButton(withTitle: L10n.cancel)
         let perform = { [weak self] in
             guard let self else { return }
             self.store.remove(id: id)

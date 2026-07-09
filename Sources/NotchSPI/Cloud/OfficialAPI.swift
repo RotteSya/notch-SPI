@@ -144,6 +144,13 @@ enum OfficialAPI {
 
     // MARK: - Pure helpers (testable)
 
+    /// The device token is a bearer credential — show just enough to identify it in support
+    /// requests, never the whole thing (shoulder-surfing / third-party screenshot tools).
+    static func truncatedToken(_ token: String) -> String {
+        guard token.count > 14 else { return token }
+        return "\(token.prefix(8))…\(token.suffix(4))"
+    }
+
     /// Resolved endpoint under the configured base. Never force-unwraps user input: a
     /// hand-typed `official.baseURL` override that doesn't parse falls back to the production
     /// default instead of crashing. Path components are appended WITHOUT a leading slash so a
