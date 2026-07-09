@@ -202,9 +202,13 @@ final class NotchView: NSView {
         capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: cap.width, height: cap.height)
 
         var x = inset + 16 + 8
-        let modeSize = modeLabel.intrinsicContentSize
-        modeLabel.frame = CGRect(x: x, y: cy - modeSize.height / 2, width: modeSize.width, height: modeSize.height)
-        x += modeSize.width + 6
+        // Size the label by asking its cell (NSString measurement misses the cell's own
+        // horizontal padding, which clipped "学习辅导" to "学习…" in the header).
+        let modeW = ceil(modeLabel.sizeThatFits(
+            NSSize(width: 300, height: 24)).width) + 4
+        let modeH = modeLabel.intrinsicContentSize.height
+        modeLabel.frame = CGRect(x: x, y: cy - modeH / 2, width: modeW, height: modeH)
+        x += modeW + 6
         let statusW = max(0, capX - 8 - x)
         let statusH = statusText.intrinsicContentSize.height
         statusText.frame = CGRect(x: x, y: cy - statusH / 2, width: statusW, height: statusH)

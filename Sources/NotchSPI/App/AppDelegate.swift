@@ -25,13 +25,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         #if DEBUG
-        // Visual-QA hook: `--qa-settings-page N` opens the settings window at page N.
+        // Visual-QA hooks: `--qa-settings-page N` opens the settings window at page N;
+        // `--qa-capture` fires one full capture as if the hotkey were pressed.
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "--qa-settings-page"), i + 1 < args.count,
            let n = Int(args[i + 1]),
            let page = MainSettingsWindowController.Page(rawValue: n) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 controller.openSettings(page: page)
+            }
+        }
+        if args.contains("--qa-capture") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                controller.qaTriggerCapture()
             }
         }
         #endif

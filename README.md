@@ -2,8 +2,8 @@
 
 A native macOS **notch-based AI study tutor**. Press a hotkey and a Dynamic‑Island‑style
 panel drops from the MacBook notch, reads the problem on your screen, and **streams a
-tutoring explanation** — powered by the AI CLIs you already have (**Codex** / **Claude
-Code**), run **read‑only**. No API key required — or bring your own key to go direct.
+tutoring explanation**. Zero setup: install, walk the onboarding, get **180 free
+questions**, and start answering. UI in **简体中文 / 日本語 / English** (switchable live).
 
 > **Capture exclusion.** The notch panel and NotchSPI's own windows are excluded from all
 > **software** screen capture — screenshots, screen recording, and Zoom/Meet/Teams screen share
@@ -12,37 +12,39 @@ Code**), run **read‑only**. No API key required — or bring your own key to g
 
 ## Features
 
-- **Notch UI** (boring.notch‑style `NSPanel` at the notch): a collapsed indicator with an
-  animated *Rose* loader sitting in the menu bar beside the notch; **hover to expand**; the
-  panel **auto‑sizes to the answer**.
-- **Capture → CLI → stream:** ScreenCaptureKit grabs the screen → drives `codex` or `claude`
-  **read‑only** → streams the answer into the panel.
-- **Official pay‑as‑you‑go service (default for new installs):** zero-setup onboarding — first
-  launch registers an anonymous device and grants trial credits; captures are proxied and metered
-  server‑side (contract in `docs/official-api.md`). An in‑app 账户与额度 panel shows balance,
-  lifetime token usage, and a top‑up link. Existing installs keep their previous mode; all three
-  modes (官方服务 / 自定义 Key / CLI) coexist and switch freely in the ⚙ menu.
-- **Custom API key (optional):** in ⚙ →「自定义 API Key…」paste your own Anthropic / OpenAI key to
-  send captures **straight to the official API** instead of the local CLI. When a key is set for the
-  selected backend it takes priority; when it's empty the app **falls back to the CLI** exactly as
-  before, so both channels coexist. Keys are stored in the local **Keychain** (never plaintext
-  defaults; pre-existing plaintext values migrate automatically); an optional model field
-  overrides the default. The header shows `Claude · API` while a key is active.
+- **Question-quota billing (题数额度制):** the account balance is a number of questions —
+  one successful capture costs exactly 1 question, failures are never charged. New devices
+  get **180 free questions** (anonymous registration, no account). Top-ups buy question
+  packs on a trilingual web page. Contract in `docs/official-api.md`; reference server in
+  [`server/`](server/).
+- **Onboarding v2:** a five-page zero-jargon flow over a live Metal aurora shader —
+  welcome (language choice) → how it works → screen-recording permission (live green check)
+  → the 180-question gift moment (rolling counter + confetti) → try-it keycaps. No mention
+  of APIs, CLIs, keys, or tokens anywhere.
+- **Unified settings** (侧栏六页): 通用 (language, depth, capture target, launch at login) ·
+  快捷键 · 外观 (five accent themes, answer text size, post-answer linger) · 账户与额度
+  (animated quota ring, top-up) · 人物像 · 高级 (answering channel, custom API keys, updates).
+  The notch's gear menu keeps only quick actions + quota at a glance.
+- **Notch UI** (boring.notch‑style `NSPanel`): a collapsed indicator with the animated
+  *Rose* loader beside the notch; **hover to expand**; the panel **auto‑sizes to the answer**;
+  the status line shows **完成 · 剩余 N 题** after every answer.
+- **Three answering channels** (设置 → 高级, switch freely):
+  - **官方服务** (default) — captures are proxied and metered server-side; the vendor key
+    never leaves the server.
+  - **自定义 API Key** — your own Anthropic / OpenAI key, straight to the vendor API
+    (Keychain-stored).
+  - **本机 CLI** — drive a logged-in `codex` / `claude` CLI, read-only.
 - **Depth modes:** 简略 (answer only) · 提示 · 引导 · 完整.
-- **Global hotkeys (customizable):** `⌘⇧1` 讲题 (tutor), `⌘⇧2` 性格作答 (personality test), `⌘⇧Space` show/hide.
-- **Settings menu (⚙):** switch backend (Codex/Claude), set custom API keys, depth, edit hotkeys, check for updates (检查更新), quit.
-- **Check for updates (检查更新):** compares the running version against the latest GitHub release;
-  also checks quietly on launch (≤ once/day) and points you to the download page when one is newer.
+- **Global hotkeys (customizable):** `⌘⇧1` 讲题 (tutor), `⌘⇧2` 性格作答 (personality test),
+  `⌘⇧Space` show/hide.
+- **Check for updates:** compares against the latest GitHub release; quiet daily auto-check.
 
 ## Requirements
 
 - macOS 14+ (built/tested on macOS 26, Apple Silicon).
 - Swift 5.9+ / Xcode.
-- One of:
-  - At least one CLI installed **and logged in**:
-    - **Codex** — the desktop app bundles a usable `codex` CLI (auto‑detected), or install the CLI.
-    - **Claude Code** — `claude` on your `PATH`, logged in.
-  - **or** a custom API key for the selected backend (⚙ →「自定义 API Key…」) — no CLI needed.
+- Nothing else for the official service. The advanced channels need an API key or a
+  logged-in CLI (`codex` / `claude`).
 
 ## Build & run
 
@@ -51,28 +53,48 @@ swift build -c release
 .build/release/NotchSPI
 ```
 
-(or `swift run`). On the first capture, macOS asks for **Screen Recording** permission —
-grant it to *NotchSPI*, then relaunch.
+(or `swift run`). Onboarding asks for **Screen Recording** permission with live detection.
+
+### Visual QA hooks (DEBUG builds only)
+
+```sh
+NSPI_QA_EPHEMERAL=1 NSPI_VISUAL_QA=1 .build/debug/NotchSPI \
+  --qa-onboarding --qa-onboarding-page 3 \      # jump straight to an onboarding page
+  --qa-settings-page 2 \                        # open settings at a page (0–5)
+  --qa-capture \                                # fire one full capture programmatically
+  -official.baseURL http://localhost:8787       # point at a local server
+```
+
+`NSPI_QA_EPHEMERAL=1` keeps all secrets in-process (never touches the real Keychain);
+`NSPI_VISUAL_QA=1` re-enables screen capture of the app's own windows for screenshots.
+
+## Server (official service)
+
+```sh
+cd server && npm ci
+DB_PATH=':memory:' OFFICIAL_PROVIDER=mock ALLOW_STUB_TOPUP=1 npm start
+```
+
+Boots with a key-free mock provider; `npm test` runs 35 unit + HTTP integration tests.
+See [`server/README.md`](server/README.md) and [`docs/official-api.md`](docs/official-api.md).
 
 ## Notes
 
 - The CLIs are spawned in an **isolated temp directory** (read‑only), so they don't crawl
   your current project.
-- **Codex** streams its whole answer at the end (feels slower); **Claude** streams
-  token‑by‑token.
-- Screenshots are downscaled to ~1568px JPEG before being sent to the CLI.
+- Screenshots are downscaled to ~1568px JPEG before being sent, and deleted right after use.
 
 ## Layout
 
 ```
 Sources/NotchSPI/
-  main.swift / AppDelegate.swift     app bootstrap (accessory app)
-  NotchPanel.swift / NotchController.swift / NotchView.swift / NotchShape.swift   notch UI
-  RoseLoader.swift                   animated math-curve indicator (Canvas)
-  ScreenCapture.swift                ScreenCaptureKit → temp JPEG
-  CLIRunner.swift                    detect + run codex/claude, stream stdout
-  APIKeyRunner.swift                 custom-key path: stream straight from Anthropic/OpenAI API
-  Cloud/                             official pay-as-you-go service: routing + billing gate,
-                                     API client, onboarding, 账户与额度 panel (docs/official-api.md)
-  Hotkeys.swift / SettingsWindow.swift / APIKeySettings.swift / Settings.swift / Prompts.swift
+  App/                 bootstrap (accessory app), L10n (runtime zh/ja/en)
+  Notch/               notch panel, controller, obsidian design system, Rose loader
+  UI/                  Metal aurora background, onboarding components (keycaps, confetti…)
+  Cloud/               official quota service: routing + quota gate, API client, onboarding
+  Settings/            unified settings window, themes, hotkeys, personas, Keychain
+  Capture/             ScreenCaptureKit → temp JPEG
+  CLI/                 codex/claude runners, direct-API runner, prompts
+  Update/              GitHub releases update check
+server/                official service reference implementation (Fastify + SQLite)
 ```
