@@ -3,6 +3,8 @@
 // an operator must set for production (vendor keys, payment provider) is surfaced here and
 // documented in .env.example.
 
+import { parsePacks, DEFAULT_PACKS_JSON } from './pricing.ts';
+
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -34,11 +36,19 @@ export const config = {
   // Public base URL of THIS server, used to build absolute links (e.g. the top-up page).
   publicBaseURL: envStr('PUBLIC_BASE_URL', 'http://localhost:8787'),
 
-  // Currency shown to the client. Pricing below is expressed in this currency's cents.
-  currency: envStr('CURRENCY', 'CNY'),
+  // ---- Quota model (题数额度制) ----------------------------------------------------------
+  // The account balance is an integer number of QUESTIONS; one successful capture costs one
+  // question. Money only appears at purchase time (the top-up page sells question packs).
 
-  // Trial credit granted to each newly registered device, in cents.
-  trialCreditCents: envInt('TRIAL_CREDIT_CENTS', 500),
+  // Free questions granted to each newly registered device.
+  trialQuestions: envInt('TRIAL_QUESTIONS', 180),
+
+  // Question packs sold on the top-up page: JSON `[{"id":"pack100","questions":100,"amount_cents":900}, …]`.
+  // Prices are cents in `currency`. Falls back to the default catalog on parse errors.
+  packs: parsePacks(envStr('PACKS_JSON', DEFAULT_PACKS_JSON)),
+
+  // Currency the packs are priced in (display + payment provider).
+  currency: envStr('CURRENCY', 'CNY'),
 
   provider: envProvider(),
   // Model the official service uses. The client never chooses; the server decides.
@@ -49,11 +59,6 @@ export const config = {
   anthropicBaseURL: envStr('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
   openaiKey: envStr('OPENAI_API_KEY', ''),
   openaiBaseURL: envStr('OPENAI_BASE_URL', 'https://api.openai.com'),
-
-  // Pricing: cents (in `currency`) charged per one million tokens. Defaults bake in a markup
-  // over raw vendor cost; tune per model. cost = ceil((in*inRate + out*outRate) / 1e6).
-  priceInputCentsPerMTok: envInt('PRICE_INPUT_CENTS_PER_MTOK', 1500),
-  priceOutputCentsPerMTok: envInt('PRICE_OUTPUT_CENTS_PER_MTOK', 7500),
 
   // Payment provider for the top-up page. "stub" credits the account via a dev-only endpoint
   // so the flow is testable; real providers (Stripe / Alipay / WeChat) plug in behind the same

@@ -22,8 +22,11 @@ test('jsStringLiteral escapes line/paragraph separators', () => {
 test('rendered top-up page never contains a raw </script> from a hostile token', () => {
   const page = new StubPaymentProvider().renderTopUpPage({
     deviceToken: '</script><img src=x onerror=alert(1)>',
+    packs: [{ id: 'pack100', questions: 100, amountCents: 900 }],
     currency: 'CNY',
     baseURL: 'http://localhost',
+    lang: 'zh',
+    stubEnabled: true,
   });
   const scriptOpen = page.indexOf('<script>');
   const body = page.slice(scriptOpen + '<script>'.length);

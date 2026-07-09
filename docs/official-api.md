@@ -1,53 +1,59 @@
-# NotchSPI 官方按量计费服务 — 服务端 API 契约
+# NotchSPI 官方服务 — 服务端 API 契约（v2 · 题数额度制）
 
 客户端（`Sources/NotchSPI/Cloud/`）已按本契约实现完毕。服务端参考实现见
 [`../server/`](../server/)（Node.js + TypeScript + Fastify + SQLite，`npm start` 开箱即跑）。
 上线后无需改动客户端代码（默认地址 `https://api.notchspi.app`，可用
 `defaults write com.rottesya.notchspi official.baseURL <url>` 指向测试环境）。
 
-服务端职责：代持真正的模型厂商 API Key、代理模型调用、按 Token 计量、扣减余额、
-处理充值（网页端）。客户端永远拿不到厂商 Key，只持有一个匿名设备令牌。
+**计费模型：题数额度制。** 账户余额是整数「题数」；一次成功的截屏问答扣 1 题，
+失败（网络/模型错误）不扣。新设备注册即赠 `TRIAL_QUESTIONS`（默认 180）题。
+金钱只出现在充值环节 —— 充值页出售「题包」（题数 + 价格），客户端永远只看到题数。
+
+服务端职责：代持真正的模型厂商 API Key、代理模型调用、按题计量、扣减题数、
+处理题包购买（网页端）。客户端永远拿不到厂商 Key，只持有一个匿名设备令牌。
 
 通用约定：
 
 - 认证：`Authorization: Bearer <device_token>`（除注册端点外）。
-- 金额一律用**分**（`*_cents` 整数）+ `currency`（`"CNY"` / `"USD"`）。
-- 错误响应体：`{"error": {"message": "<用户可读信息>"}}`。
-- `401` 令牌无效（客户端会清除本地设备令牌并引导用户在「账户与额度」重新初始化）；
-  `402` 余额不足（客户端会把本地余额镜像清零并引导充值）。
+- 错误响应体：`{"error": {"message": "<兜底信息>", "code": "<错误码>"}}`。
+  客户端按 `code` 本地化已知错误（`insufficient_quota` / `invalid_token` /
+  `bad_request` / `upstream_error` / `internal`），未知码显示 `message`。
+- `401 invalid_token` 令牌无效（客户端清除本地设备令牌并引导重新初始化）；
+  `402 insufficient_quota` 额度用完（客户端把本地题数镜像清零并引导充值）。
 
 ## POST /v1/devices — 匿名设备注册（开箱即用入口）
 
-无需认证。首次注册应赠送试用额度。重复调用允许（客户端只在本地无令牌时调用）。
+无需认证。首次注册赠送试用题数。重复调用允许（客户端只在本地无令牌时调用）。
 
 请求：
 
 ```json
-{ "platform": "macos", "app_version": "1.7" }
+{ "platform": "macos", "app_version": "2.0" }
 ```
 
 响应 200：
 
 ```json
-{ "device_token": "dev_xxxxxxxx", "balance_cents": 500, "currency": "CNY" }
+{ "device_token": "dev_xxxxxxxx", "balance_questions": 180 }
 ```
 
-## GET /v1/account — 余额与用量查询
+## GET /v1/account — 题数与用量查询
 
 响应 200：
 
 ```json
 {
-  "balance_cents": 342,
-  "currency": "CNY",
+  "balance_questions": 172,
+  "total_questions": 8,
   "total_input_tokens": 182000,
   "total_output_tokens": 45120
 }
 ```
 
-（客户端读取全部四个字段；`total_*_tokens` 会覆盖本地的累计用量镜像，以服务端为准。）
+（客户端读取全部字段；`total_*` 会覆盖本地累计镜像，以服务端为准。Token 数只做
+内部统计展示，不参与计费。）
 
-## POST /v1/captures — 截图问答（SSE 流式）
+## POST /v1/captures — 截图问答（SSE 流式，1 题/次）
 
 请求：
 
@@ -61,28 +67,32 @@
 }
 ```
 
-服务端选择模型、调用厂商 API、按 Token 计费。响应为 `text/event-stream`，事件均为
+服务端选择模型、调用厂商 API、成功后扣 1 题。响应为 `text/event-stream`，事件均为
 `data: <json>` 行：
 
 ```
 data: {"type":"delta","text":"答案增量文本"}
 data: {"type":"delta","text":"…"}
-data: {"type":"usage","input_tokens":1200,"output_tokens":480,"cost_cents":4,"balance_cents":338}
+data: {"type":"usage","input_tokens":1200,"output_tokens":480,"questions_charged":1,"balance_questions":179}
 data: [DONE]
 ```
 
-- `usage` 事件必须在流结束前发出**一次**，客户端据此更新本地余额镜像与累计用量。
-- 流中出错：发送 `data: {"type":"error","error":{"message":"…"}}` 后结束。
-- 请求前余额已不足：直接返回 HTTP `402`（响应体用通用错误格式）。
+- `usage` 事件必须在流结束前发出**一次**，客户端据此更新本地题数镜像与累计用量。
+- 流中出错：发送 `data: {"type":"error","error":{"message":"…","code":"…"}}` 后结束，
+  **不扣题**。
+- 请求前额度已用完：直接返回 HTTP `402`（响应体用通用错误格式，`code:
+  "insufficient_quota"`）。
 
-## GET /topup?device=\<token\> — 充值网页（非 API）
+## GET /topup?device=\<token\>&lang=\<zh|ja|en\> — 题包购买网页（非 API）
 
-「账户与额度」面板的「充值…」按钮会用系统浏览器打开此地址。页面自行完成支付流程
-（如 Stripe / 支付宝 / 微信）；充值到账后客户端点「刷新」即可通过 `/v1/account` 同步。
+「充值」按钮用系统浏览器打开此地址；`lang` 由客户端传入其界面语言，页面据此本地化。
+页面展示题包目录（`PACKS_JSON` 配置）并自行完成支付（生产接 Stripe / 支付宝 / 微信；
+开发环境 `ALLOW_STUB_TOPUP=1` 时点击即入账）。到账后客户端点「刷新」即可通过
+`/v1/account` 同步。
 
 ## 客户端行为摘要（便于服务端联调）
 
-- 计费拦截只作用于官方模式：本地已知余额 ≤ 0 时在发起截图前拦下并引导充值；
-  余额未知时放行，以服务端 `402` 为准。自定义 API Key / 本机 CLI 模式完全不经过
+- 额度拦截只作用于官方模式：本地已知题数 ≤ 0 时在发起截图前拦下并引导充值；
+  题数未知时放行，以服务端 `402` 为准。自定义 API Key / 本机 CLI 模式完全不经过
   官方服务，也不受拦截影响。
-- 新安装首次启动默认官方模式并自动注册；老安装保持原有模式，不会被改路由。
+- 新安装引导流程内静默注册；老安装保持原有模式，不会被改路由。

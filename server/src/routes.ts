@@ -5,8 +5,8 @@ import type { Provider, CaptureRequest } from './providers/types.ts';
 import type { PaymentProvider } from './payments.ts';
 import { ApiError, errorBody, beginSSE, SSE_DONE } from './http.ts';
 import { requireAccount } from './auth.ts';
-import { costCents } from './pricing.ts';
-import { isValidTokenShape } from './payments.ts';
+import { findPack } from './pricing.ts';
+import { isValidTokenShape, normalizeLang } from './payments.ts';
 
 export interface AppContext {
   config: Config;
@@ -28,7 +28,7 @@ interface CaptureBody {
 }
 interface StubTopUpBody {
   device_token?: unknown;
-  amount_cents?: unknown;
+  pack_id?: unknown;
 }
 
 function str(v: unknown, fallback = ''): string {
@@ -40,34 +40,32 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/healthz', async () => ({ ok: true, provider: provider.name }));
 
-  // POST /v1/devices — anonymous registration, grants trial credit. No auth.
+  // POST /v1/devices — anonymous registration, grants the free question quota. No auth.
   app.post('/v1/devices', async (req, reply) => {
     const body = (req.body ?? {}) as DeviceBody;
     const device = store.registerDevice({
       platform: str(body.platform, 'unknown').slice(0, 32),
       appVersion: str(body.app_version, 'unknown').slice(0, 32),
-      trialCreditCents: config.trialCreditCents,
-      currency: config.currency,
+      trialQuestions: config.trialQuestions,
     });
     return reply.send({
       device_token: device.token,
-      balance_cents: device.balanceCents,
-      currency: device.currency,
+      balance_questions: device.balanceQuestions,
     });
   });
 
-  // GET /v1/account — balance + lifetime usage. Auth.
+  // GET /v1/account — question balance + lifetime usage. Auth.
   app.get('/v1/account', async (req, reply) => {
     const { account } = requireAccount(req, store);
     return reply.send({
-      balance_cents: account.balanceCents,
-      currency: account.currency,
+      balance_questions: account.balanceQuestions,
+      total_questions: account.totalQuestions,
       total_input_tokens: account.totalInputTokens,
       total_output_tokens: account.totalOutputTokens,
     });
   });
 
-  // POST /v1/captures — streamed answer, metered + billed. Auth.
+  // POST /v1/captures — streamed answer; one successful capture costs one question. Auth.
   app.post('/v1/captures', async (req, reply) => {
     const { token, account } = requireAccount(req, store);
     const body = (req.body ?? {}) as CaptureBody;
@@ -84,9 +82,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (!captureReq.task) throw new ApiError(400, '缺少 task 文本');
     if (!captureReq.imageBase64) throw new ApiError(400, '缺少截图数据');
 
-    // Pre-request gate: a non-positive balance is refused as JSON 402 BEFORE any streaming.
-    if (account.balanceCents <= 0) {
-      throw new ApiError(402, '余额不足，请充值后继续');
+    // Pre-request gate: no questions left is refused as JSON 402 BEFORE any streaming.
+    if (account.balanceQuestions <= 0) {
+      throw new ApiError(402, '额度已用完，请充值后继续', 'insufficient_quota');
     }
 
     // Take over the socket for manual SSE writing.
@@ -104,52 +102,51 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
     try {
       const usage = await provider.stream(captureReq, (text) => send({ type: 'delta', text }), abort.signal);
-      const cost = costCents(
-        usage.inputTokens,
-        usage.outputTokens,
-        config.priceInputCentsPerMTok,
-        config.priceOutputCentsPerMTok,
-      );
       const newBalance = store.chargeForUsage({
         token,
+        questions: 1,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
-        costCents: cost,
         model: `${provider.name}:${config.model}`,
       });
       if (newBalance === null) {
         // Token vanished mid-request (deleted); report as a stream error, no charge applied.
-        send({ type: 'error', error: { message: '设备令牌无效' } });
+        send({ type: 'error', error: { message: '设备令牌无效', code: 'invalid_token' } });
       } else {
         send({
           type: 'usage',
           input_tokens: usage.inputTokens,
           output_tokens: usage.outputTokens,
-          cost_cents: cost,
-          balance_cents: newBalance,
+          questions_charged: 1,
+          balance_questions: newBalance,
         });
       }
       reply.raw.write(SSE_DONE);
     } catch (err) {
       const message = err instanceof Error ? err.message : '模型服务错误';
-      // On failure we do NOT charge — friendlier and avoids billing for a broken answer.
-      send({ type: 'error', error: { message } });
+      // On failure we do NOT charge — a broken answer never costs a question.
+      send({ type: 'error', error: { message, code: 'upstream_error' } });
     } finally {
       done = true;
       reply.raw.end();
     }
   });
 
-  // GET /topup?device=<token> — payment web page (not an API endpoint). No bearer auth.
+  // GET /topup?device=<token>&lang=<zh|ja|en> — payment web page (not an API endpoint).
+  // No bearer auth; the client passes its resolved UI language so the page matches the app.
   app.get('/topup', async (req, reply) => {
-    const raw = str((req.query as { device?: unknown } | undefined)?.device);
+    const q = (req.query ?? {}) as { device?: unknown; lang?: unknown };
+    const raw = str(q.device);
     // Only ever reflect a well-formed token; anything else renders as empty (belt-and-suspenders
     // with jsStringLiteral, since this endpoint is unauthenticated).
     const device = isValidTokenShape(raw) ? raw : '';
     const html = payment.renderTopUpPage({
       deviceToken: device,
+      packs: config.packs,
       currency: config.currency,
       baseURL: config.publicBaseURL,
+      lang: normalizeLang(str(q.lang)),
+      stubEnabled: config.allowStubTopUp && payment.name === 'stub',
     });
     return reply.type('text/html; charset=utf-8').send(html);
   });
@@ -162,28 +159,30 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     const body = (req.body ?? {}) as StubTopUpBody;
     const token = str(body.device_token);
-    const amount = typeof body.amount_cents === 'number' ? Math.trunc(body.amount_cents) : 0;
     if (!token) throw new ApiError(400, '缺少设备令牌');
-    if (!(amount > 0 && amount <= 1_000_000)) throw new ApiError(400, '充值金额无效');
+    const pack = findPack(config.packs, str(body.pack_id));
+    if (!pack) throw new ApiError(400, '题包无效');
 
     const newBalance = store.credit({
       token,
-      amountCents: amount,
+      questions: pack.questions,
+      amountCents: pack.amountCents,
+      currency: config.currency,
       provider: 'stub',
       reference: `stub-${Date.now()}`,
     });
     if (newBalance === null) throw new ApiError(401, '设备令牌无效');
-    return reply.send({ balance_cents: newBalance, currency: config.currency });
+    return reply.send({ balance_questions: newBalance });
   });
 
-  // Uniform error body: {"error":{"message":"…"}} with the right status code.
+  // Uniform error body: {"error":{"message":"…","code":"…"}} with the right status code.
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof ApiError) {
-      return reply.code(err.statusCode).send(errorBody(err.message));
+      return reply.code(err.statusCode).send(errorBody(err.message, err.code));
     }
     const e = err as { statusCode?: number; message?: string };
     const statusCode = typeof e.statusCode === 'number' ? e.statusCode : 500;
     const message = statusCode === 500 ? '服务器内部错误' : (e.message ?? '请求错误');
-    return reply.code(statusCode).send(errorBody(message));
+    return reply.code(statusCode).send(errorBody(message, statusCode === 500 ? 'internal' : 'bad_request'));
   });
 }

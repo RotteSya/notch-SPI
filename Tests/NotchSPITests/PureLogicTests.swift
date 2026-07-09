@@ -1,6 +1,16 @@
 import XCTest
 @testable import NotchSPI
 
+/// Pin the UI language for the duration of `body`, restoring the user's setting afterwards.
+/// L10n reads live UserDefaults, so language-sensitive assertions must not depend on the
+/// machine running the tests.
+func withLanguage(_ language: AppLanguage, _ body: () -> Void) {
+    let saved = L10n.setting
+    L10n.setting = language
+    defer { L10n.setting = saved }
+    body()
+}
+
 /// Unit tests for the app's pure, UI-free logic: GitHub-release version comparison and
 /// system-prompt selection. These need no display, no AppKit windows, and no network.
 final class UpdateCheckerVersionTests: XCTestCase {
@@ -126,32 +136,32 @@ final class ServiceRoutingTests: XCTestCase {
         XCTAssertEqual(ServiceRouting.resolve(mode: "banana", customKey: ""), .official)
     }
 
-    func testBillingGateNeverBlocksNonOfficialChannels() {
-        // Even with the worst possible account state (no token, zero balance), custom-key
+    func testQuotaGateNeverBlocksNonOfficialChannels() {
+        // Even with the worst possible account state (no token, zero questions), custom-key
         // and CLI captures must pass through untouched.
-        for balance in [nil, 0, -500] as [Int?] {
+        for balance in [nil, 0, -5] as [Int?] {
             XCTAssertEqual(
-                BillingGate.preflight(channel: .customKey("sk-x"), hasDeviceToken: false, balanceCents: balance),
+                QuotaGate.preflight(channel: .customKey("sk-x"), hasDeviceToken: false, balanceQuestions: balance),
                 .allow)
             XCTAssertEqual(
-                BillingGate.preflight(channel: .cli, hasDeviceToken: false, balanceCents: balance),
+                QuotaGate.preflight(channel: .cli, hasDeviceToken: false, balanceQuestions: balance),
                 .allow)
         }
     }
 
-    func testBillingGateOfficialChannel() {
+    func testQuotaGateOfficialChannel() {
         // No device token → deny with guidance.
-        if case .allow = BillingGate.preflight(channel: .official, hasDeviceToken: false, balanceCents: nil) {
+        if case .allow = QuotaGate.preflight(channel: .official, hasDeviceToken: false, balanceQuestions: nil) {
             XCTFail("un-registered official capture must be denied")
         }
-        // Zero / negative balance → deny.
-        if case .allow = BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: 0) {
-            XCTFail("zero balance must be denied")
+        // Zero / negative quota → deny.
+        if case .allow = QuotaGate.preflight(channel: .official, hasDeviceToken: true, balanceQuestions: 0) {
+            XCTFail("zero quota must be denied")
         }
-        // Positive balance → allow.
-        XCTAssertEqual(BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: 500), .allow)
-        // Unknown balance → allow; the server (402) is the source of truth.
-        XCTAssertEqual(BillingGate.preflight(channel: .official, hasDeviceToken: true, balanceCents: nil), .allow)
+        // Positive quota → allow.
+        XCTAssertEqual(QuotaGate.preflight(channel: .official, hasDeviceToken: true, balanceQuestions: 180), .allow)
+        // Unknown quota → allow; the server (402) is the source of truth.
+        XCTAssertEqual(QuotaGate.preflight(channel: .official, hasDeviceToken: true, balanceQuestions: nil), .allow)
     }
 
     func testDefaultModeMigration() {
@@ -164,7 +174,9 @@ final class ServiceRoutingTests: XCTestCase {
     }
 
     func testHeaderLabels() {
-        XCTAssertEqual(ServiceRouting.headerLabel(channel: .official, backend: "claude"), "官方服务")
+        withLanguage(.zhHans) {
+            XCTAssertEqual(ServiceRouting.headerLabel(channel: .official, backend: "claude"), "官方服务")
+        }
         XCTAssertEqual(ServiceRouting.headerLabel(channel: .customKey("k"), backend: "claude"), "Claude · API")
         XCTAssertEqual(ServiceRouting.headerLabel(channel: .cli, backend: "codex"), "Codex")
     }
@@ -177,25 +189,41 @@ final class OfficialAPITests: XCTestCase {
             OfficialAPI.parseStreamLine(#"data: {"type":"delta","text":"你好"}"#),
             .delta("你好"))
         XCTAssertEqual(
-            OfficialAPI.parseStreamLine(#"data: {"type":"usage","input_tokens":120,"output_tokens":45,"cost_cents":3,"balance_cents":497}"#),
-            .usage(inputTokens: 120, outputTokens: 45, costCents: 3, balanceCents: 497))
+            OfficialAPI.parseStreamLine(#"data: {"type":"usage","input_tokens":120,"output_tokens":45,"questions_charged":1,"balance_questions":179}"#),
+            .usage(inputTokens: 120, outputTokens: 45, questionsCharged: 1, balanceQuestions: 179))
+        XCTAssertEqual(
+            OfficialAPI.parseStreamLine(#"data: {"type":"error","error":{"message":"boom","code":"upstream_error"}}"#),
+            .error(message: "boom", code: "upstream_error"))
         XCTAssertEqual(
             OfficialAPI.parseStreamLine(#"data: {"type":"error","error":{"message":"boom"}}"#),
-            .error("boom"))
+            .error(message: "boom", code: nil))
         XCTAssertEqual(OfficialAPI.parseStreamLine("data: [DONE]"), .done)
         XCTAssertNil(OfficialAPI.parseStreamLine("event: ping"))
         XCTAssertNil(OfficialAPI.parseStreamLine(""))
     }
 
-    func testBalanceFormatting() {
-        XCTAssertEqual(OfficialAPI.formatBalance(cents: 1234, currency: "CNY"), "¥12.34")
-        XCTAssertEqual(OfficialAPI.formatBalance(cents: 500, currency: "USD"), "$5.00")
-        XCTAssertEqual(OfficialAPI.formatBalance(cents: nil, currency: "CNY"), "—")
+    func testLocalizedMessageMapsKnownCodesAndFallsBack() {
+        withLanguage(.zhHans) {
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("题数已用完"))
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "invalid_token", fallback: "x").contains("凭证"))
+        }
+        withLanguage(.ja) {
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("使い切りました"))
+        }
+        withLanguage(.en) {
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("out of questions"))
+        }
+        // Unknown codes surface the server's own message untouched.
+        XCTAssertEqual(OfficialAPI.localizedMessage(code: "weird_new_code", fallback: "server says"), "server says")
+        XCTAssertEqual(OfficialAPI.localizedMessage(code: nil, fallback: "raw"), "raw")
     }
 
     func testTopUpURL() {
-        let url = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: "dev_123")
-        XCTAssertEqual(url?.absoluteString, "https://api.notchspi.app/topup?device=dev_123")
+        let url = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: "dev_123", lang: "ja")
+        XCTAssertEqual(url?.absoluteString, "https://api.notchspi.app/topup?device=dev_123&lang=ja")
+        // Without a token the lang still rides along (the page renders a token-less state).
+        let bare = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: nil, lang: "en")
+        XCTAssertEqual(bare?.absoluteString, "https://api.notchspi.app/topup?lang=en")
     }
 
     func testEndpointURLIsCrashSafeAndPreservesBasePath() {
@@ -316,6 +344,55 @@ final class FirstRunBootstrapTests: XCTestCase {
     func testTokenTruncationForDisplay() {
         XCTAssertEqual(AccountViewController.truncatedToken("dev_1234567890abcdef"), "dev_1234…cdef")
         XCTAssertEqual(AccountViewController.truncatedToken("short"), "short")
+    }
+}
+
+/// The runtime-switchable localization layer: resolution rules and quota formatting.
+final class L10nTests: XCTestCase {
+    func testManualChoiceWinsOverSystemLanguages() {
+        XCTAssertEqual(L10n.resolve(setting: .ja, preferred: ["zh-Hans-CN", "en"]), .ja)
+        XCTAssertEqual(L10n.resolve(setting: .zhHans, preferred: ["en-US"]), .zh)
+        XCTAssertEqual(L10n.resolve(setting: .en, preferred: ["ja-JP"]), .en)
+    }
+
+    func testAutoResolvesFirstSupportedSystemLanguage() {
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: ["zh-Hans-CN", "en-US"]), .zh)
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: ["zh-Hant-TW"]), .zh) // Traditional → zh for now
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: ["ja-JP", "en-US"]), .ja)
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: ["fr-FR", "ja-JP"]), .ja) // skip unsupported
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: ["fr-FR", "de-DE"]), .en) // default en
+        XCTAssertEqual(L10n.resolve(setting: .auto, preferred: []), .en)
+    }
+
+    func testQuotaFormattingPerLanguage() {
+        withLanguage(.zhHans) {
+            XCTAssertEqual(L10n.questions(180), "180 题")
+            XCTAssertEqual(L10n.questionsLeft(3), "剩余 3 题")
+        }
+        withLanguage(.ja) {
+            XCTAssertEqual(L10n.questions(180), "180問")
+            XCTAssertEqual(L10n.questionsLeft(3), "残り3問")
+        }
+        withLanguage(.en) {
+            XCTAssertEqual(L10n.questions(180), "180 questions")
+            XCTAssertEqual(L10n.questions(1), "1 question")
+            XCTAssertEqual(L10n.questionsLeft(1), "1 question left")
+            XCTAssertEqual(L10n.questionsLeft(3), "3 questions left")
+        }
+    }
+
+    func testLanguageChangeInvalidatesCacheAndNotifies() {
+        let saved = L10n.setting
+        defer { L10n.setting = saved }
+        var fired = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: L10n.languageDidChange, object: nil, queue: nil) { _ in fired = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        L10n.setting = .ja
+        XCTAssertEqual(L10n.lang, .ja)
+        L10n.setting = .en
+        XCTAssertEqual(L10n.lang, .en)
+        XCTAssertTrue(fired)
     }
 }
 

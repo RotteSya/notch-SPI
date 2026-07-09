@@ -1,14 +1,22 @@
 import Foundation
 
-/// Lightweight error wrapper so `Result` can carry a user-facing message
-/// (`String` itself doesn't conform to `Error`).
+/// Error wrapper so `Result` can carry a user-facing message plus the server's machine-readable
+/// error code (`String` itself doesn't conform to `Error`). Known codes are localized client-side
+/// via `OfficialAPI.localizedMessage`; the server message is the fallback for unknown codes.
 struct OfficialAPIError: Error, Equatable {
     let message: String
+    let code: String?
+
+    init(message: String, code: String? = nil) {
+        self.message = message
+        self.code = code
+    }
 }
 
-/// Client for the NotchSPI 官方按量计费服务 (pay-as-you-go). The server side holds the vendor
-/// API keys, proxies the model call, meters tokens, and deducts balance; this client only
-/// registers an anonymous device (granting trial credits), streams answers, and mirrors the
+/// Client for the NotchSPI 官方服务（题数额度制 — the account balance is a number of questions;
+/// one successful capture costs one question). The server side holds the vendor API keys,
+/// proxies the model call, meters per question, and deducts quota; this client only registers
+/// an anonymous device (granting the 180-question trial), streams answers, and mirrors the
 /// account state for the UI. The wire contract lives in docs/official-api.md.
 ///
 /// This file is used ONLY by the `.official` service channel — the custom-key and CLI paths
@@ -28,14 +36,14 @@ enum OfficialAPI {
         return v.isEmpty ? defaultBaseURL : v
     }
 
-    /// Posted whenever balance / usage / registration state changes, so open panels refresh.
+    /// Posted whenever quota / usage / registration state changes, so open panels refresh.
     static let accountDidChange = Notification.Name("OfficialAPI.accountDidChange")
 
     // MARK: - Local account state (UserDefaults-backed cache; the server is authoritative)
 
     private static var d: UserDefaults { .standard }
 
-    /// Bearer credential for the paid service — Keychain-backed. A token from the
+    /// Bearer credential for the official service — Keychain-backed. A token from the
     /// pre-Keychain plaintext storage migrates (and its UserDefaults copy is removed)
     /// on first read.
     static var deviceToken: String? {
@@ -54,57 +62,40 @@ enum OfficialAPI {
         }
     }
 
-    /// Last balance reported by the server, in cents. nil = never synced.
-    static var balanceCents: Int? {
-        get { d.object(forKey: "official.balanceCents") as? Int }
+    /// Last question balance reported by the server. nil = never synced.
+    static var balanceQuestions: Int? {
+        get { d.object(forKey: "official.balanceQuestions") as? Int }
         set {
-            if let v = newValue { d.set(v, forKey: "official.balanceCents") }
-            else { d.removeObject(forKey: "official.balanceCents") }
+            if let v = newValue { d.set(v, forKey: "official.balanceQuestions") }
+            else { d.removeObject(forKey: "official.balanceQuestions") }
             notifyAccountChanged()
         }
     }
 
-    static var currency: String {
-        get { d.string(forKey: "official.currency") ?? "CNY" }
-        set { d.set(newValue, forKey: "official.currency") }
-    }
+    /// Below this many remaining questions the UI starts nudging toward a top-up.
+    static let lowQuotaThreshold = 10
 
+    static var totalQuestions: Int { d.integer(forKey: "official.totalQuestions") }
     static var totalInputTokens: Int { d.integer(forKey: "official.totalInputTokens") }
     static var totalOutputTokens: Int { d.integer(forKey: "official.totalOutputTokens") }
 
-    /// Metered cost of the most recent capture, for the "完成 · 本次 ¥…" status line.
-    /// UserDefaults-backed so the cross-thread write (stream task → main-queue read) is safe.
-    static var lastCaptureCostCents: Int? {
-        get { d.object(forKey: "official.lastCostCents") as? Int }
-        set {
-            if let v = newValue { d.set(v, forKey: "official.lastCostCents") }
-            else { d.removeObject(forKey: "official.lastCostCents") }
-        }
-    }
-
-    /// Fold one capture's metered usage into the local mirror (totals + balance snapshot).
-    static func recordUsage(inputTokens: Int, outputTokens: Int, costCents: Int?, balanceCentsAfter: Int?) {
+    /// Fold one capture's metered usage into the local mirror (totals + quota snapshot).
+    static func recordUsage(inputTokens: Int, outputTokens: Int, questionsCharged: Int, balanceQuestionsAfter: Int?) {
+        d.set(totalQuestions + max(0, questionsCharged), forKey: "official.totalQuestions")
         d.set(totalInputTokens + max(0, inputTokens), forKey: "official.totalInputTokens")
         d.set(totalOutputTokens + max(0, outputTokens), forKey: "official.totalOutputTokens")
-        lastCaptureCostCents = costCents
-        if let b = balanceCentsAfter { d.set(b, forKey: "official.balanceCents") }
+        if let b = balanceQuestionsAfter { d.set(b, forKey: "official.balanceQuestions") }
         notifyAccountChanged()
     }
 
     /// The server said our device token is no longer valid — drop the local account state so
-    /// the UI falls back to the "初始化账户" path instead of dead-ending on generic errors.
+    /// the UI falls back to the "领取额度" path instead of dead-ending on generic errors.
     private static func handleInvalidToken() {
         KeychainStore.write(nil, account: "official.deviceToken")
         d.removeObject(forKey: "official.deviceToken") // clear any legacy plaintext copy too
-        d.removeObject(forKey: "official.balanceCents")
+        d.removeObject(forKey: "official.balanceQuestions")
         notifyAccountChanged()
     }
-
-    private static let invalidTokenMessage =
-        "官方服务登录状态已失效。请打开齿轮菜单 →「账户与额度…」重新初始化账户（重新领取设备令牌）。"
-
-    /// Guidance appended to unexpected official-service failures so novice users always have a way out.
-    private static let fallbackHint = "\n\n如持续出现，可在齿轮菜单切换到「自定义 API Key」或「本机 CLI」模式继续使用。"
 
     private static func notifyAccountChanged() {
         if Thread.isMainThread {
@@ -116,19 +107,42 @@ enum OfficialAPI {
         }
     }
 
-    // MARK: - Pure helpers (testable)
+    // MARK: - Localized service errors (pure, testable)
 
-    /// "¥12.34" / "$5.00" from server cents. Unknown currency falls back to the code itself.
-    static func formatBalance(cents: Int?, currency: String) -> String {
-        guard let cents else { return "—" }
-        let symbol: String
-        switch currency.uppercased() {
-        case "CNY", "RMB": symbol = "¥"
-        case "USD": symbol = "$"
-        default: symbol = currency + " "
+    /// Map a server error code to the user's language; unknown codes fall back to the server's
+    /// own message. Known classes carry a way out with zero jargon.
+    static func localizedMessage(code: String?, fallback: String) -> String {
+        switch code {
+        case "insufficient_quota":
+            return L10n.t(
+                "题数已用完，本次没有消耗额度。充值后即可继续使用。",
+                "質問数を使い切りました(今回は消費されていません)。チャージすると続けられます。",
+                "You're out of questions — this attempt wasn't charged. Top up to keep going.")
+        case "invalid_token":
+            return L10n.t(
+                "本机的服务凭证已失效。请打开设置 →「账户与额度」重新领取（不影响已购买的题数）。",
+                "このデバイスの認証情報が無効になりました。設定→「アカウントと残高」から再取得してください(購入済みの質問数には影響しません)。",
+                "This device's service credential has expired. Re-initialize it in Settings → Account (your purchased questions are unaffected).")
+        case "upstream_error":
+            return L10n.t(
+                "答案生成服务暂时出了点问题，本次没有消耗额度，请稍后重试。",
+                "回答サービスに一時的な問題が発生しました(今回は消費されていません)。しばらくして再試行してください。",
+                "The answering service hit a temporary problem — this attempt wasn't charged. Please try again shortly.")
+        default:
+            return fallback
         }
-        return String(format: "%@%.2f", symbol, Double(cents) / 100)
     }
+
+    /// Guidance appended to unexpected official-service failures so novice users always have a
+    /// way out (the advanced channels live in 设置 → 高级).
+    static var fallbackHint: String {
+        L10n.t(
+            "\n\n如持续出现，可稍后重试，或在设置 →「高级」切换其他答题通道。",
+            "\n\n続く場合はしばらくして再試行するか、設定→「詳細」で別のチャネルに切り替えられます。",
+            "\n\nIf this keeps happening, try again later or switch channels in Settings → Advanced.")
+    }
+
+    // MARK: - Pure helpers (testable)
 
     /// Resolved endpoint under the configured base. Never force-unwraps user input: a
     /// hand-typed `official.baseURL` override that doesn't parse falls back to the production
@@ -140,22 +154,34 @@ enum OfficialAPI {
         return url.appendingPathComponent(clean)
     }
 
-    /// The web top-up page for this device (账户与额度面板的「充值」按钮). Appends to the
-    /// base URL's path (same as the API endpoints) so self-hosted bases like
-    /// "https://host/api" keep working.
-    static func topUpURL(baseURL: String, deviceToken: String?) -> URL? {
+    /// The web top-up page for this device. Appends to the base URL's path (same as the API
+    /// endpoints) so self-hosted bases like "https://host/api" keep working. `lang` localizes
+    /// the page to match the app.
+    static func topUpURL(baseURL: String, deviceToken: String?, lang: String) -> URL? {
         var comps = URLComponents(url: endpointURL(base: baseURL, path: "topup"), resolvingAgainstBaseURL: false)
+        var items: [URLQueryItem] = []
         if let t = deviceToken, !t.isEmpty {
-            comps?.queryItems = [URLQueryItem(name: "device", value: t)]
+            items.append(URLQueryItem(name: "device", value: t))
         }
+        items.append(URLQueryItem(name: "lang", value: lang))
+        comps?.queryItems = items
         return comps?.url
+    }
+
+    /// The current UI language as the top-up page's `lang` parameter.
+    static var topUpLang: String {
+        switch L10n.lang {
+        case .zh: return "zh"
+        case .ja: return "ja"
+        case .en: return "en"
+        }
     }
 
     /// One SSE line from the capture stream. The official service uses a small fixed event set.
     enum StreamEvent: Equatable {
         case delta(String)
-        case usage(inputTokens: Int, outputTokens: Int, costCents: Int?, balanceCents: Int?)
-        case error(String)
+        case usage(inputTokens: Int, outputTokens: Int, questionsCharged: Int, balanceQuestions: Int?)
+        case error(message: String, code: String?)
         case done
     }
 
@@ -173,15 +199,27 @@ enum OfficialAPI {
             return .usage(
                 inputTokens: obj["input_tokens"] as? Int ?? 0,
                 outputTokens: obj["output_tokens"] as? Int ?? 0,
-                costCents: obj["cost_cents"] as? Int,
-                balanceCents: obj["balance_cents"] as? Int
+                questionsCharged: obj["questions_charged"] as? Int ?? 0,
+                balanceQuestions: obj["balance_questions"] as? Int
             )
         case "error":
             let err = obj["error"] as? [String: Any]
-            return .error((err?["message"] as? String) ?? (obj["message"] as? String) ?? "未知错误")
+            let message = (err?["message"] as? String) ?? (obj["message"] as? String)
+                ?? L10n.t("未知错误", "不明なエラー", "Unknown error")
+            return .error(message: message, code: err?["code"] as? String)
         default:
             return nil
         }
+    }
+
+    /// Extract `{"error":{"message":…,"code":…}}` from a non-200 response body and localize it.
+    static func localizedErrorBody(_ data: Data, statusCode: Int) -> String {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let err = obj["error"] as? [String: Any] {
+            let fallback = (err["message"] as? String) ?? "HTTP \(statusCode)"
+            return localizedMessage(code: err["code"] as? String, fallback: fallback)
+        }
+        return APIKeyRunner.errorMessage(from: data, statusCode: statusCode)
     }
 
     static func makeRegisterRequest(baseURL: String, appVersion: String) -> URLRequest {
@@ -222,10 +260,17 @@ enum OfficialAPI {
         return req
     }
 
+    private static var cannotConnectMessage: String {
+        L10n.t("无法连接服务，请检查网络后重试。",
+               "サービスに接続できません。ネットワークを確認して再試行してください。",
+               "Can't reach the service — check your connection and try again.")
+    }
+
     // MARK: - Async operations
 
-    /// Anonymous device registration — the onboarding "开箱即用" step. Grants trial credits
-    /// server-side. Safe to call repeatedly: returns the existing token when already registered.
+    /// Anonymous device registration — the onboarding "开箱即用" step. Grants the free question
+    /// quota server-side. Safe to call repeatedly: returns the existing token when already
+    /// registered.
     @discardableResult
     static func registerIfNeeded() async -> Result<String, OfficialAPIError> {
         if let token = deviceToken { return .success(token) }
@@ -238,49 +283,52 @@ enum OfficialAPI {
                   let token = obj["device_token"] as? String, !token.isEmpty
             else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                return .failure(OfficialAPIError(message: APIKeyRunner.errorMessage(from: data, statusCode: code)))
+                return .failure(OfficialAPIError(message: localizedErrorBody(data, statusCode: code)))
             }
             deviceToken = token
-            if let b = obj["balance_cents"] as? Int { balanceCents = b }
-            if let c = obj["currency"] as? String { currency = c }
+            if let b = obj["balance_questions"] as? Int { balanceQuestions = b }
             return .success(token)
         } catch {
-            return .failure(OfficialAPIError(message: "无法连接官方服务：\(error.localizedDescription)"))
+            return .failure(OfficialAPIError(message: cannotConnectMessage))
         }
     }
 
-    /// Pull the authoritative balance + lifetime usage from the server.
+    /// Pull the authoritative quota + lifetime usage from the server.
     @discardableResult
     static func refreshAccount() async -> Result<Void, OfficialAPIError> {
-        guard let token = deviceToken else { return .failure(OfficialAPIError(message: "尚未初始化官方服务账户")) }
+        guard let token = deviceToken else {
+            return .failure(OfficialAPIError(
+                message: L10n.t("尚未领取额度", "まだ無料枠を受け取っていません", "Free questions not claimed yet")))
+        }
         let req = makeAccountRequest(baseURL: baseURL, deviceToken: token)
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             if code == 401 {
                 handleInvalidToken()
-                return .failure(OfficialAPIError(message: invalidTokenMessage))
+                return .failure(OfficialAPIError(
+                    message: localizedMessage(code: "invalid_token", fallback: ""), code: "invalid_token"))
             }
             guard code == 200,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else {
-                return .failure(OfficialAPIError(message: APIKeyRunner.errorMessage(from: data, statusCode: code)))
+                return .failure(OfficialAPIError(message: localizedErrorBody(data, statusCode: code)))
             }
-            if let b = obj["balance_cents"] as? Int { balanceCents = b }
-            if let c = obj["currency"] as? String { currency = c }
+            if let b = obj["balance_questions"] as? Int { balanceQuestions = b }
             // The server's lifetime totals are authoritative; overwrite the local mirror.
+            if let tq = obj["total_questions"] as? Int { d.set(tq, forKey: "official.totalQuestions") }
             if let ti = obj["total_input_tokens"] as? Int { d.set(ti, forKey: "official.totalInputTokens") }
             if let to = obj["total_output_tokens"] as? Int { d.set(to, forKey: "official.totalOutputTokens") }
             notifyAccountChanged()
             return .success(())
         } catch {
-            return .failure(OfficialAPIError(message: "无法连接官方服务：\(error.localizedDescription)"))
+            return .failure(OfficialAPIError(message: cannotConnectMessage))
         }
     }
 
     /// Stream one capture through the official service. Mirrors the other runners' contract:
     /// `onDelta` / `onDone` fire on the main queue. Metered usage from the stream's `usage`
-    /// event updates the local balance mirror automatically.
+    /// event updates the local quota mirror automatically.
     static func run(
         imagePath: String,
         depth: String,
@@ -291,17 +339,22 @@ enum OfficialAPI {
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
     ) {
         guard let token = deviceToken else {
-            DispatchQueue.main.async { onDone(false, "官方服务尚未初始化，请在「账户与额度…」中重试。") }
+            DispatchQueue.main.async {
+                onDone(false, L10n.t("服务尚未准备好，请稍后重试。",
+                                     "サービスの準備ができていません。しばらくして再試行してください。",
+                                     "The service isn't ready yet — please try again shortly."))
+            }
             return
         }
         let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
         let task = Prompts.taskInstruction(mode: mode)
-        lastCaptureCostCents = nil
 
         Task.detached(priority: .userInitiated) {
             // File read + base64 of a multi-MB screenshot stays off the main thread.
             guard let imageData = FileManager.default.contents(atPath: imagePath) else {
-                await MainActor.run { onDone(false, "无法读取截图文件") }
+                await MainActor.run {
+                    onDone(false, L10n.t("无法读取截图文件", "スクリーンショットを読み込めません", "Couldn't read the screenshot file"))
+                }
                 return
             }
             let request = makeCaptureRequest(
@@ -315,7 +368,9 @@ enum OfficialAPI {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
                 guard let http = response as? HTTPURLResponse else {
-                    await MainActor.run { onDone(false, "无效的服务器响应") }
+                    await MainActor.run {
+                        onDone(false, L10n.t("无效的服务器响应", "サーバー応答が不正です", "Invalid server response"))
+                    }
                     return
                 }
                 if http.statusCode != 200 {
@@ -326,17 +381,19 @@ enum OfficialAPI {
                     }
                     switch http.statusCode {
                     case 402:
-                        // The server said the balance is gone — mirror that so the billing
-                        // gate blocks further official captures until a top-up.
-                        balanceCents = 0
+                        // The server said the quota is gone — mirror that so the quota gate
+                        // blocks further official captures until a top-up.
+                        balanceQuestions = 0
                         await MainActor.run {
-                            onDone(false, "余额不足，本次未产生扣费。请在齿轮菜单 →「账户与额度…」充值，或切换到自定义 API Key / 本机 CLI 模式。")
+                            onDone(false, localizedMessage(code: "insufficient_quota", fallback: ""))
                         }
                     case 401:
                         handleInvalidToken()
-                        await MainActor.run { onDone(false, invalidTokenMessage) }
+                        await MainActor.run {
+                            onDone(false, localizedMessage(code: "invalid_token", fallback: ""))
+                        }
                     default:
-                        let msg = APIKeyRunner.errorMessage(from: body, statusCode: http.statusCode) + fallbackHint
+                        let msg = localizedErrorBody(body, statusCode: http.statusCode) + fallbackHint
                         await MainActor.run { onDone(false, msg) }
                     }
                     return
@@ -346,23 +403,23 @@ enum OfficialAPI {
                     switch parseStreamLine(line) {
                     case .delta(let text):
                         await MainActor.run { onDelta(text) }
-                    case .usage(let input, let output, let cost, let balanceAfter):
+                    case .usage(let input, let output, let charged, let balanceAfter):
                         recordUsage(inputTokens: input, outputTokens: output,
-                                    costCents: cost, balanceCentsAfter: balanceAfter)
-                    case .error(let message):
-                        streamError = message
+                                    questionsCharged: charged, balanceQuestionsAfter: balanceAfter)
+                    case .error(let message, let code):
+                        streamError = localizedMessage(code: code, fallback: message)
                     case .done, .none:
                         break
                     }
                     if streamError != nil { break }
                 }
                 if let streamError {
-                    await MainActor.run { onDone(false, "官方服务返回错误：\(streamError)" + fallbackHint) }
+                    await MainActor.run { onDone(false, streamError + fallbackHint) }
                 } else {
                     await MainActor.run { onDone(true, "") }
                 }
             } catch {
-                await MainActor.run { onDone(false, "网络请求失败：\(error.localizedDescription)") }
+                await MainActor.run { onDone(false, cannotConnectMessage) }
             }
         }
     }

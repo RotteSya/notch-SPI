@@ -6,8 +6,8 @@ import type { FastifyInstance } from 'fastify';
 // config module) is imported. Env is read once at config import, so this must precede it.
 process.env.DB_PATH = ':memory:';
 process.env.OFFICIAL_PROVIDER = 'mock';
-process.env.CURRENCY = 'CNY';
-process.env.TRIAL_CREDIT_CENTS = '3';
+process.env.TRIAL_QUESTIONS = '2';
+process.env.PACKS_JSON = JSON.stringify([{ id: 'pack100', questions: 100, amount_cents: 900 }]);
 process.env.ALLOW_STUB_TOPUP = '1';
 process.env.LOG_LEVEL = 'silent';
 
@@ -32,14 +32,29 @@ async function register(): Promise<string> {
   const res = await fetch(`${base}/v1/devices`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ platform: 'macos', app_version: '1.7' }),
+    body: JSON.stringify({ platform: 'macos', app_version: '2.0' }),
   });
   assert.equal(res.status, 200);
-  const body = (await res.json()) as { device_token: string; balance_cents: number; currency: string };
+  const body = (await res.json()) as { device_token: string; balance_questions: number };
   assert.match(body.device_token, /^dev_/);
-  assert.equal(body.balance_cents, 3);
-  assert.equal(body.currency, 'CNY');
+  assert.equal(body.balance_questions, 2);
   return body.device_token;
+}
+
+async function account(token: string): Promise<{
+  balance_questions: number;
+  total_questions: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+}> {
+  const res = await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(res.status, 200);
+  return (await res.json()) as {
+    balance_questions: number;
+    total_questions: number;
+    total_input_tokens: number;
+    total_output_tokens: number;
+  };
 }
 
 async function capture(token: string, image = 'QUJDREVG'): Promise<{ status: number; text: string }> {
@@ -51,16 +66,17 @@ async function capture(token: string, image = 'QUJDREVG'): Promise<{ status: num
   return { status: res.status, text: await res.text() };
 }
 
-test('missing / invalid token is 401 JSON', async () => {
+test('missing / invalid token is 401 JSON with an error code', async () => {
   const noAuth = await fetch(`${base}/v1/account`);
   assert.equal(noAuth.status, 401);
   const bad = await fetch(`${base}/v1/account`, { headers: { authorization: 'Bearer dev_nope' } });
   assert.equal(bad.status, 401);
-  const body = (await bad.json()) as { error: { message: string } };
+  const body = (await bad.json()) as { error: { message: string; code: string } };
   assert.ok(body.error.message.length > 0);
+  assert.equal(body.error.code, 'invalid_token');
 });
 
-test('capture streams deltas then exactly one usage event then [DONE]', async () => {
+test('capture streams deltas then exactly one usage event then [DONE], charging 1 question', async () => {
   const token = await register();
   const { status, text } = await capture(token);
   assert.equal(status, 200);
@@ -68,13 +84,13 @@ test('capture streams deltas then exactly one usage event then [DONE]', async ()
   assert.ok(deltas >= 1, `expected delta events, got ${deltas}`);
   const usages = [...text.matchAll(/"type":"usage"/g)].length;
   assert.equal(usages, 1, 'exactly one usage event');
+  assert.match(text, /"questions_charged":1/);
+  assert.match(text, /"balance_questions":1/); // 2 trial - 1 charged
   assert.match(text, /data: \[DONE\]/);
   // Account reflects the charge.
-  const acct = (await (await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
-    balance_cents: number;
-    total_output_tokens: number;
-  };
-  assert.ok(acct.balance_cents < 3);
+  const acct = await account(token);
+  assert.equal(acct.balance_questions, 1);
+  assert.equal(acct.total_questions, 1);
   assert.ok(acct.total_output_tokens > 0);
 });
 
@@ -104,70 +120,64 @@ test('missing system or task is 400 (contract-required fields)', async () => {
   assert.equal(missingTask.status, 400);
 });
 
-test('balance drains to <=0 then the gate returns HTTP 402', async () => {
+test('quota drains to 0 then the gate returns HTTP 402 insufficient_quota', async () => {
   const token = await register();
-  let last402 = false;
-  for (let i = 0; i < 10; i++) {
-    const acct = (await (await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
-      balance_cents: number;
-    };
-    if (acct.balance_cents <= 0) {
-      const { status, text } = await capture(token);
-      assert.equal(status, 402);
-      const body = JSON.parse(text) as { error: { message: string } };
-      assert.ok(body.error.message.includes('余额'));
-      last402 = true;
-      break;
-    }
-    await capture(token);
-  }
-  assert.ok(last402, 'expected a 402 once balance hit zero');
+  assert.equal((await capture(token)).status, 200); // 2 → 1
+  assert.equal((await capture(token)).status, 200); // 1 → 0
+  const { status, text } = await capture(token);
+  assert.equal(status, 402);
+  const body = JSON.parse(text) as { error: { message: string; code: string } };
+  assert.equal(body.error.code, 'insufficient_quota');
+  assert.ok(body.error.message.length > 0);
 });
 
-test('stub top-up credits the account and restores capture', async () => {
+test('stub top-up credits a pack and restores capture', async () => {
   const token = await register();
-  // Drain to zero.
-  for (let i = 0; i < 10; i++) {
-    const acct = (await (await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } })).json()) as {
-      balance_cents: number;
-    };
-    if (acct.balance_cents <= 0) break;
-    await capture(token);
-  }
+  await capture(token);
+  await capture(token);
   assert.equal((await capture(token)).status, 402);
-  // Top up.
+  // Buy the 100-question pack.
   const topup = await fetch(`${base}/topup/stub-complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ device_token: token, amount_cents: 500 }),
+    body: JSON.stringify({ device_token: token, pack_id: 'pack100' }),
   });
   assert.equal(topup.status, 200);
-  const tb = (await topup.json()) as { balance_cents: number };
-  assert.ok(tb.balance_cents >= 400);
+  const tb = (await topup.json()) as { balance_questions: number };
+  assert.equal(tb.balance_questions, 100); // 0 + 100
   // Capture works again.
   assert.equal((await capture(token)).status, 200);
+  assert.equal((await account(token)).balance_questions, 99);
 });
 
-test('stub top-up rejects an invalid amount and an unknown token', async () => {
+test('stub top-up rejects an unknown pack and an unknown token', async () => {
   const token = await register();
   const bad = await fetch(`${base}/topup/stub-complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ device_token: token, amount_cents: -1 }),
+    body: JSON.stringify({ device_token: token, pack_id: 'nope' }),
   });
   assert.equal(bad.status, 400);
   const unknown = await fetch(`${base}/topup/stub-complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ device_token: 'dev_nope', amount_cents: 500 }),
+    body: JSON.stringify({ device_token: 'dev_nope', pack_id: 'pack100' }),
   });
   assert.equal(unknown.status, 401);
 });
 
-test('top-up page renders HTML for a device', async () => {
+test('top-up page renders localized HTML with the pack catalog', async () => {
   const token = await register();
-  const res = await fetch(`${base}/topup?device=${token}`);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type') ?? '', /text\/html/);
-  assert.match(await res.text(), /充值/);
+  const zh = await fetch(`${base}/topup?device=${token}`);
+  assert.equal(zh.status, 200);
+  assert.match(zh.headers.get('content-type') ?? '', /text\/html/);
+  const zhText = await zh.text();
+  assert.match(zhText, /充值题数/);
+  assert.match(zhText, /100 题/);
+  assert.match(zhText, /¥9/);
+
+  const ja = await (await fetch(`${base}/topup?device=${token}&lang=ja`)).text();
+  assert.match(ja, /チャージ/);
+  const en = await (await fetch(`${base}/topup?device=${token}&lang=en`)).text();
+  assert.match(en, /Top Up Questions/);
 });

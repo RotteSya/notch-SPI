@@ -39,13 +39,17 @@ test('stub top-up endpoint is 404 when ALLOW_STUB_TOPUP is not set', async () =>
   const res = await fetch(`${base}/topup/stub-complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ device_token: reg.device_token, amount_cents: 500 }),
+    body: JSON.stringify({ device_token: reg.device_token, pack_id: 'pack100' }),
   });
   assert.equal(res.status, 404);
 });
 
-test('the top-up page still renders (only the credit endpoint is gated)', async () => {
+test('the top-up page still renders with buy buttons disabled (only the credit endpoint is gated)', async () => {
   const res = await fetch(`${base}/topup?device=dev_abc123`);
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /充值/);
+  const html = await res.text();
+  assert.match(html, /充值/);
+  // The stub is off, so no live buy button may reach the credit endpoint.
+  assert.ok(!html.includes('data-pack='), 'no active pack buttons when the stub is disabled');
+  assert.match(html, /disabled/);
 });

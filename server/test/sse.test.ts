@@ -7,16 +7,16 @@ test('sseFrame serializes one event as a data: frame', () => {
   assert.equal(sseFrame({ type: 'delta', text: 'hi' }), 'data: {"type":"delta","text":"hi"}\n\n');
 });
 
-test('usage frame carries all billing fields', () => {
+test('usage frame carries all quota fields', () => {
   const frame = sseFrame({
     type: 'usage',
     input_tokens: 10,
     output_tokens: 5,
-    cost_cents: 1,
-    balance_cents: 99,
+    questions_charged: 1,
+    balance_questions: 179,
   });
-  assert.match(frame, /"balance_cents":99/);
-  assert.match(frame, /"cost_cents":1/);
+  assert.match(frame, /"balance_questions":179/);
+  assert.match(frame, /"questions_charged":1/);
 });
 
 test('DONE sentinel matches the client contract', () => {

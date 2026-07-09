@@ -1,66 +1,233 @@
-import type { Config } from './config.ts';
+import type { QuestionPack } from './pricing.ts';
 
 // The top-up seam. A real integration (Stripe / Alipay / WeChat) implements `renderTopUpPage`
 // to show a payment UI and, on a verified webhook, calls `store.credit(...)`. The bundled stub
-// renders a dev-only page whose button hits POST /topup/stub-complete to credit the account
-// directly — enough to exercise the client's balance-refresh flow without a real gateway.
+// renders a page whose pack buttons hit POST /topup/stub-complete to credit the account
+// directly — enough to exercise the client's full purchase → refresh flow without a gateway.
 //
 // Swapping providers is intentionally a one-file change: implement this interface and select it
 // via PAYMENT_PROVIDER. Money stays in integer cents throughout.
 
+export type PageLang = 'zh' | 'ja' | 'en';
+
+/** Clamp an untrusted ?lang= value to a supported page language (default zh). */
+export function normalizeLang(raw: string): PageLang {
+  const v = raw.toLowerCase();
+  if (v.startsWith('ja')) return 'ja';
+  if (v.startsWith('en')) return 'en';
+  return 'zh';
+}
+
+export interface TopUpPageInput {
+  deviceToken: string;
+  packs: readonly QuestionPack[];
+  currency: string;
+  baseURL: string;
+  lang: PageLang;
+  /** true only when the dev stub endpoint is live; otherwise buttons render disabled. */
+  stubEnabled: boolean;
+}
+
 export interface PaymentProvider {
   readonly name: string;
   /** HTML for GET /topup?device=<token>. */
-  renderTopUpPage(input: { deviceToken: string; currency: string; baseURL: string }): string;
+  renderTopUpPage(input: TopUpPageInput): string;
+}
+
+interface PageStrings {
+  title: string;
+  subtitle: string;
+  perQuestion: string;
+  questionsUnit: (n: number) => string;
+  popular: string;
+  buy: string;
+  unavailable: string;
+  unavailableNote: string;
+  stubWarn: string;
+  processing: string;
+  successPrefix: string;
+  successSuffix: string;
+  failPrefix: string;
+  networkErr: string;
+  device: string;
+  security: string;
+}
+
+const STRINGS: Record<PageLang, PageStrings> = {
+  zh: {
+    title: '充值题数',
+    subtitle: '每按一次快捷键答一题，消耗 1 题额度。失败不扣题。',
+    perQuestion: '每题约',
+    questionsUnit: (n) => `${n} 题`,
+    popular: '最受欢迎',
+    buy: '购买',
+    unavailable: '暂未开放',
+    unavailableNote: '支付渠道即将开通，敬请期待。',
+    stubWarn: '⚠️ 开发用支付桩：点击即直接入账，不涉及真实支付。生产环境请接入 Stripe / 支付宝 / 微信。',
+    processing: '处理中…',
+    successPrefix: '已到账！当前剩余 ',
+    successSuffix: ' 题。回到 App 即可继续使用。',
+    failPrefix: '失败：',
+    networkErr: '网络错误：',
+    device: '设备',
+    security: '题数只与本设备绑定，无需注册账号。',
+  },
+  ja: {
+    title: '質問数をチャージ',
+    subtitle: 'ショートカット 1 回につき 1 問分を消費します。失敗時は消費されません。',
+    perQuestion: '1問あたり約',
+    questionsUnit: (n) => `${n}問`,
+    popular: '一番人気',
+    buy: '購入',
+    unavailable: '近日公開',
+    unavailableNote: '決済手段は近日公開予定です。',
+    stubWarn: '⚠️ 開発用スタブ：クリックすると即時チャージされます（実際の決済なし）。',
+    processing: '処理中…',
+    successPrefix: 'チャージ完了！残り ',
+    successSuffix: ' 問。アプリに戻ってお使いください。',
+    failPrefix: '失敗：',
+    networkErr: 'ネットワークエラー：',
+    device: 'デバイス',
+    security: '質問数はこのデバイスにのみ紐づきます。アカウント登録は不要です。',
+  },
+  en: {
+    title: 'Top Up Questions',
+    subtitle: 'Each hotkey press answers one question and costs 1 credit. Failures are never charged.',
+    perQuestion: 'about',
+    questionsUnit: (n) => `${n} questions`,
+    popular: 'Most popular',
+    buy: 'Buy',
+    unavailable: 'Coming soon',
+    unavailableNote: 'Payment methods are coming soon.',
+    stubWarn: '⚠️ Development stub: clicking credits instantly, no real payment involved.',
+    processing: 'Processing…',
+    successPrefix: 'Done! You now have ',
+    successSuffix: ' questions. Head back to the app.',
+    failPrefix: 'Failed: ',
+    networkErr: 'Network error: ',
+    device: 'Device',
+    security: 'Credits are tied to this device only — no account needed.',
+  },
+};
+
+function formatMoney(cents: number, currency: string): string {
+  const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency === 'JPY' ? '¥' : currency + ' ';
+  if (currency === 'JPY') return `${symbol}${cents}`; // JPY has no minor unit
+  const value = cents / 100;
+  return `${symbol}${Number.isInteger(value) ? value : value.toFixed(2)}`;
 }
 
 export class StubPaymentProvider implements PaymentProvider {
   readonly name = 'stub';
 
-  renderTopUpPage(input: { deviceToken: string; currency: string; baseURL: string }): string {
-    const token = escapeHtml(input.deviceToken);
-    const presets = [500, 1000, 5000];
-    const buttons = presets
-      .map(
-        (c) =>
-          `<button class="amt" data-cents="${c}">${(c / 100).toFixed(2)} ${escapeHtml(
-            input.currency,
-          )}</button>`,
-      )
-      .join('');
+  renderTopUpPage(input: TopUpPageInput): string {
+    const s = STRINGS[input.lang];
+    const token = input.deviceToken;
+    const popularIdx = input.packs.length >= 2 ? 1 : 0;
+
+    const cards = input.packs
+      .map((p, i) => {
+        const per = p.amountCents / p.questions;
+        const perStr = `${s.perQuestion} ${formatMoney(Math.round(per), input.currency)}`;
+        const badge = i === popularIdx ? `<div class="badge">${s.popular}</div>` : '';
+        const btn = input.stubEnabled
+          ? `<button class="buy" data-pack="${escapeHtml(p.id)}">${s.buy}</button>`
+          : `<button class="buy" disabled title="${s.unavailableNote}">${s.unavailable}</button>`;
+        return `<div class="card${i === popularIdx ? ' popular' : ''}">
+  ${badge}
+  <div class="q">${s.questionsUnit(p.questions)}</div>
+  <div class="price">${formatMoney(p.amountCents, input.currency)}</div>
+  <div class="per">${perStr}</div>
+  ${btn}
+</div>`;
+      })
+      .join('\n');
+
+    const warn = input.stubEnabled ? `<p class="warn">${s.stubWarn}</p>` : '';
+    const deviceLine = token
+      ? `<p class="hint">${s.device}: <code>${escapeHtml(token.slice(0, 12))}…</code> · ${s.security}</p>`
+      : '';
+
     return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
+<html lang="${input.lang === 'zh' ? 'zh-CN' : input.lang}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NotchSPI 充值（开发桩）</title>
+<title>NotchSPI · ${s.title}</title>
 <style>
-  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 460px; margin: 40px auto; padding: 0 20px; color: #1d1d1f; }
-  h1 { font-size: 20px; } .hint { color: #6e6e73; font-size: 13px; }
-  .amt { font-size: 15px; padding: 10px 16px; margin: 6px 8px 6px 0; border: 1px solid #d2d2d7; border-radius: 8px; background: #fff; cursor: pointer; }
-  .amt:hover { border-color: #0071e3; } #status { margin-top: 16px; min-height: 20px; }
-  .warn { background: #fff8e6; border: 1px solid #ffd666; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  :root { --accent: #7aa0ff; --accent-hi: #a3bdff; }
+  * { box-sizing: border-box; }
+  body {
+    font: 15px/1.6 -apple-system, "Hiragino Sans", "PingFang SC", system-ui, sans-serif;
+    margin: 0; min-height: 100vh; color: #eef1f8;
+    background: radial-gradient(1200px 600px at 50% -10%, #1b2340 0%, #0b0e1a 55%, #05060c 100%);
+    display: flex; align-items: center; justify-content: center; padding: 48px 20px;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px; letter-spacing: .01em; }
+  .sub { color: #9aa3bd; font-size: 14px; margin: 0 0 28px; }
+  .packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+  .card {
+    position: relative; border: 1px solid rgba(255,255,255,.10); border-radius: 16px;
+    padding: 22px 18px 18px; background: rgba(255,255,255,.04);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .card:hover { transform: translateY(-3px); border-color: rgba(122,160,255,.45);
+    box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+  .card.popular { border-color: rgba(122,160,255,.55); background: rgba(122,160,255,.07); }
+  .badge {
+    position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+    color: #0b0e1a; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .q { font-size: 22px; font-weight: 700; }
+  .price { font-size: 30px; font-weight: 800; margin: 8px 0 2px; letter-spacing: -.01em; }
+  .per { color: #8a93ad; font-size: 12px; margin-bottom: 16px; }
+  .buy {
+    width: 100%; font-size: 15px; font-weight: 600; padding: 10px 0; border-radius: 10px;
+    border: none; cursor: pointer; color: #0b0e1a;
+    background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+    transition: filter .15s ease, transform .1s ease;
+  }
+  .buy:hover:not(:disabled) { filter: brightness(1.08); }
+  .buy:active:not(:disabled) { transform: scale(.98); }
+  .buy:disabled { background: rgba(255,255,255,.10); color: #8a93ad; cursor: default; }
+  .warn { background: rgba(255,196,0,.08); border: 1px solid rgba(255,196,0,.35);
+    border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #ffd666; margin-top: 24px; }
+  .hint { color: #626b85; font-size: 12px; margin-top: 20px; }
+  code { color: #9aa3bd; }
+  #status { margin-top: 18px; min-height: 22px; font-size: 14px; color: var(--accent-hi); }
 </style></head>
 <body>
-  <h1>账户充值</h1>
-  <p class="warn">⚠️ 这是<strong>开发用支付桩</strong>，点击即直接入账，不涉及真实支付。生产环境请接入 Stripe / 支付宝 / 微信后替换本页。</p>
-  <p class="hint">设备：<code>${token.slice(0, 12)}…</code></p>
-  <div>${buttons}</div>
+<main>
+  <h1>${s.title}</h1>
+  <p class="sub">${s.subtitle}</p>
+  <div class="packs">${cards}</div>
   <div id="status"></div>
+  ${warn}
+  ${deviceLine}
+</main>
 <script>
-  const token = ${jsStringLiteral(input.deviceToken)};
+  const token = ${jsStringLiteral(token)};
   const statusEl = document.getElementById('status');
-  for (const btn of document.querySelectorAll('.amt')) {
+  const L = {
+    processing: ${jsStringLiteral(s.processing)},
+    okPre: ${jsStringLiteral(s.successPrefix)},
+    okSuf: ${jsStringLiteral(s.successSuffix)},
+    fail: ${jsStringLiteral(s.failPrefix)},
+    net: ${jsStringLiteral(s.networkErr)},
+  };
+  for (const btn of document.querySelectorAll('.buy[data-pack]')) {
     btn.addEventListener('click', async () => {
-      const cents = Number(btn.dataset.cents);
-      statusEl.textContent = '处理中…';
+      statusEl.textContent = L.processing;
       try {
         const r = await fetch('/topup/stub-complete', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ device_token: token, amount_cents: cents }),
+          body: JSON.stringify({ device_token: token, pack_id: btn.dataset.pack }),
         });
         const j = await r.json();
-        if (r.ok) { statusEl.textContent = '充值成功，新余额 ' + (j.balance_cents/100).toFixed(2) + ' ' + j.currency + '。回到 App 点「刷新」即可看到。'; }
-        else { statusEl.textContent = '失败：' + (j.error?.message || r.status); }
-      } catch (e) { statusEl.textContent = '网络错误：' + e; }
+        if (r.ok) { statusEl.textContent = L.okPre + j.balance_questions + L.okSuf; }
+        else { statusEl.textContent = L.fail + (j.error?.message || r.status); }
+      } catch (e) { statusEl.textContent = L.net + e; }
     });
   }
 </script>
@@ -68,7 +235,7 @@ export class StubPaymentProvider implements PaymentProvider {
   }
 }
 
-export function makePaymentProvider(_config: Config): PaymentProvider {
+export function makePaymentProvider(_config: unknown): PaymentProvider {
   // Only the stub ships in this repo. Real providers register here.
   return new StubPaymentProvider();
 }

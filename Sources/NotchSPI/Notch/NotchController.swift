@@ -521,17 +521,17 @@ final class NotchController: NSObject {
             // default for fresh installs; custom key and CLI behave exactly as before.
             let channel = self.currentChannel()
 
-            // 计费鉴权拦截：BillingGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
-            // 不读取任何账户或余额状态（见 BillingGate.preflight 的第一行守卫）。
+            // 额度鉴权拦截：QuotaGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
+            // 不读取任何账户或额度状态（见 QuotaGate.preflight 的第一行守卫）。
             if case .official = channel {
                 if OfficialAPI.deviceToken == nil {
-                    self.model.statusText = "正在初始化官方服务…"
+                    self.model.statusText = L10n.t("正在准备服务…", "サービスを準備中…", "Getting things ready…")
                     _ = await OfficialAPI.registerIfNeeded()
                 }
-                let verdict = BillingGate.preflight(
+                let verdict = QuotaGate.preflight(
                     channel: channel,
                     hasDeviceToken: OfficialAPI.deviceToken != nil,
-                    balanceCents: OfficialAPI.balanceCents
+                    balanceQuestions: OfficialAPI.balanceQuestions
                 )
                 if case .deny(let reason) = verdict {
                     self.finishError(reason)
@@ -602,12 +602,15 @@ final class NotchController: NSObject {
                 } else {
                     self.model.status = .idle
                 }
-                self.model.statusText = ok ? "完成" : "出错"
+                self.model.statusText = ok ? L10n.statusDone : L10n.statusError
                 if case .official = channel {
-                    if ok, let cost = OfficialAPI.lastCaptureCostCents {
-                        // 让用户对"按量计费"心里有数：完成时直接显示本次消耗。
-                        self.model.statusText = "完成 · 本次 \(OfficialAPI.formatBalance(cents: cost, currency: OfficialAPI.currency))"
-                    } else if !ok, let balance = OfficialAPI.balanceCents, balance <= 0 {
+                    if ok, let balance = OfficialAPI.balanceQuestions {
+                        // 让用户对额度心里有数：完成时直接显示剩余题数。
+                        self.model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(balance)
+                        if balance <= OfficialAPI.lowQuotaThreshold {
+                            self.model.statusText += L10n.t(" · 额度即将用完", " · 残りわずか", " · running low")
+                        }
+                    } else if !ok, let balance = OfficialAPI.balanceQuestions, balance <= 0 {
                         // 截屏中途遇到 402：直接打开账户面板引导充值，而不是让用户自己找入口。
                         self.openAccountWindow()
                     }

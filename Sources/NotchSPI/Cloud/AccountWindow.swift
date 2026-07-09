@@ -112,16 +112,15 @@ final class AccountViewController: NSViewController {
     /// Re-render everything from the local account mirror.
     private func reload() {
         let registered = OfficialAPI.deviceToken != nil
-        balanceLabel.stringValue = OfficialAPI.formatBalance(
-            cents: OfficialAPI.balanceCents, currency: OfficialAPI.currency)
-        usageLabel.stringValue = "累计用量：输入 \(OfficialAPI.totalInputTokens) tokens · 输出 \(OfficialAPI.totalOutputTokens) tokens"
+        balanceLabel.stringValue = OfficialAPI.balanceQuestions.map { L10n.questions($0) } ?? "—"
+        usageLabel.stringValue = "累计已答 \(OfficialAPI.totalQuestions) 题"
         deviceLabel.stringValue = registered
             ? "设备 ID：\(Self.truncatedToken(OfficialAPI.deviceToken ?? ""))"
             : "设备尚未注册 — 点击下方按钮领取试用额度"
         let mode = Settings.shared.serviceMode
         modeLabel.stringValue = mode == ServiceMode.official
-            ? "当前使用官方服务，每次截屏按实际 Token 用量从余额扣费。"
-            : "当前使用「\(Settings.label(forServiceMode: mode))」，不产生官方服务扣费。可在齿轮菜单切回官方服务。"
+            ? "当前使用官方服务，每答一题消耗 1 题额度。"
+            : "当前使用「\(Settings.label(forServiceMode: mode))」，不消耗官方额度。可在齿轮菜单切回官方服务。"
         initButton.isHidden = registered
         // Re-enable whenever the button is shown again — after a 401 clears the token, the
         // button reappears and must be clickable (it was left disabled by a prior initTapped).
@@ -148,7 +147,8 @@ final class AccountViewController: NSViewController {
 
     @objc private func topUpTapped() {
         guard let url = OfficialAPI.topUpURL(
-            baseURL: OfficialAPI.baseURL, deviceToken: OfficialAPI.deviceToken) else { return }
+            baseURL: OfficialAPI.baseURL, deviceToken: OfficialAPI.deviceToken,
+            lang: OfficialAPI.topUpLang) else { return }
         NSWorkspace.shared.open(url)
         statusLabel.stringValue = "已在浏览器打开充值页面，完成后点「刷新」同步余额。"
         statusLabel.textColor = .secondaryLabelColor
