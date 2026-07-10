@@ -26,7 +26,8 @@ test('rendered top-up page never contains a raw </script> from a hostile token',
     currency: 'CNY',
     baseURL: 'http://localhost',
     lang: 'zh',
-    stubEnabled: true,
+    mode: 'stub',
+    banner: null,
   });
   const scriptOpen = page.indexOf('<script>');
   const body = page.slice(scriptOpen + '<script>'.length);

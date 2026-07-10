@@ -9,7 +9,7 @@ test('default catalog parses to three ascending packs', () => {
   assert.ok(packs.every((p) => p.amountCents > 0));
   // Bigger packs are better value (cents per question strictly decreasing).
   const per = packs.map((p) => p.amountCents / p.questions);
-  assert.ok(per[0] > per[1] && per[1] > per[2]);
+  assert.ok(per[0]! > per[1]! && per[1]! > per[2]!);
 });
 
 test('a valid custom catalog is honored', () => {

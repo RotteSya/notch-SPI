@@ -16,7 +16,7 @@ let app: FastifyInstance;
 let base: string;
 
 before(async () => {
-  app = buildApp();
+  app = await buildApp();
   await app.listen({ host: '127.0.0.1', port: 0 });
   const addr = app.server.address();
   if (addr === null || typeof addr === 'string') throw new Error('no address');

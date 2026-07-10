@@ -1,14 +1,16 @@
 import type { QuestionPack } from './pricing.ts';
 
-// The top-up seam. A real integration (Stripe / Alipay / WeChat) implements `renderTopUpPage`
-// to show a payment UI and, on a verified webhook, calls `store.credit(...)`. The bundled stub
-// renders a page whose pack buttons hit POST /topup/stub-complete to credit the account
-// directly — enough to exercise the client's full purchase → refresh flow without a gateway.
-//
-// Swapping providers is intentionally a one-file change: implement this interface and select it
-// via PAYMENT_PROVIDER. Money stays in integer cents throughout.
+// The top-up seam. Providers implement `renderTopUpPage`; the shared renderer supports three
+// button modes:
+//   'stripe'   — buttons POST /topup/checkout and redirect to Stripe's hosted Checkout page
+//                (see stripe.ts; the verified webhook credits the questions)
+//   'stub'     — dev-only: buttons hit POST /topup/stub-complete and credit instantly
+//   'disabled' — no live payment path configured; buttons render disabled
+// Money stays in integer minor units (cents/分; JPY has none) throughout.
 
 export type PageLang = 'zh' | 'ja' | 'en';
+export type PageMode = 'stripe' | 'stub' | 'disabled';
+export type PageBanner = 'paid' | 'canceled' | null;
 
 /** Clamp an untrusted ?lang= value to a supported page language (default zh). */
 export function normalizeLang(raw: string): PageLang {
@@ -24,8 +26,9 @@ export interface TopUpPageInput {
   currency: string;
   baseURL: string;
   lang: PageLang;
-  /** true only when the dev stub endpoint is live; otherwise buttons render disabled. */
-  stubEnabled: boolean;
+  mode: PageMode;
+  /** Post-payment return state (?paid=1 / ?canceled=1) rendered as a banner. */
+  banner: PageBanner;
 }
 
 export interface PaymentProvider {
@@ -51,6 +54,8 @@ interface PageStrings {
   networkErr: string;
   device: string;
   security: string;
+  paidBanner: string;
+  canceledBanner: string;
 }
 
 const STRINGS: Record<PageLang, PageStrings> = {
@@ -63,14 +68,16 @@ const STRINGS: Record<PageLang, PageStrings> = {
     buy: '购买',
     unavailable: '暂未开放',
     unavailableNote: '支付渠道即将开通，敬请期待。',
-    stubWarn: '⚠️ 开发用支付桩：点击即直接入账，不涉及真实支付。生产环境请接入 Stripe / 支付宝 / 微信。',
+    stubWarn: '⚠️ 开发用支付桩：点击即直接入账，不涉及真实支付。生产环境请配置 Stripe。',
     processing: '处理中…',
     successPrefix: '已到账！当前剩余 ',
     successSuffix: ' 题。回到 App 即可继续使用。',
     failPrefix: '失败：',
     networkErr: '网络错误：',
     device: '设备',
-    security: '题数只与本设备绑定，无需注册账号。',
+    security: '题数只与本设备绑定，无需注册账号。支付由 Stripe 安全处理。',
+    paidBanner: '🎉 支付成功！题数将在几秒内到账 — 回到 App 点「刷新」即可看到。',
+    canceledBanner: '支付已取消，未产生任何费用。',
   },
   ja: {
     title: '質問数をチャージ',
@@ -88,7 +95,9 @@ const STRINGS: Record<PageLang, PageStrings> = {
     failPrefix: '失敗：',
     networkErr: 'ネットワークエラー：',
     device: 'デバイス',
-    security: '質問数はこのデバイスにのみ紐づきます。アカウント登録は不要です。',
+    security: '質問数はこのデバイスにのみ紐づきます。アカウント登録は不要。決済は Stripe が安全に処理します。',
+    paidBanner: '🎉 お支払いが完了しました！数秒でチャージされます — アプリに戻って「更新」を押してください。',
+    canceledBanner: 'お支払いはキャンセルされました。料金は発生していません。',
   },
   en: {
     title: 'Top Up Questions',
@@ -106,49 +115,97 @@ const STRINGS: Record<PageLang, PageStrings> = {
     failPrefix: 'Failed: ',
     networkErr: 'Network error: ',
     device: 'Device',
-    security: 'Credits are tied to this device only — no account needed.',
+    security: 'Credits are tied to this device only — no account needed. Payments are handled securely by Stripe.',
+    paidBanner: '🎉 Payment complete! Your questions arrive within seconds — hit Refresh in the app.',
+    canceledBanner: 'Payment canceled — nothing was charged.',
   },
 };
 
-function formatMoney(cents: number, currency: string): string {
+export function formatMoney(cents: number, currency: string): string {
   const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency === 'JPY' ? '¥' : currency + ' ';
   if (currency === 'JPY') return `${symbol}${cents}`; // JPY has no minor unit
   const value = cents / 100;
   return `${symbol}${Number.isInteger(value) ? value : value.toFixed(2)}`;
 }
 
-export class StubPaymentProvider implements PaymentProvider {
-  readonly name = 'stub';
+/** Localized product name for a pack, e.g. "NotchSPI · 300 题" (shown on Stripe Checkout too). */
+export function packDisplayName(pack: QuestionPack, lang: PageLang): string {
+  return `NotchSPI · ${STRINGS[lang].questionsUnit(pack.questions)}`;
+}
 
-  renderTopUpPage(input: TopUpPageInput): string {
-    const s = STRINGS[input.lang];
-    const token = input.deviceToken;
-    const popularIdx = input.packs.length >= 2 ? 1 : 0;
+/**
+ * The shared top-up page. Buttons behave per `mode`; the inline script wires either the
+ * Stripe checkout redirect or the dev stub, never both.
+ */
+export function renderTopUpPage(input: TopUpPageInput): string {
+  const s = STRINGS[input.lang];
+  const token = input.deviceToken;
+  const popularIdx = input.packs.length >= 2 ? 1 : 0;
+  const live = input.mode !== 'disabled';
 
-    const cards = input.packs
-      .map((p, i) => {
-        const per = p.amountCents / p.questions;
-        const perStr = `${s.perQuestion} ${formatMoney(Math.round(per), input.currency)}`;
-        const badge = i === popularIdx ? `<div class="badge">${s.popular}</div>` : '';
-        const btn = input.stubEnabled
-          ? `<button class="buy" data-pack="${escapeHtml(p.id)}">${s.buy}</button>`
-          : `<button class="buy" disabled title="${s.unavailableNote}">${s.unavailable}</button>`;
-        return `<div class="card${i === popularIdx ? ' popular' : ''}">
+  const cards = input.packs
+    .map((p, i) => {
+      const per = p.amountCents / p.questions;
+      const perStr = `${s.perQuestion} ${formatMoney(Math.round(per), input.currency)}`;
+      const badge = i === popularIdx ? `<div class="badge">${s.popular}</div>` : '';
+      const btn = live
+        ? `<button class="buy" data-pack="${escapeHtml(p.id)}">${s.buy}</button>`
+        : `<button class="buy" disabled title="${s.unavailableNote}">${s.unavailable}</button>`;
+      return `<div class="card${i === popularIdx ? ' popular' : ''}">
   ${badge}
   <div class="q">${s.questionsUnit(p.questions)}</div>
   <div class="price">${formatMoney(p.amountCents, input.currency)}</div>
   <div class="per">${perStr}</div>
   ${btn}
 </div>`;
-      })
-      .join('\n');
+    })
+    .join('\n');
 
-    const warn = input.stubEnabled ? `<p class="warn">${s.stubWarn}</p>` : '';
-    const deviceLine = token
-      ? `<p class="hint">${s.device}: <code>${escapeHtml(token.slice(0, 12))}…</code> · ${s.security}</p>`
+  const banner = input.banner === 'paid'
+    ? `<p class="banner ok">${s.paidBanner}</p>`
+    : input.banner === 'canceled'
+      ? `<p class="banner">${s.canceledBanner}</p>`
       : '';
+  const warn = input.mode === 'stub' ? `<p class="warn">${s.stubWarn}</p>` : '';
+  const deviceLine = token
+    ? `<p class="hint">${s.device}: <code>${escapeHtml(token.slice(0, 12))}…</code> · ${s.security}</p>`
+    : '';
 
-    return `<!doctype html>
+  const stripeJS = `
+  for (const btn of document.querySelectorAll('.buy[data-pack]')) {
+    btn.addEventListener('click', async () => {
+      statusEl.textContent = L.processing;
+      btn.disabled = true;
+      try {
+        const r = await fetch('/topup/checkout', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ device_token: token, pack_id: btn.dataset.pack, lang: LANG }),
+        });
+        const j = await r.json();
+        if (r.ok && j.url) { location.href = j.url; return; }
+        statusEl.textContent = L.fail + (j.error?.message || r.status);
+      } catch (e) { statusEl.textContent = L.net + e; }
+      btn.disabled = false;
+    });
+  }`;
+
+  const stubJS = `
+  for (const btn of document.querySelectorAll('.buy[data-pack]')) {
+    btn.addEventListener('click', async () => {
+      statusEl.textContent = L.processing;
+      try {
+        const r = await fetch('/topup/stub-complete', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ device_token: token, pack_id: btn.dataset.pack }),
+        });
+        const j = await r.json();
+        if (r.ok) { statusEl.textContent = L.okPre + j.balance_questions + L.okSuf; }
+        else { statusEl.textContent = L.fail + (j.error?.message || r.status); }
+      } catch (e) { statusEl.textContent = L.net + e; }
+    });
+  }`;
+
+  return `<!doctype html>
 <html lang="${input.lang === 'zh' ? 'zh-CN' : input.lang}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NotchSPI · ${s.title}</title>
@@ -164,6 +221,9 @@ export class StubPaymentProvider implements PaymentProvider {
   main { width: 100%; max-width: 720px; }
   h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px; letter-spacing: .01em; }
   .sub { color: #9aa3bd; font-size: 14px; margin: 0 0 28px; }
+  .banner { border-radius: 10px; padding: 12px 16px; font-size: 14px; margin: 0 0 22px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); }
+  .banner.ok { background: rgba(80,200,130,.10); border-color: rgba(80,200,130,.4); color: #9fe8bf; }
   .packs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
   .card {
     position: relative; border: 1px solid rgba(255,255,255,.10); border-radius: 16px;
@@ -201,6 +261,7 @@ export class StubPaymentProvider implements PaymentProvider {
 <main>
   <h1>${s.title}</h1>
   <p class="sub">${s.subtitle}</p>
+  ${banner}
   <div class="packs">${cards}</div>
   <div id="status"></div>
   ${warn}
@@ -208,6 +269,7 @@ export class StubPaymentProvider implements PaymentProvider {
 </main>
 <script>
   const token = ${jsStringLiteral(token)};
+  const LANG = ${jsStringLiteral(input.lang)};
   const statusEl = document.getElementById('status');
   const L = {
     processing: ${jsStringLiteral(s.processing)},
@@ -216,28 +278,17 @@ export class StubPaymentProvider implements PaymentProvider {
     fail: ${jsStringLiteral(s.failPrefix)},
     net: ${jsStringLiteral(s.networkErr)},
   };
-  for (const btn of document.querySelectorAll('.buy[data-pack]')) {
-    btn.addEventListener('click', async () => {
-      statusEl.textContent = L.processing;
-      try {
-        const r = await fetch('/topup/stub-complete', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ device_token: token, pack_id: btn.dataset.pack }),
-        });
-        const j = await r.json();
-        if (r.ok) { statusEl.textContent = L.okPre + j.balance_questions + L.okSuf; }
-        else { statusEl.textContent = L.fail + (j.error?.message || r.status); }
-      } catch (e) { statusEl.textContent = L.net + e; }
-    });
-  }
+${input.mode === 'stripe' ? stripeJS : input.mode === 'stub' ? stubJS : ''}
 </script>
 </body></html>`;
-  }
 }
 
-export function makePaymentProvider(_config: unknown): PaymentProvider {
-  // Only the stub ships in this repo. Real providers register here.
-  return new StubPaymentProvider();
+/** Dev/testing provider: instant credits via the (default-disabled) stub endpoint. */
+export class StubPaymentProvider implements PaymentProvider {
+  readonly name = 'stub';
+  renderTopUpPage(input: TopUpPageInput): string {
+    return renderTopUpPage(input);
+  }
 }
 
 export function escapeHtml(s: string): string {

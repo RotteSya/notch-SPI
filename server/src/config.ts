@@ -30,8 +30,12 @@ export const config = {
   host: envStr('HOST', '0.0.0.0'),
   port: envInt('PORT', 8787),
 
-  // SQLite file path. ":memory:" is handy for tests. Swap the whole Store for Postgres in prod.
+  // Storage (see storage.ts): Postgres in production, SQLite locally, memory as the
+  // serverless fallback. POSTGRES_URL (or DATABASE_URL) wins whenever set.
+  postgresUrl: envStr('POSTGRES_URL', envStr('DATABASE_URL', '')),
   dbPath: envStr('DB_PATH', './data/notchspi.db'),
+  // Serverless platforms have read-only filesystems; VERCEL=1 is set automatically there.
+  isServerless: envStr('VERCEL', '') !== '',
 
   // Public base URL of THIS server, used to build absolute links (e.g. the top-up page).
   publicBaseURL: envStr('PUBLIC_BASE_URL', 'http://localhost:8787'),
@@ -60,12 +64,19 @@ export const config = {
   openaiKey: envStr('OPENAI_API_KEY', ''),
   openaiBaseURL: envStr('OPENAI_BASE_URL', 'https://api.openai.com'),
 
-  // Payment provider for the top-up page. "stub" credits the account via a dev-only endpoint
-  // so the flow is testable; real providers (Stripe / Alipay / WeChat) plug in behind the same
-  // PaymentProvider interface. The stub top-up endpoint can arbitrarily credit balances and is
-  // unauthenticated, so it is DISABLED by default — a production deploy stays safe unless an
-  // operator explicitly sets ALLOW_STUB_TOPUP=1 for local development.
-  paymentProvider: envStr('PAYMENT_PROVIDER', 'stub'),
+  // ---- Payments ---------------------------------------------------------------------------
+  // Real payments: Stripe Checkout (hosted page; card / Alipay / WeChat Pay etc. are picked
+  // dynamically from the Dashboard's payment-method settings). Setting STRIPE_SECRET_KEY
+  // activates the Stripe provider automatically — prefer a RESTRICTED key (rk_…) with only
+  // Checkout Sessions write permission. STRIPE_WEBHOOK_SECRET (whsec_…) verifies the
+  // checkout.session.completed webhook that actually credits the questions.
+  stripeSecretKey: envStr('STRIPE_SECRET_KEY', ''),
+  stripeWebhookSecret: envStr('STRIPE_WEBHOOK_SECRET', ''),
+
+  // Without a Stripe key the dev stub remains: its top-up endpoint can arbitrarily credit
+  // balances and is unauthenticated, so it is DISABLED by default — a production deploy stays
+  // safe unless an operator explicitly sets ALLOW_STUB_TOPUP=1 for local development.
+  paymentProvider: envStr('PAYMENT_PROVIDER', envStr('STRIPE_SECRET_KEY', '') !== '' ? 'stripe' : 'stub'),
   allowStubTopUp: envStr('ALLOW_STUB_TOPUP', '0') === '1',
 } as const;
 

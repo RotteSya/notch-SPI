@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node src/index.ts",
     "dev": "node --watch src/index.ts",
@@ -11,10 +13,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "fastify": "^5.2.0"
+    "fastify": "^5.2.0",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.20.0",
     "typescript": "^5.7.0"
   }
 }
