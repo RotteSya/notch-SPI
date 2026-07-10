@@ -798,11 +798,12 @@ final class QuotaRingView: NSView {
             }
         }
 
-        // Number + unit in the middle.
+        // Number + unit in the middle. The number itself goes amber when the quota is low —
+        // at zero there is no arc left to carry the warning color.
         let numberText = balance.map(String.init) ?? "—"
         let numberAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 34, weight: .bold),
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: (low && balance != nil) ? AccentTheme.amber.accent : NSColor.labelColor,
         ]
         let unitAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),

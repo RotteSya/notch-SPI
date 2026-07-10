@@ -68,6 +68,20 @@ final class PromptsSelectionTests: XCTestCase {
             Prompts.taskInstruction(mode: "tutor"))
         XCTAssertTrue(Prompts.taskInstruction(mode: "tutor").contains("tutor"))
     }
+
+    func testAnswerLanguageFallbackFollowsUILanguage() {
+        // A Japanese user must never get a Chinese answer to a language-ambiguous screenshot.
+        withLanguage(.ja) {
+            XCTAssertTrue(Prompts.tutorText("guided").contains("respond in Japanese"))
+            XCTAssertTrue(Prompts.tutorText("brief").contains("respond in Japanese"))
+        }
+        withLanguage(.zhHans) {
+            XCTAssertTrue(Prompts.tutorText("full").contains("respond in Simplified Chinese"))
+        }
+        withLanguage(.en) {
+            XCTAssertTrue(Prompts.briefPrompt.contains("respond in English"))
+        }
+    }
 }
 
 /// The direct-API channel's pure request-building and SSE-parsing logic. No network, no keychain.

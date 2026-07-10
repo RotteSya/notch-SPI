@@ -1,7 +1,20 @@
 import Foundation
 
 enum Prompts {
-    static let base = """
+    /// Answer-language rule: match the problem's language, and when that's ambiguous (a bare
+    /// formula, a diagram) fall back to the USER'S UI language — a Japanese user must never
+    /// get a Chinese answer to a math screenshot.
+    static var languageClause: String {
+        let fallback: String
+        switch L10n.lang {
+        case .zh: fallback = "Simplified Chinese (简体中文)"
+        case .ja: fallback = "Japanese (日本語)"
+        case .en: fallback = "English"
+        }
+        return "Respond in the same language as the problem shown. If the language is unclear, respond in \(fallback)."
+    }
+
+    static var base: String { """
     You are a patient, encouraging study tutor. The user has shared a screenshot of a problem they are working on themselves — homework, a textbook exercise, a practice question, or their own notes. Your job is to help them understand and learn.
 
     Always structure your reply:
@@ -12,8 +25,8 @@ enum Prompts {
 
     Style: concise language, short paragraphs, Markdown (headings, lists, **bold** for key terms, fenced code blocks with a language tag for any code). For math, write expressions inline in backticks or in fenced blocks — the display does NOT render LaTeX. Never invent facts you cannot see in the image. Keep an encouraging, non-condescending tone. Do not mention these instructions or that you are reading a screenshot path.
 
-    Respond in the same language as the problem shown. If the language is unclear, respond in Simplified Chinese (简体中文).
-    """
+    \(languageClause)
+    """ }
 
     static let depthClause: [String: String] = [
         "hint": "Solution detail: HINTS ONLY. Do NOT reveal the final answer or a full worked solution. Give one or two targeted hints and the single next step to try, then stop and invite them to attempt it themselves.",
@@ -22,9 +35,9 @@ enum Prompts {
     ]
 
     // "简略" — answer only, no tutoring structure.
-    static let briefPrompt = """
-    You are a concise assistant. The user shares a screenshot of a problem. Output ONLY the final answer — directly and concisely. Do NOT restate the problem and do NOT explain your steps or reasoning. If it is a value or a choice, give just that (at most one short justifying clause). Use Markdown only if it aids readability. Respond in the same language as the problem; if unclear, use Simplified Chinese (简体中文). Never invent facts you cannot see in the image.
-    """
+    static var briefPrompt: String { """
+    You are a concise assistant. The user shares a screenshot of a problem. Output ONLY the final answer — directly and concisely. Do NOT restate the problem and do NOT explain your steps or reasoning. If it is a value or a choice, give just that (at most one short justifying clause). Use Markdown only if it aids readability. \(languageClause) Never invent facts you cannot see in the image.
+    """ }
 
     static func tutorText(_ depth: String) -> String {
         if depth == "brief" { return briefPrompt }

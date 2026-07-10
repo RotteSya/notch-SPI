@@ -35,9 +35,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.openSettings(page: page)
             }
         }
-        if args.contains("--qa-capture") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                controller.qaTriggerCapture()
+        if let i = args.firstIndex(of: "--qa-capture") {
+            // Optional count after the flag (`--qa-capture 4`) fires that many captures 6s
+            // apart — enough to drain a small trial quota and hit the deny path in one session.
+            var count = 1
+            if i + 1 < args.count, let n = Int(args[i + 1]) { count = n }
+            for n in 0..<max(1, count) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(n) * 6.0) {
+                    controller.qaTriggerCapture()
+                }
             }
         }
         #endif
