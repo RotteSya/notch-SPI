@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 process.env.DB_PATH = ':memory:';
 process.env.OFFICIAL_PROVIDER = 'mock';
 process.env.TRIAL_QUESTIONS = '0';
+process.env.CURRENCY = 'CNY'; // pin: the webhook amount/currency cross-check must match the fixture
 process.env.PACKS_JSON = JSON.stringify([{ id: 'pack300', questions: 300, amount_cents: 2400 }]);
 process.env.STRIPE_SECRET_KEY = 'rk_test_fake_key_for_tests';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_testsecret';

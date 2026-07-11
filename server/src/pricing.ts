@@ -8,12 +8,14 @@ export interface QuestionPack {
   amountCents: number; // price in cents of the configured currency
 }
 
-// Default catalog (CNY): a small taster, the value sweet spot, and a bulk pack. Operators
-// override via PACKS_JSON without redeploying code.
+// Default catalog (JPY — the production Stripe account settles in yen): a taster, the value
+// sweet spot, and a bulk pack, each cheaper per question than the last. `amount_cents` is the
+// currency's SMALLEST unit; JPY has no minor unit, so these are whole yen. Operators override
+// via PACKS_JSON (and CURRENCY) without redeploying code.
 export const DEFAULT_PACKS_JSON = JSON.stringify([
-  { id: 'pack100', questions: 100, amount_cents: 900 },
-  { id: 'pack300', questions: 300, amount_cents: 2400 },
-  { id: 'pack1000', questions: 1000, amount_cents: 6800 },
+  { id: 'pack100', questions: 100, amount_cents: 300 },
+  { id: 'pack300', questions: 300, amount_cents: 800 },
+  { id: 'pack1000', questions: 1000, amount_cents: 2200 },
 ]);
 
 /**

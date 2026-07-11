@@ -58,8 +58,9 @@ export const config = {
   // Prices are cents in `currency`. Falls back to the default catalog on parse errors.
   packs: parsePacks(envStr('PACKS_JSON', DEFAULT_PACKS_JSON)),
 
-  // Currency the packs are priced in (display + payment provider).
-  currency: envStr('CURRENCY', 'CNY'),
+  // Currency the packs are priced in (display + payment provider). Defaults to JPY to match
+  // the production Stripe account's settlement currency; override with CURRENCY for others.
+  currency: envStr('CURRENCY', 'JPY'),
 
   provider: envProvider(),
   // Model the official service uses. The client never chooses; the server decides.

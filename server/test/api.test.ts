@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 process.env.DB_PATH = ':memory:';
 process.env.OFFICIAL_PROVIDER = 'mock';
 process.env.TRIAL_QUESTIONS = '2';
+process.env.CURRENCY = 'CNY'; // pin so the ¥9 assertions stay meaningful regardless of the default
 process.env.PACKS_JSON = JSON.stringify([{ id: 'pack100', questions: 100, amount_cents: 900 }]);
 process.env.ALLOW_STUB_TOPUP = '1';
 process.env.LOG_LEVEL = 'silent';
