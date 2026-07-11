@@ -233,11 +233,11 @@ final class OfficialAPITests: XCTestCase {
     }
 
     func testTopUpURL() {
-        let url = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: "dev_123", lang: "ja")
-        XCTAssertEqual(url?.absoluteString, "https://api.notchspi.app/topup?device=dev_123&lang=ja")
+        let url = OfficialAPI.topUpURL(baseURL: "https://notchspi-api.vercel.app", deviceToken: "dev_123", lang: "ja")
+        XCTAssertEqual(url?.absoluteString, "https://notchspi-api.vercel.app/topup?device=dev_123&lang=ja")
         // Without a token the lang still rides along (the page renders a token-less state).
-        let bare = OfficialAPI.topUpURL(baseURL: "https://api.notchspi.app", deviceToken: nil, lang: "en")
-        XCTAssertEqual(bare?.absoluteString, "https://api.notchspi.app/topup?lang=en")
+        let bare = OfficialAPI.topUpURL(baseURL: "https://notchspi-api.vercel.app", deviceToken: nil, lang: "en")
+        XCTAssertEqual(bare?.absoluteString, "https://notchspi-api.vercel.app/topup?lang=en")
     }
 
     func testEndpointURLIsCrashSafeAndPreservesBasePath() {
@@ -248,7 +248,7 @@ final class OfficialAPITests: XCTestCase {
         // An unparseable override falls back to the production default instead of crashing.
         XCTAssertEqual(
             OfficialAPI.endpointURL(base: "", path: "v1/devices").absoluteString,
-            "https://api.notchspi.app/v1/devices")
+            "https://notchspi-api.vercel.app/v1/devices")
         // Leading slashes in the path don't clobber the base.
         XCTAssertEqual(
             OfficialAPI.endpointURL(base: "https://host/api", path: "/topup").absoluteString,

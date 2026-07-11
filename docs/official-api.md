@@ -2,7 +2,7 @@
 
 客户端（`Sources/NotchSPI/Cloud/`）已按本契约实现完毕。服务端参考实现见
 [`../server/`](../server/)（Node.js + TypeScript + Fastify + SQLite，`npm start` 开箱即跑）。
-上线后无需改动客户端代码（默认地址 `https://api.notchspi.app`，可用
+上线后无需改动客户端代码（默认地址 `https://notchspi-api.vercel.app`，可用
 `defaults write com.rottesya.notchspi official.baseURL <url>` 指向测试环境）。
 
 **计费模型：题数额度制。** 账户余额是整数「题数」；一次成功的截屏问答扣 1 题，

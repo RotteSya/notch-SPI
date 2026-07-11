@@ -307,12 +307,16 @@ export function escapeHtml(s: string): string {
  * `?device=` value on the unauthenticated top-up page.
  */
 export function jsStringLiteral(s: string): string {
+  // U+2028/U+2029 are valid in JSON strings but are LINE TERMINATORS in JS source; build them
+  // from char codes so this file itself never contains them (or fragile escapes of them).
+  const LS = String.fromCharCode(0x2028);
+  const PS = String.fromCharCode(0x2029);
   return JSON.stringify(s)
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
+    .split(LS).join('\\u2028')
+    .split(PS).join('\\u2029');
 }
 
 /**

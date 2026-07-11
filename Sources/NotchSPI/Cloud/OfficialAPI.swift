@@ -27,7 +27,7 @@ enum OfficialAPI {
 
     /// Production endpoint of the official service. Overridable via the "official.baseURL"
     /// default for staging/self-hosted deployments (no UI; `defaults write` only).
-    static let defaultBaseURL = "https://api.notchspi.app"
+    static let defaultBaseURL = "https://notchspi-api.vercel.app"
 
     static var baseURL: String {
         var v = (UserDefaults.standard.string(forKey: "official.baseURL") ?? "")

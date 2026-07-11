@@ -37,8 +37,15 @@ export const config = {
   // Serverless platforms have read-only filesystems; VERCEL=1 is set automatically there.
   isServerless: envStr('VERCEL', '') !== '',
 
-  // Public base URL of THIS server, used to build absolute links (e.g. the top-up page).
-  publicBaseURL: envStr('PUBLIC_BASE_URL', 'http://localhost:8787'),
+  // Public base URL of THIS server, used to build absolute links (the top-up page and the
+  // Stripe checkout return URLs). On Vercel it derives from the auto-injected production URL
+  // so no manual configuration is needed; PUBLIC_BASE_URL still overrides (custom domains).
+  publicBaseURL: envStr(
+    'PUBLIC_BASE_URL',
+    envStr('VERCEL_PROJECT_PRODUCTION_URL', '') !== ''
+      ? `https://${envStr('VERCEL_PROJECT_PRODUCTION_URL', '')}`
+      : 'http://localhost:8787',
+  ),
 
   // ---- Quota model (题数额度制) ----------------------------------------------------------
   // The account balance is an integer number of QUESTIONS; one successful capture costs one
