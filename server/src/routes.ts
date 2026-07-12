@@ -9,6 +9,7 @@ import { requireAccount } from './auth.ts';
 import { findPack } from './pricing.ts';
 import { isValidTokenShape, normalizeLang } from './payments.ts';
 import { verifyStripeSignature, createCheckoutSession, type StripeEvent } from './stripe.ts';
+import { renderLandingPage, resolveSiteLang } from './site.ts';
 
 export interface AppContext {
   config: Config;
@@ -49,6 +50,25 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   // Config-at-a-glance for operators: which provider answers, where data lives, how payments
   // are wired. `db: "memory"` on a production deployment means POSTGRES_URL is missing.
+  // GET / — the public product site (also the "company website" for payment-provider review).
+  // Language: ?lang wins, then Accept-Language, defaulting to Japanese. Cacheable at the CDN;
+  // Vary keeps the language negotiation honest.
+  app.get('/', async (req, reply) => {
+    const q = (req.query ?? {}) as { lang?: unknown };
+    const lang = resolveSiteLang(str(q.lang), str(req.headers['accept-language']));
+    const html = renderLandingPage({
+      packs: config.packs,
+      trialQuestions: config.trialQuestions,
+      currency: config.currency,
+      lang,
+    });
+    return reply
+      .header('Cache-Control', 'public, max-age=300')
+      .header('Vary', 'Accept-Language')
+      .type('text/html; charset=utf-8')
+      .send(html);
+  });
+
   app.get('/healthz', async () => ({
     ok: true,
     provider: provider.name,
