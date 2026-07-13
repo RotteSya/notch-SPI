@@ -68,6 +68,7 @@ export class MemoryStore implements Store {
     currency: string;
     provider: string;
     reference: string;
+    note?: string;
   }): Promise<number | null> {
     const d = this.devices.get(hashToken(input.token));
     if (!d) return null;

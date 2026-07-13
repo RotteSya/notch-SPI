@@ -601,6 +601,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
     private let topUpButton = NSButton()
     private let refreshButton = NSButton()
     private let claimButton = NSButton()
+    private let copyCodeButton = NSButton()
     private var observer: NSObjectProtocol?
 
     override func loadView() {
@@ -647,8 +648,18 @@ private final class AccountPageController: NSViewController, SettingsPage {
         statusLabel.frame = NSRect(x: 270, y: y + 40, width: 320, height: 40)
         root.addSubview(statusLabel)
 
-        deviceLabel.frame = NSRect(x: 36, y: 300, width: 560, height: 18)
+        deviceLabel.frame = NSRect(x: 36, y: 300, width: 380, height: 18)
         root.addSubview(deviceLabel)
+
+        // Copy the full device code so a user can send it to support for a manual quota grant.
+        // (The label only ever shows a masked form; this is the deliberate way to reveal it.)
+        copyCodeButton.title = L10n.t("复制设备码", "デバイスコードをコピー", "Copy device code")
+        copyCodeButton.bezelStyle = .rounded
+        copyCodeButton.controlSize = .small
+        copyCodeButton.target = self
+        copyCodeButton.action = #selector(copyCodeTapped)
+        copyCodeButton.frame = NSRect(x: 424, y: 296, width: 172, height: 24)
+        root.addSubview(copyCodeButton)
 
         let note = captionLabel(L10n.t(
             "每成功答一题消耗 1 题；出错不扣。额度与本机绑定，无需注册账号。",
@@ -689,6 +700,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
             ? L10n.t("设备 ID：", "デバイスID：", "Device ID: ") + OfficialAPI.truncatedToken(OfficialAPI.deviceToken ?? "")
             : L10n.t("尚未领取免费额度。", "まだ無料枠を受け取っていません。", "Free questions not claimed yet.")
         claimButton.isHidden = registered
+        copyCodeButton.isHidden = !registered
         topUpButton.isEnabled = registered
         refreshButton.isEnabled = registered
     }
@@ -729,6 +741,15 @@ private final class AccountPageController: NSViewController, SettingsPage {
             }
             self.reload()
         }
+    }
+
+    @objc private func copyCodeTapped() {
+        guard let token = OfficialAPI.deviceToken else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(token, forType: .string)
+        statusLabel.stringValue = L10n.t("设备码已复制，可发给客服用于补充额度。",
+                                         "デバイスコードをコピーしました。サポートへの残高追加依頼にお使いください。",
+                                         "Device code copied — send it to support to get credits added.")
     }
 }
 

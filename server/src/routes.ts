@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { timingSafeEqual } from 'node:crypto';
 import type { Config } from './config.ts';
 import type { Store } from './db.ts';
 import type { Provider, CaptureRequest } from './providers/types.ts';
@@ -10,6 +11,7 @@ import { findPack } from './pricing.ts';
 import { isValidTokenShape, normalizeLang } from './payments.ts';
 import { verifyStripeSignature, createCheckoutSession, type StripeEvent } from './stripe.ts';
 import { renderLandingPage, resolveSiteLang } from './site.ts';
+import { renderAdminPage } from './admin.ts';
 
 export interface AppContext {
   config: Config;
@@ -39,14 +41,30 @@ interface CheckoutBody {
   pack_id?: unknown;
   lang?: unknown;
 }
+interface AdminGrantBody {
+  device_token?: unknown;
+  questions?: unknown;
+  note?: unknown;
+  idempotency_key?: unknown;
+}
 
 function str(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
 }
 
+/** Constant-time compare of a caller-supplied admin token against the configured secret. */
+function adminTokenMatches(provided: string, expected: string): boolean {
+  if (!provided || !expected) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { config, store, storeKind, provider, payment } = ctx;
   const stripeLive = payment.name === 'stripe' && config.stripeSecretKey !== '';
+  // The admin grant console exists only when a secret is configured — otherwise /admin 404s.
+  const adminEnabled = config.adminToken !== '';
 
   // Config-at-a-glance for operators: which provider answers, where data lives, how payments
   // are wired. `db: "memory"` on a production deployment means POSTGRES_URL is missing.
@@ -293,6 +311,59 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     });
     if (newBalance === null) throw new ApiError(401, '设备令牌无效');
     return reply.send({ balance_questions: newBalance });
+  });
+
+  // GET /admin — the password-protected manual-grant console. It exists only when ADMIN_TOKEN is
+  // set (otherwise 404). The page carries no secret; the operator's key is entered client-side and
+  // sent to /admin/grant. noindex so it never lands in search results.
+  app.get('/admin', async (_req, reply) => {
+    if (!adminEnabled) throw new ApiError(404, '未启用');
+    return reply
+      .header('X-Robots-Tag', 'noindex, nofollow')
+      .header('Cache-Control', 'no-store')
+      .type('text/html; charset=utf-8')
+      .send(renderAdminPage({ currency: config.currency }));
+  });
+
+  // POST /admin/grant — grant N free questions to a device, authorized by the admin secret in the
+  // `x-admin-token` header (constant-time compare). Records a topups row (provider="admin",
+  // amount 0, optional note) for audit and is idempotent on the reference. Grants only ADD
+  // questions — there is deliberately no deduct path here.
+  app.post('/admin/grant', async (req, reply) => {
+    if (!adminEnabled) throw new ApiError(404, '未启用');
+    const provided = typeof req.headers['x-admin-token'] === 'string' ? req.headers['x-admin-token'] : '';
+    if (!adminTokenMatches(provided, config.adminToken)) throw new ApiError(401, '管理员密钥无效', 'invalid_token');
+
+    const body = (req.body ?? {}) as AdminGrantBody;
+    const token = str(body.device_token);
+    if (!isValidTokenShape(token)) throw new ApiError(400, '设备令牌格式无效');
+    // Accept a number or a numeric string (curl-friendly); must be a positive integer in range.
+    const raw = body.questions;
+    const questions =
+      typeof raw === 'number' ? Math.trunc(raw)
+      : typeof raw === 'string' && raw.trim() !== '' ? Math.trunc(Number(raw))
+      : Number.NaN;
+    if (!Number.isFinite(questions) || !(questions > 0 && questions <= 100_000)) {
+      throw new ApiError(400, '题数必须是 1–100000 的整数');
+    }
+    const note = str(body.note).slice(0, 200).trim();
+    const idem = str(body.idempotency_key).trim();
+    const reference = idem !== ''
+      ? `admin:${idem}`
+      : `admin:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const newBalance = await store.credit({
+      token,
+      questions,
+      amountCents: 0,
+      currency: config.currency,
+      provider: 'admin',
+      reference,
+      note: note !== '' ? note : undefined,
+    });
+    if (newBalance === null) throw new ApiError(401, '设备不存在，请确认 token 是否正确', 'invalid_token');
+    req.log.info({ questions, newBalance, reference }, 'admin grant');
+    return reply.send({ balance_questions: newBalance, questions_granted: questions });
   });
 
   // Uniform error body: {"error":{"message":"…","code":"…"}} with the right status code.

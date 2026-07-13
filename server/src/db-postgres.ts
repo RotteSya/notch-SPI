@@ -37,8 +37,12 @@ CREATE TABLE IF NOT EXISTS topups (
   currency     TEXT NOT NULL,
   provider     TEXT NOT NULL,
   reference    TEXT,
+  note         TEXT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Lazy migration for databases created before the admin grant tool (Postgres supports the
+-- IF NOT EXISTS guard, so this is a safe no-op once the column exists).
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS note TEXT;
 CREATE INDEX IF NOT EXISTS idx_usage_device ON usage_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_topups_device ON topups(device_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_reference ON topups(reference);
@@ -146,6 +150,7 @@ export class PostgresStore implements Store {
     currency: string;
     provider: string;
     reference: string;
+    note?: string;
   }): Promise<number | null> {
     await this.ensureSchema();
     return this.tx(async (client) => {
@@ -166,9 +171,9 @@ export class PostgresStore implements Store {
         [newBalance, dev.id],
       );
       await client.query(
-        `INSERT INTO topups (device_id, questions, amount_cents, currency, provider, reference)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [dev.id, input.questions, input.amountCents, input.currency, input.provider, input.reference],
+        `INSERT INTO topups (device_id, questions, amount_cents, currency, provider, reference, note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [dev.id, input.questions, input.amountCents, input.currency, input.provider, input.reference, input.note ?? null],
       );
       return newBalance;
     });

@@ -48,7 +48,8 @@ export interface Store {
   /**
    * Credit a purchased question pack — IDEMPOTENT on `reference`: a second call with the same
    * reference (e.g. a retried Stripe webhook delivery) is a no-op that returns the current
-   * balance. Returns null if the token is invalid.
+   * balance. Returns null if the token is invalid. `note` is an optional free-text memo stored
+   * on the top-up record (used by the admin grant tool for audit).
    */
   credit(input: {
     token: string;
@@ -57,6 +58,7 @@ export interface Store {
     currency: string;
     provider: string;
     reference: string;
+    note?: string;
   }): Promise<number | null>;
 
   close(): Promise<void>;

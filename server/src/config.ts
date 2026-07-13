@@ -86,6 +86,11 @@ export const config = {
   // safe unless an operator explicitly sets ALLOW_STUB_TOPUP=1 for local development.
   paymentProvider: envStr('PAYMENT_PROVIDER', envStr('STRIPE_SECRET_KEY', '') !== '' ? 'stripe' : 'stub'),
   allowStubTopUp: envStr('ALLOW_STUB_TOPUP', '0') === '1',
+
+  // Admin grant tool (manual quota top-ups for support / comps): a secret required to authorize
+  // GET /admin and POST /admin/grant. If empty, the entire /admin path is DISABLED (404) — the
+  // feature simply does not exist unless an operator sets ADMIN_TOKEN, so it is safe by default.
+  adminToken: envStr('ADMIN_TOKEN', ''),
 } as const;
 
 export type Config = typeof config;

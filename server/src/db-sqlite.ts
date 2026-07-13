@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS topups (
   currency     TEXT NOT NULL,
   provider     TEXT NOT NULL,
   reference    TEXT,
+  note         TEXT,
   created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_usage_device ON usage_events(device_id);
@@ -62,6 +63,16 @@ export class SqliteStore implements Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
+    // Lazy migration: databases created before the admin grant tool lack topups.note. SQLite's
+    // ADD COLUMN has no IF NOT EXISTS, so probe the schema first (idempotent on every boot).
+    this.ensureColumn('topups', 'note');
+  }
+
+  private ensureColumn(table: string, column: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+    }
   }
 
   async registerDevice(input: {
@@ -139,6 +150,7 @@ export class SqliteStore implements Store {
     currency: string;
     provider: string;
     reference: string;
+    note?: string;
   }): Promise<number | null> {
     return this.tx(() => {
       const dev = this.deviceByToken(input.token);
@@ -157,10 +169,10 @@ export class SqliteStore implements Store {
         .run(newBalance, now, dev.id);
       this.db
         .prepare(
-          `INSERT INTO topups (device_id, questions, amount_cents, currency, provider, reference, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO topups (device_id, questions, amount_cents, currency, provider, reference, note, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(dev.id, input.questions, input.amountCents, input.currency, input.provider, input.reference, now);
+        .run(dev.id, input.questions, input.amountCents, input.currency, input.provider, input.reference, input.note ?? null, now);
       return newBalance;
     });
   }
