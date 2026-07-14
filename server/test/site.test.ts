@@ -45,7 +45,8 @@ test('GET / renders the Japanese site by default with live pricing and legal sec
   assert.match(html, /プライバシーポリシー/);                // privacy
   assert.match(html, /返金・キャンセルポリシー/);            // refunds
   assert.match(html, /raysyadesu@gmail\.com/);              // contact
-  assert.match(html, /releases\/latest\/download\/NotchSPI\.dmg/); // download CTA
+  assert.match(html, /href="\/dl"/);                        // download CTA → counted redirect
+  assert.match(html, /releases\/latest/);                   // GitHub Releases link still present
 });
 
 test('?lang switches the site language; the JP disclosure stays present', async () => {

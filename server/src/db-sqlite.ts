@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS topups (
   note         TEXT,
   created_at   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS counters (
+  name  TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_usage_device ON usage_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_topups_device ON topups(device_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_reference ON topups(reference);
@@ -175,6 +179,24 @@ export class SqliteStore implements Store {
         .run(dev.id, input.questions, input.amountCents, input.currency, input.provider, input.reference, input.note ?? null, now);
       return newBalance;
     });
+  }
+
+  async bumpCounter(name: string): Promise<number> {
+    const row = this.db
+      .prepare(
+        `INSERT INTO counters (name, value) VALUES (?, 1)
+         ON CONFLICT(name) DO UPDATE SET value = value + 1
+         RETURNING value`,
+      )
+      .get(name) as { value: number } | undefined;
+    return row?.value ?? 0;
+  }
+
+  async getCounter(name: string): Promise<number> {
+    const row = this.db.prepare(`SELECT value FROM counters WHERE name = ?`).get(name) as
+      | { value: number }
+      | undefined;
+    return row?.value ?? 0;
   }
 
   /** Run `fn` inside a transaction; rollback on any throw. node:sqlite is synchronous. */

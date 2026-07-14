@@ -61,6 +61,12 @@ export interface Store {
     note?: string;
   }): Promise<number | null>;
 
+  /** Atomically increment a named counter (created at 0 if absent) and return the new value. */
+  bumpCounter(name: string): Promise<number>;
+
+  /** Read a named counter's current value; 0 if it has never been bumped. */
+  getCounter(name: string): Promise<number>;
+
   close(): Promise<void>;
 }
 

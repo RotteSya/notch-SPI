@@ -17,6 +17,7 @@ interface DeviceRecord {
 export class MemoryStore implements Store {
   private devices = new Map<string, DeviceRecord>(); // keyed by token hash
   private creditedReferences = new Set<string>();
+  private counters = new Map<string, number>();
 
   async registerDevice(input: {
     platform: string;
@@ -76,6 +77,16 @@ export class MemoryStore implements Store {
     this.creditedReferences.add(input.reference);
     d.balanceQuestions += input.questions;
     return d.balanceQuestions;
+  }
+
+  async bumpCounter(name: string): Promise<number> {
+    const value = (this.counters.get(name) ?? 0) + 1;
+    this.counters.set(name, value);
+    return value;
+  }
+
+  async getCounter(name: string): Promise<number> {
+    return this.counters.get(name) ?? 0;
   }
 
   async close(): Promise<void> {}

@@ -182,3 +182,13 @@ test('top-up page renders localized HTML with the pack catalog', async () => {
   const en = await (await fetch(`${base}/topup?device=${token}&lang=en`)).text();
   assert.match(en, /Top Up Questions/);
 });
+
+test('GET /dl counts the click and 302s to the GitHub DMG; /stats reports the tally', async () => {
+  const before = (await (await fetch(`${base}/stats`)).json()) as { download_clicks: number };
+  const res = await fetch(`${base}/dl`, { redirect: 'manual' });
+  assert.equal(res.status, 302);
+  assert.match(res.headers.get('location') ?? '', /github\.com\/RotteSya\/notch-SPI\/releases\/latest\/download\/NotchSPI\.dmg/);
+  assert.match(res.headers.get('cache-control') ?? '', /no-store/);
+  const after = (await (await fetch(`${base}/stats`)).json()) as { download_clicks: number };
+  assert.equal(after.download_clicks, before.download_clicks + 1);
+});

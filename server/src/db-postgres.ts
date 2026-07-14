@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS topups (
 -- Lazy migration for databases created before the admin grant tool (Postgres supports the
 -- IF NOT EXISTS guard, so this is a safe no-op once the column exists).
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS note TEXT;
+-- Simple named counters (e.g. download-button clicks on the public site).
+CREATE TABLE IF NOT EXISTS counters (
+  name  TEXT PRIMARY KEY,
+  value BIGINT NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_usage_device ON usage_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_topups_device ON topups(device_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_topups_reference ON topups(reference);
@@ -177,6 +182,26 @@ export class PostgresStore implements Store {
       );
       return newBalance;
     });
+  }
+
+  async bumpCounter(name: string): Promise<number> {
+    await this.ensureSchema();
+    const { rows } = await this.pool.query<{ value: string }>(
+      `INSERT INTO counters (name, value) VALUES ($1, 1)
+       ON CONFLICT (name) DO UPDATE SET value = counters.value + 1
+       RETURNING value`,
+      [name],
+    );
+    return Number(rows[0]?.value ?? 0);
+  }
+
+  async getCounter(name: string): Promise<number> {
+    await this.ensureSchema();
+    const { rows } = await this.pool.query<{ value: string }>(
+      `SELECT value FROM counters WHERE name = $1`,
+      [name],
+    );
+    return Number(rows[0]?.value ?? 0);
   }
 
   private async tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {

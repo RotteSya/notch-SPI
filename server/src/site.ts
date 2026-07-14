@@ -8,8 +8,13 @@ import { formatMoney, escapeHtml, type PageLang } from './payments.ts';
 // Pricing renders from the LIVE pack catalog so the site can never drift from checkout.
 
 const GITHUB = 'https://github.com/RotteSya/notch-SPI';
-const DOWNLOAD = `${GITHUB}/releases/latest/download/NotchSPI.dmg`;
+// The real DMG asset on GitHub's "latest release". The /dl endpoint (routes.ts) redirects here.
+export const DOWNLOAD_URL = `${GITHUB}/releases/latest/download/NotchSPI.dmg`;
 const RELEASES = `${GITHUB}/releases/latest`;
+// Download buttons point at our own /dl endpoint so each click is tallied server-side before a
+// 302 to DOWNLOAD_URL. GitHub's asset counter stays the ground truth for completed downloads;
+// this measures clicks on the site's download buttons (visible via GET /stats).
+const DOWNLOAD = '/dl';
 const CONTACT_EMAIL = 'raysyadesu@gmail.com';
 
 export interface SiteInput {

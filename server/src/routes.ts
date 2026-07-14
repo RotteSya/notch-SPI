@@ -10,7 +10,7 @@ import { requireAccount } from './auth.ts';
 import { findPack } from './pricing.ts';
 import { isValidTokenShape, normalizeLang } from './payments.ts';
 import { verifyStripeSignature, createCheckoutSession, type StripeEvent } from './stripe.ts';
-import { renderLandingPage, resolveSiteLang } from './site.ts';
+import { renderLandingPage, resolveSiteLang, DOWNLOAD_URL } from './site.ts';
 import { renderAdminPage } from './admin.ts';
 
 export interface AppContext {
@@ -85,6 +85,25 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       .header('Vary', 'Accept-Language')
       .type('text/html; charset=utf-8')
       .send(html);
+  });
+
+  // GET /dl — tally a download-button click, then 302 to the real GitHub DMG. Counting is
+  // best-effort: a DB hiccup must never block the download, so a failure is logged and ignored.
+  // Browser prefetch can inflate this slightly; GitHub's own asset counter stays the ground
+  // truth for completed downloads — this measures clicks on the site's download buttons.
+  app.get('/dl', async (req, reply) => {
+    try {
+      await store.bumpCounter('download_clicks');
+    } catch (err) {
+      req.log.error({ err }, 'download counter bump failed');
+    }
+    return reply.header('Cache-Control', 'no-store').redirect(DOWNLOAD_URL, 302);
+  });
+
+  // GET /stats — public, read-only tally of download-button clicks.
+  app.get('/stats', async (_req, reply) => {
+    const downloadClicks = await store.getCounter('download_clicks');
+    return reply.header('Cache-Control', 'no-store').send({ download_clicks: downloadClicks });
   });
 
   app.get('/healthz', async () => ({
