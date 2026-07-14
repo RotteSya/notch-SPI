@@ -87,3 +87,12 @@ fi
 
 echo "==> Done:"
 ls -lh "$OUT/$APP_NAME.dmg"
+
+# Publish to Quark cloud drive (夸克网盘) for real releases only:
+# a notarized DMG (SIGN_ID present) means this is a release, not an ad-hoc dev build.
+# Opt out with PUBLISH_QUARK=0. Non-fatal: a netdisk failure never discards the built DMG.
+if [ -n "$SIGN_ID" ] && [ "${PUBLISH_QUARK:-1}" != "0" ]; then
+  echo "==> Publishing DMG to Quark cloud drive…"
+  VERSION="$VERSION" "$(dirname "$0")/publish-quark.sh" \
+    || echo "    ⚠️  网盘上传失败（DMG 已在本地/GitHub 不受影响）；修好后重跑: scripts/publish-quark.sh"
+fi
