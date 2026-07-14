@@ -15,6 +15,10 @@ final class NotchView: NSView {
 
     // Surface (fills the whole panel incl. the transparent shadow margin).
     private let surface = NotchSurfaceView()
+    // Interior light field (Metal) — the obsidian's living light, between body and content.
+    private let luma = NotchLumaView()
+    private var lastAnswerLen = 0
+    private var followBottom = false
 
     // Collapsed bar — the Rose sits in the menu-bar space to the left of the notch.
     private let collapsedBar = FlippedContainer()
@@ -30,9 +34,13 @@ final class NotchView: NSView {
         systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
     private let answerScroll = NSScrollView()
-    private let answerText = NSTextView()
+    private let answerStream = StreamingAnswerView()
 
     private lazy var morph = DisplayTween(host: self, value: 0)
+    /// Geometry-only channel: expanding overshoots (spring) while `morph` (opacity/visibility)
+    /// stays a clamped out-cubic. They MUST be separate — a spring on opacity would flash the
+    /// content fully lit inside the still-small mid-morph card and spill past its edge.
+    private lazy var geoMorph = DisplayTween(host: self, value: 0)
     private var wasExpanded = false
     private var hovering = false
     private var trackingAreaRef: NSTrackingArea?
@@ -64,6 +72,7 @@ final class NotchView: NSView {
 
     private func build() {
         addSubview(surface)
+        addSubview(luma)
 
         collapsedBar.addSubview(roseCollapsed)
         addSubview(collapsedBar)
@@ -80,6 +89,7 @@ final class NotchView: NSView {
         }
 
         morph.onChange = { [weak self] _ in self?.applyLayout() }
+        geoMorph.onChange = { [weak self] _ in self?.applyLayout() }
     }
 
     private func configureAnswerArea() {
@@ -89,20 +99,7 @@ final class NotchView: NSView {
         answerScroll.scrollerStyle = .overlay
         answerScroll.borderType = .noBorder
         answerScroll.horizontalScrollElasticity = .none
-
-        answerText.isEditable = false
-        answerText.isSelectable = true
-        answerText.drawsBackground = false
-        answerText.backgroundColor = .clear
-        answerText.textContainerInset = NSSize(width: 0, height: 0)
-        answerText.textContainer?.lineFragmentPadding = 0
-        answerText.isVerticallyResizable = true
-        answerText.isHorizontallyResizable = false
-        answerText.textContainer?.widthTracksTextView = true
-        answerText.minSize = .zero
-        answerText.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        answerText.autoresizingMask = [.width]
-        answerScroll.documentView = answerText
+        answerScroll.documentView = answerStream
     }
 
     private func observe() {
@@ -116,8 +113,14 @@ final class NotchView: NSView {
 
     private func refresh() {
         let tint = roseTint()
-        roseCollapsed.color = tint
-        roseHeader.color = tint
+        let busy = model.status == .running || model.status == .streaming
+        roseCollapsed.color = tint; roseCollapsed.busy = busy
+        roseHeader.color = tint; roseHeader.busy = busy
+
+        luma.setState(model.status)
+        // Streaming token arrival → one ripple through the light field.
+        if model.status == .streaming, model.answer.count > lastAnswerLen { luma.pulse() }
+        lastAnswerLen = model.answer.count
 
         modeLabel.stringValue = model.modeLabel
         statusText.stringValue = model.statusText
@@ -127,13 +130,24 @@ final class NotchView: NSView {
             ? (model.personaLabel.isEmpty ? L10n.t("设置人物像", "人物像を設定", "Set persona") : model.personaLabel)
                                    : model.depthLabel
 
-        answerText.textStorage?.setAttributedString(NotchType.answerString(model.answer, mode: model.mode))
+        let attr = NotchType.answerString(model.answer, mode: model.mode)
+        answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
+        // While streaming, keep the newest text in view (a long answer scrolls within its region).
+        if model.status == .streaming { followBottom = true }
+        else if model.status != .running { followBottom = false }
 
-        // Drive the morph from the model's expand state.
+        // Drive the morph from the model's expand state. Opacity channel = out-cubic always;
+        // geometry channel = spring overshoot when expanding, quiet out-cubic when collapsing.
         if model.expanded != wasExpanded {
             wasExpanded = model.expanded
-            if reduceMotion { morph.set(model.expanded ? 1 : 0) }
-            else { morph.animate(to: model.expanded ? 1 : 0, duration: NotchPalette.morphDuration) }
+            let target: CGFloat = model.expanded ? 1 : 0
+            if reduceMotion {
+                morph.set(target); geoMorph.set(target)
+            } else {
+                morph.animate(to: target, duration: NotchPalette.morphDuration)
+                geoMorph.ease = model.expanded ? NotchMotion.springSettle : NotchMotion.outCubic
+                geoMorph.animate(to: target, duration: NotchPalette.morphDuration)
+            }
         }
         applyLayout()
     }
@@ -158,19 +172,29 @@ final class NotchView: NSView {
     private func applyLayout() {
         let b = bounds
         guard b.width > 1 else { return }
+        // p: opacity / visibility — clamped (a crossfade must never invert).
+        // g: geometry — may overshoot past 1 (spring), so the whole slab lands like a soft body.
+        //    Radii take an amplified overshoot (gr) — 10% on an 8pt shoulder is only ~0.8pt, too
+        //    subtle to feel; ×2.5 makes the corners visibly soften-then-settle on arrival.
         let p = max(0, min(1, morph.value))
+        let g = max(0, geoMorph.value)
+        let gr = g <= 1 ? g : 1 + (g - 1) * 2.5
 
         // Card inset: the transparent shadow margin grows in only as we expand (top stays flush).
-        let mH = NotchMetrics.shadowMarginH * p
-        let mB = NotchMetrics.shadowMarginBottom * p
+        let mH = NotchMetrics.shadowMarginH * g
+        let mB = NotchMetrics.shadowMarginBottom * g
         let card = CGRect(x: mH, y: 0, width: b.width - mH * 2, height: b.height - mB)
 
         surface.frame = b
         surface.cardRect = card
-        surface.topRadius = notchLerp(6, 8, p)
-        surface.bottomRadius = notchLerp(14, 22, p)
+        surface.topRadius = notchLerp(6, 8, gr)
+        surface.bottomRadius = notchLerp(14, 22, gr)
         surface.depth = p
         surface.showShadow = p > 0.001
+
+        luma.frame = b
+        luma.setSlab(cardRect: card, topRadius: notchLerp(6, 8, gr),
+                     bottomRadius: notchLerp(14, 22, gr), depth: p)
 
         collapsedBar.frame = card
         expandedContent.frame = card
@@ -217,7 +241,18 @@ final class NotchView: NSView {
         // answer scrolls within this fixed region and a short one hugs it.
         let top = NotchLayout.headerHeight
         let h = max(0, size.height - top - NotchLayout.answerBottomPad)
-        answerScroll.frame = CGRect(x: inset, y: top, width: max(0, size.width - inset * 2), height: h)
+        let w = max(0, size.width - inset * 2)
+        answerScroll.frame = CGRect(x: inset, y: top, width: w, height: h)
+
+        // The streaming view is the scroll's documentView, sized to the FULL content height so a
+        // long answer scrolls; the CTFramesetter measure matches what it draws.
+        let docH = max(h, NotchType.answerHeight(model.answer, mode: model.mode, width: w))
+        answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
+        if followBottom {
+            let maxY = max(0, docH - h)
+            answerScroll.contentView.scroll(to: NSPoint(x: 0, y: maxY))
+            answerScroll.reflectScrolledClipView(answerScroll.contentView)
+        }
     }
 
     // MARK: Hover

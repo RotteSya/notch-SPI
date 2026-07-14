@@ -35,6 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.openSettings(page: page)
             }
         }
+        if let i = args.firstIndex(of: "--qa-notch"), i + 1 < args.count {
+            let state = args[i + 1]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                controller.qaDriveNotch(state)
+            }
+        }
         if let i = args.firstIndex(of: "--qa-capture") {
             // Optional count after the flag (`--qa-capture 4`) fires that many captures 6s
             // apart — enough to drain a small trial quota and hit the deny path in one session.

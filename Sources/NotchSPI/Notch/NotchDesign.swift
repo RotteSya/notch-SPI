@@ -34,9 +34,26 @@ enum NotchPalette {
 
     // Motion durations (s). The single morph time is shared by the controller's panel-frame
     // animation and the view's radius/content tween, so the whole instrument moves as one body.
-    static let morphDuration: CFTimeInterval   = 0.30
+    static let morphDuration: CFTimeInterval = {
+        #if DEBUG
+        // Visual QA: NSPI_SLOW_MORPH=1 stretches the morph to 2.4s for frame-by-frame inspection.
+        if ProcessInfo.processInfo.environment["NSPI_SLOW_MORPH"] == "1" { return 2.4 }
+        #endif
+        return 0.32
+    }()
     static let contentDuration: CFTimeInterval = 0.18
     static let controlDuration: CFTimeInterval = 0.13
+}
+
+/// Shared easing curves for the expand/collapse morph.
+enum NotchMotion {
+    /// Under-damped spring settle for EXPANDING: a ~10% overshoot then a soft landing (residual
+    /// <0.6% at t=1; the tween snaps to the exact value when it ends, so it is imperceptible).
+    /// Only for expanding — collapsing is a quiet exhale where a bounce would read as flippant.
+    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-5.0 * t) * cos(7.0 * t) }
+
+    /// The original quiet out-cubic (collapse direction, and the opacity channel).
+    static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
 }
 
 /// Layout metrics shared between the controller (panel frame) and the view (content inset), so
@@ -154,10 +171,9 @@ enum NotchType {
 
     static func answerHeight(_ answer: String, mode: String, width: CGFloat) -> CGFloat {
         guard width > 1 else { return 0 }
-        return ceil(answerString(answer, mode: mode).boundingRect(
-            with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).height)
+        // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
+        // height always matches what is drawn — no last-line clip, no trailing gap.
+        return StreamingAnswerView.measure(answerString(answer, mode: mode), width: width)
     }
 
     private static func variant(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {

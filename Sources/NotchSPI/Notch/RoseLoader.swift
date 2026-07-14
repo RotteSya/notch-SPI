@@ -7,6 +7,12 @@ import QuartzCore
 final class RoseLoaderView: NSView {
     var color: NSColor = .white { didSet { needsDisplay = true } }
 
+    /// Whether the pipeline is actively working. At rest the rose still breathes/rotates, but
+    /// those motions are minutes-slow (28s/rev, 4.3s pulse) — 24fps is imperceptible from 60 and
+    /// this indicator is ALWAYS on screen beside the notch, so the idle cost matters. Working
+    /// (running/streaming) takes the full clock.
+    var busy: Bool = false { didSet { if busy != oldValue { retuneClock() } } }
+
     // config (from the original)
     private let particleCount = 48
     private let trailSpan = 0.3
@@ -42,6 +48,13 @@ final class RoseLoaderView: NSView {
         let l = displayLink(target: self, selector: #selector(tick))
         l.add(to: .main, forMode: .common)
         link = l
+        retuneClock()
+    }
+
+    private func retuneClock() {
+        guard let link, !reduceMotion else { return }
+        let fps: Float = busy ? 60 : 24
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: max(15, fps - 12), maximum: fps, preferred: fps)
     }
 
     private func stopLink() { link?.invalidate(); link = nil }

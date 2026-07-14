@@ -118,6 +118,64 @@ final class NotchController: NSObject {
     /// so the whole pipeline — screenshot → official channel → stream → quota status line —
     /// can be exercised and screenshotted without pressing keys.
     func qaTriggerCapture() { runTapped(mode: "tutor") }
+
+    /// Visual-QA hook: drive the notch into a specific presentation state with FIXTURE content
+    /// (no capture, no server), so the light field / streaming text / morph can be screenshotted
+    /// deterministically. States: idle · running · streaming · presenting · error.
+    private var qaStreamWork: DispatchWorkItem?
+    func qaDriveNotch(_ state: String) {
+        qaStreamWork?.cancel()
+        // Optional: force an accent theme so the light field's tint can be verified across themes.
+        if let theme = ProcessInfo.processInfo.environment["NSPI_QA_THEME"] { Appearance.setTheme(theme) }
+        pinned = true
+        if !visible { visible = true; panel.orderFrontRegardless() }
+        let fixture = """
+        **思路**　这道题考查二次函数的最小值。先把 `f(x) = x² − 4x + 3` 配方成顶点式，最值一眼可见。
+
+        **配方**　`f(x) = (x − 2)² − 1`，所以抛物线的顶点在 `(2, −1)`。
+
+        **结论**　开口向上，当 `x = 2` 时取得最小值 **−1**；没有最大值。
+        """
+        switch state {
+        case "running":
+            model.answer = ""; model.status = .running; model.statusText = L10n.statusPreparing
+            setExpanded(true)
+        case "presenting":
+            model.answer = fixture; model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            setExpanded(true); resizeToFit()
+        case "long":  // exceeds maxExpandedHeight → must scroll, pinned to the tail
+            model.answer = Array(repeating: fixture, count: 4).joined(separator: "\n\n")
+            model.status = .idle; model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(178)
+            setExpanded(true); resizeToFit()
+        case "error":
+            model.answer = L10n.t("截屏失败，目标窗口可能刚被关闭，请重试。",
+                                  "キャプチャに失敗しました。再試行してください。",
+                                  "Capture failed — the target window may have just closed. Please try again.")
+            model.status = .error; model.statusText = L10n.statusError
+            setExpanded(true); resizeToFit()
+        default: // "streaming" — run the real birth animation by appending in chunks
+            model.answer = ""; model.status = .running; model.statusText = L10n.statusPreparing
+            setExpanded(true)
+            let chars = Array(fixture)
+            var i = 0
+            func pump() {
+                guard i < chars.count else {
+                    model.status = .idle
+                    model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+                    resizeToFit(); return
+                }
+                let step = min(chars.count - i, Int.random(in: 2...4))
+                model.answer += String(chars[i..<i+step]); i += step
+                model.status = .streaming; model.statusText = L10n.statusExplaining
+                resizeToFit()
+                let w = DispatchWorkItem { pump() }
+                qaStreamWork = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.045, execute: w)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: DispatchWorkItem { pump() })
+        }
+    }
     #endif
 
     private func registerHotkeys() {
@@ -330,8 +388,8 @@ final class NotchController: NSObject {
         let f = frame(expanded: expanded)
         if animate {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.28
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                ctx.duration = NotchPalette.morphDuration   // one body: same clock as the view's morph tween
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.90, 0.24, 1.00)
                 panel.animator().setFrame(f, display: true)
             }
         } else {
