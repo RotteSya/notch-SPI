@@ -601,6 +601,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
     private let topUpButton = NSButton()
     private let refreshButton = NSButton()
     private let claimButton = NSButton()
+    private let resetButton = NSButton()
     private let copyCodeButton = NSButton()
     private var observer: NSObjectProtocol?
 
@@ -645,6 +646,16 @@ private final class AccountPageController: NSViewController, SettingsPage {
         claimButton.frame = NSRect(x: 268, y: y, width: 220, height: 30)
         root.addSubview(claimButton)
 
+        // Shown only when the server rejected this device's credential (401). Resetting is
+        // destructive (see OfficialAPI.resetCredential), so it's confirmed and never automatic.
+        resetButton.title = L10n.t("重置服务凭证", "認証情報をリセット", "Reset credential")
+        resetButton.bezelStyle = .rounded
+        resetButton.target = self
+        resetButton.action = #selector(resetTapped)
+        resetButton.frame = NSRect(x: 268, y: y, width: 220, height: 30)
+        resetButton.isHidden = true
+        root.addSubview(resetButton)
+
         statusLabel.frame = NSRect(x: 270, y: y + 40, width: 320, height: 40)
         root.addSubview(statusLabel)
 
@@ -687,9 +698,11 @@ private final class AccountPageController: NSViewController, SettingsPage {
 
     private func reload() {
         let registered = OfficialAPI.deviceToken != nil
-        // A cached balance without a live token is stale (e.g. the token was invalidated) —
-        // show the unclaimed state, not a number nobody can spend.
-        let balance = registered ? OfficialAPI.balanceQuestions : nil
+        // Credential kept but rejected by the server (401): a distinct state from "not registered".
+        let rejected = registered && OfficialAPI.credentialRejected
+        // A cached balance without a live/accepted token is stale — show the empty ring, not a
+        // number nobody can spend.
+        let balance = (registered && !rejected) ? OfficialAPI.balanceQuestions : nil
         ring.setBalance(balance, animated: true)
         usageLabel.stringValue = L10n.t("累计已答 \(OfficialAPI.totalQuestions) 题",
                                         "これまでに\(OfficialAPI.totalQuestions)問回答",
@@ -700,9 +713,18 @@ private final class AccountPageController: NSViewController, SettingsPage {
             ? L10n.t("设备 ID：", "デバイスID：", "Device ID: ") + OfficialAPI.truncatedToken(OfficialAPI.deviceToken ?? "")
             : L10n.t("尚未领取免费额度。", "まだ無料枠を受け取っていません。", "Free questions not claimed yet.")
         claimButton.isHidden = registered
+        resetButton.isHidden = !rejected
         copyCodeButton.isHidden = !registered
-        topUpButton.isEnabled = registered
+        // A rejected credential can't be spent or topped up until it's reset or re-accepted.
+        topUpButton.isEnabled = registered && !rejected
         refreshButton.isEnabled = registered
+        // Surface the rejection without clobbering a transient status message already on screen.
+        if rejected && statusLabel.stringValue.isEmpty {
+            statusLabel.stringValue = L10n.t(
+                "本机服务凭证已失效。若只是临时网络/服务波动，请先点「刷新」重试；确认失效后再「重置服务凭证」（不影响已购买的题数入账记录）。",
+                "このデバイスの認証情報が無効になりました。一時的な不具合の場合はまず「更新」を試し、無効が確実な場合のみ「認証情報をリセット」してください(購入済みの記録には影響しません)。",
+                "This device's credential was rejected. If it's just a temporary hiccup, hit Refresh first; only Reset once you're sure — your purchase records are unaffected.")
+        }
     }
 
     @objc private func topUpTapped() {
@@ -750,6 +772,24 @@ private final class AccountPageController: NSViewController, SettingsPage {
         statusLabel.stringValue = L10n.t("设备码已复制，可发给客服用于补充额度。",
                                          "デバイスコードをコピーしました。サポートへの残高追加依頼にお使いください。",
                                          "Device code copied — send it to support to get credits added.")
+    }
+
+    @objc private func resetTapped() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("重置服务凭证？", "認証情報をリセットしますか？",
+                                   "Reset service credential?")
+        alert.informativeText = L10n.t(
+            "仅在确认本机凭证确实失效时才重置。重置会丢弃当前设备码并领取一份新的免费额度；如果只是临时网络或服务波动，请改点「刷新」。已购买的题数请先复制设备码联系客服再重置。",
+            "認証情報が確実に無効な場合のみリセットしてください。現在のデバイスコードを破棄して新しい無料枠を取得します。一時的な不具合の場合は「更新」をお使いください。購入済みの質問数がある場合は、先にデバイスコードをコピーしてサポートにご連絡ください。",
+            "Only reset if you're sure the credential is truly invalid. This discards the current device code and claims a fresh free allowance. If it's a temporary hiccup, use Refresh instead. If you have purchased questions, copy the device code and contact support before resetting.")
+        alert.addButton(withTitle: L10n.t("重置并重新领取", "リセットして再取得", "Reset & re-claim"))
+        alert.addButton(withTitle: L10n.cancel)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        OfficialAPI.resetCredential()
+        statusLabel.stringValue = ""
+        reload()
+        claimTapped() // mint and register a fresh device token
     }
 }
 

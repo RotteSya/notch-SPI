@@ -9,6 +9,7 @@ export type ErrorCode =
   | 'insufficient_quota' // 402 — question balance is used up
   | 'invalid_token'      // 401 — unknown/expired device token
   | 'bad_request'        // 400 — malformed input
+  | 'rate_limited'       // 429 — too many requests (registration / capture concurrency)
   | 'upstream_error'     // 502 — the model vendor call failed
   | 'not_found'          // 404
   | 'internal';          // 500
@@ -30,6 +31,7 @@ function defaultCode(statusCode: number): ErrorCode {
     case 401: return 'invalid_token';
     case 402: return 'insufficient_quota';
     case 404: return 'not_found';
+    case 429: return 'rate_limited';
     case 502: return 'upstream_error';
     default: return 'internal';
   }

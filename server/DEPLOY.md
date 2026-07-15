@@ -32,6 +32,11 @@ curl https://notchspi-api.vercel.app/healthz
 表结构首次访问自动创建，无迁移步骤。配置前 `/healthz` 显示 `db:"memory"`（数据易失，
 仅够冒烟）；配置后显示 `db:"postgres"`。
 
+**TLS：默认校验数据库证书**（`verify-full`），计费库连接不再接受中间人。Neon / Supabase
+用 Node 内置公共根证书即可通过，无需额外配置。仅在提供商证书无法被公共根验证时才需要：
+设 `POSTGRES_CA_CERT_FILE`（或内联 `POSTGRES_CA_CERT`）指定 CA（如 AWS RDS 证书包）。
+`POSTGRES_SSL_MODE=require` 是「加密但不校验」的逃生开关，除非确有必要且接受风险，否则不要用。
+
 ### 3. 真实支付（Stripe Checkout）
 
 1. Stripe Dashboard → Developers → API keys → 创建 **Restricted key**（只勾

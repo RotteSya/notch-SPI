@@ -36,29 +36,41 @@ export async function readVendorSSE(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // Only JSON *parse* failures are swallowed here (keep-alive / comment lines). An exception
+  // thrown by `onEvent` itself is a real vendor error event (see the providers' `error` cases)
+  // and MUST propagate so the capture route reports a failure and does NOT charge a question —
+  // parsing it inside the same try/catch is exactly what let a failed answer bill the user.
   const emit = (payload: string): void => {
     if (payload === '' || payload === '[DONE]') return;
+    let parsed: unknown;
     try {
-      onEvent(JSON.parse(payload));
+      parsed = JSON.parse(payload);
     } catch {
-      // ignore malformed keep-alive / comment lines
+      return; // malformed keep-alive / comment line — never a vendor event
     }
+    onEvent(parsed);
   };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { lines, rest } = splitSSEChunk(buffer);
+      buffer = rest;
+      for (const payload of lines) emit(payload);
+    }
+    // Flush any bytes held by the decoder (a trailing multi-byte char split across the final
+    // chunk boundary), then drain the buffer including a final data: line without a newline.
+    buffer += decoder.decode();
     const { lines, rest } = splitSSEChunk(buffer);
-    buffer = rest;
     for (const payload of lines) emit(payload);
+    const tail = rest.trimStart();
+    if (tail.startsWith('data:')) emit(tail.slice('data:'.length).trim());
+  } finally {
+    // Release the lock on every exit (including an onEvent throw) so the upstream body can be
+    // torn down cleanly instead of leaking a held reader.
+    reader.releaseLock();
   }
-  // Flush any bytes held by the decoder (a trailing multi-byte char split across the final
-  // chunk boundary), then drain the buffer including a final data: line without a newline.
-  buffer += decoder.decode();
-  const { lines, rest } = splitSSEChunk(buffer);
-  for (const payload of lines) emit(payload);
-  const tail = rest.trimStart();
-  if (tail.startsWith('data:')) emit(tail.slice('data:'.length).trim());
 }
 
 /**

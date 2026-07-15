@@ -61,17 +61,39 @@ interface DeviceRow {
   total_output_tokens: string;
 }
 
+/** The pg `ssl` option: `false` = plaintext, otherwise a Node TLS options subset. */
+export type PgSSLConfig = false | { rejectUnauthorized: boolean; ca?: string };
+
+/**
+ * Decide the TLS option for the billing-DB connection. SECURE BY DEFAULT: the server's
+ * certificate is verified unless the operator explicitly opts out. `rejectUnauthorized: false`
+ * (encrypt but do NOT authenticate — a man-in-the-middle hole on a payments database) is now
+ * reachable only via `mode: 'require'`, never the default. Pure, so it is unit-tested.
+ *   'disable' (or `sslmode=disable` in the URL) → false                     (no TLS; local/dev)
+ *   'require'                                    → { rejectUnauthorized:false } (TLS, unverified)
+ *   'verify-full' or unset (default)             → { rejectUnauthorized:true[, ca] } (verified)
+ */
+export function resolvePostgresSSL(input: {
+  connectionString: string;
+  mode?: string;
+  caCert?: string;
+}): PgSSLConfig {
+  const mode = (input.mode ?? '').trim().toLowerCase();
+  if (mode === 'disable' || input.connectionString.includes('sslmode=disable')) return false;
+  if (mode === 'require') return { rejectUnauthorized: false };
+  const ca = input.caCert?.trim();
+  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
 export class PostgresStore implements Store {
   private pool: pg.Pool;
   private ready: Promise<void> | null = null;
 
-  constructor(connectionString: string) {
+  constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }) {
     this.pool = new pg.Pool({
       connectionString,
       max: 5, // serverless-friendly; use the provider's pooled URL for real concurrency
-      // Managed Postgres (Neon/Supabase/RDS) requires TLS; local dev URLs can opt out
-      // with ?sslmode=disable which the driver honors from the URL itself.
-      ssl: connectionString.includes('sslmode=disable') ? undefined : { rejectUnauthorized: false },
+      ssl,
     });
   }
 

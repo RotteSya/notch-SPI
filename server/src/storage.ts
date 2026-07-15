@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { Store } from './db.ts';
 import type { Config } from './config.ts';
 
@@ -13,8 +14,14 @@ export type StoreKind = 'postgres' | 'sqlite' | 'memory';
 
 export async function makeStore(config: Config): Promise<{ store: Store; kind: StoreKind }> {
   if (config.postgresUrl) {
-    const { PostgresStore } = await import('./db-postgres.ts');
-    return { store: new PostgresStore(config.postgresUrl), kind: 'postgres' };
+    const { PostgresStore, resolvePostgresSSL } = await import('./db-postgres.ts');
+    // A custom CA can arrive inline (env vars often store PEM with literal "\n") or as a file
+    // path. A configured-but-unreadable CA file fails boot loudly — never silently downgrade a
+    // security setting the operator explicitly asked for.
+    const caInline = config.postgresCACert ? config.postgresCACert.replace(/\\n/g, '\n') : '';
+    const caCert = caInline || (config.postgresCACertFile ? readFileSync(config.postgresCACertFile, 'utf8') : '');
+    const ssl = resolvePostgresSSL({ connectionString: config.postgresUrl, mode: config.postgresSSLMode, caCert });
+    return { store: new PostgresStore(config.postgresUrl, ssl), kind: 'postgres' };
   }
   if (config.isServerless) {
     const { MemoryStore } = await import('./db-memory.ts');

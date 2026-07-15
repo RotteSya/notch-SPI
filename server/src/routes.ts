@@ -12,6 +12,7 @@ import { isValidTokenShape, normalizeLang } from './payments.ts';
 import { verifyStripeSignature, createCheckoutSession, type StripeEvent } from './stripe.ts';
 import { renderLandingPage, resolveSiteLang, DOWNLOAD_URL } from './site.ts';
 import { renderAdminPage } from './admin.ts';
+import { createFixedWindowLimiter, createConcurrencyLimiter, clientIp } from './rateLimit.ts';
 
 export interface AppContext {
   config: Config;
@@ -66,6 +67,11 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // The admin grant console exists only when a secret is configured — otherwise /admin 404s.
   const adminEnabled = config.adminToken !== '';
 
+  // Best-effort abuse limits (see rateLimit.ts): a per-IP cap on anonymous registration and a
+  // per-token cap on concurrent captures. Instantiated once so state lives for the process.
+  const registerLimiter = createFixedWindowLimiter(config.deviceRegPerHour, 60 * 60 * 1000);
+  const captureLimiter = createConcurrencyLimiter(config.captureConcurrencyPerToken);
+
   // Config-at-a-glance for operators: which provider answers, where data lives, how payments
   // are wired. `db: "memory"` on a production deployment means POSTGRES_URL is missing.
   // GET / — the public product site (also the "company website" for payment-provider review).
@@ -114,8 +120,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     webhook: stripeLive ? (config.stripeWebhookSecret !== '' ? 'configured' : 'MISSING_SECRET') : 'n/a',
   }));
 
-  // POST /v1/devices — anonymous registration, grants the free question quota. No auth.
+  // POST /v1/devices — anonymous registration, grants the free question quota. No auth, so a
+  // per-IP cap keeps this from being a free-quota faucet (best-effort; see rateLimit.ts).
   app.post('/v1/devices', async (req, reply) => {
+    if (!registerLimiter.hit(clientIp(req))) {
+      throw new ApiError(429, '注册过于频繁，请稍后再试', 'rate_limited');
+    }
     const body = (req.body ?? {}) as DeviceBody;
     const device = await store.registerDevice({
       platform: str(body.platform, 'unknown').slice(0, 32),
@@ -161,6 +171,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       throw new ApiError(402, '额度已用完，请充值后继续', 'insufficient_quota');
     }
 
+    // Concurrency cap: stop one token from opening several streams at once to drive its balance
+    // deeply negative in parallel. Refused as JSON 429 BEFORE hijacking the socket.
+    if (!captureLimiter.tryAcquire(token)) {
+      throw new ApiError(429, '同一设备的并发请求过多，请等上一题完成后再试', 'rate_limited');
+    }
+
     // Take over the socket for manual SSE writing.
     reply.hijack();
     const send = beginSSE(reply);
@@ -175,33 +191,49 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     });
 
     try {
-      const usage = await provider.stream(captureReq, (text) => send({ type: 'delta', text }), abort.signal);
-      const newBalance = await store.chargeForUsage({
-        token,
-        questions: 1,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        model: `${provider.name}:${config.model}`,
-      });
-      if (newBalance === null) {
-        // Token vanished mid-request (deleted); report as a stream error, no charge applied.
-        send({ type: 'error', error: { message: '设备令牌无效', code: 'invalid_token' } });
+      // A question is charged ONLY for an answer that actually produced text. A vendor can
+      // resolve an HTTP-200 stream with no deltas (empty completion / content-filter block);
+      // billing that would break the product's "失败不扣题" promise.
+      let sawDelta = false;
+      const usage = await provider.stream(
+        captureReq,
+        (text) => {
+          if (text.length > 0) sawDelta = true;
+          send({ type: 'delta', text });
+        },
+        abort.signal,
+      );
+      if (!sawDelta) {
+        send({ type: 'error', error: { message: '答案生成服务未返回内容，本次未消耗额度，请重试', code: 'upstream_error' } });
       } else {
-        send({
-          type: 'usage',
-          input_tokens: usage.inputTokens,
-          output_tokens: usage.outputTokens,
-          questions_charged: 1,
-          balance_questions: newBalance,
+        const newBalance = await store.chargeForUsage({
+          token,
+          questions: 1,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          model: `${provider.name}:${config.model}`,
         });
+        if (newBalance === null) {
+          // Token vanished mid-request (deleted); report as a stream error, no charge applied.
+          send({ type: 'error', error: { message: '设备令牌无效', code: 'invalid_token' } });
+        } else {
+          send({
+            type: 'usage',
+            input_tokens: usage.inputTokens,
+            output_tokens: usage.outputTokens,
+            questions_charged: 1,
+            balance_questions: newBalance,
+          });
+          reply.raw.write(SSE_DONE);
+        }
       }
-      reply.raw.write(SSE_DONE);
     } catch (err) {
       const message = err instanceof Error ? err.message : '模型服务错误';
       // On failure we do NOT charge — a broken answer never costs a question.
       send({ type: 'error', error: { message, code: 'upstream_error' } });
     } finally {
       done = true;
+      captureLimiter.release(token);
       reply.raw.end();
     }
   });

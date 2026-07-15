@@ -43,3 +43,15 @@ test('readVendorSSE ignores [DONE] and malformed lines', async () => {
   );
   assert.deepEqual(events, [{ ok: true }]);
 });
+
+test('readVendorSSE propagates an error thrown by onEvent (vendor error events are NOT swallowed)', async () => {
+  // A vendor can signal an error mid-stream (Anthropic/OpenAI `error` event); the provider throws
+  // from onEvent, and that MUST surface so the capture route reports failure and skips the charge.
+  const enc = new TextEncoder();
+  await assert.rejects(
+    readVendorSSE(streamOf([enc.encode('data: {"type":"error"}\n')]), () => {
+      throw new Error('vendor overloaded');
+    }),
+    /vendor overloaded/,
+  );
+});

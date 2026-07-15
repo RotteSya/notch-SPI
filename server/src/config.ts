@@ -34,6 +34,16 @@ export const config = {
   // serverless fallback. POSTGRES_URL (or DATABASE_URL) wins whenever set.
   postgresUrl: envStr('POSTGRES_URL', envStr('DATABASE_URL', '')),
   dbPath: envStr('DB_PATH', './data/notchspi.db'),
+
+  // Postgres TLS. The billing DB connection VERIFIES the server certificate by default; the old
+  // encrypt-but-don't-authenticate mode (a MITM hole) is now reachable only via an explicit
+  // POSTGRES_SSL_MODE=require. Values: 'verify-full' (default) | 'require' | 'disable'. Managed
+  // providers whose cert isn't in the system trust store (e.g. AWS RDS, a private CA) supply a CA
+  // via POSTGRES_CA_CERT (inline PEM) or POSTGRES_CA_CERT_FILE (path); Neon/Supabase verify with
+  // the public roots already trusted by Node.
+  postgresSSLMode: envStr('POSTGRES_SSL_MODE', ''),
+  postgresCACert: envStr('POSTGRES_CA_CERT', ''),
+  postgresCACertFile: envStr('POSTGRES_CA_CERT_FILE', ''),
   // Serverless platforms have read-only filesystems; VERCEL=1 is set automatically there.
   isServerless: envStr('VERCEL', '') !== '',
 
@@ -91,6 +101,14 @@ export const config = {
   // GET /admin and POST /admin/grant. If empty, the entire /admin path is DISABLED (404) — the
   // feature simply does not exist unless an operator sets ADMIN_TOKEN, so it is safe by default.
   adminToken: envStr('ADMIN_TOKEN', ''),
+
+  // ---- Best-effort rate limits (see rateLimit.ts) -----------------------------------------
+  // Defense in depth against free-quota farming and parallel-capture balance abuse. In-memory
+  // and per-instance, so treat a platform WAF as the real hard limit. Set a knob to 0 to disable.
+  // Max anonymous device registrations per client IP per hour.
+  deviceRegPerHour: envInt('DEVICE_REG_PER_HOUR', 30),
+  // Max simultaneous in-flight captures for a single device token.
+  captureConcurrencyPerToken: envInt('CAPTURE_CONCURRENCY_PER_TOKEN', 3),
 } as const;
 
 export type Config = typeof config;

@@ -75,6 +75,20 @@ enum OfficialAPI {
     /// Below this many remaining questions the UI starts nudging toward a top-up.
     static let lowQuotaThreshold = 10
 
+    /// True when the server last answered 401 for this device's token. We deliberately do NOT
+    /// delete the token on a 401 (see `handleInvalidToken`): the token is the ONLY key to any
+    /// purchased quota, and a spurious 401 — a mis-pointed `official.baseURL`, a transient server
+    /// misconfiguration — must never silently strand a paying user's balance. Instead we raise
+    /// this flag so 设置 →「账户与额度」can warn and offer an explicit, confirmed reset. Cleared on
+    /// any successful register/refresh.
+    static var credentialRejected: Bool {
+        get { d.bool(forKey: "official.credentialRejected") }
+        set {
+            if newValue { d.set(true, forKey: "official.credentialRejected") }
+            else { d.removeObject(forKey: "official.credentialRejected") }
+        }
+    }
+
     static var totalQuestions: Int { d.integer(forKey: "official.totalQuestions") }
     static var totalInputTokens: Int { d.integer(forKey: "official.totalInputTokens") }
     static var totalOutputTokens: Int { d.integer(forKey: "official.totalOutputTokens") }
@@ -88,12 +102,25 @@ enum OfficialAPI {
         notifyAccountChanged()
     }
 
-    /// The server said our device token is no longer valid — drop the local account state so
-    /// the UI falls back to the "领取额度" path instead of dead-ending on generic errors.
+    /// The server answered 401 for our device token. Do NOT delete the token here — a merely
+    /// transient or mis-targeted 401 would otherwise orphan any purchased quota (the token is the
+    /// only key to it). Keep the credential, drop just the cached balance so the UI stops showing
+    /// a number nobody can spend, and flag the rejection so the account page can offer an explicit
+    /// reset. `resetCredential()` is the ONLY path that actually discards the token.
     private static func handleInvalidToken() {
+        d.removeObject(forKey: "official.balanceQuestions")
+        credentialRejected = true
+        notifyAccountChanged()
+    }
+
+    /// Explicit, user-confirmed credential reset (设置 →「账户与额度」). Discards the rejected device
+    /// token and all cached account state so the next registration mints a fresh one. Behind a
+    /// confirmation precisely because discarding a still-valid token would strand purchased quota.
+    static func resetCredential() {
         KeychainStore.write(nil, account: "official.deviceToken")
         d.removeObject(forKey: "official.deviceToken") // clear any legacy plaintext copy too
         d.removeObject(forKey: "official.balanceQuestions")
+        credentialRejected = false
         notifyAccountChanged()
     }
 
@@ -293,6 +320,7 @@ enum OfficialAPI {
                 return .failure(OfficialAPIError(message: localizedErrorBody(data, statusCode: code)))
             }
             deviceToken = token
+            credentialRejected = false // a fresh, accepted token clears any prior rejection
             if let b = obj["balance_questions"] as? Int { balanceQuestions = b }
             return .success(token)
         } catch {
@@ -321,6 +349,7 @@ enum OfficialAPI {
             else {
                 return .failure(OfficialAPIError(message: localizedErrorBody(data, statusCode: code)))
             }
+            credentialRejected = false // the server accepted our token — clear any prior rejection
             if let b = obj["balance_questions"] as? Int { balanceQuestions = b }
             // The server's lifetime totals are authoritative; overwrite the local mirror.
             if let tq = obj["total_questions"] as? Int { d.set(tq, forKey: "official.totalQuestions") }

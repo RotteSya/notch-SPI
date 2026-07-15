@@ -58,6 +58,10 @@ export class OpenAIProvider implements Provider {
     const usage: Usage = { inputTokens: 0, outputTokens: 0 };
     await readVendorSSE(res.body, (payload) => {
       const ev = payload as OpenAIChunk;
+      // An OpenAI-compatible endpoint can emit `{"error":{...}}` on an HTTP-200 stream. Throw so
+      // the capture route treats it as a failure and never charges (mirrors the Anthropic
+      // provider); otherwise it would look like an empty but successful answer.
+      if (ev.error) throw new Error(ev.error.message ?? 'OpenAI 流式错误');
       const text = ev.choices?.[0]?.delta?.content;
       if (typeof text === 'string' && text.length > 0) onDelta(text);
       if (ev.usage) {
@@ -72,4 +76,5 @@ export class OpenAIProvider implements Provider {
 interface OpenAIChunk {
   choices?: Array<{ delta?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
+  error?: { message?: string };
 }

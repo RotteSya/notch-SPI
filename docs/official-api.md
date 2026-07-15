@@ -17,13 +17,17 @@
 - 认证：`Authorization: Bearer <device_token>`（除注册端点外）。
 - 错误响应体：`{"error": {"message": "<兜底信息>", "code": "<错误码>"}}`。
   客户端按 `code` 本地化已知错误（`insufficient_quota` / `invalid_token` /
-  `bad_request` / `upstream_error` / `internal`），未知码显示 `message`。
-- `401 invalid_token` 令牌无效（客户端清除本地设备令牌并引导重新初始化）；
-  `402 insufficient_quota` 额度用完（客户端把本地题数镜像清零并引导充值）。
+  `bad_request` / `rate_limited` / `upstream_error` / `internal`），未知码显示 `message`。
+- `401 invalid_token` 令牌无效：客户端**保留**设备令牌（它是已购题数的唯一凭证，
+  瞬时 401 不得销毁），仅清空本地题数镜像并标记「凭证待确认」，在设置 →「账户与额度」
+  提供二次确认的「重置服务凭证」。`402 insufficient_quota` 额度用完（客户端把本地题数
+  镜像清零并引导充值）；`429 rate_limited` 请求过于频繁（注册频率或并发截图超限）。
 
 ## POST /v1/devices — 匿名设备注册（开箱即用入口）
 
 无需认证。首次注册赠送试用题数。重复调用允许（客户端只在本地无令牌时调用）。
+为防止免费额度被脚本批量领取，本端点按客户端 IP 限流（`DEVICE_REG_PER_HOUR`，默认 30 次/小时），
+超限返回 `429 rate_limited`。此为进程内尽力而为的限流，硬性保障应交由平台 WAF。
 
 请求：
 
@@ -78,10 +82,13 @@ data: [DONE]
 ```
 
 - `usage` 事件必须在流结束前发出**一次**，客户端据此更新本地题数镜像与累计用量。
-- 流中出错：发送 `data: {"type":"error","error":{"message":"…","code":"…"}}` 后结束，
-  **不扣题**。
+- 流中出错，或模型返回空回答（没有任何 `delta` 文本）：发送
+  `data: {"type":"error","error":{"message":"…","code":"…"}}` 后结束，**不扣题**
+  —— 只有真正产出了答案文本才会扣 1 题。
 - 请求前额度已用完：直接返回 HTTP `402`（响应体用通用错误格式，`code:
   "insufficient_quota"`）。
+- 同一令牌并发截图超过 `CAPTURE_CONCURRENCY_PER_TOKEN`（默认 3）：返回 HTTP `429`
+  `rate_limited`（在流开始前，仍是通用 JSON 错误格式）。
 
 ## GET /topup?device=\<token\>&lang=\<zh|ja|en\> — 题包购买网页（非 API）
 

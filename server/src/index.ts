@@ -3,12 +3,14 @@ import { pathToFileURL } from 'node:url';
 import { config } from './config.ts';
 import { makeStore } from './storage.ts';
 import { makeProvider } from './providers/index.ts';
+import type { Provider } from './providers/types.ts';
 import { StubPaymentProvider, type PaymentProvider } from './payments.ts';
 import { StripePaymentProvider } from './stripe.ts';
 import { registerRoutes } from './routes.ts';
 
-// Compose the app so it can also be built in-process by tests (no listen).
-export async function buildApp() {
+// Compose the app so it can also be built in-process by tests (no listen). `overrides.provider`
+// is a test-only seam for exercising vendor-failure paths (the real provider is chosen by config).
+export async function buildApp(overrides: { provider?: Provider } = {}) {
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
     // Screenshots arrive as base64 JPEG; allow generous bodies.
@@ -31,7 +33,7 @@ export async function buildApp() {
   if (storeKind === 'memory') {
     app.log.warn('storage: in-memory fallback — data is EPHEMERAL; set POSTGRES_URL for production');
   }
-  const provider = makeProvider(config, (msg) => app.log.warn(msg));
+  const provider = overrides.provider ?? makeProvider(config, (msg) => app.log.warn(msg));
   const payment: PaymentProvider =
     config.paymentProvider === 'stripe' && config.stripeSecretKey !== ''
       ? new StripePaymentProvider()
