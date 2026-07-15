@@ -347,7 +347,13 @@ final class NotchController: NSObject {
 
     // MARK: - Geometry (NSScreen coords are bottom-left origin)
 
-    private var screen: NSScreen? { NSScreen.main ?? NSScreen.screens.first }
+    /// Prefer the built-in display that actually HAS the physical notch (non-zero safe-area top), so
+    /// the slab is never placed at the top-center of a notchless external monitor. Falls back to the
+    /// main screen, then any screen.
+    private var screen: NSScreen? {
+        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
+            ?? NSScreen.main ?? NSScreen.screens.first
+    }
 
     private var notchWidth: CGFloat {
         guard let s = screen else { return 200 }
@@ -357,31 +363,43 @@ final class NotchController: NSObject {
         return 200
     }
 
-    private var notchHeight: CGFloat { max(28, screen?.safeAreaInsets.top ?? 0) }
+    /// Height of the slab in the collapsed (fused) state. The physical notch cutout's bottom aligns
+    /// with the **menu-bar bottom**, which on a notched display can be a point taller than the
+    /// notch-safe inset (measured here: 33pt chrome vs 32pt `safeAreaInsets.top`). Using the safe
+    /// inset left the slab's lower edge a hair (2px) above the real cutout — a visible "short bottom".
+    /// So take the true top-chrome height; never shorter than the safe inset, and guard the
+    /// menu-bar-auto-hide case (where `frame.maxY - visibleFrame.maxY` collapses toward 0).
+    private var notchHeight: CGFloat {
+        guard let s = screen else { return 28 }
+        let safe = s.safeAreaInsets.top
+        guard safe > 0 else { return max(28, safe) }         // notchless display → 28 floor
+        let menuBar = s.frame.maxY - s.visibleFrame.maxY     // true top chrome (0 if auto-hidden)
+        return max(safe, menuBar)
+    }
+
+    /// Points-per-pixel of the target display; every panel edge is snapped to this grid so the
+    /// software slab fuses with the hardware notch instead of straddling a physical pixel.
+    private var backingScale: CGFloat { screen?.backingScaleFactor ?? 2 }
+
+    /// The transparent left extension (collapsed) that puts the Rose in the menu bar beside the cutout.
+    private let collapsedSideExtension: CGFloat = 60
 
     private func frame(expanded: Bool) -> NSRect {
         // No display (truly headless) — nothing sensible to place; a harmless default avoids a crash.
         guard let s = screen?.frame else { return NSRect(x: 0, y: 0, width: expandedWidth, height: 100) }
+        let m = NotchGeometry.Metrics(screenFrame: s, scale: backingScale,
+                                      notchWidth: notchWidth, notchHeight: notchHeight)
         if expanded {
             // The visible card is `expandedWidth × expandedCardHeight`; the panel is grown by a
             // transparent margin (sides + bottom, never the top) so the obsidian card can cast a
             // soft drop shadow without it being clipped at the panel edge.
-            let mH = NotchMetrics.shadowMarginH
-            let mB = NotchMetrics.shadowMarginBottom
-            let cardW = expandedWidth
-            let cardH = expandedCardHeight()
-            let w = cardW + mH * 2
-            let h = cardH + mB
-            return NSRect(x: (s.midX - cardW / 2 - mH).rounded(), y: (s.maxY - h).rounded(),
-                          width: w.rounded(), height: h.rounded())
+            return NotchGeometry.expanded(m, cardWidth: expandedWidth, cardHeight: expandedCardHeight(),
+                                          marginH: NotchMetrics.shadowMarginH,
+                                          marginBottom: NotchMetrics.shadowMarginBottom)
         }
-        // Collapsed: within the menu-bar height; extend to the LEFT of the notch so the
-        // rose shows in the visible menu-bar space beside the (non-display) notch cutout.
-        let sideExt: CGFloat = 60
-        let w = notchWidth + sideExt
-        let h = notchHeight
-        let x = s.midX - notchWidth / 2 - sideExt // right edge at the notch's right; extend left
-        return NSRect(x: x.rounded(), y: (s.maxY - h).rounded(), width: w.rounded(), height: h.rounded())
+        // Collapsed: within the menu-bar height; right wall fused with the notch, extended LEFT so
+        // the rose shows in the visible menu-bar space beside the (non-display) notch cutout.
+        return NotchGeometry.collapsed(m, sideExtension: collapsedSideExtension)
     }
 
     private func setFrame(expanded: Bool, animate: Bool) {

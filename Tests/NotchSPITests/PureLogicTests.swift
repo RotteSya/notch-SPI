@@ -440,3 +440,80 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertEqual(KeychainStore.read(account), "sk-legacy")
     }
 }
+
+/// Pixel-exact placement of the notch slab against the physical cutout. These are the regression
+/// tests for the "程序刘海与硬件刘海错位/穿帮" fix: independent point-rounding used to slide the
+/// collapsed slab a physical pixel off the hardware notch wall. Ground-truth numbers below are a
+/// real 14″ MacBook Pro (1512×982 @2×, notch 185pt wide, 32pt tall, side areas reported 663/664).
+final class NotchGeometryTests: XCTestCase {
+    private let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    private let scale: CGFloat = 2
+    private let notchW: CGFloat = 185
+    private let notchH: CGFloat = 32
+    private let sideExt: CGFloat = 60
+
+    private var metrics: NotchGeometry.Metrics {
+        .init(screenFrame: screen, scale: scale, notchWidth: notchW, notchHeight: notchH)
+    }
+
+    // The single fact the whole illusion rests on: the collapsed slab's RIGHT wall must coincide,
+    // to the physical pixel, with the hardware notch's right wall. The pre-fix math rounded x to an
+    // integer point (603.5 → 604), pushing this wall to 849pt (+1px). It must be 848.5pt exactly.
+    func testCollapsedRightWallFusesWithHardwareNotch() {
+        let f = NotchGeometry.collapsed(metrics, sideExtension: sideExt)
+        let hardwareRightWall = screen.midX + notchW / 2 // 848.5pt — display-centered cutout
+        XCTAssertEqual(f.maxX, hardwareRightWall, accuracy: 0.001,
+                       "collapsed slab right wall must fuse with the hardware notch wall (no 穿帮)")
+        // …and land on the backing-pixel grid so the wall is crisp, not a blurred half-pixel.
+        XCTAssertEqual((f.maxX * scale).rounded(), f.maxX * scale, accuracy: 0.001)
+    }
+
+    // The slab's implied notch-region LEFT wall (right edge minus the notch width) must equally land
+    // on the hardware left wall — the whole slab shares the cutout's axis, not the screen's.
+    func testCollapsedNotchRegionSharesHardwareAxis() {
+        let f = NotchGeometry.collapsed(metrics, sideExtension: sideExt)
+        let notchLeftWall = f.maxX - notchW
+        XCTAssertEqual(notchLeftWall, screen.midX - notchW / 2, accuracy: 0.001) // 663.5pt
+    }
+
+    // The top of the slab must sit exactly on the display's top edge, or a hairline seam opens at
+    // the top of the cutout. Height-then-derive-y guarantees it regardless of fractional heights.
+    func testTopEdgePinnedToDisplayTop() {
+        let c = NotchGeometry.collapsed(metrics, sideExtension: sideExt)
+        XCTAssertEqual(c.maxY, screen.maxY, accuracy: 0.001)
+        // Fractional card height (from text measurement) must NOT let the top drift — the classic
+        // round(y)+round(h) ≠ top bug. 87.3 + 28 margin is deliberately fraction-heavy.
+        let e = NotchGeometry.expanded(metrics, cardWidth: 600, cardHeight: 87.3,
+                                       marginH: 22, marginBottom: 28)
+        XCTAssertEqual(e.maxY, screen.maxY, accuracy: 0.001)
+    }
+
+    // Collapsed and expanded must share ONE horizontal center (the notch axis), so the expand /
+    // collapse morph rises straight out of the cutout instead of sliding sideways.
+    func testCollapsedAndExpandedShareNotchCenter() {
+        let notchCenter = screen.midX // 756
+        let c = NotchGeometry.collapsed(metrics, sideExtension: sideExt)
+        let e = NotchGeometry.expanded(metrics, cardWidth: 600, cardHeight: 120,
+                                       marginH: 22, marginBottom: 28)
+        // Collapsed panel is asymmetric (left extension for the rose), so its NOTCH region — not the
+        // whole panel — is what must be centered: right wall minus half the notch width.
+        XCTAssertEqual(c.maxX - notchW / 2, notchCenter, accuracy: 0.001)
+        XCTAssertEqual(e.midX, notchCenter, accuracy: 0.001) // symmetric card is centered outright
+    }
+
+    // The expanded card keeps its exact requested width once the transparent shadow margins are
+    // stripped, so the obsidian body is never off by a stray pixel.
+    func testExpandedCardWidthPreservedInsideMargins() {
+        let e = NotchGeometry.expanded(metrics, cardWidth: 600, cardHeight: 120,
+                                       marginH: 22, marginBottom: 28)
+        XCTAssertEqual(e.width - 22 * 2, 600, accuracy: 0.001)
+    }
+
+    func testPixelAlignSnapsToBackingGrid() {
+        XCTAssertEqual(NotchGeometry.pixelAlign(603.5, scale: 2), 603.5, accuracy: 0.0001) // already on grid
+        XCTAssertEqual(NotchGeometry.pixelAlign(603.3, scale: 2), 603.5, accuracy: 0.0001) // → nearest 0.5
+        XCTAssertEqual(NotchGeometry.pixelAlign(603.1, scale: 2), 603.0, accuracy: 0.0001)
+        XCTAssertEqual(NotchGeometry.pixelAlign(100.0, scale: 1), 100.0, accuracy: 0.0001)
+        XCTAssertEqual(NotchGeometry.pixelAlign(100.4, scale: 1), 100.0, accuracy: 0.0001)
+    }
+}
