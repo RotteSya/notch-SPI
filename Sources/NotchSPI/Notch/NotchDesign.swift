@@ -47,10 +47,13 @@ enum NotchPalette {
 
 /// Shared easing curves for the expand/collapse morph.
 enum NotchMotion {
-    /// Under-damped spring settle for EXPANDING: a ~10% overshoot then a soft landing (residual
-    /// <0.6% at t=1; the tween snaps to the exact value when it ends, so it is imperceptible).
+    /// Under-damped spring settle for EXPANDING. This curve now drives the PANEL FRAME itself
+    /// (not just radii), so the overshoot is tuned soft — ~4.7% at t≈0.44, residual 0.12% at t=1
+    /// (the tween snaps to the exact value when it ends, so the snap is imperceptible). On a
+    /// ~380pt width delta that is a ~17pt breath past the target and a settle back — a soft body
+    /// landing, never a wobble. Radii re-amplify it (see `applyLayout`) to keep corners lively.
     /// Only for expanding — collapsing is a quiet exhale where a bounce would read as flippant.
-    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-5.0 * t) * cos(7.0 * t) }
+    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-6.0 * t) * cos(5.2 * t) }
 
     /// The original quiet out-cubic (collapse direction, and the opacity channel).
     static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
@@ -78,6 +81,19 @@ enum NotchLayout {
 // MARK: - Small helpers
 
 @inline(__always) func notchLerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+
+/// Rect lerp — extrapolates past t=1 so the frame spring can overshoot as one body.
+@inline(__always) func notchLerpRect(_ a: CGRect, _ b: CGRect, _ t: CGFloat) -> CGRect {
+    CGRect(x: notchLerp(a.minX, b.minX, t), y: notchLerp(a.minY, b.minY, t),
+           width: notchLerp(a.width, b.width, t), height: notchLerp(a.height, b.height, t))
+}
+
+/// Smoothstep of `x` across [lo, hi] — the staging ramp for content alpha inside the morph.
+@inline(__always) func notchRamp(_ x: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+    guard hi > lo else { return x >= hi ? 1 : 0 }
+    let t = max(0, min(1, (x - lo) / (hi - lo)))
+    return t * t * (3 - 2 * t)
+}
 
 /// A vertical CGGradient from `(color, location)` stops in sRGB.
 func notchGradient(_ stops: [(NSColor, CGFloat)]) -> CGGradient {
@@ -201,8 +217,11 @@ final class DisplayTween {
     private weak var host: NSView?
 
     var onChange: ((CGFloat) -> Void)?
-    /// Out-cubic settle, matched to the controller's ease-out frame curve.
+    /// Out-cubic settle (the opacity channel's default).
     var ease: (CGFloat) -> CGFloat = { t in 1 - pow(1 - t, 3) }
+
+    /// True while a tween is in flight (used to hand the panel frame between morph and growth).
+    var isAnimating: Bool { link.map { !$0.isPaused } ?? false }
 
     init(host: NSView, value: CGFloat = 0) {
         self.host = host
@@ -253,6 +272,78 @@ private final class TweenProxy {
     @objc func tick() { owner?.step() }
 }
 
+// MARK: - Critically damped spring
+
+/// A retargetable critically-damped spring on a scalar. Unlike a restarted tween, retargeting
+/// mid-flight PRESERVES velocity — so a stream of moving targets (panel height growing line by
+/// line, follow-bottom scroll chasing new text) glides as one continuous motion instead of a
+/// staircase of eased hops. Semi-implicit Euler; stable at display rates for the ω used here.
+struct CriticalSpring {
+    private(set) var value: CGFloat = 0
+    private var velocity: CGFloat = 0
+    var target: CGFloat = 0
+    /// ω² — 210 ⇒ ω≈14.5, settles in ~0.35s without overshoot.
+    var stiffness: CGFloat = 210
+
+    var settled: Bool { abs(value - target) < 0.25 && abs(velocity) < 4 }
+
+    mutating func step(_ dt: CFTimeInterval) {
+        let dt = CGFloat(min(max(dt, 0), 1.0 / 30))   // clamp runloop stalls; keep integration stable
+        let damping = 2 * sqrt(stiffness)
+        velocity += (stiffness * (target - value) - damping * velocity) * dt
+        value += velocity * dt
+        if settled { value = target; velocity = 0 }
+    }
+
+    /// Jump to a value with no motion (state resets, Reduce Motion).
+    mutating func snap(_ v: CGFloat) { value = v; target = v; velocity = 0 }
+}
+
+// MARK: - Display ticker
+
+/// A pausable display-link that reports the frame delta — the clock for the springs. Weak-proxy
+/// target like `DisplayTween` so it never retains its host.
+final class NotchTicker {
+    private var link: CADisplayLink?
+    private var proxy: TickerProxy?
+    private var lastTime: CFTimeInterval = 0
+    private weak var host: NSView?
+    var onTick: ((CFTimeInterval) -> Void)?
+
+    init(host: NSView) { self.host = host }
+
+    var isRunning: Bool { link.map { !$0.isPaused } ?? false }
+
+    func start() {
+        guard let host else { return }
+        if link == nil {
+            let p = TickerProxy(self)
+            proxy = p
+            link = host.displayLink(target: p, selector: #selector(TickerProxy.tick))
+            link?.add(to: .main, forMode: .common)
+        }
+        if link?.isPaused == true || lastTime == 0 { lastTime = CACurrentMediaTime() }
+        link?.isPaused = false
+    }
+
+    func pause() { link?.isPaused = true }
+
+    fileprivate func step() {
+        let now = CACurrentMediaTime()
+        let dt = now - lastTime
+        lastTime = now
+        onTick?(dt)
+    }
+
+    deinit { link?.invalidate() }
+}
+
+private final class TickerProxy {
+    weak var owner: NotchTicker?
+    init(_ o: NotchTicker) { owner = o }
+    @objc func tick() { owner?.step() }
+}
+
 // MARK: - Obsidian surface
 
 /// The material treatment applied to the notch slab, drawn entirely within the shape so it never
@@ -268,7 +359,9 @@ final class NotchSurfaceView: NSView {
     var bottomRadius: CGFloat = 11 { didSet { needsDisplay = true } }
     /// 0 = collapsed (seam-fused, minimal volume) … 1 = expanded (full lower-face volume).
     var depth: CGFloat = 0 { didSet { needsDisplay = true } }
-    var showShadow: Bool = false { didSet { needsDisplay = true } }
+    /// Drop-shadow strength 0…1, driven by the morph so the card's grounding fades in/out with
+    /// its lift — a binary toggle here reads as a shadow popping on under the menu bar.
+    var shadowStrength: CGFloat = 0 { didSet { needsDisplay = true } }
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil } // never intercept clicks
@@ -281,15 +374,16 @@ final class NotchSurfaceView: NSView {
         // Grounded drop shadow (expanded only). Paint the opaque body twice with a CG shadow so it
         // falls below the card — a tight contact shadow plus a soft ambient one. Offsets are
         // positive-down because the flipped context has +y pointing toward the bottom of screen.
-        if showShadow {
+        if shadowStrength > 0.01 {
+            let s = min(1, shadowStrength)
             ctx.saveGState()
             ctx.setShadow(offset: CGSize(width: 0, height: 9), blur: 16,
-                          color: NSColor.black.withAlphaComponent(0.55).cgColor)
+                          color: NSColor.black.withAlphaComponent(0.55 * s).cgColor)
             ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
             ctx.restoreGState()
             ctx.saveGState()
             ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 5,
-                          color: NSColor.black.withAlphaComponent(0.38).cgColor)
+                          color: NSColor.black.withAlphaComponent(0.38 * s).cgColor)
             ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
             ctx.restoreGState()
         }

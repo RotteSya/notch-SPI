@@ -4,6 +4,7 @@ import Carbon.HIToolbox
 final class NotchController: NSObject {
     let model = TutorModel()
     private let panel: NotchPanel
+    private var notchView: NotchView!
     private var hovering = false
     private var pinned = false
     private var running = false
@@ -24,12 +25,14 @@ final class NotchController: NSObject {
 
         let view = NotchView(
             model: model,
+            frameProvider: { [weak self] expanded in self?.frame(expanded: expanded) ?? .zero },
             onHover: { [weak self] in self?.hover($0) },
             onCycleDepth: { [weak self] in self?.cycleDepth() },
             onEditPersona: { [weak self] in self?.openSettings(page: .personas) },
             onSettings: { [weak self] in self?.showSettings() }
         )
         view.autoresizingMask = [.width, .height]
+        notchView = view
         panel.contentView = view
         panel.setFrame(frame(expanded: false), display: true)
 
@@ -166,10 +169,31 @@ final class NotchController: NSObject {
                                   "Capture failed — the target window may have just closed. Please try again.")
             model.status = .error; model.statusText = L10n.statusError
             setExpanded(true); resizeToFit()
+        case "cycle":  // expand ⇄ collapse forever — for filming both morph directions
+            model.answer = fixture; model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            setExpanded(true); resizeToFit()
+            var next = false
+            func flip() {
+                let w = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.setExpanded(next)
+                    next.toggle()
+                    flip()
+                }
+                qaStreamWork = w
+                // Rest long enough for the morph to settle even under NSPI_SLOW_MORPH.
+                DispatchQueue.main.asyncAfter(deadline: .now() + NotchPalette.morphDuration + 1.4, execute: w)
+            }
+            flip()
         default: // "streaming" — run the real birth animation by appending in chunks
+                 // ("streaming-long" streams 4× the fixture, far past maxExpandedHeight, so the
+                 //  height spring hits its clamp and the follow-bottom scroll takes over)
             model.answer = ""; model.status = .running; model.statusText = L10n.statusPreparing
             setExpanded(true)
-            let chars = Array(fixture)
+            let text = state == "streaming-long"
+                ? Array(repeating: fixture, count: 4).joined(separator: "\n\n") : fixture
+            let chars = Array(text)
             var i = 0
             func pump() {
                 guard i < chars.count else {
@@ -414,19 +438,6 @@ final class NotchController: NSObject {
         return NotchGeometry.collapsed(m, sideExtension: collapsedSideExtension)
     }
 
-    private func setFrame(expanded: Bool, animate: Bool) {
-        let f = frame(expanded: expanded)
-        if animate {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = NotchPalette.morphDuration   // one body: same clock as the view's morph tween
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.90, 0.24, 1.00)
-                panel.animator().setFrame(f, display: true)
-            }
-        } else {
-            panel.setFrame(f, display: true)
-        }
-    }
-
     // Auto-size the expanded panel to its content (clamped), so a short answer
     // doesn't leave a big empty blob and a long one scrolls.
     private let minExpandedHeight: CGFloat = 76
@@ -445,7 +456,8 @@ final class NotchController: NSObject {
         guard model.expanded else { return }
         let target = frame(expanded: true)
         if abs(panel.frame.height - target.height) >= 2 {
-            panel.setFrame(target, display: true)
+            // The view's height spring carries the frame — streamed growth glides, never steps.
+            notchView.retargetExpandedFrame(target)
         }
     }
 
@@ -453,8 +465,9 @@ final class NotchController: NSObject {
 
     func setExpanded(_ on: Bool) {
         guard model.expanded != on else { return }
+        // NotchView observes this and drives the whole morph — panel frame included — on one
+        // display-link clock, so frame, radii, light field and content can never drift apart.
         model.expanded = on
-        setFrame(expanded: on, animate: true)
     }
 
     private func hover(_ inside: Bool) {

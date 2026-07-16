@@ -1,17 +1,32 @@
 import AppKit
 import Combine
+import QuartzCore
 
-/// The notch's content, in pure AppKit. A flipped `NSView` hosting the obsidian surface, a
-/// collapsed menu-bar bar (just the Rose indicator beside the cutout), and an expanded card
-/// (header + scrollable answer), crossfading between the two as the controller drives
-/// `model.expanded`. The slab radii + content opacity tween on a display clock matched to the
-/// controller's panel-frame animation, so frame and contents arrive as one body.
+/// The notch's content, in pure AppKit — and the single clock that moves it.
+///
+/// One body, one clock: the panel FRAME, the slab radii, the light field and the content staging
+/// are all driven from the same display-link morph (`geoMorph`), so nothing can drift apart the
+/// way a window-server animation and a view tween can. Three ideas carry the design:
+///
+///  1. **One rose.** The signature indicator never crossfades or duplicates: the same
+///     `RoseLoaderView` glides and rescales between its menu-bar pose and its header pose,
+///     riding the slab's leading edge — a shared-element transition, not two ghosts.
+///  2. **A content plate.** The expanded header + answer are laid out ONCE at their final size
+///     and clipped to the slab's path with a layer mask. Mid-morph the slab's edges *reveal*
+///     finished content — text never re-wraps, the status line never re-truncates, and no
+///     scroller flashes while the card is still growing.
+///  3. **Springs for streaming.** The panel's line-by-line growth and the follow-bottom scroll
+///     ride retargetable critically-damped springs, so arriving tokens pour the card open in one
+///     continuous glide instead of a staircase of `setFrame` jumps.
 final class NotchView: NSView {
     private let model: TutorModel
     private let onHover: (Bool) -> Void
     private let onCycleDepth: () -> Void
     private let onEditPersona: () -> Void
     private let onSettings: () -> Void
+    /// Supplies the CURRENT collapsed/expanded panel frames (screen coords). Geometry stays owned
+    /// by the controller; this view owns the clock that travels between the two.
+    private let frameProvider: (Bool) -> NSRect
 
     // Surface (fills the whole panel incl. the transparent shadow margin).
     private let surface = NotchSurfaceView()
@@ -19,29 +34,45 @@ final class NotchView: NSView {
     private let luma = NotchLumaView()
     private var lastAnswerLen = 0
     private var followBottom = false
+    private var userDetached = false   // the user scrolled up to read; never yank them back down
 
-    // Collapsed bar — the Rose sits in the menu-bar space to the left of the notch.
-    private let collapsedBar = FlippedContainer()
-    private let roseCollapsed = RoseLoaderView()
+    /// The one persistent rose (see note 1 above). Floats above the content plate, unmasked.
+    private let rose = RoseLoaderView()
 
-    // Expanded card.
+    // Expanded content plate (see note 2 above).
     private let expandedContent = FlippedContainer()
-    private let roseHeader = RoseLoaderView()
+    private let contentMask = CAShapeLayer()
     private let modeLabel = NotchView.makeLabel(size: 12.5, weight: .semibold, color: NotchPalette.primary)
     private let statusText = NotchView.makeLabel(size: 11, weight: .regular, color: NotchPalette.secondary)
     private let capsule = NotchCapsuleButton()
     private lazy var gearButton = NotchControlButton(
         systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
-    private let answerScroll = NSScrollView()
+    private let answerScroll = FollowScrollView()
     private let answerStream = StreamingAnswerView()
+    /// Top-edge dissolve for scrolled answers: once the text scrolls under the header it fades
+    /// out over ~16pt instead of being guillotined mid-glyph. Strength follows the offset, so an
+    /// unscrolled answer keeps its first line at full ink.
+    private let scrollFade = CAGradientLayer()
 
     private lazy var morph = DisplayTween(host: self, value: 0)
-    /// Geometry-only channel: expanding overshoots (spring) while `morph` (opacity/visibility)
+    /// Geometry channel: expanding overshoots (soft spring) while `morph` (opacity/staging)
     /// stays a clamped out-cubic. They MUST be separate — a spring on opacity would flash the
-    /// content fully lit inside the still-small mid-morph card and spill past its edge.
+    /// content past full mid-landing.
     private lazy var geoMorph = DisplayTween(host: self, value: 0)
+
+    // Frame anchors for the morph lerp. Re-anchored to the live window frame at each morph start
+    // so a reversal or a mid-stream height change can never cause a frame jump.
+    private var collapsedAnchor: NSRect = .zero
+    private var expandedAnchor: NSRect = .zero
+
+    // Streaming springs (see note 3 above), stepped by one shared ticker.
+    private lazy var ticker = NotchTicker(host: self)
+    private var heightSpring = CriticalSpring()
+    private var scrollSpring = CriticalSpring()
+
     private var wasExpanded = false
+    private var lastPlateSize = CGSize.zero
     private var hovering = false
     private var trackingAreaRef: NSTrackingArea?
     private var cancellables = Set<AnyCancellable>()
@@ -49,11 +80,13 @@ final class NotchView: NSView {
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     init(model: TutorModel,
+         frameProvider: @escaping (Bool) -> NSRect,
          onHover: @escaping (Bool) -> Void,
          onCycleDepth: @escaping () -> Void,
          onEditPersona: @escaping () -> Void,
          onSettings: @escaping () -> Void) {
         self.model = model
+        self.frameProvider = frameProvider
         self.onHover = onHover
         self.onCycleDepth = onCycleDepth
         self.onEditPersona = onEditPersona
@@ -74,13 +107,14 @@ final class NotchView: NSView {
         addSubview(surface)
         addSubview(luma)
 
-        collapsedBar.addSubview(roseCollapsed)
-        addSubview(collapsedBar)
-
         configureAnswerArea()
-        [roseHeader, modeLabel, statusText, capsule, gearButton, answerScroll].forEach { expandedContent.addSubview($0) }
+        [modeLabel, statusText, capsule, gearButton, answerScroll].forEach { expandedContent.addSubview($0) }
+        expandedContent.wantsLayer = true
+        expandedContent.layer?.mask = contentMask
         addSubview(expandedContent)
         expandedContent.alphaValue = 0
+
+        addSubview(rose)   // above the plate; decorative, never intercepts clicks
 
         // The capsule dispatches by the active mode: cycle depth (tutor) / edit persona (personality).
         capsule.onClick = { [weak self] in
@@ -89,7 +123,11 @@ final class NotchView: NSView {
         }
 
         morph.onChange = { [weak self] _ in self?.applyLayout() }
-        geoMorph.onChange = { [weak self] _ in self?.applyLayout() }
+        geoMorph.onChange = { [weak self] g in
+            self?.applyMorphFrame(g)
+            self?.applyLayout()
+        }
+        ticker.onTick = { [weak self] dt in self?.springTick(dt) }
     }
 
     private func configureAnswerArea() {
@@ -100,6 +138,9 @@ final class NotchView: NSView {
         answerScroll.borderType = .noBorder
         answerScroll.horizontalScrollElasticity = .none
         answerScroll.documentView = answerStream
+        answerScroll.onUserScroll = { [weak self] in self?.noteUserScroll() }
+        answerScroll.wantsLayer = true
+        answerScroll.layer?.mask = scrollFade
     }
 
     private func observe() {
@@ -114,8 +155,7 @@ final class NotchView: NSView {
     private func refresh() {
         let tint = roseTint()
         let busy = model.status == .running || model.status == .streaming
-        roseCollapsed.color = tint; roseCollapsed.busy = busy
-        roseHeader.color = tint; roseHeader.busy = busy
+        rose.color = tint; rose.busy = busy
 
         luma.setState(model.status)
         // Streaming token arrival → one ripple through the light field.
@@ -135,21 +175,19 @@ final class NotchView: NSView {
         // While streaming, keep the newest text in view (a long answer scrolls within its region).
         if model.status == .streaming { followBottom = true }
         else if model.status != .running { followBottom = false }
-
-        // Drive the morph from the model's expand state. Opacity channel = out-cubic always;
-        // geometry channel = spring overshoot when expanding, quiet out-cubic when collapsing.
-        if model.expanded != wasExpanded {
-            wasExpanded = model.expanded
-            let target: CGFloat = model.expanded ? 1 : 0
-            if reduceMotion {
-                morph.set(target); geoMorph.set(target)
-            } else {
-                morph.animate(to: target, duration: NotchPalette.morphDuration)
-                geoMorph.ease = model.expanded ? NotchMotion.springSettle : NotchMotion.outCubic
-                geoMorph.animate(to: target, duration: NotchPalette.morphDuration)
-            }
+        if model.answer.isEmpty {
+            // A new turn resets the reading position instantly — no smooth scroll to the top.
+            scrollSpring.snap(0)
+            scrollTo(0)
+            userDetached = false
         }
+
+        if model.expanded != wasExpanded { beginMorph(model.expanded) }
+
+        // Content (labels, capsule, answer length) may have changed — re-lay the plate.
+        if lastPlateSize != .zero { layoutPlate(lastPlateSize) }
         applyLayout()
+        updateFollow()
     }
 
     /// Rose tint by state — white at rest (no "camera-in-use" green dot), accent while working,
@@ -162,6 +200,132 @@ final class NotchView: NSView {
         }
     }
 
+    // MARK: Morph (one clock: frame + styling)
+
+    private func beginMorph(_ on: Bool) {
+        wasExpanded = on
+        let current = window?.frame ?? .zero
+        if on {
+            if geoMorph.value <= 0.001, current.width > 0 { collapsedAnchor = current }
+            else if collapsedAnchor.width <= 0 { collapsedAnchor = frameProvider(false) }
+            expandedAnchor = frameProvider(true)
+        } else {
+            if geoMorph.value >= 0.999, current.width > 0 { expandedAnchor = current }
+            collapsedAnchor = frameProvider(false)
+        }
+        // The morph owns the frame now — quiesce the streaming springs at today's reality.
+        ticker.pause()
+        heightSpring.snap(current.height)
+
+        let target: CGFloat = on ? 1 : 0
+        if reduceMotion {
+            morph.set(target); geoMorph.set(target)
+        } else {
+            morph.animate(to: target, duration: NotchPalette.morphDuration)
+            geoMorph.ease = on ? NotchMotion.springSettle : NotchMotion.outCubic
+            geoMorph.animate(to: target, duration: NotchPalette.morphDuration)
+        }
+    }
+
+    private func applyMorphFrame(_ g: CGFloat) {
+        guard collapsedAnchor.width > 0, expandedAnchor.width > 0, let window else { return }
+        window.setFrame(notchLerpRect(collapsedAnchor, expandedAnchor, max(0, g)), display: true)
+    }
+
+    /// The expanded target grew or shrank (answer streaming in, font/size change). While the
+    /// morph is in flight the frame lerp retargets naturally; once settled, the height spring
+    /// carries the frame — line-by-line growth becomes one continuous glide.
+    func retargetExpandedFrame(_ f: NSRect) {
+        expandedAnchor = f
+        guard wasExpanded, !geoMorph.isAnimating, let window else { return }
+        if reduceMotion {
+            window.setFrame(f, display: true)
+            return
+        }
+        if heightSpring.settled { heightSpring.snap(window.frame.height) }
+        heightSpring.target = f.height
+        if !heightSpring.settled { ticker.start() }
+    }
+
+    private func springTick(_ dt: CFTimeInterval) {
+        var active = false
+        if !heightSpring.settled {
+            heightSpring.step(dt)
+            if let window {
+                let h = max(1, heightSpring.value)
+                window.setFrame(NSRect(x: expandedAnchor.minX, y: expandedAnchor.maxY - h,
+                                       width: expandedAnchor.width, height: h), display: true)
+            }
+            active = true
+        }
+        if followBottom && !userDetached { scrollSpring.target = maxScrollOffset() }
+        if !scrollSpring.settled {
+            scrollSpring.step(dt)
+            scrollTo(scrollSpring.value)
+            active = true
+        }
+        if !active { ticker.pause() }
+    }
+
+    // MARK: Follow-bottom scroll
+
+    private func maxScrollOffset() -> CGFloat {
+        max(0, answerStream.frame.height - answerScroll.contentView.bounds.height)
+    }
+
+    private func scrollTo(_ y: CGFloat) {
+        answerScroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: max(0, y)))
+        answerScroll.reflectScrolledClipView(answerScroll.contentView)
+        updateScrollFade()
+    }
+
+    private func updateScrollFade() {
+        let h = answerScroll.frame.height
+        guard h > 1 else { return }
+        let off = answerScroll.contentView.bounds.origin.y
+        let top = max(0, min(1, off / 12))                        // dissolved after 12pt of scroll
+        // "More below" dissolve — suppressed while auto-following so newborn glyphs stay crisp
+        // (the follow spring trails the tail by a few points; fading there would shimmer).
+        let bottom = followBottom && !userDetached
+            ? 0 : max(0, min(1, (maxScrollOffset() - off) / 12))
+        let fade = NSNumber(value: Double(min(0.5, 16 / h)))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        scrollFade.frame = answerScroll.bounds
+        scrollFade.startPoint = CGPoint(x: 0.5, y: 0)
+        scrollFade.endPoint = CGPoint(x: 0.5, y: 1)
+        scrollFade.colors = [
+            NSColor.white.withAlphaComponent(1 - top).cgColor,
+            NSColor.white.cgColor,
+            NSColor.white.cgColor,
+            NSColor.white.withAlphaComponent(1 - bottom).cgColor,
+        ]
+        scrollFade.locations = [0, fade, NSNumber(value: 1 - fade.doubleValue), 1]
+        CATransaction.commit()
+    }
+
+    private func updateFollow() {
+        guard wasExpanded, followBottom, !userDetached else { return }
+        let target = maxScrollOffset()
+        if reduceMotion {
+            scrollSpring.snap(target)
+            scrollTo(target)
+            return
+        }
+        if abs(target - scrollSpring.target) > 0.5 || !scrollSpring.settled {
+            if scrollSpring.settled { scrollSpring.snap(answerScroll.contentView.bounds.origin.y) }
+            scrollSpring.target = target
+            if !scrollSpring.settled { ticker.start() }
+        }
+    }
+
+    private func noteUserScroll() {
+        let y = answerScroll.contentView.bounds.origin.y
+        scrollSpring.snap(y)                             // never fight the user's hand
+        userDetached = y < maxScrollOffset() - 12        // back at the tail → follow re-engages
+        updateScrollFade()
+    }
+
     // MARK: Layout (morph-driven)
 
     override func layout() {
@@ -172,13 +336,13 @@ final class NotchView: NSView {
     private func applyLayout() {
         let b = bounds
         guard b.width > 1 else { return }
-        // p: opacity / visibility — clamped (a crossfade must never invert).
-        // g: geometry — may overshoot past 1 (spring), so the whole slab lands like a soft body.
-        //    Radii take an amplified overshoot (gr) — 10% on an 8pt shoulder is only ~0.8pt, too
-        //    subtle to feel; ×2.5 makes the corners visibly soften-then-settle on arrival.
+        // p: opacity / staging — clamped (a reveal must never invert).
+        // g: geometry — may overshoot past 1 (soft frame spring, ~4.7% peak).
+        //    Radii re-amplify the overshoot (gr): 4.7% of an 8pt shoulder is invisible; ×6 makes
+        //    the corners visibly soften-then-settle as the body lands.
         let p = max(0, min(1, morph.value))
         let g = max(0, geoMorph.value)
-        let gr = g <= 1 ? g : 1 + (g - 1) * 2.5
+        let gr = g <= 1 ? g : 1 + (g - 1) * 6
 
         // Card inset: the transparent shadow margin grows in only as we expand (top stays flush).
         let mH = NotchMetrics.shadowMarginH * g
@@ -190,33 +354,59 @@ final class NotchView: NSView {
         surface.topRadius = notchLerp(6, 8, gr)
         surface.bottomRadius = notchLerp(14, 22, gr)
         surface.depth = p
-        surface.showShadow = p > 0.001
+        surface.shadowStrength = p
 
         luma.frame = b
         luma.setSlab(cardRect: card, topRadius: notchLerp(6, 8, gr),
                      bottomRadius: notchLerp(14, 22, gr), depth: p)
 
-        collapsedBar.frame = card
-        expandedContent.frame = card
-        collapsedBar.alphaValue = 1 - p
-        expandedContent.alphaValue = p
-        collapsedBar.isHidden = p >= 0.999
-        expandedContent.isHidden = p <= 0.001
-
-        if !collapsedBar.isHidden { layoutCollapsed(card.size) }
-        if !expandedContent.isHidden { layoutExpanded(card.size) }
+        layoutRose(card: card, g: g)
+        layoutContentPlate(card: card, p: p)
     }
 
-    private func layoutCollapsed(_ size: CGSize) {
-        let cy = size.height / 2
-        roseCollapsed.frame = CGRect(x: 14, y: cy - 10, width: 20, height: 20)
+    /// The rose's two poses share a center-x of 24pt from the card's left edge, so the morph is a
+    /// glide along the leading edge plus a gentle 20→16pt rescale and a 1.5pt vertical settle.
+    private func layoutRose(card: CGRect, g: CGFloat) {
+        let t = max(0, min(g, 1.1))
+        let barH = collapsedAnchor.height > 0 ? collapsedAnchor.height : bounds.height
+        let cy = notchLerp(barH / 2, NotchLayout.headerRowCenterY, t)
+        let size = notchLerp(20, 16, t)
+        rose.frame = CGRect(x: card.minX + 24 - size / 2, y: cy - size / 2, width: size, height: size)
     }
 
-    private func layoutExpanded(_ size: CGSize) {
+    private func layoutContentPlate(card: CGRect, p: CGFloat) {
+        guard expandedAnchor.width > 0 else { expandedContent.isHidden = true; return }
+        let plateSize = CGSize(width: expandedAnchor.width - NotchMetrics.shadowMarginH * 2,
+                               height: expandedAnchor.height - NotchMetrics.shadowMarginBottom)
+        if plateSize != lastPlateSize {
+            lastPlateSize = plateSize
+            layoutPlate(plateSize)
+        }
+        expandedContent.frame = CGRect(origin: card.origin, size: plateSize)
+
+        // Staging: the slab leads, the content follows — in by ~half the morph on the way out of
+        // the notch, and gone in the first exhale of a collapse.
+        let ca = notchRamp(p, 0.38, 0.88)
+        expandedContent.alphaValue = ca
+        expandedContent.isHidden = ca <= 0.001
+
+        // Clip the plate to the slab so mid-morph content ends at the obsidian's edge, never past it.
+        if !expandedContent.isHidden {
+            let path = NotchShape.cgPath(in: card, topRadius: surface.topRadius,
+                                         bottomRadius: surface.bottomRadius)
+            var shift = CGAffineTransform(translationX: -card.minX, y: -card.minY)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            contentMask.path = path.copy(using: &shift)
+            CATransaction.commit()
+        }
+    }
+
+    /// Lay the plate at its FINAL size — called when the target size or the content changes,
+    /// never per morph tick, so the CTFramesetter cache stays warm and nothing re-wraps.
+    private func layoutPlate(_ size: CGSize) {
         let inset = NotchLayout.contentInsetH
         let cy = NotchLayout.headerRowCenterY
-
-        roseHeader.frame = CGRect(x: inset, y: cy - 8, width: 16, height: 16)
 
         let gearX = size.width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
@@ -225,7 +415,7 @@ final class NotchView: NSView {
         let capX = gearX - 8 - cap.width
         capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: cap.width, height: cap.height)
 
-        var x = inset + 16 + 8
+        var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
         // Size the label by asking its cell (NSString measurement misses the cell's own
         // horizontal padding, which clipped "学习辅导" to "学习…" in the header).
         let modeW = ceil(modeLabel.sizeThatFits(
@@ -248,11 +438,7 @@ final class NotchView: NSView {
         // long answer scrolls; the CTFramesetter measure matches what it draws.
         let docH = max(h, NotchType.answerHeight(model.answer, mode: model.mode, width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
-        if followBottom {
-            let maxY = max(0, docH - h)
-            answerScroll.contentView.scroll(to: NSPoint(x: 0, y: maxY))
-            answerScroll.reflectScrolledClipView(answerScroll.contentView)
-        }
+        updateScrollFade()
     }
 
     // MARK: Hover
@@ -297,6 +483,18 @@ final class NotchView: NSView {
 /// flipped `NotchView` (a plain NSView is bottom-left, which would invert the stacked rows).
 private final class FlippedContainer: NSView {
     override var isFlipped: Bool { true }
+}
+
+// MARK: - Follow scroll view
+
+/// The answer scroller — reports user-initiated scrolls so the auto-follow can yield to a
+/// reading user (scroll up to detach; return to the tail to re-engage).
+private final class FollowScrollView: NSScrollView {
+    var onUserScroll: (() -> Void)?
+    override func scrollWheel(with event: NSEvent) {
+        super.scrollWheel(with: event)
+        onUserScroll?()
+    }
 }
 
 // MARK: - Capsule button
