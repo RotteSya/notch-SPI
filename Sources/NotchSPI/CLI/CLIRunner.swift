@@ -117,6 +117,29 @@ enum CLIRunner {
         text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    /// Session cache for the capture hotpath: a full probe spawns a login shell plus several
+    /// child processes (`--version`, auth status) and can take seconds. Entries are revalidated
+    /// cheaply (the binary must still exist); the controller re-probes fresh when the cache
+    /// doesn't yield a runnable CLI and drops it whenever a run fails, so an uninstall or
+    /// logout never sticks.
+    @MainActor private static var detectCache: [String: CLIInfo]?
+
+    @MainActor static func detectCached() async -> [String: CLIInfo] {
+        if let cached = detectCache,
+           cached.values.allSatisfy({ $0.path == nil || FileManager.default.isExecutableFile(atPath: $0.path!) }) {
+            return cached
+        }
+        return await detectFresh()
+    }
+
+    @MainActor static func detectFresh() async -> [String: CLIInfo] {
+        let fresh = await detect()
+        detectCache = fresh
+        return fresh
+    }
+
+    @MainActor static func invalidateDetectCache() { detectCache = nil }
+
     static func detect() async -> [String: CLIInfo] {
         await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {

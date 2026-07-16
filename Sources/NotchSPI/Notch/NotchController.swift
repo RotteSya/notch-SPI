@@ -43,6 +43,18 @@ final class NotchController: NSObject {
         observers.append(NotificationCenter.default.addObserver(
             forName: Appearance.themeDidChange, object: nil, queue: .main
         ) { [weak self] _ in self?.refreshAppearance() })
+
+        // Pre-enumerate shareable content so the first hotkey press skips the ~100–300ms
+        // window-server enumeration; kept fresh after each shot and across display changes.
+        Task { @MainActor in ScreenCapture.prefetchShareableContent() }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                ScreenCapture.invalidateShareableContent()
+                ScreenCapture.prefetchShareableContent()
+            }
+        })
     }
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
@@ -510,6 +522,15 @@ final class NotchController: NSObject {
             // default for fresh installs; custom key and CLI behave exactly as before.
             let channel = self.currentChannel()
 
+            // The screenshot takes a few hundred ms — use that window to warm the network path
+            // (DNS + TLS + serverless cold start + DB wake for official; vendor TLS for custom
+            // key) so the capture POST rides a hot connection. Fire-and-forget.
+            switch channel {
+            case .official: OfficialAPI.warmUp()
+            case .customKey: APIKeyRunner.warmUp(cliId: cliId)
+            case .cli: break
+            }
+
             // 额度鉴权拦截：QuotaGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
             // 不读取任何账户或额度状态（见 QuotaGate.preflight 的第一行守卫）。
             if case .official = channel {
@@ -529,10 +550,16 @@ final class NotchController: NSObject {
                 }
             }
 
-            // CLI mode is the only channel that needs a local binary; detection is untouched.
+            // CLI mode is the only channel that needs a local binary. Detection results are
+            // cached for the session (a fresh probe spawns a login shell and can take seconds);
+            // when the cache doesn't yield a runnable CLI — including after an uninstall or
+            // logout went stale — re-probe fresh once before surfacing an error.
             var binPath: String?
             if case .cli = channel {
-                let det = await CLIRunner.detect()
+                var det = await CLIRunner.detectCached()
+                if !(det[cliId]?.installed == true && det[cliId]?.loggedIn != false) {
+                    det = await CLIRunner.detectFresh()
+                }
                 guard let info = det[cliId], info.installed, let path = info.path else {
                     self.finishError(L10n.t(
                         "未找到 \(cliId) 命令行。请安装并登录后重试，或在设置 →「高级」切换回官方服务。",
@@ -551,15 +578,22 @@ final class NotchController: NSObject {
                 binPath = path
             }
 
-            // Hide the panel only for full-screen shots, so it isn't in its own
-            // screenshot; a target window can't contain our panel.
+            // Full-screen shots must not contain our own panel. Fast path: exclude the panel
+            // window from the capture filter, so it never has to be hidden (no blink, no
+            // settle delay). A target window can't contain our panel, so it needs neither.
             let target = Settings.shared.captureTarget
+            #if DEBUG
+            let captureStart = Date()
+            #endif
+            let result: Result<ScreenCapture.Shot, CaptureError>
             if target == .fullScreen {
-                self.panel.orderOut(nil)
-                try? await Task.sleep(nanoseconds: 130_000_000)
+                result = await self.captureFullScreenExcludingPanel()
+            } else {
+                result = await ScreenCapture.capture(target: target)
             }
-            let result = await ScreenCapture.capture(target: target)
-            self.panel.orderFrontRegardless()
+            #if DEBUG
+            print("[NotchSPI] capture took \(Int(Date().timeIntervalSince(captureStart) * 1000))ms")
+            #endif
 
             let shot: ScreenCapture.Shot
             switch result {
@@ -591,6 +625,11 @@ final class NotchController: NSObject {
             }
             let onDone: (Bool, String) -> Void = { [weak self] ok, stderr in
                 guard let self else { return }
+                if !ok, case .cli = channel {
+                    // The failure may mean the CLI was uninstalled or logged out since the
+                    // cached probe — drop the cache so the next press re-checks.
+                    Task { @MainActor in CLIRunner.invalidateDetectCache() }
+                }
                 if self.model.answer.isEmpty {
                     self.model.answer = ok
                         ? L10n.noOutput
@@ -652,6 +691,26 @@ final class NotchController: NSObject {
         }
     }
 
+    /// Full-screen capture without hiding the panel: the panel window is excluded from the
+    /// capture filter. If the panel can't be identified in the shareable content (no valid
+    /// window number, or SCK doesn't list it), fall back to the legacy hide → settle → shoot.
+    @MainActor
+    private func captureFullScreenExcludingPanel() async -> Result<ScreenCapture.Shot, CaptureError> {
+        if panel.windowNumber > 0 {
+            let r = await ScreenCapture.capture(target: .fullScreen,
+                                                excludingWindowID: CGWindowID(panel.windowNumber))
+            if case .failure(.panelNotExcludable) = r {} else { return r }
+        }
+        #if DEBUG
+        print("[NotchSPI] panel exclusion unavailable; falling back to hide+capture")
+        #endif
+        panel.orderOut(nil)
+        try? await Task.sleep(nanoseconds: 130_000_000)
+        let r = await ScreenCapture.capture(target: .fullScreen)
+        panel.orderFrontRegardless()
+        return r
+    }
+
     private static func message(for error: CaptureError) -> String {
         switch error {
         case .noPermission:
@@ -668,7 +727,7 @@ final class NotchController: NSObject {
             return L10n.t("「\(name)」当前没有可截取的窗口。",
                           "「\(name)」にキャプチャ可能なウィンドウがありません。",
                           "\"\(name)\" has no capturable window right now.")
-        case .captureFailed:
+        case .captureFailed, .panelNotExcludable:
             return L10n.t("截屏失败，目标窗口可能刚被关闭，请重试。",
                           "キャプチャに失敗しました。対象ウィンドウが閉じられた可能性があります。再試行してください。",
                           "Capture failed — the target window may have just closed. Please try again.")

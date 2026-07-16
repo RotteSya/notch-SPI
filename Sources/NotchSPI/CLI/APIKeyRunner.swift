@@ -12,6 +12,19 @@ enum APIKeyRunner {
     static let anthropicEndpoint = "https://api.anthropic.com/v1/messages"
     static let openAIEndpoint = "https://api.openai.com/v1/chat/completions"
 
+    /// Fire-and-forget TLS warm-up of the vendor endpoint while the screenshot is captured.
+    /// An unauthenticated HEAD costs nothing server-side but leaves the HTTPS connection in
+    /// URLSession's pool for the real streaming POST moments later.
+    static func warmUp(cliId: String) {
+        guard let url = URL(string: cliId == "claude" ? anthropicEndpoint : openAIEndpoint) else { return }
+        Task.detached(priority: .userInitiated) {
+            var req = URLRequest(url: url)
+            req.httpMethod = "HEAD"
+            req.timeoutInterval = 10
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+
     /// Build the streaming HTTP request for the chosen backend. The screenshot travels inline as
     /// base64 JPEG (ScreenCapture always writes JPEG), so no file paths leak to the vendor.
     static func makeRequest(

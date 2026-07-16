@@ -302,6 +302,26 @@ enum OfficialAPI {
 
     // MARK: - Async operations
 
+    /// Fire-and-forget network warm-up, called the moment the hotkey is pressed. While the
+    /// screenshot is being taken this establishes DNS + TLS + HTTP/2 to the service and wakes
+    /// the serverless function and its database, so the capture POST rides a hot path. The
+    /// response is deliberately ignored — warming must never mutate account state.
+    static func warmUp() {
+        let base = baseURL
+        let token = deviceToken
+        Task.detached(priority: .userInitiated) {
+            var req: URLRequest
+            if let token {
+                // /v1/account touches auth + DB, waking a suspended database as well.
+                req = makeAccountRequest(baseURL: base, deviceToken: token)
+            } else {
+                req = URLRequest(url: endpointURL(base: base, path: "healthz"))
+            }
+            req.timeoutInterval = 10
+            _ = try? await URLSession.shared.data(for: req)
+        }
+    }
+
     /// Anonymous device registration — the onboarding "开箱即用" step. Grants the free question
     /// quota server-side. Safe to call repeatedly: returns the existing token when already
     /// registered.

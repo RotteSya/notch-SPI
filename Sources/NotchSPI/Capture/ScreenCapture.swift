@@ -12,6 +12,9 @@ enum CaptureError: Error {
     case appNotRunning(name: String)
     case noCapturableWindow(name: String)
     case captureFailed
+    /// Full screen only: the caller asked to exclude its own panel window but it wasn't in
+    /// the shareable list. Internal signal — the controller falls back to hiding the panel.
+    case panelNotExcludable
 }
 
 enum ScreenCapture {
@@ -67,61 +70,140 @@ enum ScreenCapture {
         w.windowLayer == 0 && w.frame.width >= minContentSize.width && w.frame.height >= minContentSize.height
     }
 
+    // MARK: - Shareable-content cache (full-screen fast path)
+
+    /// Cached enumeration for FULL-SCREEN captures. `SCShareableContent` costs ~100–300ms per
+    /// call — the slowest client-side step — and the full-screen path only needs two stable
+    /// facts from it: the display list and our own panel window. Staleness (display unplugged,
+    /// resolution changed) shows up as a failed attempt, never a wrong image, and the capture
+    /// then retries with a fresh enumeration. App-window targets never use the cache: window
+    /// stacking changes constantly, and a stale pick could capture the wrong window.
+    @MainActor private static var cachedContent: SCShareableContent?
+    @MainActor private static var refreshing = false
+
+    /// Refresh the cache off the critical path (launch, after each shot, display changes).
+    @MainActor static func prefetchShareableContent() {
+        guard !refreshing else { return }
+        refreshing = true
+        Task {
+            let c = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            if let c { cachedContent = c }
+            refreshing = false
+        }
+    }
+
+    @MainActor static func invalidateShareableContent() {
+        cachedContent = nil
+    }
+
     // MARK: - Capture
 
-    /// Capture the chosen target to a temp JPEG (downscaled to ~1568px long edge).
-    static func capture(target: CaptureTarget, maxLongEdge: CGFloat = 1568) async -> Result<Shot, CaptureError> {
+    /// Capture the chosen target to a temp JPEG (≤ ~1568px long edge). For full screen,
+    /// `excludingWindowID` composites the shot WITHOUT that window — the controller passes
+    /// the notch panel so it never has to be hidden (and blink) before the shot.
+    static func capture(
+        target: CaptureTarget, maxLongEdge: CGFloat = 1568, excludingWindowID: CGWindowID? = nil
+    ) async -> Result<Shot, CaptureError> {
+        guard case .app(let bundleID) = target else {
+            return await captureFullScreen(maxLongEdge: maxLongEdge, excludingWindowID: excludingWindowID)
+        }
+
+        // App targets enumerate off-screen windows too, so minimized ones are found.
         let content: SCShareableContent
         do {
-            // App targets enumerate off-screen windows too, so minimized ones are found.
-            content = target == .fullScreen
-                ? try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                : try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         } catch {
             return .failure(.noPermission)
         }
 
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        let name = running.first?.localizedName ?? bundleID
+        let owned = content.windows.filter {
+            $0.owningApplication?.bundleIdentifier == bundleID && isCapturable($0)
+        }
+        guard !owned.isEmpty else {
+            return .failure(running.isEmpty ? .appNotRunning(name: name) : .noCapturableWindow(name: name))
+        }
+        // SCShareableContent lists windows front-to-back: the first on-screen one
+        // is the app's frontmost. Fall back to the largest off-screen (minimized) window.
+        guard let window = owned.first(where: { $0.isOnScreen })
+            ?? owned.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+        else { return .failure(.noCapturableWindow(name: name)) }
+
+        // Window-server composited: unaffected by occlusion, Space, or which display it's on.
+        let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
         config.showsCursor = false
-        let filter: SCContentFilter
+        let scale = CGFloat(filter.pointPixelScale)
+        setDimensions(config, width: filter.contentRect.width * scale,
+                      height: filter.contentRect.height * scale, maxLongEdge: maxLongEdge)
+        config.ignoreShadowsSingleWindow = true
         // Blank-frame heuristic only makes sense for full screen; a small window's
         // JPEG can legitimately be tiny.
-        var blankThreshold = 0
+        return await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 0)
+    }
 
-        switch target {
-        case .fullScreen:
-            let mainID = CGMainDisplayID()
-            guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first
-            else { return .failure(.captureFailed) }
-            filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
-            let scale = NSScreen.main?.backingScaleFactor ?? 2
-            config.width = Int(CGFloat(display.width) * scale)
-            config.height = Int(CGFloat(display.height) * scale)
-            blankThreshold = 9000
-
-        case .app(let bundleID):
-            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-            let name = running.first?.localizedName ?? bundleID
-            let owned = content.windows.filter {
-                $0.owningApplication?.bundleIdentifier == bundleID && isCapturable($0)
+    private static func captureFullScreen(
+        maxLongEdge: CGFloat, excludingWindowID: CGWindowID?
+    ) async -> Result<Shot, CaptureError> {
+        // Fast path: the cached enumeration. Any failure — stale display handle, panel window
+        // missing — falls through to a fresh enumeration below.
+        if let cached = await MainActor.run(body: { cachedContent }) {
+            let r = await attemptFullScreen(content: cached, maxLongEdge: maxLongEdge,
+                                            excludingWindowID: excludingWindowID)
+            if case .success = r {
+                await MainActor.run { prefetchShareableContent() } // keep the next press warm
+                return r
             }
-            guard !owned.isEmpty else {
-                return .failure(running.isEmpty ? .appNotRunning(name: name) : .noCapturableWindow(name: name))
-            }
-            // SCShareableContent lists windows front-to-back: the first on-screen one
-            // is the app's frontmost. Fall back to the largest off-screen (minimized) window.
-            guard let window = owned.first(where: { $0.isOnScreen })
-                ?? owned.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
-            else { return .failure(.noCapturableWindow(name: name)) }
-
-            // Window-server composited: unaffected by occlusion, Space, or which display it's on.
-            filter = SCContentFilter(desktopIndependentWindow: window)
-            let scale = CGFloat(filter.pointPixelScale)
-            config.width = Int(filter.contentRect.width * scale)
-            config.height = Int(filter.contentRect.height * scale)
-            config.ignoreShadowsSingleWindow = true
         }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        } catch {
+            return .failure(.noPermission)
+        }
+        await MainActor.run { cachedContent = content }
+        return await attemptFullScreen(content: content, maxLongEdge: maxLongEdge,
+                                       excludingWindowID: excludingWindowID)
+    }
 
+    private static func attemptFullScreen(
+        content: SCShareableContent, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?
+    ) async -> Result<Shot, CaptureError> {
+        let mainID = CGMainDisplayID()
+        guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first
+        else { return .failure(.captureFailed) }
+
+        let filter: SCContentFilter
+        if let id = excludingWindowID {
+            guard let panel = content.windows.first(where: { $0.windowID == id })
+            else { return .failure(.panelNotExcludable) }
+            filter = SCContentFilter(display: display, excludingWindows: [panel])
+        } else {
+            filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        }
+        let config = SCStreamConfiguration()
+        config.showsCursor = false
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        setDimensions(config, width: CGFloat(display.width) * scale,
+                      height: CGFloat(display.height) * scale, maxLongEdge: maxLongEdge)
+        return await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 9000)
+    }
+
+    /// Ask the window server for the shot at its FINAL size (≤ maxLongEdge on the long side):
+    /// capturing a 5K display at native pixels only to immediately downscale wastes both the
+    /// capture IPC and a CPU resample on the hot path.
+    private static func setDimensions(
+        _ config: SCStreamConfiguration, width: CGFloat, height: CGFloat, maxLongEdge: CGFloat
+    ) {
+        let f = min(1, maxLongEdge / max(width, height, 1))
+        config.width = Int(width * f)
+        config.height = Int(height * f)
+    }
+
+    private static func shoot(
+        filter: SCContentFilter, config: SCStreamConfiguration, maxLongEdge: CGFloat, blankThreshold: Int
+    ) async -> Result<Shot, CaptureError> {
         do {
             let cg = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
             guard let shot = encode(cg, maxLongEdge: maxLongEdge, blankThreshold: blankThreshold)
