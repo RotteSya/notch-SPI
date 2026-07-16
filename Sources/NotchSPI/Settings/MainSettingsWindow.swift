@@ -924,9 +924,36 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
     private let claudeModelField = NSTextField()
     private let openaiModelField = NSTextField()
     private let versionLabel = captionLabel("")
+    /// The CLI-switch state the page was last built with; a mismatch (客服 flipped it and an
+    /// account sync landed) triggers a rebuild so the CLI radio appears/disappears live.
+    private var builtWithCLIEnabled = false
+    private var accountObserver: NSObjectProtocol?
+
+    deinit {
+        if let o = accountObserver { NotificationCenter.default.removeObserver(o) }
+    }
 
     override func loadView() {
-        let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
+        view = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
+        populate()
+        accountObserver = NotificationCenter.default.addObserver(
+            forName: OfficialAPI.accountDidChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.rebuildIfCLISwitchChanged() }
+    }
+
+    private func rebuildIfCLISwitchChanged() {
+        guard isViewLoaded, builtWithCLIEnabled != OfficialAPI.cliEnabled else { return }
+        populate()
+    }
+
+    /// (Re)build the whole page. Idempotent so the CLI-switch observer can call it again.
+    private func populate() {
+        let root = view
+        root.subviews.forEach { $0.removeFromSuperview() }
+        modeRadios.removeAll()
+        backendPopup.removeAllItems()
+        let cliEnabled = OfficialAPI.cliEnabled
+        builtWithCLIEnabled = cliEnabled
 
         let title = pageTitleLabel(L10n.t("高级", "詳細", "Advanced"))
         title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
@@ -934,7 +961,9 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
 
         var y: CGFloat = 92
 
-        // 答题通道 (service channel)
+        // 答题通道 (service channel). The CLI radio exists only on devices where the operator
+        // has flipped the per-device switch (镜像自官方服务的 cli_enabled) — everyone else sees
+        // just official / custom key, and routing reroutes any stale cli mode to official.
         let channelLabel = rowLabel(L10n.t("答题通道", "回答チャネル", "Answering channel"))
         channelLabel.frame = NSRect(x: 36, y: y, width: 200, height: 18)
         root.addSubview(channelLabel)
@@ -945,12 +974,16 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
             ServiceMode.customKey: L10n.t("用你自己的 Anthropic / OpenAI API Key 直连，费用走你的账户。", "自分の Anthropic / OpenAI API キーで直接接続。", "Use your own Anthropic / OpenAI API key; costs go to your account."),
             ServiceMode.cli: L10n.t("驱动本机已登录的 codex / claude 命令行。", "ローカルの codex / claude CLI を利用。", "Drive the locally installed codex / claude CLIs."),
         ]
-        for mode in ServiceMode.all {
+        let visibleModes = cliEnabled ? ServiceMode.all : ServiceMode.all.filter { $0 != ServiceMode.cli }
+        // With the CLI hidden, a stored cli mode resolves to official — show that honestly.
+        var selectedMode = Settings.shared.serviceMode
+        if !cliEnabled && selectedMode == ServiceMode.cli { selectedMode = ServiceMode.official }
+        for mode in visibleModes {
             let radio = NSButton(radioButtonWithTitle: L10n.serviceModeLabel(mode), target: self,
                                  action: #selector(modePicked(_:)))
             radio.frame = NSRect(x: 40, y: y, width: 220, height: 18)
             radio.identifier = NSUserInterfaceItemIdentifier(mode)
-            radio.state = Settings.shared.serviceMode == mode ? .on : .off
+            radio.state = selectedMode == mode ? .on : .off
             root.addSubview(radio)
             modeRadios.append(radio)
             let d = captionLabel(descs[mode] ?? "")
@@ -983,9 +1016,15 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
                           keyField: openaiKeyField, modelField: openaiModelField,
                           cliId: "codex", placeholder: "sk-…")
 
-        let keyHint = captionLabel(L10n.t("Key 只保存在本机钥匙串。填写后该引擎自动直连官方 API；留空则回退到 CLI。",
-                                          "キーはこのMacのキーチェーンにのみ保存。入力するとAPIに直接接続、空欄ならCLIへフォールバック。",
-                                          "Keys live only in your local Keychain. Filled → direct API; empty → CLI fallback."))
+        // The empty-key fallback differs with the CLI switch: unlocked → CLI (the pre-official
+        // behavior), locked → the official service. Say the truth for this device.
+        let keyHint = captionLabel(cliEnabled
+            ? L10n.t("Key 只保存在本机钥匙串。填写后该引擎自动直连官方 API；留空则回退到 CLI。",
+                     "キーはこのMacのキーチェーンにのみ保存。入力するとAPIに直接接続、空欄ならCLIへフォールバック。",
+                     "Keys live only in your local Keychain. Filled → direct API; empty → CLI fallback.")
+            : L10n.t("Key 只保存在本机钥匙串。填写后该引擎自动直连官方 API；留空则使用官方服务。",
+                     "キーはこのMacのキーチェーンにのみ保存。入力するとAPIに直接接続、空欄なら公式サービスを利用。",
+                     "Keys live only in your local Keychain. Filled → direct API; empty → the official service."))
         keyHint.frame = NSRect(x: 40, y: y, width: 552, height: 30)
         root.addSubview(keyHint)
         y += 40
@@ -1000,7 +1039,6 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         versionLabel.frame = NSRect(x: 216, y: y + 7, width: 200, height: 16)
         root.addSubview(versionLabel)
 
-        view = root
         reloadKeys()
     }
 
@@ -1066,5 +1104,8 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
 
     @objc private func checkUpdates() { UpdateChecker.checkForUpdatesManually() }
 
-    func pageDidShow() { reloadKeys() }
+    func pageDidShow() {
+        rebuildIfCLISwitchChanged()
+        reloadKeys()
+    }
 }

@@ -115,3 +115,54 @@ test('grant accepts a numeric string amount (curl-friendly)', async () => {
   assert.equal(res.status, 200);
   assert.equal(await balance(token), 35);
 });
+
+function setCli(body: Record<string, unknown>, adminToken: string | null): Promise<Response> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (adminToken !== null) headers['x-admin-token'] = adminToken;
+  return fetch(`${base}/admin/cli`, { method: 'POST', headers, body: JSON.stringify(body) });
+}
+
+async function cliEnabled(token: string): Promise<boolean> {
+  const r = await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } });
+  const j = (await r.json()) as { cli_enabled: boolean };
+  return j.cli_enabled;
+}
+
+test('the admin page includes the CLI switch form', async () => {
+  const html = await (await fetch(`${base}/admin`)).text();
+  assert.match(html, /CLI 模式开关/);
+  assert.match(html, /\/admin\/cli/);
+});
+
+test('cli switch requires the admin secret and defaults to off', async () => {
+  const token = await register();
+  assert.equal(await cliEnabled(token), false, 'new devices start with CLI off');
+  assert.equal((await setCli({ device_token: token, enabled: true }, null)).status, 401);
+  assert.equal((await setCli({ device_token: token, enabled: true }, 'wrong-key')).status, 401);
+  assert.equal(await cliEnabled(token), false, 'nothing flipped on auth failure');
+});
+
+test('cli switch flips on and off, mirrored by /v1/account', async () => {
+  const token = await register();
+  const on = await setCli({ device_token: token, enabled: true }, 'admin-secret-xyz');
+  assert.equal(on.status, 200);
+  assert.deepEqual(await on.json(), { cli_enabled: true });
+  assert.equal(await cliEnabled(token), true);
+  const off = await setCli({ device_token: token, enabled: false }, 'admin-secret-xyz');
+  assert.equal(off.status, 200);
+  assert.deepEqual(await off.json(), { cli_enabled: false });
+  assert.equal(await cliEnabled(token), false);
+});
+
+test('cli switch validates the token and the enabled flag', async () => {
+  const token = await register();
+  // Malformed token → 400; well-formed but unregistered → 401.
+  assert.equal((await setCli({ device_token: 'not-a-token', enabled: true }, 'admin-secret-xyz')).status, 400);
+  const ghost = 'dev_' + 'x'.repeat(40);
+  assert.equal((await setCli({ device_token: ghost, enabled: true }, 'admin-secret-xyz')).status, 401);
+  // enabled must be a real boolean — strings/numbers/missing are rejected.
+  for (const v of ['true', 1, null, undefined]) {
+    const res = await setCli({ device_token: token, enabled: v }, 'admin-secret-xyz');
+    assert.equal(res.status, 400, `enabled=${String(v)} must be rejected`);
+  }
+});

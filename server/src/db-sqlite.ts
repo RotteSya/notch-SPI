@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS devices (
   total_questions     INTEGER NOT NULL DEFAULT 0,
   total_input_tokens  INTEGER NOT NULL DEFAULT 0,
   total_output_tokens INTEGER NOT NULL DEFAULT 0,
+  cli_enabled         INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL
 );
@@ -56,6 +57,7 @@ interface DeviceRow {
   total_questions: number;
   total_input_tokens: number;
   total_output_tokens: number;
+  cli_enabled: number;
 }
 
 export class SqliteStore implements Store {
@@ -67,15 +69,17 @@ export class SqliteStore implements Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
-    // Lazy migration: databases created before the admin grant tool lack topups.note. SQLite's
-    // ADD COLUMN has no IF NOT EXISTS, so probe the schema first (idempotent on every boot).
-    this.ensureColumn('topups', 'note');
+    // Lazy migrations: databases created before the admin grant tool lack topups.note, and ones
+    // before the per-device CLI switch lack devices.cli_enabled. SQLite's ADD COLUMN has no
+    // IF NOT EXISTS, so probe the schema first (idempotent on every boot).
+    this.ensureColumn('topups', 'note', 'TEXT');
+    this.ensureColumn('devices', 'cli_enabled', 'INTEGER NOT NULL DEFAULT 0');
   }
 
-  private ensureColumn(table: string, column: string): void {
+  private ensureColumn(table: string, column: string, definition: string): void {
     const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === column)) {
-      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   }
 
@@ -98,7 +102,7 @@ export class SqliteStore implements Store {
   private deviceByToken(token: string): DeviceRow | null {
     const row = this.db
       .prepare(
-        `SELECT id, balance_questions, total_questions, total_input_tokens, total_output_tokens
+        `SELECT id, balance_questions, total_questions, total_input_tokens, total_output_tokens, cli_enabled
          FROM devices WHERE token_hash = ?`,
       )
       .get(hashToken(token)) as DeviceRow | undefined;
@@ -113,7 +117,17 @@ export class SqliteStore implements Store {
       totalQuestions: row.total_questions,
       totalInputTokens: row.total_input_tokens,
       totalOutputTokens: row.total_output_tokens,
+      cliEnabled: row.cli_enabled === 1,
     };
+  }
+
+  async setCliEnabled(token: string, enabled: boolean): Promise<boolean | null> {
+    const dev = this.deviceByToken(token);
+    if (!dev) return null;
+    this.db
+      .prepare(`UPDATE devices SET cli_enabled = ?, updated_at = ? WHERE id = ?`)
+      .run(enabled ? 1 : 0, new Date().toISOString(), dev.id);
+    return enabled;
   }
 
   async chargeForUsage(input: {

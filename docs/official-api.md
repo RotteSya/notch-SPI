@@ -50,12 +50,15 @@
   "balance_questions": 172,
   "total_questions": 8,
   "total_input_tokens": 182000,
-  "total_output_tokens": 45120
+  "total_output_tokens": 45120,
+  "cli_enabled": false
 }
 ```
 
 （客户端读取全部字段；`total_*` 会覆盖本地累计镜像，以服务端为准。Token 数只做
-内部统计展示，不参与计费。）
+内部统计展示，不参与计费。`cli_enabled` 是按设备的 CLI 通道开关：默认 false，
+运营在管理后台（POST /admin/cli，与手动加题同一套 ADMIN_TOKEN 鉴权）按设备码
+开启后，客户端在下一次账户同步时镜像该值，设置 → 高级 才会出现「本机 CLI」选项。）
 
 ## POST /v1/captures — 截图问答（SSE 流式，1 题/次）
 

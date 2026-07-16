@@ -12,6 +12,7 @@ interface DeviceRecord {
   totalQuestions: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  cliEnabled: boolean;
 }
 
 export class MemoryStore implements Store {
@@ -31,6 +32,7 @@ export class MemoryStore implements Store {
       totalQuestions: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      cliEnabled: false,
     });
     return { token, balanceQuestions: input.trialQuestions };
   }
@@ -43,7 +45,15 @@ export class MemoryStore implements Store {
       totalQuestions: d.totalQuestions,
       totalInputTokens: d.totalInputTokens,
       totalOutputTokens: d.totalOutputTokens,
+      cliEnabled: d.cliEnabled,
     };
+  }
+
+  async setCliEnabled(token: string, enabled: boolean): Promise<boolean | null> {
+    const d = this.devices.get(hashToken(token));
+    if (!d) return null;
+    d.cliEnabled = enabled;
+    return enabled;
   }
 
   async chargeForUsage(input: {

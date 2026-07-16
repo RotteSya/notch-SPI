@@ -51,7 +51,8 @@ final class Settings {
             if let v = d.string(forKey: "serviceMode"), ServiceMode.all.contains(v) { return v }
             return ServiceRouting.defaultMode(
                 isExistingInstall: isExistingInstall,
-                hasCustomKey: usesCustomKey(for: cli)
+                hasCustomKey: usesCustomKey(for: cli),
+                cliAllowed: OfficialAPI.cliEnabled
             )
         }
         set { d.set(newValue, forKey: "serviceMode") }
@@ -76,7 +77,8 @@ final class Settings {
         let existing = isExistingInstall
         serviceMode = ServiceRouting.defaultMode(
             isExistingInstall: existing,
-            hasCustomKey: usesCustomKey(for: cli)
+            hasCustomKey: usesCustomKey(for: cli),
+            cliAllowed: OfficialAPI.cliEnabled
         )
         if existing { onboardingDone = true }
     }

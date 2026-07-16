@@ -1,8 +1,9 @@
-// The admin grant console, served at GET /admin — a single password-protected page the operator
-// uses to manually top up a specific device's question balance (support, comps, refunds-in-kind).
-// The page itself carries NO secret: the admin key is entered here, kept in localStorage for
-// convenience, and sent as the `x-admin-token` header on POST /admin/grant, which verifies it
-// server-side. The whole /admin path is 404 unless ADMIN_TOKEN is configured (see routes.ts).
+// The admin console, served at GET /admin — a single password-protected page the operator uses
+// to manually top up a specific device's question balance (support, comps, refunds-in-kind) and
+// to flip a device's CLI-channel switch. The page itself carries NO secret: the admin key is
+// entered here, kept in localStorage for convenience, and sent as the `x-admin-token` header on
+// POST /admin/grant and POST /admin/cli, which verify it server-side. The whole /admin path is
+// 404 unless ADMIN_TOKEN is configured (see routes.ts).
 
 export interface AdminPageInput {
   currency: string;
@@ -44,9 +45,14 @@ export function renderAdminPage(_input: AdminPageInput): string {
   button:hover:not(:disabled) { filter:brightness(1.08); }
   button:active:not(:disabled) { transform:scale(.99); }
   button:disabled { opacity:.55; cursor:default; }
-  #status { margin-top:18px; min-height:22px; font-size:14px; }
-  #status.ok { color:#9fe8bf; }
-  #status.err { color:#ff9c9c; }
+  .status { margin-top:18px; min-height:22px; font-size:14px; }
+  .status.ok { color:#9fe8bf; }
+  .status.err { color:#ff9c9c; }
+  hr { border:none; border-top:1px solid rgba(255,255,255,.12); margin:34px 0 26px; }
+  h2 { font-size:16px; font-weight:700; }
+  .btn-row { display:flex; gap:12px; margin-top:4px; }
+  .btn-row button { flex:1; margin-top:0; }
+  button.ghost { background:rgba(255,255,255,.08); color:var(--ink); border:1px solid rgba(255,255,255,.18); }
   code { color:var(--dim); font-size:12px; }
   .hint { color:var(--faint); font-size:12px; margin-top:24px; }
 </style></head>
@@ -71,8 +77,21 @@ export function renderAdminPage(_input: AdminPageInput): string {
     </label>
     <button id="go" type="submit">加题</button>
   </form>
-  <div id="status"></div>
+  <div id="status" class="status"></div>
   <p class="hint">题数只增不减。每次提交独立记账（provider=admin），可在数据库 topups 表查审计。</p>
+  <hr>
+  <h2>CLI 模式开关</h2>
+  <p class="sub">按设备开启/关闭已停用的 CLI 通道。客户端在下一次账户同步后生效。</p>
+  <form id="cf" autocomplete="off">
+    <label>设备 token
+      <input id="cli-device" type="text" placeholder="dev_…" required spellcheck="false">
+    </label>
+    <div class="btn-row">
+      <button id="cli-on" type="button">开启 CLI</button>
+      <button id="cli-off" type="button" class="ghost">关闭 CLI</button>
+    </div>
+  </form>
+  <div id="cli-status" class="status"></div>
 </main>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -83,12 +102,12 @@ export function renderAdminPage(_input: AdminPageInput): string {
   $('f').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const st = $('status');
-    st.className = ''; st.textContent = '';
+    st.className = 'status'; st.textContent = '';
     const key = $('key').value.trim();
     const device = $('device').value.trim();
     const questions = parseInt($('questions').value, 10);
     const note = $('note').value.trim();
-    if (!key || !device || !(questions > 0)) { st.className='err'; st.textContent='请填写密钥、设备 token 和正整数题数。'; return; }
+    if (!key || !device || !(questions > 0)) { st.className='status err'; st.textContent='请填写密钥、设备 token 和正整数题数。'; return; }
     try { localStorage.setItem(KEY_STORE, key); } catch (e) {}
 
     const btn = $('go');
@@ -104,19 +123,51 @@ export function renderAdminPage(_input: AdminPageInput): string {
       });
       const j = await r.json().catch(() => ({}));
       if (r.ok) {
-        st.className = 'ok';
+        st.className = 'status ok';
         st.textContent = '已加 ' + questions + ' 题。该设备当前余额：' + j.balance_questions + ' 题。';
         $('device').value = ''; $('questions').value = ''; $('note').value = '';
       } else {
-        st.className = 'err';
+        st.className = 'status err';
         st.textContent = '失败（' + r.status + '）：' + ((j.error && j.error.message) || '请检查密钥与设备 token');
       }
     } catch (e) {
-      st.className = 'err'; st.textContent = '网络错误：' + e;
+      st.className = 'status err'; st.textContent = '网络错误：' + e;
     } finally {
       btn.disabled = false; btn.textContent = '加题';
     }
   });
+
+  async function setCli(enabled) {
+    const st = $('cli-status');
+    st.className = 'status'; st.textContent = '';
+    const key = $('key').value.trim();
+    const device = $('cli-device').value.trim();
+    if (!key || !device) { st.className='status err'; st.textContent='请填写上方的管理员密钥和设备 token。'; return; }
+    try { localStorage.setItem(KEY_STORE, key); } catch (e) {}
+    const onBtn = $('cli-on'), offBtn = $('cli-off');
+    onBtn.disabled = true; offBtn.disabled = true;
+    try {
+      const r = await fetch('/admin/cli', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-admin-token': key },
+        body: JSON.stringify({ device_token: device, enabled }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) {
+        st.className = 'status ok';
+        st.textContent = j.cli_enabled ? '已为该设备开启 CLI 模式。' : '已为该设备关闭 CLI 模式。';
+      } else {
+        st.className = 'status err';
+        st.textContent = '失败（' + r.status + '）：' + ((j.error && j.error.message) || '请检查密钥与设备 token');
+      }
+    } catch (e) {
+      st.className = 'status err'; st.textContent = '网络错误：' + e;
+    } finally {
+      onBtn.disabled = false; offBtn.disabled = false;
+    }
+  }
+  $('cli-on').addEventListener('click', () => setCli(true));
+  $('cli-off').addEventListener('click', () => setCli(false));
 </script>
 </body></html>`;
 }

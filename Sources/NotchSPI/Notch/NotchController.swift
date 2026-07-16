@@ -66,7 +66,8 @@ final class NotchController: NSObject {
     private func currentChannel() -> ServiceChannel {
         ServiceRouting.resolve(
             mode: Settings.shared.serviceMode,
-            customKey: Settings.shared.apiKey(for: Settings.shared.cli)
+            customKey: Settings.shared.apiKey(for: Settings.shared.cli),
+            cliAllowed: OfficialAPI.cliEnabled
         )
     }
 

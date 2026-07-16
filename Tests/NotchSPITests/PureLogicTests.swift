@@ -139,15 +139,26 @@ final class APIKeyRunnerTests: XCTestCase {
 /// Three-mode routing (official / customKey / cli) and the billing gate. The single most
 /// important invariant: the billing interceptor can NEVER stop a custom-key or CLI capture.
 final class ServiceRoutingTests: XCTestCase {
-    func testResolveMatrix() {
-        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: ""), .official)
-        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: "sk-x"), .official)
-        XCTAssertEqual(ServiceRouting.resolve(mode: "cli", customKey: "sk-x"), .cli)
-        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "sk-x"), .customKey("sk-x"))
+    func testResolveMatrixWhenCLIUnlocked() {
+        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: "", cliAllowed: true), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: "sk-x", cliAllowed: true), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "cli", customKey: "sk-x", cliAllowed: true), .cli)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "sk-x", cliAllowed: true), .customKey("sk-x"))
         // customKey mode without a key falls back to the CLI — the pre-official behavior.
-        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "   "), .cli)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "   ", cliAllowed: true), .cli)
         // Unknown/corrupt mode strings resolve to the default.
-        XCTAssertEqual(ServiceRouting.resolve(mode: "banana", customKey: ""), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "banana", customKey: "", cliAllowed: true), .official)
+    }
+
+    func testResolveMatrixWhenCLILocked() {
+        // The retired CLI channel is unreachable until the per-device switch is flipped:
+        // an explicit cli mode AND the empty-custom-key fallback both reroute to official.
+        XCTAssertEqual(ServiceRouting.resolve(mode: "cli", customKey: "", cliAllowed: false), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "cli", customKey: "sk-x", cliAllowed: false), .official)
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "   ", cliAllowed: false), .official)
+        // A real custom key is unaffected by the switch.
+        XCTAssertEqual(ServiceRouting.resolve(mode: "customKey", customKey: "sk-x", cliAllowed: false), .customKey("sk-x"))
+        XCTAssertEqual(ServiceRouting.resolve(mode: "official", customKey: "", cliAllowed: false), .official)
     }
 
     func testQuotaGateNeverBlocksNonOfficialChannels() {
@@ -180,11 +191,13 @@ final class ServiceRoutingTests: XCTestCase {
 
     func testDefaultModeMigration() {
         // Fresh installs land on the official service.
-        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: false), "official")
-        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: true), "official")
-        // Existing installs keep their previous behavior — never silently rerouted.
-        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: true), "customKey")
-        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: false), "cli")
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: false, cliAllowed: false), "official")
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: false, hasCustomKey: true, cliAllowed: false), "official")
+        // Existing installs with a key keep it — never silently rerouted.
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: true, cliAllowed: false), "customKey")
+        // Key-less existing installs used to default to the CLI; retired unless unlocked.
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: false, cliAllowed: true), "cli")
+        XCTAssertEqual(ServiceRouting.defaultMode(isExistingInstall: true, hasCustomKey: false, cliAllowed: false), "official")
     }
 
     func testHeaderLabels() {
@@ -303,7 +316,7 @@ final class ChannelRoutingTests: XCTestCase {
 /// launch-time writes must not change the outcome.
 final class FirstRunBootstrapTests: XCTestCase {
     private let keys = ["serviceMode", "onboardingDone", "cli", "depth", "captureKeyCode",
-                        "apiKey.claude", "apiKey.codex", "personaName"]
+                        "apiKey.claude", "apiKey.codex", "personaName", "official.cliEnabled"]
     private let keychainAccounts = ["apiKey.claude", "apiKey.codex"]
 
     /// Run `body` against a clean slate of the involved defaults AND keychain items
@@ -336,9 +349,21 @@ final class FirstRunBootstrapTests: XCTestCase {
         }
     }
 
-    func testExistingCLIInstallKeepsCLIAndSkipsOnboarding() {
+    func testExistingKeylessInstallLandsOnOfficialWhileCLIIsLocked() {
         withCleanDefaults {
             UserDefaults.standard.set("guided", forKey: "depth") // pre-official footprint
+            Settings.shared.bootstrapFirstRunState()
+            // The CLI channel is retired: without the per-device switch, the old key-less
+            // default reroutes to the official service (onboarding is still skipped).
+            XCTAssertEqual(Settings.shared.serviceMode, "official")
+            XCTAssertTrue(Settings.shared.onboardingDone)
+        }
+    }
+
+    func testExistingKeylessInstallKeepsCLIWhenUnlocked() {
+        withCleanDefaults {
+            UserDefaults.standard.set("guided", forKey: "depth") // pre-official footprint
+            UserDefaults.standard.set(true, forKey: "official.cliEnabled") // 设备码已开通
             Settings.shared.bootstrapFirstRunState()
             XCTAssertEqual(Settings.shared.serviceMode, "cli")
             XCTAssertTrue(Settings.shared.onboardingDone)

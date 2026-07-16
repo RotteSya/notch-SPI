@@ -14,6 +14,8 @@ export interface Account {
   totalQuestions: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  /** Per-device switch for the retired CLI channel; flipped manually by the operator. */
+  cliEnabled: boolean;
 }
 
 export interface RegisteredDevice {
@@ -60,6 +62,12 @@ export interface Store {
     reference: string;
     note?: string;
   }): Promise<number | null>;
+
+  /**
+   * Flip the per-device CLI switch (admin console only — the same manual flow as grants).
+   * Returns the value now stored, or null if the token is unknown/invalid. Idempotent.
+   */
+  setCliEnabled(token: string, enabled: boolean): Promise<boolean | null>;
 
   /** Atomically increment a named counter (created at 0 if absent) and return the new value. */
   bumpCounter(name: string): Promise<number>;

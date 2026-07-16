@@ -75,6 +75,20 @@ enum OfficialAPI {
     /// Below this many remaining questions the UI starts nudging toward a top-up.
     static let lowQuotaThreshold = 10
 
+    /// Per-device switch for the retired CLI channel, controlled server-side: the operator
+    /// flips it in the admin console for a given 设备码, exactly like a manual quota grant.
+    /// Mirrored locally on every account sync (the server is authoritative), so an unlocked
+    /// device keeps its CLI access offline. Gates ServiceRouting (see `resolve(cliAllowed:)`)
+    /// and the 设置 → 高级 channel picker.
+    static var cliEnabled: Bool {
+        get { d.bool(forKey: "official.cliEnabled") }
+        set {
+            if newValue { d.set(true, forKey: "official.cliEnabled") }
+            else { d.removeObject(forKey: "official.cliEnabled") }
+            notifyAccountChanged()
+        }
+    }
+
     /// True when the server last answered 401 for this device's token. We deliberately do NOT
     /// delete the token on a 401 (see `handleInvalidToken`): the token is the ONLY key to any
     /// purchased quota, and a spurious 401 — a mis-pointed `official.baseURL`, a transient server
@@ -120,6 +134,7 @@ enum OfficialAPI {
         KeychainStore.write(nil, account: "official.deviceToken")
         d.removeObject(forKey: "official.deviceToken") // clear any legacy plaintext copy too
         d.removeObject(forKey: "official.balanceQuestions")
+        d.removeObject(forKey: "official.cliEnabled") // the switch belongs to the old 设备码
         credentialRejected = false
         notifyAccountChanged()
     }
@@ -371,6 +386,8 @@ enum OfficialAPI {
             }
             credentialRejected = false // the server accepted our token — clear any prior rejection
             if let b = obj["balance_questions"] as? Int { balanceQuestions = b }
+            // Mirror the per-device CLI switch (absent in older server responses → leave as-is).
+            if let cli = obj["cli_enabled"] as? Bool { cliEnabled = cli }
             // The server's lifetime totals are authoritative; overwrite the local mirror.
             if let tq = obj["total_questions"] as? Int { d.set(tq, forKey: "official.totalQuestions") }
             if let ti = obj["total_input_tokens"] as? Int { d.set(ti, forKey: "official.totalInputTokens") }

@@ -48,6 +48,10 @@ interface AdminGrantBody {
   note?: unknown;
   idempotency_key?: unknown;
 }
+interface AdminCliBody {
+  device_token?: unknown;
+  enabled?: unknown;
+}
 
 function str(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
@@ -138,7 +142,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     });
   });
 
-  // GET /v1/account — question balance + lifetime usage. Auth.
+  // GET /v1/account — question balance + lifetime usage + per-device feature switches. Auth.
   app.get('/v1/account', async (req, reply) => {
     const { account } = await requireAccount(req, store);
     return reply.send({
@@ -146,6 +150,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       total_questions: account.totalQuestions,
       total_input_tokens: account.totalInputTokens,
       total_output_tokens: account.totalOutputTokens,
+      cli_enabled: account.cliEnabled,
     });
   });
 
@@ -415,6 +420,25 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (newBalance === null) throw new ApiError(401, '设备不存在，请确认 token 是否正确', 'invalid_token');
     req.log.info({ questions, newBalance, reference }, 'admin grant');
     return reply.send({ balance_questions: newBalance, questions_granted: questions });
+  });
+
+  // POST /admin/cli — flip the per-device CLI switch, same manual flow (and same admin secret)
+  // as question grants: the operator pastes a device token and enables/disables the retired CLI
+  // channel for that machine. The client mirrors the flag on its next account sync. Idempotent.
+  app.post('/admin/cli', async (req, reply) => {
+    if (!adminEnabled) throw new ApiError(404, '未启用');
+    const provided = typeof req.headers['x-admin-token'] === 'string' ? req.headers['x-admin-token'] : '';
+    if (!adminTokenMatches(provided, config.adminToken)) throw new ApiError(401, '管理员密钥无效', 'invalid_token');
+
+    const body = (req.body ?? {}) as AdminCliBody;
+    const token = str(body.device_token);
+    if (!isValidTokenShape(token)) throw new ApiError(400, '设备令牌格式无效');
+    if (typeof body.enabled !== 'boolean') throw new ApiError(400, 'enabled 必须是 true 或 false');
+
+    const stored = await store.setCliEnabled(token, body.enabled);
+    if (stored === null) throw new ApiError(401, '设备不存在，请确认 token 是否正确', 'invalid_token');
+    req.log.info({ cliEnabled: stored }, 'admin cli switch');
+    return reply.send({ cli_enabled: stored });
   });
 
   // Uniform error body: {"error":{"message":"…","code":"…"}} with the right status code.

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS devices (
   total_questions     BIGINT NOT NULL DEFAULT 0,
   total_input_tokens  BIGINT NOT NULL DEFAULT 0,
   total_output_tokens BIGINT NOT NULL DEFAULT 0,
+  cli_enabled         BOOLEAN NOT NULL DEFAULT false,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -43,6 +44,8 @@ CREATE TABLE IF NOT EXISTS topups (
 -- Lazy migration for databases created before the admin grant tool (Postgres supports the
 -- IF NOT EXISTS guard, so this is a safe no-op once the column exists).
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS note TEXT;
+-- Lazy migration for databases created before the per-device CLI switch.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS cli_enabled BOOLEAN NOT NULL DEFAULT false;
 -- Simple named counters (e.g. download-button clicks on the public site).
 CREATE TABLE IF NOT EXISTS counters (
   name  TEXT PRIMARY KEY,
@@ -59,6 +62,7 @@ interface DeviceRow {
   total_questions: string;
   total_input_tokens: string;
   total_output_tokens: string;
+  cli_enabled: boolean;
 }
 
 /** The pg `ssl` option: `false` = plaintext, otherwise a Node TLS options subset. */
@@ -123,7 +127,7 @@ export class PostgresStore implements Store {
   async getAccount(token: string): Promise<Account | null> {
     await this.ensureSchema();
     const { rows } = await this.pool.query<DeviceRow>(
-      `SELECT id, balance_questions, total_questions, total_input_tokens, total_output_tokens
+      `SELECT id, balance_questions, total_questions, total_input_tokens, total_output_tokens, cli_enabled
        FROM devices WHERE token_hash = $1`,
       [hashToken(token)],
     );
@@ -134,7 +138,18 @@ export class PostgresStore implements Store {
       totalQuestions: Number(row.total_questions),
       totalInputTokens: Number(row.total_input_tokens),
       totalOutputTokens: Number(row.total_output_tokens),
+      cliEnabled: row.cli_enabled === true,
     };
+  }
+
+  async setCliEnabled(token: string, enabled: boolean): Promise<boolean | null> {
+    await this.ensureSchema();
+    const { rows } = await this.pool.query<{ cli_enabled: boolean }>(
+      `UPDATE devices SET cli_enabled = $1, updated_at = now()
+       WHERE token_hash = $2 RETURNING cli_enabled`,
+      [enabled, hashToken(token)],
+    );
+    return rows[0] ? rows[0].cli_enabled === true : null;
   }
 
   async chargeForUsage(input: {

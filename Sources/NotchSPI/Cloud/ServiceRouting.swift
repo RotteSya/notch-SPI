@@ -24,13 +24,20 @@ enum ServiceRouting {
     /// customKey mode with an empty key falls back to the CLI — exactly the behavior that
     /// existed before the official service, so nothing regresses for key-less users.
     /// Unknown mode strings resolve to the official default.
-    static func resolve(mode: String, customKey: String) -> ServiceChannel {
+    ///
+    /// `cliAllowed` is the per-device unlock gate (OfficialAPI.cliEnabled — flipped by the
+    /// operator per 设备码, like a manual quota grant): the CLI channel is retired by default
+    /// and every path that would reach it — explicit cli mode, or the empty-custom-key
+    /// fallback — reroutes to the official service until unlocked. The stored mode string is
+    /// never rewritten, so unlocking restores the previous choice.
+    static func resolve(mode: String, customKey: String, cliAllowed: Bool) -> ServiceChannel {
         switch mode {
         case ServiceMode.cli:
-            return .cli
+            return cliAllowed ? .cli : .official
         case ServiceMode.customKey:
             let key = customKey.trimmingCharacters(in: .whitespacesAndNewlines)
-            return key.isEmpty ? .cli : .customKey(key)
+            if !key.isEmpty { return .customKey(key) }
+            return cliAllowed ? .cli : .official
         default:
             return .official
         }
@@ -38,10 +45,13 @@ enum ServiceRouting {
 
     /// First-run default. New installs land on the official quota service (开箱即用);
     /// existing installs keep whatever they were doing before this feature existed, so an
-    /// update never silently reroutes a working setup.
-    static func defaultMode(isExistingInstall: Bool, hasCustomKey: Bool) -> String {
+    /// update never silently reroutes a working setup. Key-less existing installs used to
+    /// default to the CLI; with the CLI retired behind the 设备码 gate they now land on the
+    /// official service unless already unlocked.
+    static func defaultMode(isExistingInstall: Bool, hasCustomKey: Bool, cliAllowed: Bool) -> String {
         guard isExistingInstall else { return ServiceMode.official }
-        return hasCustomKey ? ServiceMode.customKey : ServiceMode.cli
+        if hasCustomKey { return ServiceMode.customKey }
+        return cliAllowed ? ServiceMode.cli : ServiceMode.official
     }
 
     /// Header label for the notch UI, e.g. "官方服务" / "Claude · API" / "Claude".

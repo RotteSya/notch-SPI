@@ -29,8 +29,22 @@ for (const impl of IMPLEMENTATIONS) {
       totalQuestions: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
+      cliEnabled: false,
     });
     assert.equal(await store.getAccount('dev_nope'), null);
+    await store.close();
+  });
+
+  test(`[${impl.name}] setCliEnabled flips per device; unknown token is null`, async () => {
+    const store = impl.make();
+    const a = await store.registerDevice({ platform: 'm', appVersion: '1', trialQuestions: 0 });
+    const b = await store.registerDevice({ platform: 'm', appVersion: '1', trialQuestions: 0 });
+    assert.equal(await store.setCliEnabled(a.token, true), true);
+    assert.equal((await store.getAccount(a.token))?.cliEnabled, true);
+    assert.equal((await store.getAccount(b.token))?.cliEnabled, false, 'the switch is per-device');
+    assert.equal(await store.setCliEnabled(a.token, false), false);
+    assert.equal((await store.getAccount(a.token))?.cliEnabled, false);
+    assert.equal(await store.setCliEnabled('dev_nope', true), null);
     await store.close();
   });
 
