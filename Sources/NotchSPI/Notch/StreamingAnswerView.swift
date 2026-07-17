@@ -21,6 +21,16 @@ final class StreamingAnswerView: NSView {
     private var proxy: StreamProxy?
     private var frameCache: (key: String, width: CGFloat, frame: CTFrame)?
 
+    /// Fires when the "▸ 推理过程" line is clicked (brief mode's folded scratch work).
+    var onToggleReasoning: (() -> Void)?
+    /// The RAW model text for 拷贝全文 — `plain` is the composed display string, which folds
+    /// scratch work away and restyles the FINAL marker, so it is not the copyable source.
+    var rawCopyText = ""
+    // UTF-16 ranges (on `attributed`) extracted from the composer's custom attributes.
+    private var cardRange: NSRange?         // whole card: chip is drawn behind this
+    private var cardAnswerRange: NSRange?   // just the payload: what 拷贝答案 copies
+    private var toggleRange: NSRange?
+
     private static let birthDuration: CFTimeInterval = 0.18
     private static let stagger: CFTimeInterval = 0.012
     private static let staggerCap: CFTimeInterval = 0.22   // long paste doesn't queue forever
@@ -41,6 +51,7 @@ final class StreamingAnswerView: NSView {
         self.isPlaceholder = isPlaceholder
         attributed = attr
         frameCache = nil
+        extractRanges()
 
         if isPlaceholder {
             plain = new
@@ -66,6 +77,25 @@ final class StreamingAnswerView: NSView {
         births = next
         needsDisplay = true
         updateLink()
+    }
+
+    /// Pull the composer's semantic ranges out of the attributed string — the string itself is
+    /// the only contract between NotchType and this view, so nothing can drift out of sync.
+    private func extractRanges() {
+        cardRange = nil; cardAnswerRange = nil; toggleRange = nil
+        let full = NSRange(location: 0, length: attributed.length)
+        attributed.enumerateAttribute(.nspiAnswerCard, in: full) { value, range, _ in
+            guard value != nil else { return }
+            cardRange = cardRange.map { NSUnionRange($0, range) } ?? range
+            if (value as? String) == "answer" {
+                cardAnswerRange = cardAnswerRange.map { NSUnionRange($0, range) } ?? range
+            }
+        }
+        attributed.enumerateAttribute(.nspiReasoningToggle, in: full) { value, range, _ in
+            guard value != nil else { return }
+            toggleRange = toggleRange.map { NSUnionRange($0, range) } ?? range
+        }
+        window?.invalidateCursorRects(for: self)
     }
 
     // MARK: - Shared framesetter (measure == render)
@@ -108,6 +138,12 @@ final class StreamingAnswerView: NSView {
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
+        // The answer card's glass chip — behind the glyphs, born with its first glyph.
+        if let chip = cardRange, chip.length > 0 {
+            drawCardChip(chip, lines: lines, origins: origins, shift: shift,
+                         ctx: ctx, now: now, utf16Births: utf16Births)
+        }
+
         for (li, line) in lines.enumerated() {
             let originX = origins[li].x
             let originY = origins[li].y - shift
@@ -147,6 +183,94 @@ final class StreamingAnswerView: NSView {
     }
 
     private func easeOut(_ t: CFTimeInterval) -> CGFloat { CGFloat(1 - pow(1 - t, 2.4)) }
+
+    /// The chip behind the answer card: a full-width rounded row, accent-tinted glass with a
+    /// hairline — quiet, never a loud color block. Drawn in the flipped (y-up) text context, so
+    /// it shares the glyphs' coordinate space exactly. Its alpha rides the FIRST card glyph's
+    /// birth, so chip and text condense into view together.
+    private func drawCardChip(_ chip: NSRange, lines: [CTLine], origins: [CGPoint],
+                              shift: CGFloat, ctx: CGContext, now: CFTimeInterval,
+                              utf16Births: [CFTimeInterval]) {
+        var top = -CGFloat.greatestFiniteMagnitude    // y-up context coords
+        var bottom = CGFloat.greatestFiniteMagnitude
+        for (li, line) in lines.enumerated() {
+            let r = CTLineGetStringRange(line)
+            guard NSIntersectionRange(NSRange(location: r.location, length: r.length), chip).length > 0
+            else { continue }
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let oy = origins[li].y - shift
+            top = max(top, oy + ascent)
+            bottom = min(bottom, oy - descent)
+        }
+        guard top > -CGFloat.greatestFiniteMagnitude else { return }
+
+        var a: CGFloat = 1
+        if !isPlaceholder && !reduceMotion, chip.location < utf16Births.count {
+            let birth = utf16Births[chip.location]
+            a = easeOut(min(1, max(0, (now - birth) / Self.birthDuration)))
+        }
+        guard a > 0.001 else { return }
+
+        let rect = CGRect(x: 0, y: bottom - NotchType.cardPadV,
+                          width: bounds.width, height: (top - bottom) + NotchType.cardPadV * 2)
+        let path = CGPath(roundedRect: rect, cornerWidth: NotchType.cardCorner,
+                          cornerHeight: NotchType.cardCorner, transform: nil)
+        ctx.saveGState()
+        ctx.addPath(path)
+        ctx.setFillColor(NotchPalette.accent.withAlphaComponent(0.10 * a).cgColor)
+        ctx.fillPath()
+        ctx.addPath(path)
+        ctx.setStrokeColor(NotchPalette.accentHi.withAlphaComponent(0.22 * a).cgColor)
+        ctx.setLineWidth(1)
+        ctx.strokePath()
+        ctx.restoreGState()
+    }
+
+    /// View-space rects of the lines that intersect `range` (for cursor + click on the toggle).
+    private func lineRects(for range: NSRange) -> [CGRect] {
+        guard let frame = currentFrame() else { return [] }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        var rects: [CGRect] = []
+        for (li, line) in lines.enumerated() {
+            let r = CTLineGetStringRange(line)
+            guard NSIntersectionRange(NSRange(location: r.location, length: r.length), range).length > 0
+            else { continue }
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            let w = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            // Flipped-view y of the baseline (see draw(): view y = layoutHeight - origin.y).
+            let baseline = Self.layoutHeight - origins[li].y
+            rects.append(CGRect(x: origins[li].x, y: baseline - ascent,
+                                width: CGFloat(w), height: ascent + descent))
+        }
+        return rects
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let toggle = toggleRange else { return }
+        for r in lineRects(for: toggle) {
+            addCursorRect(r.insetBy(dx: -6, dy: -4).intersection(bounds), cursor: .pointingHand)
+        }
+    }
+
+    #if DEBUG
+    /// Visual-QA: where the toggle currently sits (view coords), for the synthetic click hook.
+    func qaReasoningToggleRect() -> CGRect? { toggleRange.flatMap { lineRects(for: $0).first } }
+    #endif
+
+    override func mouseDown(with event: NSEvent) {
+        if let toggle = toggleRange {
+            let p = convert(event.locationInWindow, from: nil)
+            if lineRects(for: toggle).contains(where: { $0.insetBy(dx: -6, dy: -4).contains(p) }) {
+                onToggleReasoning?()
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
 
     private static func utf16BirthTable(plain: String, births: [CFTimeInterval]) -> [CFTimeInterval] {
         var table: [CFTimeInterval] = []
@@ -192,16 +316,35 @@ final class StreamingAnswerView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard !isPlaceholder, !plain.isEmpty else { return nil }
         let menu = NSMenu()
-        let item = NSMenuItem(title: L10n.t("拷贝回答", "回答をコピー", "Copy Answer"),
-                              action: #selector(copyAnswer), keyEquivalent: "")
+        let hasCard = (cardAnswerRange?.length ?? 0) > 0
+        if hasCard {
+            let answerItem = NSMenuItem(title: L10n.t("拷贝答案", "答えをコピー", "Copy Answer"),
+                                        action: #selector(copyFinalAnswer), keyEquivalent: "")
+            answerItem.target = self
+            menu.addItem(answerItem)
+        }
+        // Without a card this is the whole reply; with one it's the full text incl. scratch work.
+        let allTitle = hasCard
+            ? L10n.t("拷贝全文", "全文をコピー", "Copy Full Text")
+            : L10n.t("拷贝回答", "回答をコピー", "Copy Answer")
+        let item = NSMenuItem(title: allTitle, action: #selector(copyAnswer), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
         return menu
     }
 
+    @objc private func copyFinalAnswer() {
+        guard let r = cardAnswerRange else { return }
+        let s = (attributed.string as NSString).substring(with: r)
+            .replacingOccurrences(of: "\u{2028}", with: "\n")   // undo the one-paragraph trick
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+    }
+
     @objc private func copyAnswer() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(plain, forType: .string)
+        NSPasteboard.general.setString(rawCopyText.isEmpty ? plain : rawCopyText, forType: .string)
     }
 }
 

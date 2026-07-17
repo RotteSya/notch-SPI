@@ -16,6 +16,8 @@ final class TutorModel: ObservableObject {
     @Published var answer = "" // streamed markdown text
     @Published var cliLabel = ""
     @Published var depthLabel = ""
+    @Published var answerDepth = "guided" // depth the CURRENT answer was captured with (frozen per run)
+    @Published var reasoningRevealed = false // brief mode: the folded scratch work is open
     @Published var mode = "tutor"        // active mode id: "tutor" | "personality"
     @Published var modeLabel = ""        // header title for the active mode
     @Published var personaLabel = ""      // current persona name (empty = not set)

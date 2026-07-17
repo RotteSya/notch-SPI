@@ -24,6 +24,7 @@ final class NotchView: NSView {
     private let onCycleDepth: () -> Void
     private let onEditPersona: () -> Void
     private let onSettings: () -> Void
+    private let onToggleReasoning: () -> Void
     /// Supplies the CURRENT collapsed/expanded panel frames (screen coords). Geometry stays owned
     /// by the controller; this view owns the clock that travels between the two.
     private let frameProvider: (Bool) -> NSRect
@@ -84,13 +85,15 @@ final class NotchView: NSView {
          onHover: @escaping (Bool) -> Void,
          onCycleDepth: @escaping () -> Void,
          onEditPersona: @escaping () -> Void,
-         onSettings: @escaping () -> Void) {
+         onSettings: @escaping () -> Void,
+         onToggleReasoning: @escaping () -> Void) {
         self.model = model
         self.frameProvider = frameProvider
         self.onHover = onHover
         self.onCycleDepth = onCycleDepth
         self.onEditPersona = onEditPersona
         self.onSettings = onSettings
+        self.onToggleReasoning = onToggleReasoning
         super.init(frame: .zero)
         build()
         observe()
@@ -138,6 +141,7 @@ final class NotchView: NSView {
         answerScroll.borderType = .noBorder
         answerScroll.horizontalScrollElasticity = .none
         answerScroll.documentView = answerStream
+        answerStream.onToggleReasoning = { [weak self] in self?.onToggleReasoning() }
         answerScroll.onUserScroll = { [weak self] in self?.noteUserScroll() }
         answerScroll.wantsLayer = true
         answerScroll.layer?.mask = scrollFade
@@ -170,7 +174,8 @@ final class NotchView: NSView {
             ? (model.personaLabel.isEmpty ? L10n.t("设置人物像", "人物像を設定", "Set persona") : model.personaLabel)
                                    : model.depthLabel
 
-        let attr = NotchType.answerString(model.answer, mode: model.mode)
+        let attr = NotchType.answerString(model.answer, presentation: NotchType.presentation(for: model))
+        answerStream.rawCopyText = model.answer
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
         // While streaming, keep the newest text in view (a long answer scrolls within its region).
         if model.status == .streaming { followBottom = true }
@@ -436,10 +441,33 @@ final class NotchView: NSView {
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
         // long answer scrolls; the CTFramesetter measure matches what it draws.
-        let docH = max(h, NotchType.answerHeight(model.answer, mode: model.mode, width: w))
+        let docH = max(h, NotchType.answerHeight(model.answer,
+                                                 presentation: NotchType.presentation(for: model), width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
         updateScrollFade()
     }
+
+    #if DEBUG
+    /// Visual-QA: post a REAL mouse-down/up pair through the window at the reasoning toggle's
+    /// center, so the whole event chain (panel hit-test → scroll view → StreamingAnswerView
+    /// coordinate math) is exercised — not just the callback.
+    func qaClickReasoningToggle() {
+        guard let window, let rect = answerStream.qaReasoningToggleRect() else {
+            fputs("[NotchSPI] QA: no reasoning toggle on screen\n", stderr)
+            return
+        }
+        let inWindow = answerStream.convert(CGPoint(x: rect.midX, y: rect.midY), to: nil)
+        fputs("[NotchSPI] QA: toggle rect \(rect) → window point \(inWindow), hit = "
+              + String(describing: hitTest(convert(inWindow, from: nil))) + "\n", stderr)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let e = NSEvent.mouseEvent(
+                with: type, location: inWindow, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                window.sendEvent(e)
+            }
+        }
+    }
+    #endif
 
     // MARK: Hover
 

@@ -123,13 +123,37 @@ func notchTintedSymbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight
 
 // MARK: - Answer typography
 
+/// How the current answer should be presented — derived from the model on every refresh and
+/// passed to BOTH the renderer and the height measurement, so they can never disagree.
+struct AnswerPresentation: Equatable {
+    var mode: String        // "tutor" | "personality"
+    var depth: String       // depth this answer was CAPTURED with (frozen per run, not live)
+    var finished: Bool      // the stream has ended (idle / error)
+    var revealed: Bool      // the user unfolded the scratch work (brief depth, finished)
+}
+
+extension NSAttributedString.Key {
+    /// Marks the answer-card range. Value: "label" (the small caption) or "answer" (the payload —
+    /// also what 拷贝答案 copies). The streaming view draws the glass chip behind this range.
+    static let nspiAnswerCard = NSAttributedString.Key("nspiAnswerCard")
+    /// Marks the clickable "▸ 推理过程" line that folds/unfolds the scratch work.
+    static let nspiReasoningToggle = NSAttributedString.Key("nspiReasoningToggle")
+}
+
 /// Single source of truth for the answer's typography, used by BOTH the view (rendering) and the
 /// controller (height measurement), so the measured panel height always matches what is drawn —
 /// no last-line clip, no trailing gap. Non-empty answers render inline Markdown (bold / italic /
-/// code), matching the original SwiftUI `AttributedString(markdown:)` treatment.
+/// code). Answers under the FINAL contract (see `Prompts.finalLineClause`) are composed via
+/// `AnswerComposer`: scratch work + ONE authoritative answer card — never two answers.
 enum NotchType {
     /// User-adjustable in 设置 → 外观 (small / standard / large).
     static var answerFontSize: CGFloat { Appearance.answerFontSize }
+
+    // Answer-card metrics, shared by the renderer (chip rect) and the measurer (extra height).
+    static let cardCorner: CGFloat = 10
+    static let cardPadV: CGFloat = 8       // chip inner padding above first / below last card line
+    static let cardPadH: CGFloat = 12      // text indent inside the full-width chip
+    static let cardGapAbove: CGFloat = 10  // clear air between the chip and what precedes it
 
     static func placeholder(mode: String) -> String {
         if mode == "personality" {
@@ -144,52 +168,180 @@ enum NotchType {
                       "Press \(key) for tutoring · hover to expand")
     }
 
-    static func answerString(_ answer: String, mode: String) -> NSAttributedString {
-        let para = NSMutableParagraphStyle()
+    /// Presentation snapshot for the model's CURRENT answer.
+    static func presentation(for model: TutorModel) -> AnswerPresentation {
+        AnswerPresentation(
+            mode: model.mode,
+            depth: model.answerDepth,
+            finished: !(model.status == .running || model.status == .streaming),
+            revealed: model.reasoningRevealed)
+    }
+
+    static func answerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
         if answer.isEmpty {
+            let para = NSMutableParagraphStyle()
             para.lineSpacing = 2
-            return NSAttributedString(string: placeholder(mode: mode), attributes: [
+            return NSAttributedString(string: placeholder(mode: p.mode), attributes: [
                 .font: NSFont.systemFont(ofSize: answerFontSize),
                 .foregroundColor: NotchPalette.secondary,
                 .paragraphStyle: para,
             ])
         }
-        para.lineSpacing = 3
-        let base = NSFont.systemFont(ofSize: answerFontSize)
+        // Modes that never carry a FINAL contract (persona lists; hints reveal no answer)
+        // render exactly as before.
+        guard p.mode != "personality", p.depth != "hint" else { return body(answer, dim: false) }
+
+        let parse = AnswerComposer.parse(answer, streaming: !p.finished)
+        guard let final = parse.final, !(p.finished && final.isEmpty) else {
+            // No marker (yet). A brief answer still streaming is scratch work — de-emphasize it.
+            // A FINISHED reply without a marker (error text, contract violation) falls back to
+            // the normal treatment, so nothing readable is ever hidden or folded away.
+            let dim = p.depth == "brief" && !p.finished
+            return body(parse.working, dim: dim)
+        }
+
         let out = NSMutableAttributedString()
-        if let attributed = try? AttributedString(
-            markdown: answer,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            for run in attributed.runs {
-                let piece = String(attributed[run.range].characters)
-                var font = base
-                if let intent = run.inlinePresentationIntent {
-                    if intent.contains(.code) {
-                        font = .monospacedSystemFont(ofSize: answerFontSize - 0.5, weight: .regular)
-                    } else {
-                        let bold = intent.contains(.stronglyEmphasized)
-                        let italic = intent.contains(.emphasized)
-                        font = variant(base, bold: bold, italic: italic)
-                    }
+        let hasWorking = !parse.working.isEmpty
+        if hasWorking {
+            if p.depth == "brief" && p.finished {
+                // The condensation moment: scratch folds into a quiet, reopenable line.
+                out.append(toggleLine(expanded: p.revealed))
+                if p.revealed {
+                    out.append(NSAttributedString(string: "\n"))
+                    out.append(body(parse.working, dim: true))
                 }
-                out.append(NSAttributedString(string: piece, attributes: [
-                    .font: font, .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
-                ]))
+            } else {
+                out.append(body(parse.working, dim: p.depth == "brief"))
             }
-        } else {
-            out.append(NSAttributedString(string: answer, attributes: [
-                .font: base, .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
-            ]))
+        }
+        if out.length > 0 { out.append(NSAttributedString(string: "\n")) }
+        out.append(card(final, afterContent: out.length > 0))
+        if !parse.overflow.isEmpty {
+            // Contract-violating trailing scratch: quiet notes below the card, clear of the
+            // chip's bottom inset (spacingBefore covers cardPadV plus breathing room).
+            out.append(NSAttributedString(string: "\n"))
+            out.append(body(parse.overflow, dim: true, spacingBefore: cardPadV + 6))
         }
         return out
     }
 
-    static func answerHeight(_ answer: String, mode: String, width: CGFloat) -> CGFloat {
+    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat) -> CGFloat {
         guard width > 1 else { return 0 }
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
-        return StreamingAnswerView.measure(answerString(answer, mode: mode), width: width)
+        let attr = answerString(answer, presentation: presentation)
+        var h = StreamingAnswerView.measure(attr, width: width)
+        // The chip's bottom inset extends below its last text line.
+        if attr.length > 0, attr.attribute(.nspiAnswerCard, at: attr.length - 1, effectiveRange: nil) != nil {
+            h += cardPadV
+        }
+        return h
+    }
+
+    // MARK: Composition pieces
+
+    /// Body text: the pre-fix rendering, parameterized. `dim` is the scratch-work treatment —
+    /// a touch smaller, secondary ink, tighter leading. Quiet, never competing with the card.
+    private static func body(_ text: String, dim: Bool, spacingBefore: CGFloat = 0) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = dim ? 2.5 : 3
+        let size = dim ? max(10.5, answerFontSize - 2) : answerFontSize
+        let out = inlineMarkdown(
+            text,
+            baseFont: .systemFont(ofSize: size),
+            codeFont: .monospacedSystemFont(ofSize: size - 0.5, weight: .regular),
+            color: dim ? NotchPalette.secondary : NotchPalette.primary,
+            para: para)
+        guard spacingBefore > 0, out.length > 0 else { return out }
+        // Air before the FIRST paragraph only (e.g. overflow clearing the chip's bottom inset).
+        let m = NSMutableAttributedString(attributedString: out)
+        let first = (m.string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
+        let spaced = para.mutableCopy() as! NSMutableParagraphStyle
+        spaced.paragraphSpacingBefore = spacingBefore
+        m.addAttribute(.paragraphStyle, value: spaced, range: first)
+        return m
+    }
+
+    /// The authoritative answer card: a small accent caption + the answer itself, one size up
+    /// and semibold. The whole range carries `.nspiAnswerCard` so the streaming view can draw
+    /// the glass chip behind it; indents keep the text off the chip's rounded edges.
+    private static func card(_ final: String, afterContent: Bool) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 3
+        para.firstLineHeadIndent = cardPadH
+        para.headIndent = cardPadH
+        para.tailIndent = -cardPadH
+        para.paragraphSpacingBefore = (afterContent ? cardGapAbove : 0) + cardPadV
+
+        let out = NSMutableAttributedString()
+        let labelFont = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+        out.append(NSAttributedString(string: L10n.answerCardLabel + "  ", attributes: [
+            .font: labelFont,
+            .foregroundColor: NotchPalette.accentHi.withAlphaComponent(0.92),
+            .kern: 1.4,
+            .paragraphStyle: para,
+            .nspiAnswerCard: "label",
+        ]))
+        // Inner newlines become line separators so a multi-line answer stays ONE paragraph
+        // (paragraphSpacingBefore must not repeat inside the chip).
+        let text = final.replacingOccurrences(of: "\n", with: "\u{2028}")
+        out.append(inlineMarkdown(
+            text,
+            baseFont: .systemFont(ofSize: answerFontSize + 4, weight: .semibold),
+            codeFont: .monospacedSystemFont(ofSize: answerFontSize + 3, weight: .medium),
+            color: NotchPalette.primary,
+            para: para,
+            extra: [.nspiAnswerCard: "answer"]))
+        return out
+    }
+
+    private static func toggleLine(expanded: Bool) -> NSAttributedString {
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 2
+        let title = L10n.t("推理过程", "考え方", "Reasoning")
+        return NSAttributedString(string: "\(expanded ? "▾" : "▸") \(title)", attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NotchPalette.secondary,
+            .paragraphStyle: para,
+            .nspiReasoningToggle: true,
+        ])
+    }
+
+    /// Inline-Markdown → attributed runs with the given typography (the original `answerString`
+    /// parse, factored so scratch, body and card can each bring their own fonts and extras).
+    private static func inlineMarkdown(
+        _ text: String, baseFont: NSFont, codeFont: NSFont, color: NSColor,
+        para: NSParagraphStyle, extra: [NSAttributedString.Key: Any] = [:]
+    ) -> NSAttributedString {
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: baseFont, .foregroundColor: color, .paragraphStyle: para,
+        ]
+        for (k, v) in extra { attrs[k] = v }
+        let out = NSMutableAttributedString()
+        if let attributed = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            for run in attributed.runs {
+                let piece = String(attributed[run.range].characters)
+                var font = baseFont
+                if let intent = run.inlinePresentationIntent {
+                    if intent.contains(.code) {
+                        font = codeFont
+                    } else {
+                        font = variant(baseFont,
+                                       bold: intent.contains(.stronglyEmphasized),
+                                       italic: intent.contains(.emphasized))
+                    }
+                }
+                var a = attrs
+                a[.font] = font
+                out.append(NSAttributedString(string: piece, attributes: a))
+            }
+        } else {
+            out.append(NSAttributedString(string: text, attributes: attrs))
+        }
+        return out
     }
 
     private static func variant(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {

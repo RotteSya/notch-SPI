@@ -157,5 +157,9 @@ enum L10n {
     static var statusError: String { t("出错", "エラー", "Error") }
     static var statusExplaining: String { t("讲解中…", "解説中…", "Explaining…") }
     static var statusAnswering: String { t("作答中…", "回答中…", "Answering…") }
+    static var statusReasoning: String { t("推理中…", "思考中…", "Thinking…") }
+
+    /// Caption on the answer card (see NotchType.card).
+    static var answerCardLabel: String { t("答案", "答え", "ANSWER") }
     static var noOutput: String { t("（没有输出）", "（出力なし）", "(no output)") }
 }

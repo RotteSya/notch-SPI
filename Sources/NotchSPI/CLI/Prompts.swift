@@ -28,21 +28,49 @@ enum Prompts {
     \(languageClause)
     """ }
 
+    /// The one-answer contract, shared by every depth that reveals a result. A streamed reply
+    /// cannot be un-said: the panel shows text the moment it is generated, so a model that
+    /// guesses early and corrects itself mid-stream leaves TWO answers on screen (the bug this
+    /// clause exists to kill). The contract: verify FIRST, conclude ONCE, and mark the
+    /// conclusion machine-readably — the client parses the FINAL line into the answer card and
+    /// never shows the literal marker.
+    static let finalLineClause = """
+    Your reply streams to the user token by token and can never be edited afterwards, so:
+    - Finish ALL calculation and checking BEFORE stating any result. Never announce a tentative answer early ("the answer is X… wait, actually Y"). If you notice an earlier step was wrong, silently continue with the corrected work — no apologies, no pointing back at the mistake.
+    - State your conclusion exactly ONCE, at the very end of the reply, as its own last line in exactly this format:
+
+    FINAL: <the answer>
+
+    Keep `FINAL:` in Latin capitals exactly as shown — the app parses this line and renders it as a highlighted answer card (the marker itself is never displayed). Write <the answer> in the problem's language: the choice/letter/value itself plus at most one short clause. Nothing may follow that line, and `FINAL:` must appear nowhere else in the reply.
+    """
+
     static let depthClause: [String: String] = [
         "hint": "Solution detail: HINTS ONLY. Do NOT reveal the final answer or a full worked solution. Give one or two targeted hints and the single next step to try, then stop and invite them to attempt it themselves.",
-        "guided": "Solution detail: GUIDED WALKTHROUGH. Work through the problem step by step, showing the reasoning and intermediate results, and arrive at the final answer at the end. Close with a one-line takeaway of the general technique so it transfers to similar problems.",
-        "full": "Solution detail: FULL WORKED SOLUTION. Provide the complete solution with every step justified, the final answer clearly marked (e.g. **Answer:** …), a short verification or sanity-check, a brief \"why this works\" note, and one common mistake to avoid.",
+        "guided": "Solution detail: GUIDED WALKTHROUGH. Work through the problem step by step, showing the reasoning and intermediate results. Close with a one-line takeaway of the general technique so it transfers to similar problems, then end with the FINAL line.",
+        "full": "Solution detail: FULL WORKED SOLUTION. Provide the complete solution with every step justified, a short verification or sanity-check, a brief \"why this works\" note, and one common mistake to avoid — then end with the FINAL line.",
     ]
 
-    // "简略" — answer only, no tutoring structure.
+    // "简略" — the user wants the answer with minimal reading. The model still MUST work the
+    // problem out first (an autoregressive model that is forbidden to reason can only guess —
+    // that's how a wrong BDECA lands on screen before the right ADBCE), but the working stays
+    // telegraphic scratch: the UI de-emphasizes it while streaming and folds it away once the
+    // FINAL line arrives, leaving just the answer card.
     static var briefPrompt: String { """
-    You are a concise assistant. The user shares a screenshot of a problem. Output ONLY the final answer — directly and concisely. Do NOT restate the problem and do NOT explain your steps or reasoning. If it is a value or a choice, give just that (at most one short justifying clause). Use Markdown only if it aids readability. \(languageClause) Never invent facts you cannot see in the image.
+    You are a fast, precise solver. The user shares a screenshot of a problem and wants the answer with minimal reading.
+
+    Work the problem out BEFORE answering, but keep the working terse: telegraphic scratch notes — short lines, symbols, no prose, no headings, no restating the problem. Write only what you need to reach a VERIFIED result; the app de-emphasizes these notes and tucks them away once the answer arrives, so never pad them for presentation. For a multiple-choice or short-form item, check your result against the on-screen options before concluding.
+
+    \(finalLineClause)
+
+    Use Markdown only if it aids readability. \(languageClause) Never invent facts you cannot see in the image.
     """ }
 
     static func tutorText(_ depth: String) -> String {
         if depth == "brief" { return briefPrompt }
         let clause = depthClause[depth] ?? depthClause["guided"]!
-        return base + "\n\n" + clause
+        // Hints deliberately never reveal an answer, so they carry no FINAL contract.
+        if depth == "hint" { return base + "\n\n" + clause }
+        return base + "\n\n" + clause + "\n\n" + finalLineClause
     }
 
     // MARK: - Personality-test mode
@@ -63,6 +91,7 @@ enum Prompts {
         Output rules:
         - Handle every question visible in the screenshot, in the on-screen order, numbered (1, 2, 3 …) following any numbering shown.
         - For each item output ONLY the recommended choice, written exactly as it appears on screen (e.g. `1. 当てはまる` or `3. Bに近い`). One line per question. No explanation unless an item is genuinely ambiguous, in which case add a brief parenthetical.
+        - Decide each item's choice BEFORE writing its line, and never revise a line you have already written — your reply streams to the user as it is generated, so a correction would leave two contradictory answers on screen.
         - Do NOT restate the full statements — the user can already see them. Be fast and scannable.
         - If the screenshot is unclear, cut off, or the choices are unreadable, say exactly what you can and cannot see instead of guessing.
 

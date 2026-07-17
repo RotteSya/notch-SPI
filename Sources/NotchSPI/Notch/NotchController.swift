@@ -29,7 +29,12 @@ final class NotchController: NSObject {
             onHover: { [weak self] in self?.hover($0) },
             onCycleDepth: { [weak self] in self?.cycleDepth() },
             onEditPersona: { [weak self] in self?.openSettings(page: .personas) },
-            onSettings: { [weak self] in self?.showSettings() }
+            onSettings: { [weak self] in self?.showSettings() },
+            onToggleReasoning: { [weak self] in
+                guard let self else { return }
+                self.model.reasoningRevealed.toggle()
+                self.resizeToFit() // the height spring glides the fold/unfold
+            }
         )
         view.autoresizingMask = [.width, .height]
         notchView = view
@@ -149,12 +154,24 @@ final class NotchController: NSObject {
         if let theme = ProcessInfo.processInfo.environment["NSPI_QA_THEME"] { Appearance.setTheme(theme) }
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
+        model.mode = "tutor"
+        model.answerDepth = "guided"
+        model.reasoningRevealed = false
         let fixture = """
         **思路**　这道题考查二次函数的最小值。先把 `f(x) = x² − 4x + 3` 配方成顶点式，最值一眼可见。
 
         **配方**　`f(x) = (x − 2)² − 1`，所以抛物线的顶点在 `(2, −1)`。
 
         **结论**　开口向上，当 `x = 2` 时取得最小值 **−1**；没有最大值。
+        """
+        // The FINAL-contract fixture mirrors the real-world bug report: a wrong early
+        // conclusion, a corrected one — the card must show ONLY the last (ADBCE).
+        let finalFixture = """
+        C=0：エ→D=−20、オ→E=B+30、ウ→D−E=±40 → E=20、B=−10
+        ア→A=B±20 → A=10 or −30、イ→C−A=±30 → A=−30
+        FINAL: BDECA
+        検算：A=−30 < D=−20 < B=−10 < C=0 < E=20 ✓ 最小は A
+        FINAL: **ADBCE**（A=−30 が最小）
         """
         switch state {
         case "running":
@@ -173,6 +190,31 @@ final class NotchController: NSObject {
                                   "キャプチャに失敗しました。再試行してください。",
                                   "Capture failed — the target window may have just closed. Please try again.")
             model.status = .error; model.statusText = L10n.statusError
+            setExpanded(true); resizeToFit()
+        case "final":  // brief answer, folded scratch + answer card (the post-fix hero state)
+            model.answerDepth = "brief"
+            model.answer = finalFixture; model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            setExpanded(true); resizeToFit()
+        case "final-open":  // scratch work unfolded via the ▸ toggle
+            model.answerDepth = "brief"; model.reasoningRevealed = true
+            model.answer = finalFixture; model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            setExpanded(true); resizeToFit()
+        case "final-click":  // real-event toggle test: fold → unfold (2s) → fold again (4s)
+            model.answerDepth = "brief"
+            model.answer = finalFixture; model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            setExpanded(true); resizeToFit()
+            for delay in [2.0, 4.0] {
+                let w = DispatchWorkItem { [weak self] in self?.notchView.qaClickReasoningToggle() }
+                qaStreamWork = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
+            }
+        case "final-guided":  // guided depth keeps the walkthrough and ends in the card
+            model.answer = fixture + "\nFINAL: **−1**（`x = 2` 时取得）"
+            model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
             setExpanded(true); resizeToFit()
         case "cycle":  // expand ⇄ collapse forever — for filming both morph directions
             model.answer = fixture; model.status = .idle
@@ -193,11 +235,16 @@ final class NotchController: NSObject {
             flip()
         default: // "streaming" — run the real birth animation by appending in chunks
                  // ("streaming-long" streams 4× the fixture, far past maxExpandedHeight, so the
-                 //  height spring hits its clamp and the follow-bottom scroll takes over)
+                 //  height spring hits its clamp and the follow-bottom scroll takes over;
+                 //  "streaming-final" streams the FINAL-contract fixture as a brief run: dim
+                 //  scratch → chip birth → the fold-away condensation on completion)
+            let isFinal = state == "streaming-final"
+            if isFinal { model.answerDepth = "brief" }
             model.answer = ""; model.status = .running; model.statusText = L10n.statusPreparing
             setExpanded(true)
-            let text = state == "streaming-long"
-                ? Array(repeating: fixture, count: 4).joined(separator: "\n\n") : fixture
+            let text = isFinal ? finalFixture
+                : state == "streaming-long"
+                    ? Array(repeating: fixture, count: 4).joined(separator: "\n\n") : fixture
             let chars = Array(text)
             var i = 0
             func pump() {
@@ -208,7 +255,10 @@ final class NotchController: NSObject {
                 }
                 let step = min(chars.count - i, Int.random(in: 2...4))
                 model.answer += String(chars[i..<i+step]); i += step
-                model.status = .streaming; model.statusText = L10n.statusExplaining
+                model.status = .streaming
+                model.statusText = isFinal
+                    ? (AnswerComposer.hasMarker(model.answer) ? L10n.statusAnswering : L10n.statusReasoning)
+                    : L10n.statusExplaining
                 resizeToFit()
                 let w = DispatchWorkItem { pump() }
                 qaStreamWork = w
@@ -452,7 +502,8 @@ final class NotchController: NSObject {
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
         let width = expandedWidth - NotchLayout.contentInsetH * 2
-        let answerH = NotchType.answerHeight(model.answer, mode: model.mode, width: width)
+        let answerH = NotchType.answerHeight(model.answer,
+                                             presentation: NotchType.presentation(for: model), width: width)
         let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
@@ -529,6 +580,10 @@ final class NotchController: NSObject {
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
         model.answer = ""
+        // Freeze this answer's presentation inputs: cycling the depth mid-stream must not
+        // restyle an answer that was captured under another contract.
+        model.answerDepth = Settings.shared.depth
+        model.reasoningRevealed = false
         model.status = .running
         model.statusText = L10n.statusPreparing
         refreshCLILabel()
@@ -649,13 +704,19 @@ final class NotchController: NSObject {
 
             let mode = Settings.shared.mode
             let statusVerb = mode == "personality" ? L10n.statusAnswering : L10n.statusExplaining
+            // Brief runs narrate their two phases: scratch work streams as 推理中…, and the
+            // moment the FINAL marker lands the line flips to 作答中… — the status text tells
+            // the same story the de-emphasized text + answer card are telling.
+            let briefRun = mode != "personality" && self.model.answerDepth == "brief"
 
             // Shared by both channels so CLI mode and direct-API mode render identically.
             let onDelta: (String) -> Void = { [weak self] delta in
                 guard let self else { return }
                 self.model.answer += delta
                 self.model.status = .streaming
-                self.model.statusText = statusVerb
+                self.model.statusText = briefRun
+                    ? (AnswerComposer.hasMarker(self.model.answer) ? L10n.statusAnswering : L10n.statusReasoning)
+                    : statusVerb
                 self.resizeToFit()
             }
             let onDone: (Bool, String) -> Void = { [weak self] ok, stderr in

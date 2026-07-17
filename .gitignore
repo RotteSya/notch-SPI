@@ -3,3 +3,4 @@
 .DS_Store
 *.xcodeproj
 dist/
+dist-qa/
