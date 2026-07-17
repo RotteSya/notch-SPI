@@ -175,7 +175,6 @@ final class NotchView: NSView {
                                    : model.depthLabel
 
         let attr = NotchType.answerString(model.answer, presentation: NotchType.presentation(for: model))
-        answerStream.rawCopyText = model.answer
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
         // While streaming, keep the newest text in view (a long answer scrolls within its region).
         if model.status == .streaming { followBottom = true }

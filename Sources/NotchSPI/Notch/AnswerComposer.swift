@@ -67,6 +67,19 @@ enum AnswerComposer {
         return markerRegex.firstMatch(in: raw, range: NSRange(location: 0, length: ns.length)) != nil
     }
 
+    /// The answer-card payload as clean plain text for the clipboard — the FINAL answer with any
+    /// inline markdown (`**bold**`, `` `code` ``) flattened to what the card visually shows.
+    /// nil when the reply carries no answer card (no marker → nothing to auto-copy).
+    static func clipboardAnswer(_ raw: String) -> String? {
+        guard let final = parse(raw, streaming: false).final, !final.isEmpty else { return nil }
+        if let a = try? AttributedString(
+            markdown: final, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            let flat = String(a.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !flat.isEmpty { return flat }
+        }
+        return final
+    }
+
     // MARK: - Helpers
 
     private static func trimTail(_ s: String) -> String {

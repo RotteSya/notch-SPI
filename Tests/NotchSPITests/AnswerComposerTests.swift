@@ -125,6 +125,21 @@ final class AnswerComposerTests: XCTestCase {
         XCTAssertTrue(AnswerComposer.hasMarker("scratch\nFINAL: x"))
         XCTAssertTrue(AnswerComposer.hasMarker("scratch\n**FINAL:** x"))
     }
+
+    // MARK: clipboardAnswer (auto-copy payload)
+
+    func testClipboardAnswerIsTheLastFinalFlattened() {
+        // Last marker wins, and inline markdown is flattened to what the card shows.
+        XCTAssertEqual(AnswerComposer.clipboardAnswer("scratch\nFINAL: BDECA\nfix\nFINAL: **ADBCE**"), "ADBCE")
+        XCTAssertEqual(AnswerComposer.clipboardAnswer("x\nFINAL: **ADBCE**（A=−30 が最小）"), "ADBCE（A=−30 が最小）")
+        XCTAssertEqual(AnswerComposer.clipboardAnswer("x\nFINAL: the value is `42`"), "the value is 42")
+    }
+
+    func testClipboardAnswerNilWithoutACard() {
+        // No marker → nothing to auto-copy (hints, personality lists, error text).
+        XCTAssertNil(AnswerComposer.clipboardAnswer("just some reasoning, no answer"))
+        XCTAssertNil(AnswerComposer.clipboardAnswer("1. 当てはまる\n2. Bに近い"))
+    }
 }
 
 /// The appearance knobs' pure clamping / derivation (no UserDefaults touched).

@@ -449,6 +449,7 @@ private final class AppearancePageController: NSViewController, SettingsPage {
     private let delayReadout = NSTextField(labelWithString: "")
     private let stayCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let revealCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let autoCopyCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
 
     private let labelW: CGFloat = 148
     private let fieldX: CGFloat = 36 + 160
@@ -548,6 +549,21 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         revealCheckbox.state = Appearance.revealReasoningByDefault ? .on : .off
         revealCheckbox.frame = NSRect(x: fieldX, y: y, width: 360, height: 20)
         root.addSubview(revealCheckbox)
+        y += 36
+
+        // 剪贴板：答完后自动复制答案
+        let copyLabel = rowLabel(L10n.t("剪贴板", "クリップボード", "Clipboard"))
+        copyLabel.alignment = .right
+        copyLabel.frame = NSRect(x: 36, y: y + 1, width: labelW, height: 18)
+        root.addSubview(copyLabel)
+        autoCopyCheckbox.title = L10n.t("答完后自动复制答案到剪贴板",
+                                        "回答後に答えをクリップボードへ自動コピー",
+                                        "Copy the answer to the clipboard when done")
+        autoCopyCheckbox.target = self
+        autoCopyCheckbox.action = #selector(autoCopyToggled)
+        autoCopyCheckbox.state = Appearance.autoCopyAnswer ? .on : .off
+        autoCopyCheckbox.frame = NSRect(x: fieldX, y: y, width: 400, height: 20)
+        root.addSubview(autoCopyCheckbox)
         y += 40
 
         let liveHint = captionLabel(L10n.t("所有更改即时生效 — 抬头看看刘海。",
@@ -608,6 +624,10 @@ private final class AppearancePageController: NSViewController, SettingsPage {
 
     @objc private func revealToggled() {
         Appearance.revealReasoningByDefault = (revealCheckbox.state == .on)
+    }
+
+    @objc private func autoCopyToggled() {
+        Appearance.autoCopyAnswer = (autoCopyCheckbox.state == .on)
     }
 
     func pageDidShow() { refreshSwatches(); syncSizeUI(); syncDelayUI() }

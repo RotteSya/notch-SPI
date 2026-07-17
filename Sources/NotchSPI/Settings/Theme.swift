@@ -156,6 +156,17 @@ enum Appearance {
         return L10n.t("\(n) 秒", "\(n)秒", "\(n)s")
     }
 
+    // MARK: Auto-copy answer (剪贴板)
+
+    /// When on, the answer card's payload is copied to the clipboard the moment a capture
+    /// finishes — so the answer is ready to paste without any right-click. Opt-in (default off):
+    /// silently writing to the clipboard is a surprise unless the user asked for it. Read by
+    /// NotchController on completion (see onDone).
+    static var autoCopyAnswer: Bool {
+        get { d.bool(forKey: "autoCopyAnswer") }   // default false
+        set { d.set(newValue, forKey: "autoCopyAnswer") }
+    }
+
     // MARK: Reasoning fold (简略模式)
 
     /// Brief mode folds its scratch work away behind "▸ 推理过程" once the answer lands. Users who

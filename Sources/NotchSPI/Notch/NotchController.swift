@@ -198,7 +198,9 @@ final class NotchController: NSObject {
             model.answerDepth = "brief"
             model.answer = finalFixture; model.status = .idle
             model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+            if autoCopyAnswerIfEnabled() { model.statusText += " · " + L10n.statusCopied }
             setExpanded(true); resizeToFit()
+            fputs("[NotchSPI] QA: notch windowNumber \(panel.windowNumber)\n", stderr)
         case "final-open":  // scratch work unfolded via the ▸ toggle
             model.answerDepth = "brief"; model.reasoningRevealed = true
             model.answer = finalFixture; model.status = .idle
@@ -750,6 +752,11 @@ final class NotchController: NSObject {
                         self.openSettings(page: .account)
                     }
                 }
+                // Auto-copy the answer card's payload the moment it's ready (opt-in). No marker
+                // (personality lists, hints, error text) → nothing to copy, so it stays silent.
+                if ok, self.autoCopyAnswerIfEnabled() {
+                    self.model.statusText += " · " + L10n.statusCopied
+                }
                 self.resizeToFit()
                 self.running = false
                 self.pinned = false
@@ -832,6 +839,19 @@ final class NotchController: NSObject {
                           "キャプチャに失敗しました。対象ウィンドウが閉じられた可能性があります。再試行してください。",
                           "Capture failed — the target window may have just closed. Please try again.")
         }
+    }
+
+    /// Copy the answer card's payload to the clipboard when 自动复制 is on. Returns whether it
+    /// copied, so the caller can annotate the status line. Shared by the live completion path and
+    /// the QA fixtures so both behave identically. Silent (no copy) when the reply carries no
+    /// answer card (personality lists, hints, error text — `clipboardAnswer` returns nil).
+    @discardableResult
+    private func autoCopyAnswerIfEnabled() -> Bool {
+        guard Appearance.autoCopyAnswer, model.mode != "personality",
+              let answer = AnswerComposer.clipboardAnswer(model.answer) else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(answer, forType: .string)
+        return true
     }
 
     private func finishError(_ msg: String) {

@@ -23,12 +23,8 @@ final class StreamingAnswerView: NSView {
 
     /// Fires when the "▸ 推理过程" line is clicked (brief mode's folded scratch work).
     var onToggleReasoning: (() -> Void)?
-    /// The RAW model text for 拷贝全文 — `plain` is the composed display string, which folds
-    /// scratch work away and restyles the FINAL marker, so it is not the copyable source.
-    var rawCopyText = ""
     // UTF-16 ranges (on `attributed`) extracted from the composer's custom attributes.
     private var cardRange: NSRange?         // whole card: chip is drawn behind this
-    private var cardAnswerRange: NSRange?   // just the payload: what 拷贝答案 copies
     private var toggleRange: NSRange?
 
     private static let birthDuration: CFTimeInterval = 0.18
@@ -82,14 +78,11 @@ final class StreamingAnswerView: NSView {
     /// Pull the composer's semantic ranges out of the attributed string — the string itself is
     /// the only contract between NotchType and this view, so nothing can drift out of sync.
     private func extractRanges() {
-        cardRange = nil; cardAnswerRange = nil; toggleRange = nil
+        cardRange = nil; toggleRange = nil
         let full = NSRange(location: 0, length: attributed.length)
         attributed.enumerateAttribute(.nspiAnswerCard, in: full) { value, range, _ in
             guard value != nil else { return }
             cardRange = cardRange.map { NSUnionRange($0, range) } ?? range
-            if (value as? String) == "answer" {
-                cardAnswerRange = cardAnswerRange.map { NSUnionRange($0, range) } ?? range
-            }
         }
         attributed.enumerateAttribute(.nspiReasoningToggle, in: full) { value, range, _ in
             guard value != nil else { return }
@@ -310,42 +303,6 @@ final class StreamingAnswerView: NSView {
     }
 
     deinit { link?.invalidate() }
-
-    // MARK: - Copy affordance (selection was traded for the birth animation)
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard !isPlaceholder, !plain.isEmpty else { return nil }
-        let menu = NSMenu()
-        let hasCard = (cardAnswerRange?.length ?? 0) > 0
-        if hasCard {
-            let answerItem = NSMenuItem(title: L10n.t("拷贝答案", "答えをコピー", "Copy Answer"),
-                                        action: #selector(copyFinalAnswer), keyEquivalent: "")
-            answerItem.target = self
-            menu.addItem(answerItem)
-        }
-        // Without a card this is the whole reply; with one it's the full text incl. scratch work.
-        let allTitle = hasCard
-            ? L10n.t("拷贝全文", "全文をコピー", "Copy Full Text")
-            : L10n.t("拷贝回答", "回答をコピー", "Copy Answer")
-        let item = NSMenuItem(title: allTitle, action: #selector(copyAnswer), keyEquivalent: "")
-        item.target = self
-        menu.addItem(item)
-        return menu
-    }
-
-    @objc private func copyFinalAnswer() {
-        guard let r = cardAnswerRange else { return }
-        let s = (attributed.string as NSString).substring(with: r)
-            .replacingOccurrences(of: "\u{2028}", with: "\n")   // undo the one-paragraph trick
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-    }
-
-    @objc private func copyAnswer() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(rawCopyText.isEmpty ? plain : rawCopyText, forType: .string)
-    }
 }
 
 private final class StreamProxy {

@@ -162,4 +162,5 @@ enum L10n {
     /// Caption on the answer card (see NotchType.card).
     static var answerCardLabel: String { t("答案", "答え", "ANSWER") }
     static var noOutput: String { t("（没有输出）", "（出力なし）", "(no output)") }
+    static var statusCopied: String { t("已复制", "コピー済み", "Copied") }
 }

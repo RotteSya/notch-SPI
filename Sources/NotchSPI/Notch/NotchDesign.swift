@@ -133,8 +133,8 @@ struct AnswerPresentation: Equatable {
 }
 
 extension NSAttributedString.Key {
-    /// Marks the answer-card range. Value: "label" (the small caption) or "answer" (the payload —
-    /// also what 拷贝答案 copies). The streaming view draws the glass chip behind this range.
+    /// Marks the answer-card range. Value: "label" (the small caption) or "answer" (the payload).
+    /// The streaming view draws the glass chip behind this range.
     static let nspiAnswerCard = NSAttributedString.Key("nspiAnswerCard")
     /// Marks the clickable "▸ 推理过程" line that folds/unfolds the scratch work.
     static let nspiReasoningToggle = NSAttributedString.Key("nspiReasoningToggle")
