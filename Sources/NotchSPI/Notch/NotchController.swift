@@ -98,6 +98,9 @@ final class NotchController: NSObject {
         panel.contentView?.subviews.forEach { $0.needsDisplay = true }
         // Poke the model so NotchView re-reads fonts/colors for the answer text.
         model.objectWillChange.send()
+        // A font-size change alters the measured answer height — reflow the expanded panel so
+        // the card resizes live under the slider instead of waiting for the next stream/hover.
+        resizeToFit()
     }
 
     // MARK: - Onboarding (first launch only)
@@ -583,7 +586,7 @@ final class NotchController: NSObject {
         // Freeze this answer's presentation inputs: cycling the depth mid-stream must not
         // restyle an answer that was captured under another contract.
         model.answerDepth = Settings.shared.depth
-        model.reasoningRevealed = false
+        model.reasoningRevealed = Appearance.revealReasoningByDefault
         model.status = .running
         model.statusText = L10n.statusPreparing
         refreshCLILabel()

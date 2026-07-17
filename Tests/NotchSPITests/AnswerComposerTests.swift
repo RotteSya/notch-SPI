@@ -127,6 +127,59 @@ final class AnswerComposerTests: XCTestCase {
     }
 }
 
+/// The appearance knobs' pure clamping / derivation (no UserDefaults touched).
+final class AppearancePreferenceTests: XCTestCase {
+    func testFontSizeClampsIntoRange() {
+        XCTAssertEqual(Appearance.clampFontSize(3), Appearance.answerFontRange.lowerBound)
+        XCTAssertEqual(Appearance.clampFontSize(99), Appearance.answerFontRange.upperBound)
+        XCTAssertEqual(Appearance.clampFontSize(14), 14)
+    }
+
+    func testCollapseSecondsClamp() {
+        XCTAssertEqual(Appearance.clampCollapseSeconds(0), Appearance.collapseSecondsRange.lowerBound)
+        XCTAssertEqual(Appearance.clampCollapseSeconds(1000), Appearance.collapseSecondsRange.upperBound)
+        XCTAssertEqual(Appearance.clampCollapseSeconds(12), 12)
+    }
+
+    func testResolvedCollapseDelay() {
+        // "Stay expanded" collapses to the 0 the pipeline reads as "never auto-fold".
+        XCTAssertEqual(Appearance.resolvedCollapseDelay(stay: true, seconds: 15), 0)
+        XCTAssertEqual(Appearance.resolvedCollapseDelay(stay: false, seconds: 15), 15)
+        // A non-stay value is still clamped, so a corrupt default can't produce a 0 (== stay).
+        XCTAssertEqual(Appearance.resolvedCollapseDelay(stay: false, seconds: 0),
+                       Appearance.collapseSecondsRange.lowerBound)
+    }
+
+    func testFontSizeReadout() {
+        XCTAssertEqual(Appearance.fontSizeReadout(13), "13 pt")
+        XCTAssertEqual(Appearance.fontSizeReadout(19), "19 pt")
+    }
+
+    func testCollapseReadoutAcrossStatesAndLanguages() {
+        withLanguage(.zhHans) {
+            XCTAssertEqual(Appearance.collapseReadout(stay: false, seconds: 9), "9 秒")
+            XCTAssertEqual(Appearance.collapseReadout(stay: true, seconds: 9), "保持展开")
+            // A value past the range is clamped in the readout too, never shown raw.
+            XCTAssertEqual(Appearance.collapseReadout(stay: false, seconds: 999), "30 秒")
+        }
+        withLanguage(.en) {
+            XCTAssertEqual(Appearance.collapseReadout(stay: false, seconds: 20), "20s")
+            XCTAssertEqual(Appearance.collapseReadout(stay: true, seconds: 20), "stays open")
+        }
+    }
+
+    func testAnswerCardScalesWithBodySize() {
+        // The card headline is body + 4 (see NotchType.card) — the slider drives both.
+        let small = NotchType.answerHeight("x\nFINAL: 42", presentation: AnswerPresentation(
+            mode: "tutor", depth: "guided", finished: true, revealed: false), width: 400)
+        // Can't mutate Appearance here without touching defaults, but the composition must at
+        // least produce a taller card than a plain two-line body at the same settings.
+        let plain = NotchType.answerHeight("x\n42", presentation: AnswerPresentation(
+            mode: "tutor", depth: "guided", finished: true, revealed: false), width: 400)
+        XCTAssertGreaterThan(small, plain)
+    }
+}
+
 /// Every depth that reveals an answer must carry the FINAL contract; hints must not.
 final class PromptsFinalContractTests: XCTestCase {
     func testBriefCarriesContractAndReasoningFirst() {

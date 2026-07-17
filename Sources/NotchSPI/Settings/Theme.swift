@@ -71,49 +71,101 @@ enum Appearance {
 
     // MARK: Answer text size
 
-    /// "small" | "standard" | "large" → the answer body's point size.
-    static var answerSizeID: String {
-        get { d.string(forKey: "answerSize") ?? "standard" }
+    /// The answer body's point size, now a continuous value (finer than the old small/standard/
+    /// large presets). The answer card scales with it (card = body + 4, see NotchType.card).
+    static let answerFontRange: ClosedRange<CGFloat> = 11...19
+    static let answerFontDefault: CGFloat = 13
+
+    /// Clamp any candidate size into the supported range (pure; unit-tested).
+    static func clampFontSize(_ pt: CGFloat) -> CGFloat {
+        min(max(pt, answerFontRange.lowerBound), answerFontRange.upperBound)
+    }
+
+    /// The px readout beside the size slider (pure; unit-tested).
+    static func fontSizeReadout(_ pt: CGFloat) -> String { "\(Int(pt.rounded())) pt" }
+
+    static var answerFontSize: CGFloat {
+        get {
+            if let pt = d.object(forKey: "answerFontSizePt") as? Double { return clampFontSize(CGFloat(pt)) }
+            return clampFontSize(legacyAnswerFontSize())   // migrate the old 3-preset key on read
+        }
         set {
-            d.set(newValue, forKey: "answerSize")
+            d.set(Double(clampFontSize(newValue)), forKey: "answerFontSizePt")
             NotificationCenter.default.post(name: themeDidChange, object: nil)
         }
     }
 
-    static var answerFontSize: CGFloat {
-        switch answerSizeID {
+    /// Bridge from the retired "answerSize" = small|standard|large preset (12/13/15pt).
+    private static func legacyAnswerFontSize() -> CGFloat {
+        switch d.string(forKey: "answerSize") {
         case "small": return 12
         case "large": return 15
-        default: return 13
+        default: return answerFontDefault
         }
     }
 
-    static func answerSizeLabel(_ id: String) -> String {
-        switch id {
-        case "small": return L10n.t("小", "小", "Small")
-        case "large": return L10n.t("大", "大", "Large")
-        default: return L10n.t("标准", "標準", "Standard")
+    // MARK: Auto-collapse (答完后收起)
+
+    /// Decomposed into a plain duration + an explicit "keep it open" switch, so the UI is a
+    /// slider plus a checkbox instead of one popup that overloads 0 to mean "never". The
+    /// duration is remembered even while "stay expanded" is on, so toggling back restores it.
+    static let collapseSecondsRange: ClosedRange<Double> = 2...30
+    static let collapseSecondsDefault: Double = 9
+
+    static func clampCollapseSeconds(_ v: Double) -> Double {
+        min(max(v, collapseSecondsRange.lowerBound), collapseSecondsRange.upperBound)
+    }
+
+    static var stayExpanded: Bool {
+        get {
+            if d.object(forKey: "collapseStay") != nil { return d.bool(forKey: "collapseStay") }
+            // Migrate: the old single key used 0 to mean "stay until mouse leaves".
+            if d.object(forKey: "collapseDelay") != nil { return d.double(forKey: "collapseDelay") == 0 }
+            return false
+        }
+        set {
+            d.set(newValue, forKey: "collapseStay")
+            NotificationCenter.default.post(name: themeDidChange, object: nil)
         }
     }
 
-    static let answerSizeIDs = ["small", "standard", "large"]
-
-    // MARK: Auto-collapse delay
+    static var collapseSeconds: Double {
+        get {
+            if let v = d.object(forKey: "collapseSeconds") as? Double { return clampCollapseSeconds(v) }
+            let old = d.object(forKey: "collapseDelay") as? Double ?? 0   // 0 when absent
+            return old > 0 ? clampCollapseSeconds(old) : collapseSecondsDefault
+        }
+        set {
+            d.set(clampCollapseSeconds(newValue), forKey: "collapseSeconds")
+            NotificationCenter.default.post(name: themeDidChange, object: nil)
+        }
+    }
 
     /// Seconds the expanded answer lingers after completion before folding back into the notch.
-    /// 0 means "stay until I move the mouse away" (collapse only on hover-out).
-    static var collapseDelay: TimeInterval {
-        get {
-            guard d.object(forKey: "collapseDelay") != nil else { return 9 }
-            return d.double(forKey: "collapseDelay")
-        }
-        set { d.set(newValue, forKey: "collapseDelay") }
+    /// 0 means "stay until the mouse moves away" — the single value the pipeline consumes.
+    static var collapseDelay: TimeInterval { resolvedCollapseDelay(stay: stayExpanded, seconds: collapseSeconds) }
+
+    static func resolvedCollapseDelay(stay: Bool, seconds: Double) -> TimeInterval {
+        stay ? 0 : clampCollapseSeconds(seconds)
     }
 
-    static let collapseDelayChoices: [TimeInterval] = [4, 9, 20, 0]
+    /// The readout beside the collapse slider (pure; unit-tested).
+    static func collapseReadout(stay: Bool, seconds: Double) -> String {
+        if stay { return L10n.t("保持展开", "開いたまま", "stays open") }
+        let n = Int(clampCollapseSeconds(seconds).rounded())
+        return L10n.t("\(n) 秒", "\(n)秒", "\(n)s")
+    }
 
-    static func collapseDelayLabel(_ v: TimeInterval) -> String {
-        if v == 0 { return L10n.t("一直展开，直到移开鼠标", "マウスを離すまで開いたまま", "Stay until mouse leaves") }
-        return L10n.t("\(Int(v)) 秒后收起", "\(Int(v))秒後にたたむ", "Fold after \(Int(v))s")
+    // MARK: Reasoning fold (简略模式)
+
+    /// Brief mode folds its scratch work away behind "▸ 推理过程" once the answer lands. Users who
+    /// always want to see the working can make it start unfolded. Read by NotchController when a
+    /// capture begins (see runTapped).
+    static var revealReasoningByDefault: Bool {
+        get { d.bool(forKey: "revealReasoning") }   // default false = folded
+        set {
+            d.set(newValue, forKey: "revealReasoning")
+            NotificationCenter.default.post(name: themeDidChange, object: nil)
+        }
     }
 }

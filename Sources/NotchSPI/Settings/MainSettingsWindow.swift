@@ -164,6 +164,11 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        #if DEBUG
+        // Visual-QA: print the window number so a shot can target THIS window by id
+        // (screencapture -l <id>), grabbing only the app's own pixels — never the whole screen.
+        if let n = window?.windowNumber { fputs("[NotchSPI] QA: settings windowNumber \(n)\n", stderr) }
+        #endif
     }
 }
 
@@ -437,8 +442,16 @@ private final class HotkeysPageController: NSViewController, SettingsPage {
 
 private final class AppearancePageController: NSViewController, SettingsPage {
     private var swatches: [AccentSwatch] = []
-    private let sizeControl = NSSegmentedControl()
-    private let delayPopup = NSPopUpButton()
+    private let sizeSlider = NSSlider()
+    private let sizeReadout = NSTextField(labelWithString: "")
+    private let sizeSample = NSTextField(labelWithString: "")
+    private let delaySlider = NSSlider()
+    private let delayReadout = NSTextField(labelWithString: "")
+    private let stayCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let revealCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+
+    private let labelW: CGFloat = 148
+    private let fieldX: CGFloat = 36 + 160
 
     override func loadView() {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
@@ -452,13 +465,14 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         // 强调色 swatches
         let accentLabel = rowLabel(L10n.t("强调色", "アクセントカラー", "Accent color"))
         accentLabel.alignment = .right
-        accentLabel.frame = NSRect(x: 36, y: y + 12, width: 148, height: 18)
+        accentLabel.frame = NSRect(x: 36, y: y + 12, width: labelW, height: 18)
         root.addSubview(accentLabel)
-        var x: CGFloat = 36 + 160
+        var x: CGFloat = fieldX
         for theme in AccentTheme.all {
             let swatch = AccentSwatch(theme: theme) { [weak self] picked in
                 Appearance.setTheme(picked.id)
                 self?.refreshSwatches()
+                self?.restyleSample()
             }
             swatch.frame = NSRect(x: x, y: y, width: 56, height: 56)
             root.addSubview(swatch)
@@ -468,71 +482,135 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         let accentHint = captionLabel(L10n.t("Rose 指示器、刘海边缘的光、按钮都会跟随这个颜色。",
                                              "Rose インジケーター、ノッチの光、ボタンがこの色に染まります。",
                                              "The Rose, the notch's edge light, and every button follow this color."))
-        accentHint.frame = NSRect(x: 36 + 160, y: y + 62, width: 380, height: 32)
+        accentHint.frame = NSRect(x: fieldX, y: y + 62, width: 380, height: 32)
         root.addSubview(accentHint)
         y += 112
 
-        // 答案字号
+        // 答案字号 — continuous slider with a live px readout and a WYSIWYG sample chip.
         let sizeLabel = rowLabel(L10n.t("答案字号", "回答の文字サイズ", "Answer text size"))
         sizeLabel.alignment = .right
-        sizeLabel.frame = NSRect(x: 36, y: y + 4, width: 148, height: 18)
+        sizeLabel.frame = NSRect(x: 36, y: y + 6, width: labelW, height: 18)
         root.addSubview(sizeLabel)
-        sizeControl.segmentCount = Appearance.answerSizeIDs.count
-        for (i, id) in Appearance.answerSizeIDs.enumerated() {
-            sizeControl.setLabel(Appearance.answerSizeLabel(id), forSegment: i)
-            sizeControl.setWidth(70, forSegment: i)
-        }
-        sizeControl.selectedSegment = Appearance.answerSizeIDs.firstIndex(of: Appearance.answerSizeID) ?? 1
-        sizeControl.target = self
-        sizeControl.action = #selector(sizePicked)
-        sizeControl.frame = NSRect(x: 36 + 160, y: y, width: 220, height: 26)
-        root.addSubview(sizeControl)
-        y += 48
+        sizeSlider.minValue = Double(Appearance.answerFontRange.lowerBound)
+        sizeSlider.maxValue = Double(Appearance.answerFontRange.upperBound)
+        sizeSlider.doubleValue = Double(Appearance.answerFontSize)
+        sizeSlider.numberOfTickMarks = Int(Appearance.answerFontRange.upperBound - Appearance.answerFontRange.lowerBound) + 1
+        sizeSlider.allowsTickMarkValuesOnly = true
+        sizeSlider.target = self
+        sizeSlider.action = #selector(sizeChanged)
+        sizeSlider.frame = NSRect(x: fieldX, y: y + 2, width: 220, height: 24)
+        root.addSubview(sizeSlider)
+        sizeReadout.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        sizeReadout.textColor = .secondaryLabelColor
+        sizeReadout.frame = NSRect(x: fieldX + 230, y: y + 6, width: 56, height: 18)
+        root.addSubview(sizeReadout)
+        // The sample renders the answer-card headline at the chosen size so users see the exact
+        // result without leaving Settings (the notch may well be collapsed).
+        sizeSample.frame = NSRect(x: fieldX, y: y + 30, width: 320, height: 30)
+        sizeSample.lineBreakMode = .byTruncatingTail
+        root.addSubview(sizeSample)
+        y += 74
 
-        // 收起时长
-        let delayLabel = rowLabel(L10n.t("答完后", "回答後", "After answering"))
+        // 答完后收起 — a seconds slider, disabled while "keep expanded" is on.
+        let delayLabel = rowLabel(L10n.t("答完后收起", "回答後にたたむ", "Fold after answering"))
         delayLabel.alignment = .right
-        delayLabel.frame = NSRect(x: 36, y: y + 4, width: 148, height: 18)
+        delayLabel.frame = NSRect(x: 36, y: y + 6, width: labelW, height: 18)
         root.addSubview(delayLabel)
-        for v in Appearance.collapseDelayChoices {
-            delayPopup.addItem(withTitle: Appearance.collapseDelayLabel(v))
-            delayPopup.lastItem?.representedObject = v
-        }
-        if let idx = Appearance.collapseDelayChoices.firstIndex(of: Appearance.collapseDelay) {
-            delayPopup.selectItem(at: idx)
-        }
-        delayPopup.target = self
-        delayPopup.action = #selector(delayPicked)
-        delayPopup.frame = NSRect(x: 36 + 160, y: y, width: 260, height: 26)
-        root.addSubview(delayPopup)
-        y += 56
+        delaySlider.minValue = Appearance.collapseSecondsRange.lowerBound
+        delaySlider.maxValue = Appearance.collapseSecondsRange.upperBound
+        delaySlider.doubleValue = Appearance.collapseSeconds
+        delaySlider.target = self
+        delaySlider.action = #selector(delayChanged)
+        delaySlider.frame = NSRect(x: fieldX, y: y + 2, width: 220, height: 24)
+        root.addSubview(delaySlider)
+        delayReadout.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        delayReadout.textColor = .secondaryLabelColor
+        delayReadout.frame = NSRect(x: fieldX + 230, y: y + 6, width: 90, height: 18)
+        root.addSubview(delayReadout)
+        y += 34
+
+        stayCheckbox.title = L10n.t("保持展开，直到移开鼠标", "マウスを離すまで開いたまま", "Keep expanded until the mouse leaves")
+        stayCheckbox.target = self
+        stayCheckbox.action = #selector(stayToggled)
+        stayCheckbox.state = Appearance.stayExpanded ? .on : .off
+        stayCheckbox.frame = NSRect(x: fieldX, y: y, width: 340, height: 20)
+        root.addSubview(stayCheckbox)
+        y += 44
+
+        // 简略模式默认展开推理
+        let reasonLabel = rowLabel(L10n.t("简略模式", "簡潔モード", "Brief mode"))
+        reasonLabel.alignment = .right
+        reasonLabel.frame = NSRect(x: 36, y: y + 1, width: labelW, height: 18)
+        root.addSubview(reasonLabel)
+        revealCheckbox.title = L10n.t("答完后默认展开「推理过程」", "回答後に「考え方」を最初から開く", "Show the reasoning unfolded by default")
+        revealCheckbox.target = self
+        revealCheckbox.action = #selector(revealToggled)
+        revealCheckbox.state = Appearance.revealReasoningByDefault ? .on : .off
+        revealCheckbox.frame = NSRect(x: fieldX, y: y, width: 360, height: 20)
+        root.addSubview(revealCheckbox)
+        y += 40
 
         let liveHint = captionLabel(L10n.t("所有更改即时生效 — 抬头看看刘海。",
                                            "変更はすぐ反映されます — ノッチを見てみて。",
                                            "Everything applies instantly — glance up at the notch."))
-        liveHint.frame = NSRect(x: 36 + 160, y: y, width: 380, height: 20)
+        liveHint.frame = NSRect(x: fieldX, y: y, width: 380, height: 20)
         root.addSubview(liveHint)
 
         view = root
         refreshSwatches()
+        syncSizeUI()
+        syncDelayUI()
     }
 
     private func refreshSwatches() {
         for s in swatches { s.isChosen = s.theme.id == Appearance.theme.id }
     }
 
-    @objc private func sizePicked() {
-        let idx = max(0, min(sizeControl.selectedSegment, Appearance.answerSizeIDs.count - 1))
-        Appearance.answerSizeID = Appearance.answerSizeIDs[idx]
+    // MARK: Answer size
+
+    @objc private func sizeChanged() {
+        Appearance.answerFontSize = CGFloat(sizeSlider.doubleValue)
+        syncSizeUI()
     }
 
-    @objc private func delayPicked() {
-        if let v = delayPopup.selectedItem?.representedObject as? TimeInterval {
-            Appearance.collapseDelay = v
-        }
+    private func syncSizeUI() {
+        sizeReadout.stringValue = Appearance.fontSizeReadout(Appearance.answerFontSize)
+        restyleSample()
     }
 
-    func pageDidShow() { refreshSwatches() }
+    /// Mirror the notch's answer-card headline (body size + 4, semibold) at the chosen accent.
+    private func restyleSample() {
+        let pt = Appearance.answerFontSize
+        sizeSample.font = .systemFont(ofSize: pt + 4, weight: .semibold)
+        sizeSample.textColor = .labelColor
+        sizeSample.stringValue = L10n.t("答案 A = −30", "答え A = −30", "Answer  A = −30")
+    }
+
+    // MARK: Collapse
+
+    @objc private func delayChanged() {
+        Appearance.collapseSeconds = delaySlider.doubleValue
+        syncDelayUI()
+    }
+
+    @objc private func stayToggled() {
+        Appearance.stayExpanded = (stayCheckbox.state == .on)
+        syncDelayUI()
+    }
+
+    private func syncDelayUI() {
+        let stay = Appearance.stayExpanded
+        delaySlider.isEnabled = !stay
+        delaySlider.doubleValue = Appearance.collapseSeconds
+        delayReadout.textColor = stay ? .tertiaryLabelColor : .secondaryLabelColor
+        delayReadout.stringValue = Appearance.collapseReadout(stay: stay, seconds: Appearance.collapseSeconds)
+    }
+
+    @objc private func revealToggled() {
+        Appearance.revealReasoningByDefault = (revealCheckbox.state == .on)
+    }
+
+    func pageDidShow() { refreshSwatches(); syncSizeUI(); syncDelayUI() }
 }
 
 /// One accent color dot with its name beneath; a ring marks the chosen one.
