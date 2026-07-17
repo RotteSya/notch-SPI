@@ -88,7 +88,8 @@ final class PromptsSelectionTests: XCTestCase {
 final class APIKeyRunnerTests: XCTestCase {
     func testAnthropicRequestShape() {
         let req = APIKeyRunner.makeRequest(
-            cliId: "claude", apiKey: "sk-ant-test", model: "claude-opus-4-8",
+            proto: .anthropic, endpoint: APIKeyRunner.anthropicEndpoint,
+            apiKey: "sk-ant-test", model: "claude-opus-4-8",
             systemText: "SYS", taskText: "tutor me on the problem it shows.", imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, APIKeyRunner.anthropicEndpoint)
         XCTAssertEqual(req.value(forHTTPHeaderField: "x-api-key"), "sk-ant-test")
@@ -101,7 +102,8 @@ final class APIKeyRunnerTests: XCTestCase {
 
     func testOpenAIRequestShape() {
         let req = APIKeyRunner.makeRequest(
-            cliId: "codex", apiKey: "sk-oai-test", model: "gpt-5",
+            proto: .openai, endpoint: APIKeyRunner.openAIEndpoint,
+            apiKey: "sk-oai-test", model: "gpt-5",
             systemText: "SYS", taskText: "answer.", imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, APIKeyRunner.openAIEndpoint)
         XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer sk-oai-test")
@@ -109,18 +111,31 @@ final class APIKeyRunnerTests: XCTestCase {
         XCTAssertEqual(body["model"] as? String, "gpt-5")
     }
 
+    /// Any OpenAI-compatible provider works by pointing the same `.openai` path at its base URL —
+    /// this is what makes the whole preset list (Gemini, Grok, Qwen, GLM, Kimi, OpenRouter, custom)
+    /// possible without a per-vendor client.
+    func testOpenAICompatibleCustomEndpoint() {
+        let endpoint = "https://openrouter.ai/api/v1/chat/completions"
+        let req = APIKeyRunner.makeRequest(
+            proto: .openai, endpoint: endpoint,
+            apiKey: "sk-or-test", model: "openai/gpt-4o",
+            systemText: "SYS", taskText: "answer.", imageBase64: "QUJD")
+        XCTAssertEqual(req.url?.absoluteString, endpoint)
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer sk-or-test")
+    }
+
     func testAnthropicDeltaParsing() {
         let line = #"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"你好"}}"#
-        XCTAssertEqual(APIKeyRunner.parseDelta(cliId: "claude", line: line), "你好")
-        XCTAssertNil(APIKeyRunner.parseDelta(cliId: "claude", line: "event: ping"))
+        XCTAssertEqual(APIKeyRunner.parseDelta(proto: .anthropic, line: line), "你好")
+        XCTAssertNil(APIKeyRunner.parseDelta(proto: .anthropic, line: "event: ping"))
         let stop = #"data: {"type":"message_stop"}"#
-        XCTAssertNil(APIKeyRunner.parseDelta(cliId: "claude", line: stop))
+        XCTAssertNil(APIKeyRunner.parseDelta(proto: .anthropic, line: stop))
     }
 
     func testOpenAIDeltaParsing() {
         let line = #"data: {"choices":[{"delta":{"content":"hi"}}]}"#
-        XCTAssertEqual(APIKeyRunner.parseDelta(cliId: "codex", line: line), "hi")
-        XCTAssertNil(APIKeyRunner.parseDelta(cliId: "codex", line: "data: [DONE]"))
+        XCTAssertEqual(APIKeyRunner.parseDelta(proto: .openai, line: line), "hi")
+        XCTAssertNil(APIKeyRunner.parseDelta(proto: .openai, line: "data: [DONE]"))
     }
 
     func testStreamErrorParsing() {
@@ -133,6 +148,54 @@ final class APIKeyRunnerTests: XCTestCase {
         let data = #"{"error":{"message":"invalid x-api-key"}}"#.data(using: .utf8)!
         XCTAssertTrue(APIKeyRunner.errorMessage(from: data, statusCode: 401).contains("invalid x-api-key"))
         XCTAssertTrue(APIKeyRunner.errorMessage(from: Data(), statusCode: 500).contains("500"))
+    }
+}
+
+/// The third-party provider registry + custom-endpoint normalization.
+final class APIProviderTests: XCTestCase {
+    func testRegistryIntegrity() {
+        // Anthropic is the only native-protocol provider; everyone else is OpenAI-compatible.
+        let anthropic = APIProvider.byID("anthropic")
+        XCTAssertEqual(anthropic.proto, .anthropic)
+        XCTAssertEqual(anthropic.endpoint, APIKeyRunner.anthropicEndpoint)
+        XCTAssertEqual(APIProvider.byID("openai").endpoint, APIKeyRunner.openAIEndpoint)
+        for p in APIProvider.all where p.id != "anthropic" { XCTAssertEqual(p.proto, .openai) }
+
+        // Legacy storage keys are preserved so pre-feature keys carry over.
+        XCTAssertEqual(anthropic.storageKey, "claude")
+        XCTAssertEqual(APIProvider.byID("openai").storageKey, "codex")
+
+        // Storage keys unique; every preset (non-custom) ships a default model + console link.
+        XCTAssertEqual(Set(APIProvider.all.map { $0.storageKey }).count, APIProvider.all.count)
+        for p in APIProvider.all where !p.isCustom {
+            XCTAssertFalse(p.defaultModel.isEmpty, "\(p.id) missing default model")
+            XCTAssertNotNil(p.consoleURL, "\(p.id) missing console URL")
+        }
+
+        // Unknown id falls back to the first provider, never crashes.
+        XCTAssertEqual(APIProvider.byID("nope").id, APIProvider.all[0].id)
+    }
+
+    func testCustomEndpointNormalization() {
+        let s = Settings.shared
+        let original = s.apiCustomBaseURL
+        defer { s.apiCustomBaseURL = original }
+        let custom = APIProvider.byID("custom")
+
+        // Preset endpoints are used verbatim regardless of the custom base URL.
+        XCTAssertEqual(s.endpoint(for: APIProvider.byID("grok")), "https://api.x.ai/v1/chat/completions")
+
+        // A bare base gets the chat path appended (trailing slash tolerated).
+        s.apiCustomBaseURL = "https://api.deepseek.com/v1/"
+        XCTAssertEqual(s.endpoint(for: custom), "https://api.deepseek.com/v1/chat/completions")
+
+        // A full endpoint is left as-is.
+        s.apiCustomBaseURL = "https://host/openai/v1/chat/completions"
+        XCTAssertEqual(s.endpoint(for: custom), "https://host/openai/v1/chat/completions")
+
+        // Empty stays empty (the capture path guards on this).
+        s.apiCustomBaseURL = ""
+        XCTAssertEqual(s.endpoint(for: custom), "")
     }
 }
 
@@ -202,10 +265,14 @@ final class ServiceRoutingTests: XCTestCase {
 
     func testHeaderLabels() {
         withLanguage(.zhHans) {
-            XCTAssertEqual(ServiceRouting.headerLabel(channel: .official, backend: "claude"), "官方服务")
+            XCTAssertEqual(ServiceRouting.headerLabel(
+                channel: .official, cliBackend: "claude", customProviderName: "Claude"), "官方服务")
         }
-        XCTAssertEqual(ServiceRouting.headerLabel(channel: .customKey("k"), backend: "claude"), "Claude · API")
-        XCTAssertEqual(ServiceRouting.headerLabel(channel: .cli, backend: "codex"), "Codex")
+        // Custom-key mode labels from the active provider name, so any vendor reads correctly.
+        XCTAssertEqual(ServiceRouting.headerLabel(
+            channel: .customKey("k"), cliBackend: "claude", customProviderName: "Google Gemini"), "Google Gemini · API")
+        XCTAssertEqual(ServiceRouting.headerLabel(
+            channel: .cli, cliBackend: "codex", customProviderName: "Claude"), "Codex")
     }
 }
 
@@ -284,9 +351,10 @@ final class OfficialAPITests: XCTestCase {
 /// The CLI ↔ custom-key coexistence: labels and routing gates read from Settings.
 final class ChannelRoutingTests: XCTestCase {
     func testLabelReflectsChannel() {
-        XCTAssertEqual(Settings.label(forCLI: "claude", usingCustomKey: false), "Claude")
-        XCTAssertEqual(Settings.label(forCLI: "claude", usingCustomKey: true), "Claude · API")
-        XCTAssertEqual(Settings.label(forCLI: "codex", usingCustomKey: true), "Codex · API")
+        // CLI-mode engine label. (Custom-key "· API" labels are covered by testHeaderLabels, which
+        // now derives them from the active provider name rather than the CLI backend.)
+        XCTAssertEqual(Settings.label(forCLI: "claude"), "Claude")
+        XCTAssertEqual(Settings.label(forCLI: "codex"), "Codex")
     }
 
     func testCustomKeyGateAndModelDefault() {

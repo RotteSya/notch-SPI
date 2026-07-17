@@ -91,8 +91,47 @@ final class Settings {
 
     // MARK: - Custom API keys (direct-API mode)
 
-    /// Default model per backend when the user hasn't overridden it in the API Key settings.
-    static let defaultAPIModels = ["claude": "claude-opus-4-8", "codex": "gpt-5"]
+    /// Active third-party provider id for 自定义 Key mode. Independent of `cli` (which stays the
+    /// CLI-mode backend). Until explicitly set, it's migrated from the pre-provider layout where
+    /// custom-key mode used `cli` (claude/codex) to pick between Anthropic and OpenAI.
+    var apiProvider: String {
+        get {
+            if let v = d.string(forKey: "apiProvider"), APIProvider.all.contains(where: { $0.id == v }) {
+                return v
+            }
+            return cli == "claude" ? "anthropic" : "openai"
+        }
+        set { d.set(newValue, forKey: "apiProvider") }
+    }
+
+    /// Resolved provider object for custom-key mode.
+    var activeProvider: APIProvider { APIProvider.byID(apiProvider) }
+
+    /// User-supplied base URL for the `custom` (OpenAI-compatible) provider. Normalized in
+    /// `endpoint(for:)`.
+    var apiCustomBaseURL: String {
+        get { (d.string(forKey: "apiCustomBaseURL") ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        set { d.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "apiCustomBaseURL") }
+    }
+
+    /// Streaming endpoint for a provider: the preset endpoint, or the normalized custom base URL.
+    /// Custom accepts either a full endpoint or a bare base — the chat path is appended when absent.
+    func endpoint(for provider: APIProvider) -> String {
+        guard provider.isCustom else { return provider.endpoint }
+        var base = apiCustomBaseURL
+        if base.isEmpty { return "" }
+        if base.hasSuffix("/") { base.removeLast() }
+        if base.contains("/chat/completions") || base.hasSuffix("/messages") { return base }
+        return base + "/chat/completions"
+    }
+
+    /// Default model per backend/provider when the user hasn't overridden it. Built from the
+    /// provider registry so every preset (and the legacy "claude"/"codex" CLI backends) resolves.
+    static let defaultAPIModels: [String: String] = {
+        var m: [String: String] = [:]
+        for p in APIProvider.all where !p.defaultModel.isEmpty { m[p.storageKey] = p.defaultModel }
+        return m
+    }()
 
     /// User-supplied API key for a backend ("claude" → Anthropic, "codex" → OpenAI).
     /// Non-empty ⇒ captures go straight to the vendor API; empty ⇒ fall back to the local CLI.
@@ -199,12 +238,6 @@ final class Settings {
 
     static func label(forCLI cli: String) -> String {
         cli == "claude" ? "Claude" : "Codex"
-    }
-
-    /// Header label reflecting the active channel for a backend: "Claude · API" when a custom
-    /// key routes captures straight to the vendor API, plain "Claude" in CLI mode.
-    static func label(forCLI cli: String, usingCustomKey: Bool) -> String {
-        usingCustomKey ? label(forCLI: cli) + " · API" : label(forCLI: cli)
     }
 
     static let depthCycle = ["brief", "hint", "guided", "full"]

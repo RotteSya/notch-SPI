@@ -54,12 +54,14 @@ enum ServiceRouting {
         return cliAllowed ? ServiceMode.cli : ServiceMode.official
     }
 
-    /// Header label for the notch UI, e.g. "官方服务" / "Claude · API" / "Claude".
-    static func headerLabel(channel: ServiceChannel, backend: String) -> String {
+    /// Header label for the notch UI, e.g. "官方服务" / "Gemini · API" / "Codex".
+    /// `cliBackend` names the CLI-mode engine (codex/claude); `customProviderName` names the active
+    /// third-party provider for custom-key mode.
+    static func headerLabel(channel: ServiceChannel, cliBackend: String, customProviderName: String) -> String {
         switch channel {
         case .official: return L10n.serviceOfficial
-        case .customKey: return Settings.label(forCLI: backend, usingCustomKey: true)
-        case .cli: return Settings.label(forCLI: backend)
+        case .customKey: return customProviderName + " · API"
+        case .cli: return Settings.label(forCLI: cliBackend)
         }
     }
 }

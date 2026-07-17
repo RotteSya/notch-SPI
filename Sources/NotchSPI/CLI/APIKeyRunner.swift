@@ -1,10 +1,11 @@
 import Foundation
 
 /// Direct-API channel: when the user supplies their own API key, the capture is sent straight to
-/// the vendor endpoint (Anthropic for "claude", OpenAI for "codex") instead of spawning the local
-/// CLI. `CLIRunner` is untouched and remains the path whenever no key is set, so the two modes
-/// coexist: key present → direct API, key empty → CLI fallback (decided per capture in
-/// `NotchController.runTapped`).
+/// the chosen provider's endpoint (see `APIProvider`) instead of spawning the local CLI. Anthropic
+/// speaks its own Messages API; every other provider uses the OpenAI-compatible Chat Completions
+/// protocol, so `makeRequest` branches on `APIWireProtocol`, not on a vendor name. `CLIRunner` is
+/// untouched and remains the path whenever no key is set, so the two modes coexist: key present →
+/// direct API, key empty → CLI fallback (decided per capture in `NotchController.runTapped`).
 enum APIKeyRunner {
 
     // MARK: - Request building (pure, testable)
@@ -12,11 +13,11 @@ enum APIKeyRunner {
     static let anthropicEndpoint = "https://api.anthropic.com/v1/messages"
     static let openAIEndpoint = "https://api.openai.com/v1/chat/completions"
 
-    /// Fire-and-forget TLS warm-up of the vendor endpoint while the screenshot is captured.
+    /// Fire-and-forget TLS warm-up of the provider endpoint while the screenshot is captured.
     /// An unauthenticated HEAD costs nothing server-side but leaves the HTTPS connection in
     /// URLSession's pool for the real streaming POST moments later.
-    static func warmUp(cliId: String) {
-        guard let url = URL(string: cliId == "claude" ? anthropicEndpoint : openAIEndpoint) else { return }
+    static func warmUp(endpoint: String) {
+        guard let url = URL(string: endpoint) else { return }
         Task.detached(priority: .userInitiated) {
             var req = URLRequest(url: url)
             req.httpMethod = "HEAD"
@@ -25,10 +26,11 @@ enum APIKeyRunner {
         }
     }
 
-    /// Build the streaming HTTP request for the chosen backend. The screenshot travels inline as
-    /// base64 JPEG (ScreenCapture always writes JPEG), so no file paths leak to the vendor.
+    /// Build the streaming HTTP request for the chosen protocol/endpoint. The screenshot travels
+    /// inline as base64 JPEG (ScreenCapture always writes JPEG), so no file paths leak to the vendor.
     static func makeRequest(
-        cliId: String,
+        proto: APIWireProtocol,
+        endpoint: String,
         apiKey: String,
         model: String,
         systemText: String,
@@ -36,10 +38,9 @@ enum APIKeyRunner {
         imageBase64: String
     ) -> URLRequest {
         let userText = "Analyze the attached screenshot image, then \(taskText)"
-        var req: URLRequest
+        var req = URLRequest(url: URL(string: endpoint)!)
         let body: [String: Any]
-        if cliId == "claude" {
-            req = URLRequest(url: URL(string: anthropicEndpoint)!)
+        if proto == .anthropic {
             req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
             req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             body = [
@@ -57,7 +58,6 @@ enum APIKeyRunner {
                 ]],
             ]
         } else {
-            req = URLRequest(url: URL(string: openAIEndpoint)!)
             req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             body = [
                 "model": model,
@@ -111,8 +111,8 @@ enum APIKeyRunner {
         return text
     }
 
-    static func parseDelta(cliId: String, line: String) -> String? {
-        cliId == "claude" ? parseAnthropicDelta(line) : parseOpenAIDelta(line)
+    static func parseDelta(proto: APIWireProtocol, line: String) -> String? {
+        proto == .anthropic ? parseAnthropicDelta(line) : parseOpenAIDelta(line)
     }
 
     /// An in-stream error event (both vendors can emit `{"error": {...}}` mid-stream).
@@ -150,8 +150,10 @@ enum APIKeyRunner {
     /// Stream the answer via the vendor API. Mirrors `CLIRunner.run`'s contract: `onDelta` /
     /// `onDone` fire on the main queue, and a request-level 120s timeout guards a stalled stream.
     static func run(
-        cliId: String,
+        proto: APIWireProtocol,
+        endpoint: String,
         apiKey: String,
+        model: String,
         imagePath: String,
         depth: String,
         mode: String,
@@ -162,7 +164,6 @@ enum APIKeyRunner {
     ) {
         let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
         let task = Prompts.taskInstruction(mode: mode)
-        let model = Settings.shared.apiModel(for: cliId)
 
         Task.detached(priority: .userInitiated) {
             // File read + base64 of a multi-MB screenshot stays off the main thread.
@@ -171,13 +172,13 @@ enum APIKeyRunner {
                 return
             }
             let request = makeRequest(
-                cliId: cliId, apiKey: apiKey,
+                proto: proto, endpoint: endpoint, apiKey: apiKey,
                 model: model,
                 systemText: sys, taskText: task,
                 imageBase64: imageData.base64EncodedString()
             )
             #if DEBUG
-            print("[NotchSPI] direct API run \(cliId) → \(request.url?.host ?? "?")")
+            print("[NotchSPI] direct API run \(model) → \(request.url?.host ?? "?")")
             #endif
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -196,7 +197,7 @@ enum APIKeyRunner {
                 }
                 var streamError: String?
                 for try await line in bytes.lines {
-                    if let text = parseDelta(cliId: cliId, line: line) {
+                    if let text = parseDelta(proto: proto, line: line) {
                         await MainActor.run { onDelta(text) }
                     } else if let err = parseStreamError(line) {
                         streamError = err

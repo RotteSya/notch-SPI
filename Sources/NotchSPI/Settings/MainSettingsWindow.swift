@@ -10,7 +10,7 @@ import ServiceManagement
 //   外观 Appearance — accent theme, answer text size, auto-collapse delay
 //   账户 Account    — quota ring, top-up, lifetime usage, device id
 //   人物像 Personas — the persona library (embedded PersonaManagerViewController)
-//   高级 Advanced   — service channel, custom API keys, backend, updates
+//   高级 Advanced   — service channel, custom API keys, updates
 
 // MARK: - Window controller
 
@@ -918,11 +918,11 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
     var onChange: (() -> Void)?
 
     private var modeRadios: [NSButton] = []
-    private let backendPopup = NSPopUpButton()
-    private let claudeKeyField = NSSecureTextField()
-    private let openaiKeyField = NSSecureTextField()
-    private let claudeModelField = NSTextField()
-    private let openaiModelField = NSTextField()
+    private let backendPopup = NSPopUpButton()   // CLI-mode engine (codex / claude)
+    private let providerPopup = NSPopUpButton()  // custom-key third-party provider
+    private let apiKeyField = NSSecureTextField()
+    private let apiModelField = NSTextField()
+    private let baseURLField = NSTextField()      // custom provider only
     private let versionLabel = captionLabel("")
     /// The CLI-switch state the page was last built with; a mismatch (客服 flipped it and an
     /// account sync landed) triggers a rebuild so the CLI radio appears/disappears live.
@@ -951,7 +951,6 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         let root = view
         root.subviews.forEach { $0.removeFromSuperview() }
         modeRadios.removeAll()
-        backendPopup.removeAllItems()
         let cliEnabled = OfficialAPI.cliEnabled
         builtWithCLIEnabled = cliEnabled
 
@@ -993,41 +992,117 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         }
         y += 8
 
-        // 后端 (only meaningful for customKey / cli)
-        let backendLabel = rowLabel(L10n.t("引擎", "エンジン", "Engine"))
-        backendLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
-        root.addSubview(backendLabel)
-        for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
-            backendPopup.addItem(withTitle: label)
-            backendPopup.lastItem?.representedObject = id
+        // Custom-key mode: pick a third-party provider, then paste that vendor's key + (optionally)
+        // a model. Everything routes through APIProvider — presets fill endpoint/model, and the
+        // "Custom" entry exposes a Base URL field for any OpenAI-compatible service.
+        if selectedMode == ServiceMode.customKey {
+            let provider = Settings.shared.activeProvider
+
+            // 厂商
+            let providerLabel = rowLabel(L10n.t("厂商", "プロバイダ", "Provider"))
+            providerLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            root.addSubview(providerLabel)
+            providerPopup.removeAllItems()
+            for p in APIProvider.all {
+                providerPopup.addItem(withTitle: p.isCustom
+                    ? L10n.t("自定义 · OpenAI 兼容", "カスタム · OpenAI 互換", "Custom · OpenAI-compatible")
+                    : p.name)
+                providerPopup.lastItem?.representedObject = p.id
+            }
+            providerPopup.selectItem(at: APIProvider.all.firstIndex { $0.id == provider.id } ?? 0)
+            providerPopup.target = self
+            providerPopup.action = #selector(providerPicked)
+            providerPopup.frame = NSRect(x: 150, y: y, width: 230, height: 26)
+            root.addSubview(providerPopup)
+            if provider.consoleURL != nil {
+                let getKey = NSButton(title: L10n.t("获取 Key ↗", "キーを取得 ↗", "Get key ↗"),
+                                      target: self, action: #selector(openConsole))
+                getKey.bezelStyle = .recessed
+                getKey.controlSize = .small
+                getKey.frame = NSRect(x: 392, y: y + 2, width: 110, height: 22)
+                root.addSubview(getKey)
+            }
+            y += 40
+
+            // Base URL — custom provider only.
+            if provider.isCustom {
+                let urlLabel = rowLabel("Base URL")
+                urlLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+                root.addSubview(urlLabel)
+                baseURLField.placeholderString = "https://api.example.com/v1"
+                baseURLField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+                baseURLField.frame = NSRect(x: 150, y: y, width: 442, height: 24)
+                baseURLField.delegate = self
+                baseURLField.identifier = NSUserInterfaceItemIdentifier("apiBaseURL")
+                root.addSubview(baseURLField)
+                y += 34
+            }
+
+            // API Key
+            let keyLabel = rowLabel("API Key")
+            keyLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            root.addSubview(keyLabel)
+            apiKeyField.placeholderString = provider.keyPlaceholder
+            apiKeyField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            apiKeyField.frame = NSRect(x: 150, y: y, width: 442, height: 24)
+            apiKeyField.delegate = self
+            apiKeyField.identifier = NSUserInterfaceItemIdentifier("apiKey")
+            root.addSubview(apiKeyField)
+            y += 34
+
+            // 模型
+            let modelLabel = rowLabel(L10n.t("模型", "モデル", "Model"))
+            modelLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            root.addSubview(modelLabel)
+            apiModelField.placeholderString = provider.defaultModel.isEmpty
+                ? L10n.t("必填（需支持视觉）", "必須（視覚対応）", "required (vision-capable)")
+                : provider.defaultModel
+            apiModelField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            apiModelField.frame = NSRect(x: 150, y: y, width: 300, height: 24)
+            apiModelField.delegate = self
+            apiModelField.identifier = NSUserInterfaceItemIdentifier("apiModel")
+            root.addSubview(apiModelField)
+            y += 38
+
+            // The empty-key fallback differs with the CLI switch: unlocked → CLI (the pre-official
+            // behavior), locked → the official service. Say the truth for this device.
+            let keyHint = captionLabel(cliEnabled
+                ? L10n.t("Key 只存本机钥匙串；截图会直接发给所选厂商（模型需支持视觉）。留空则回退到 CLI。",
+                         "キーはこのMacのキーチェーンにのみ保存。スクショは選択したプロバイダに送信（視覚対応モデルが必要）。空欄ならCLIへフォールバック。",
+                         "Keys stay in your local Keychain; the screenshot goes straight to the chosen provider (model must support vision). Empty → CLI fallback.")
+                : L10n.t("Key 只存本机钥匙串；截图会直接发给所选厂商（模型需支持视觉）。留空则使用官方服务。",
+                         "キーはこのMacのキーチェーンにのみ保存。スクショは選択したプロバイダに送信（視覚対応モデルが必要）。空欄なら公式サービスを利用。",
+                         "Keys stay in your local Keychain; the screenshot goes straight to the chosen provider (model must support vision). Empty → the official service."))
+            keyHint.frame = NSRect(x: 40, y: y, width: 552, height: 44)
+            root.addSubview(keyHint)
+            y += 52
+        } else if selectedMode == ServiceMode.cli {
+            // 引擎 — which locally-installed CLI to drive. Only reachable when the operator has
+            // unlocked the CLI channel for this device (cliEnabled); there's no key to infer it
+            // from, so the picker stays here (persistent popup ⇒ clear it before repopulating).
+            let backendLabel = rowLabel(L10n.t("引擎", "エンジン", "Engine"))
+            backendLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            root.addSubview(backendLabel)
+            backendPopup.removeAllItems()
+            for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
+                backendPopup.addItem(withTitle: label)
+                backendPopup.lastItem?.representedObject = id
+            }
+            backendPopup.selectItem(at: Settings.shared.cli == "claude" ? 1 : 0)
+            backendPopup.target = self
+            backendPopup.action = #selector(backendPicked)
+            backendPopup.frame = NSRect(x: 150, y: y, width: 140, height: 26)
+            root.addSubview(backendPopup)
+            y += 42
+
+            let cliHint = captionLabel(L10n.t(
+                "驱动本机已安装并登录的对应命令行。",
+                "ローカルにインストール・ログイン済みの対応 CLI を利用します。",
+                "Drives the matching local CLI (must be installed and signed in)."))
+            cliHint.frame = NSRect(x: 40, y: y, width: 552, height: 20)
+            root.addSubview(cliHint)
+            y += 28
         }
-        backendPopup.selectItem(at: Settings.shared.cli == "claude" ? 1 : 0)
-        backendPopup.target = self
-        backendPopup.action = #selector(backendPicked)
-        backendPopup.frame = NSRect(x: 150, y: y, width: 140, height: 26)
-        root.addSubview(backendPopup)
-        y += 42
-
-        // API keys (compact, live-commit, Keychain-backed)
-        y = addKeySection(root, y: y, header: "Claude · Anthropic API Key",
-                          keyField: claudeKeyField, modelField: claudeModelField,
-                          cliId: "claude", placeholder: "sk-ant-…")
-        y = addKeySection(root, y: y, header: "Codex · OpenAI API Key",
-                          keyField: openaiKeyField, modelField: openaiModelField,
-                          cliId: "codex", placeholder: "sk-…")
-
-        // The empty-key fallback differs with the CLI switch: unlocked → CLI (the pre-official
-        // behavior), locked → the official service. Say the truth for this device.
-        let keyHint = captionLabel(cliEnabled
-            ? L10n.t("Key 只保存在本机钥匙串。填写后该引擎自动直连官方 API；留空则回退到 CLI。",
-                     "キーはこのMacのキーチェーンにのみ保存。入力するとAPIに直接接続、空欄ならCLIへフォールバック。",
-                     "Keys live only in your local Keychain. Filled → direct API; empty → CLI fallback.")
-            : L10n.t("Key 只保存在本机钥匙串。填写后该引擎自动直连官方 API；留空则使用官方服务。",
-                     "キーはこのMacのキーチェーンにのみ保存。入力するとAPIに直接接続、空欄なら公式サービスを利用。",
-                     "Keys live only in your local Keychain. Filled → direct API; empty → the official service."))
-        keyHint.frame = NSRect(x: 40, y: y, width: 552, height: 30)
-        root.addSubview(keyHint)
-        y += 40
 
         // Updates + version
         let updateButton = NSButton(title: L10n.t("检查更新…", "アップデートを確認…", "Check for Updates…"),
@@ -1042,60 +1117,54 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         reloadKeys()
     }
 
-    private func addKeySection(_ root: NSView, y: CGFloat, header: String,
-                               keyField: NSSecureTextField, modelField: NSTextField,
-                               cliId: String, placeholder: String) -> CGFloat {
-        var y = y
-        let h = rowLabel(header)
-        h.font = .systemFont(ofSize: 12, weight: .semibold)
-        h.frame = NSRect(x: 40, y: y, width: 300, height: 16)
-        root.addSubview(h)
-        y += 20
-        keyField.placeholderString = placeholder
-        keyField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        keyField.frame = NSRect(x: 40, y: y, width: 340, height: 24)
-        keyField.delegate = self
-        keyField.identifier = NSUserInterfaceItemIdentifier("key.\(cliId)")
-        root.addSubview(keyField)
-        modelField.placeholderString = Settings.defaultAPIModels[cliId]
-        modelField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        modelField.frame = NSRect(x: 388, y: y, width: 204, height: 24)
-        modelField.delegate = self
-        modelField.identifier = NSUserInterfaceItemIdentifier("model.\(cliId)")
-        modelField.toolTip = L10n.t("模型（留空用默认）", "モデル（空欄でデフォルト）", "Model (empty = default)")
-        root.addSubview(modelField)
-        return y + 34
-    }
-
+    /// Fill the custom-key fields from the active provider's stored key / model / base URL. A model
+    /// equal to the provider's default shows blank so the placeholder carries the default.
     private func reloadKeys() {
-        claudeKeyField.stringValue = Settings.shared.apiKey(for: "claude")
-        openaiKeyField.stringValue = Settings.shared.apiKey(for: "codex")
-        let cm = Settings.shared.apiModel(for: "claude")
-        claudeModelField.stringValue = cm == Settings.defaultAPIModels["claude"] ? "" : cm
-        let om = Settings.shared.apiModel(for: "codex")
-        openaiModelField.stringValue = om == Settings.defaultAPIModels["codex"] ? "" : om
+        let p = Settings.shared.activeProvider
+        apiKeyField.stringValue = Settings.shared.apiKey(for: p.storageKey)
+        let m = Settings.shared.apiModel(for: p.storageKey)
+        apiModelField.stringValue = (!p.defaultModel.isEmpty && m == p.defaultModel) ? "" : m
+        baseURLField.stringValue = Settings.shared.apiCustomBaseURL
     }
 
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField,
               let id = field.identifier?.rawValue else { return }
+        let storageKey = Settings.shared.activeProvider.storageKey
         switch id {
-        case "key.claude": Settings.shared.setAPIKey(field.stringValue, for: "claude")
-        case "key.codex": Settings.shared.setAPIKey(field.stringValue, for: "codex")
-        case "model.claude": Settings.shared.setAPIModel(field.stringValue, for: "claude")
-        case "model.codex": Settings.shared.setAPIModel(field.stringValue, for: "codex")
+        case "apiKey": Settings.shared.setAPIKey(field.stringValue, for: storageKey)
+        case "apiModel": Settings.shared.setAPIModel(field.stringValue, for: storageKey)
+        case "apiBaseURL": Settings.shared.apiCustomBaseURL = field.stringValue
         default: return
         }
         onChange?()
     }
 
-    @objc private func modePicked(_ sender: NSButton) {
-        guard let mode = sender.identifier?.rawValue else { return }
-        Settings.shared.serviceMode = mode
-        for r in modeRadios { r.state = r === sender ? .on : .off }
+    /// Custom-key provider picker: switch the active third-party provider, then rebuild so the
+    /// key/model placeholders and the Base URL row (custom only) match.
+    @objc private func providerPicked() {
+        guard let id = providerPopup.selectedItem?.representedObject as? String else { return }
+        Settings.shared.apiProvider = id
+        populate()
         onChange?()
     }
 
+    /// Open the active provider's API-key console in the browser.
+    @objc private func openConsole() {
+        guard let url = Settings.shared.activeProvider.consoleURL.flatMap(URL.init(string:)) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func modePicked(_ sender: NSButton) {
+        guard let mode = sender.identifier?.rawValue else { return }
+        Settings.shared.serviceMode = mode
+        // Rebuild so the per-channel fields (custom-key rows, or the CLI engine picker) appear/
+        // disappear to match the chosen channel; populate() recreates the radios selected right.
+        populate()
+        onChange?()
+    }
+
+    /// CLI-mode engine picker: choose which local CLI (codex / claude) captures drive.
     @objc private func backendPicked() {
         guard let id = backendPopup.selectedItem?.representedObject as? String else { return }
         Settings.shared.cli = id

@@ -62,18 +62,22 @@ final class NotchController: NSObject {
 
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
-    /// The channel the NEXT capture will use, resolved from the current settings.
+    /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
+    /// reads the key of the active third-party provider.
     private func currentChannel() -> ServiceChannel {
         ServiceRouting.resolve(
             mode: Settings.shared.serviceMode,
-            customKey: Settings.shared.apiKey(for: Settings.shared.cli),
+            customKey: Settings.shared.apiKey(for: Settings.shared.activeProvider.storageKey),
             cliAllowed: OfficialAPI.cliEnabled
         )
     }
 
     /// Reflect the active channel (官方服务 / 自定义 Key / CLI) in the notch header.
     private func refreshCLILabel() {
-        model.cliLabel = ServiceRouting.headerLabel(channel: currentChannel(), backend: Settings.shared.cli)
+        model.cliLabel = ServiceRouting.headerLabel(
+            channel: currentChannel(),
+            cliBackend: Settings.shared.cli,
+            customProviderName: Settings.shared.activeProvider.name)
     }
 
     private func refreshAfterLanguageChange() {
@@ -535,14 +539,31 @@ final class NotchController: NSObject {
             // Routing: the chosen 答题通道 decides the channel. Official (question quota) is the
             // default for fresh installs; custom key and CLI behave exactly as before.
             let channel = self.currentChannel()
+            // Custom-key mode targets one of the third-party providers; resolve it once so the
+            // warm-up, preflight, and run all agree on endpoint/model/protocol.
+            let provider = Settings.shared.activeProvider
+            let apiEndpoint = Settings.shared.endpoint(for: provider)
+            let apiModel = Settings.shared.apiModel(for: provider.storageKey)
 
             // The screenshot takes a few hundred ms — use that window to warm the network path
             // (DNS + TLS + serverless cold start + DB wake for official; vendor TLS for custom
             // key) so the capture POST rides a hot connection. Fire-and-forget.
             switch channel {
             case .official: OfficialAPI.warmUp()
-            case .customKey: APIKeyRunner.warmUp(cliId: cliId)
+            case .customKey: APIKeyRunner.warmUp(endpoint: apiEndpoint)
             case .cli: break
+            }
+
+            // Custom provider needs a Base URL + model before it can answer; a preset always has
+            // both, so this only bites the "custom" entry left half-filled. Guide the user there
+            // rather than firing a doomed request after spending a capture.
+            if case .customKey = channel, apiEndpoint.isEmpty || apiModel.isEmpty {
+                self.finishError(L10n.t(
+                    "请先在设置 →「高级」填好该厂商的 Base URL 和模型名。",
+                    "設定→「詳細」でこのプロバイダの Base URL とモデル名を入力してください。",
+                    "Fill in this provider's Base URL and model name in Settings → Advanced first."))
+                self.openSettings(page: .advanced)
+                return
             }
 
             // 额度鉴权拦截：QuotaGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
@@ -687,7 +708,8 @@ final class NotchController: NSObject {
                 )
             case .customKey(let apiKey):
                 APIKeyRunner.run(
-                    cliId: cliId, apiKey: apiKey, imagePath: shot.path, depth: Settings.shared.depth,
+                    proto: provider.proto, endpoint: apiEndpoint, apiKey: apiKey, model: apiModel,
+                    imagePath: shot.path, depth: Settings.shared.depth,
                     mode: mode,
                     personaName: Settings.shared.personaName,
                     personaText: Settings.shared.personaText,
