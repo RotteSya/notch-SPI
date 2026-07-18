@@ -1274,5 +1274,12 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
     func pageDidShow() {
         rebuildIfCLISwitchChanged()
         reloadKeys()
+        // Pull the authoritative account so a just-flipped server-side CLI switch shows up the
+        // moment 高级 opens — without the user having to visit 账户与额度 first. A successful
+        // refresh whose cli_enabled differs posts accountDidChange, and the observer above
+        // rebuilds the page. Only meaningful for the official channel (needs a device token).
+        if OfficialAPI.deviceToken != nil {
+            Task { @MainActor in _ = await OfficialAPI.refreshAccount() }
+        }
     }
 }
