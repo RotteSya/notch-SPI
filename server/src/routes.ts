@@ -131,10 +131,17 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       throw new ApiError(429, '注册过于频繁，请稍后再试', 'rate_limited');
     }
     const body = (req.body ?? {}) as DeviceBody;
+    // The welcome gift is randomized per device across the configured range, so the onboarding
+    // reveal lands on a different number for each player. Clamp defensively (min ≥ 0, max ≥ min)
+    // so a misconfigured range can never grant a negative balance — while still allowing an
+    // explicit 0 (a deployment that disables the free trial, as some tests configure).
+    const lo = Math.max(0, Math.min(config.trialMinQuestions, config.trialMaxQuestions));
+    const hi = Math.max(lo, config.trialMaxQuestions);
+    const trialQuestions = lo + Math.floor(Math.random() * (hi - lo + 1));
     const device = await store.registerDevice({
       platform: str(body.platform, 'unknown').slice(0, 32),
       appVersion: str(body.app_version, 'unknown').slice(0, 32),
-      trialQuestions: config.trialQuestions,
+      trialQuestions,
     });
     return reply.send({
       device_token: device.token,

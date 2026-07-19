@@ -61,8 +61,14 @@ export const config = {
   // The account balance is an integer number of QUESTIONS; one successful capture costs one
   // question. Money only appears at purchase time (the top-up page sells question packs).
 
-  // Free questions granted to each newly registered device.
+  // Free questions granted to each newly registered device. The grant is RANDOMIZED per device
+  // across [trialMinQuestions, trialMaxQuestions] (see the register route) so the onboarding
+  // "welcome gift" feels personal — no two players get the same number. The range defaults to
+  // 100–180; set min === max for a fixed grant (the deterministic route tests do exactly this).
+  // `trialQuestions` remains the advertised ceiling used by the public site copy.
   trialQuestions: envInt('TRIAL_QUESTIONS', 180),
+  trialMinQuestions: envInt('TRIAL_MIN_QUESTIONS', 100),
+  trialMaxQuestions: envInt('TRIAL_MAX_QUESTIONS', 180),
 
   // Question packs sold on the top-up page: JSON `[{"id":"pack100","questions":100,"amount_cents":900}, …]`.
   // Prices are cents in `currency`. Falls back to the default catalog on parse errors.

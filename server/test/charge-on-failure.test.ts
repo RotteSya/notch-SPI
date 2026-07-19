@@ -9,6 +9,8 @@ import type { Provider, Usage, CaptureRequest } from '../src/providers/types.ts'
 process.env.DB_PATH = ':memory:';
 process.env.OFFICIAL_PROVIDER = 'mock'; // ignored: we inject a provider below
 process.env.TRIAL_QUESTIONS = '3';
+process.env.TRIAL_MIN_QUESTIONS = '3'; // pin min===max so the trial grant is deterministic (3)
+process.env.TRIAL_MAX_QUESTIONS = '3';
 process.env.CURRENCY = 'CNY';
 process.env.LOG_LEVEL = 'silent';
 process.env.DEVICE_REG_PER_HOUR = '1000'; // don't let the abuse limits interfere with this suite
