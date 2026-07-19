@@ -737,7 +737,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         root.addSubview(refreshButton)
         y += 40
 
-        claimButton.title = L10n.t("领取 180 题免费额度", "180問の無料枠を受け取る", "Claim 180 free questions")
+        claimButton.title = L10n.t("领取免费额度", "無料枠を受け取る", "Claim free questions")
         claimButton.bezelStyle = .rounded
         claimButton.target = self
         claimButton.action = #selector(claimTapped)
