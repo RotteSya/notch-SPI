@@ -214,12 +214,6 @@ final class PromptsFinalContractTests: XCTestCase {
         XCTAssertFalse(Prompts.tutorText("hint").contains("FINAL:"))
     }
 
-    func testPersonalityHasNoContractButStreamsSafely() {
-        let p = Prompts.systemText(mode: "personality", depth: "guided",
-                                   personaName: "n", personaText: "t")
-        XCTAssertFalse(p.contains("FINAL:"))
-        XCTAssertTrue(p.contains("never revise a line"))
-    }
 }
 
 /// Composition-level guards: what actually reaches the glass.

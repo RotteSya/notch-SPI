@@ -165,35 +165,40 @@ enum CLIRunner {
 
     // MARK: - Run (streaming)
 
+    /// Final argv for one frozen prompt. Kept pure so channel parity and argument ordering are
+    /// testable without spawning either CLI (`--image` is variadic in Codex, so prompt order is
+    /// significant).
+    static func makeArguments(
+        cliId: String, prompt: CapturePrompt, imagePath: String
+    ) -> [String] {
+        if cliId == "claude" {
+            let text = prompt.system
+                + "\n\nThe screenshot is saved at this path: \(imagePath)\nOpen and read that image file, then "
+                + prompt.task
+            return [
+                "-p", text,
+                "--allowedTools", "Read",
+                "--disallowedTools", "Edit,Write,Bash,WebFetch,WebSearch",
+                "--permission-mode", "dontAsk",
+                "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+            ]
+        }
+        let text = prompt.system + "\n\nAnalyze the attached screenshot image, then " + prompt.task
+        return ["exec", "--sandbox", "read-only", "--skip-git-repo-check", text, "-i", imagePath]
+    }
+
     /// Spawn the chosen CLI read-only and stream text via onDelta. Callbacks fire
     /// on the main queue. A safety timeout kills a stuck process after 120s.
     static func run(
         cliId: String,
         binPath: String,
         imagePath: String,
-        depth: String,
-        mode: String,
-        personaName: String,
-        personaText: String,
+        prompt: CapturePrompt,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
     ) {
-        let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
-        let task = Prompts.taskInstruction(mode: mode)
         let isClaude = (cliId == "claude")
-        let args: [String]
-        if isClaude {
-            let prompt = sys + "\n\nThe screenshot is saved at this path: \(imagePath)\nOpen and read that image file, then \(task)"
-            args = ["-p", prompt,
-                    "--allowedTools", "Read",
-                    "--disallowedTools", "Edit,Write,Bash,WebFetch,WebSearch",
-                    "--permission-mode", "dontAsk",
-                    "--output-format", "stream-json", "--verbose", "--include-partial-messages"]
-        } else {
-            let prompt = sys + "\n\nAnalyze the attached screenshot image, then \(task)"
-            // Prompt BEFORE -i: --image is variadic and would otherwise eat the prompt.
-            args = ["exec", "--sandbox", "read-only", "--skip-git-repo-check", prompt, "-i", imagePath]
-        }
+        let args = makeArguments(cliId: cliId, prompt: prompt, imagePath: imagePath)
 
         let wd = workDir()
         let p = Process()

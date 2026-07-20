@@ -50,23 +50,27 @@ final class PromptsSelectionTests: XCTestCase {
         XCTAssertTrue(Prompts.tutorText("nonsense").contains("GUIDED WALKTHROUGH"))
     }
 
-    func testSystemTextRoutesByMode() {
-        let persona = Prompts.systemText(
+    func testCapturePromptRoutesByMode() {
+        let persona = Prompts.capturePrompt(
             mode: "personality", depth: "guided",
-            personaName: "A社", personaText: "creative and bold")
-        XCTAssertTrue(persona.contains("creative and bold"))
-        XCTAssertTrue(persona.contains("A社"))
+            personaName: "A社", personaText: "creative and bold", sessionContext: "CTX")
+        XCTAssertTrue(persona.system.contains("creative and bold"))
+        XCTAssertTrue(persona.system.contains("A社"))
+        XCTAssertTrue(persona.system.contains("CTX"))
 
-        let tutor = Prompts.systemText(
-            mode: "tutor", depth: "brief", personaName: "", personaText: "")
-        XCTAssertEqual(tutor, Prompts.briefPrompt)
+        let tutor = Prompts.capturePrompt(
+            mode: "tutor", depth: "brief", personaName: "", personaText: "", sessionContext: "IGNORED")
+        XCTAssertEqual(tutor.system, Prompts.briefPrompt)
+        XCTAssertFalse(tutor.system.contains("IGNORED"))
     }
 
     func testTaskInstructionDiffersByMode() {
-        XCTAssertNotEqual(
-            Prompts.taskInstruction(mode: "personality"),
-            Prompts.taskInstruction(mode: "tutor"))
-        XCTAssertTrue(Prompts.taskInstruction(mode: "tutor").contains("tutor"))
+        let personality = Prompts.capturePrompt(
+            mode: "personality", depth: "guided", personaName: "n", personaText: "t", sessionContext: "c")
+        let tutor = Prompts.capturePrompt(
+            mode: "tutor", depth: "guided", personaName: "", personaText: "", sessionContext: "c")
+        XCTAssertNotEqual(personality.task, tutor.task)
+        XCTAssertTrue(tutor.task.contains("tutor"))
     }
 
     func testAnswerLanguageFallbackFollowsUILanguage() {
@@ -90,7 +94,8 @@ final class APIKeyRunnerTests: XCTestCase {
         let req = APIKeyRunner.makeRequest(
             proto: .anthropic, endpoint: APIKeyRunner.anthropicEndpoint,
             apiKey: "sk-ant-test", model: "claude-opus-4-8",
-            systemText: "SYS", taskText: "tutor me on the problem it shows.", imageBase64: "QUJD")
+            prompt: CapturePrompt(system: "SYS", task: "tutor me on the problem it shows."),
+            imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, APIKeyRunner.anthropicEndpoint)
         XCTAssertEqual(req.value(forHTTPHeaderField: "x-api-key"), "sk-ant-test")
         XCTAssertEqual(req.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
@@ -104,7 +109,7 @@ final class APIKeyRunnerTests: XCTestCase {
         let req = APIKeyRunner.makeRequest(
             proto: .openai, endpoint: APIKeyRunner.openAIEndpoint,
             apiKey: "sk-oai-test", model: "gpt-5",
-            systemText: "SYS", taskText: "answer.", imageBase64: "QUJD")
+            prompt: CapturePrompt(system: "SYS", task: "answer."), imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, APIKeyRunner.openAIEndpoint)
         XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer sk-oai-test")
         let body = try! JSONSerialization.jsonObject(with: req.httpBody!) as! [String: Any]
@@ -119,7 +124,7 @@ final class APIKeyRunnerTests: XCTestCase {
         let req = APIKeyRunner.makeRequest(
             proto: .openai, endpoint: endpoint,
             apiKey: "sk-or-test", model: "openai/gpt-4o",
-            systemText: "SYS", taskText: "answer.", imageBase64: "QUJD")
+            prompt: CapturePrompt(system: "SYS", task: "answer."), imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, endpoint)
         XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer sk-or-test")
     }
@@ -338,7 +343,7 @@ final class OfficialAPITests: XCTestCase {
     func testCaptureRequestShape() {
         let req = OfficialAPI.makeCaptureRequest(
             baseURL: "https://api.notchspi.app", deviceToken: "dev_123",
-            systemText: "SYS", taskText: "tutor me.", imageBase64: "QUJD")
+            prompt: CapturePrompt(system: "SYS", task: "tutor me."), imageBase64: "QUJD")
         XCTAssertEqual(req.url?.absoluteString, "https://api.notchspi.app/v1/captures")
         XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer dev_123")
         let body = try! JSONSerialization.jsonObject(with: req.httpBody!) as! [String: Any]

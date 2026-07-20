@@ -3,6 +3,7 @@ import Combine
 /// Observable state the notch renders. Mutated on the main thread by the controller's pipeline.
 /// `ObservableObject` / `@Published` are Combine types — the notch is pure AppKit and observes
 /// this via `objectWillChange`, no SwiftUI involved.
+@MainActor
 final class TutorModel: ObservableObject {
     enum Status {
         case idle, ready, running, streaming, error

@@ -35,8 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.openSettings(page: page)
             }
         }
-        if let i = args.firstIndex(of: "--qa-notch"), i + 1 < args.count {
-            let state = args[i + 1]
+        let qaNotchState: String? = {
+            if let i = args.firstIndex(of: "--qa-notch"), i + 1 < args.count {
+                return args[i + 1]
+            }
+            return ProcessInfo.processInfo.environment["NSPI_QA_NOTCH"]
+        }()
+        if let state = qaNotchState, !state.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 controller.qaDriveNotch(state)
             }

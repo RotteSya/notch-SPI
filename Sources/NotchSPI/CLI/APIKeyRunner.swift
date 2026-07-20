@@ -33,11 +33,10 @@ enum APIKeyRunner {
         endpoint: String,
         apiKey: String,
         model: String,
-        systemText: String,
-        taskText: String,
+        prompt: CapturePrompt,
         imageBase64: String
     ) -> URLRequest {
-        let userText = "Analyze the attached screenshot image, then \(taskText)"
+        let userText = "Analyze the attached screenshot image, then \(prompt.task)"
         var req = URLRequest(url: URL(string: endpoint)!)
         let body: [String: Any]
         if proto == .anthropic {
@@ -47,7 +46,7 @@ enum APIKeyRunner {
                 "model": model,
                 "max_tokens": 8192,
                 "stream": true,
-                "system": systemText,
+                "system": prompt.system,
                 "messages": [[
                     "role": "user",
                     "content": [
@@ -63,7 +62,7 @@ enum APIKeyRunner {
                 "model": model,
                 "stream": true,
                 "messages": [
-                    ["role": "system", "content": systemText],
+                    ["role": "system", "content": prompt.system],
                     ["role": "user", "content": [
                         ["type": "text", "text": userText],
                         ["type": "image_url",
@@ -155,16 +154,10 @@ enum APIKeyRunner {
         apiKey: String,
         model: String,
         imagePath: String,
-        depth: String,
-        mode: String,
-        personaName: String,
-        personaText: String,
+        prompt: CapturePrompt,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
     ) {
-        let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
-        let task = Prompts.taskInstruction(mode: mode)
-
         Task.detached(priority: .userInitiated) {
             // File read + base64 of a multi-MB screenshot stays off the main thread.
             guard let imageData = FileManager.default.contents(atPath: imagePath) else {
@@ -174,7 +167,7 @@ enum APIKeyRunner {
             let request = makeRequest(
                 proto: proto, endpoint: endpoint, apiKey: apiKey,
                 model: model,
-                systemText: sys, taskText: task,
+                prompt: prompt,
                 imageBase64: imageData.base64EncodedString()
             )
             #if DEBUG

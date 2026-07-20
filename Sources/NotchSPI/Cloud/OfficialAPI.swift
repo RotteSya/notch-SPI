@@ -292,7 +292,7 @@ enum OfficialAPI {
 
     static func makeCaptureRequest(
         baseURL: String, deviceToken: String,
-        systemText: String, taskText: String, imageBase64: String
+        prompt: CapturePrompt, imageBase64: String
     ) -> URLRequest {
         var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
         req.httpMethod = "POST"
@@ -300,8 +300,8 @@ enum OfficialAPI {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 120
         req.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "system": systemText,
-            "task": "Analyze the attached screenshot image, then \(taskText)",
+            "system": prompt.system,
+            "task": "Analyze the attached screenshot image, then \(prompt.task)",
             "image_base64": imageBase64,
             "image_media_type": "image/jpeg",
             "stream": true,
@@ -404,10 +404,7 @@ enum OfficialAPI {
     /// event updates the local quota mirror automatically.
     static func run(
         imagePath: String,
-        depth: String,
-        mode: String,
-        personaName: String,
-        personaText: String,
+        prompt: CapturePrompt,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
     ) {
@@ -419,9 +416,6 @@ enum OfficialAPI {
             }
             return
         }
-        let sys = Prompts.systemText(mode: mode, depth: depth, personaName: personaName, personaText: personaText)
-        let task = Prompts.taskInstruction(mode: mode)
-
         Task.detached(priority: .userInitiated) {
             // File read + base64 of a multi-MB screenshot stays off the main thread.
             guard let imageData = FileManager.default.contents(atPath: imagePath) else {
@@ -432,7 +426,7 @@ enum OfficialAPI {
             }
             let request = makeCaptureRequest(
                 baseURL: baseURL, deviceToken: token,
-                systemText: sys, taskText: task,
+                prompt: prompt,
                 imageBase64: imageData.base64EncodedString()
             )
             #if DEBUG

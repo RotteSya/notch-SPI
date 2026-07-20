@@ -4,3 +4,4 @@
 *.xcodeproj
 dist/
 dist-qa/
+/.eval-results/

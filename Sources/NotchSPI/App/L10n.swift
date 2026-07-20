@@ -158,6 +158,42 @@ enum L10n {
     static var statusExplaining: String { t("讲解中…", "解説中…", "Explaining…") }
     static var statusAnswering: String { t("作答中…", "回答中…", "Answering…") }
     static var statusReasoning: String { t("推理中…", "思考中…", "Thinking…") }
+    static var statusContextCleared: String {
+        t("连续题上下文已清空", "連続質問のコンテキストを消去しました", "Questionnaire context cleared")
+    }
+    static var statusContextNotSaved: String {
+        t("连续题上下文未保存", "連続質問のコンテキストを保存できませんでした", "Questionnaire context wasn't saved")
+    }
+    static var statusUnreadable: String {
+        t("截图或选项无法辨认", "画像または選択肢を読み取れません", "Screenshot or choices unreadable")
+    }
+    static var statusPartialUnreadable: String {
+        t("部分题目无法辨认", "一部の質問を読み取れません", "Some questions were unreadable")
+    }
+    static var statusMissingPrevious: String {
+        t("上一题上下文不可用", "前の質問のコンテキストがありません", "Previous-question context unavailable")
+    }
+    static var statusDependsOnMissingPrevious: String {
+        t("本页依赖缺失的上一题", "このページには前の質問が必要です", "This page depends on the missing previous question")
+    }
+    static var statusPartialMissingPrevious: String {
+        t("部分题目缺少上一题上下文", "一部の質問に前の質問が必要です", "Some questions need the previous-question context")
+    }
+    static var statusNoValidChoices: String {
+        t("未收到有效选项", "有効な選択肢を受信できませんでした", "No valid choices received")
+    }
+    static var statusTransportFailure: String {
+        t("回答传输中断", "回答の受信が中断されました", "Answer transport interrupted")
+    }
+    static var statusQuotaRunningLow: String {
+        t("额度即将用完", "残りわずか", "Running low")
+    }
+
+    static var startNewQuestionnaire: String {
+        t("开始新问卷 / 清空连续题上下文",
+          "新しい質問票を開始 / 連続コンテキストを消去",
+          "Start new questionnaire / clear context")
+    }
 
     /// Caption on the answer card (see NotchType.card).
     static var answerCardLabel: String { t("答案", "答え", "ANSWER") }

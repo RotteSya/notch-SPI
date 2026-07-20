@@ -169,6 +169,7 @@ enum NotchType {
     }
 
     /// Presentation snapshot for the model's CURRENT answer.
+    @MainActor
     static func presentation(for model: TutorModel) -> AnswerPresentation {
         AnswerPresentation(
             mode: model.mode,
@@ -187,9 +188,15 @@ enum NotchType {
                 .paragraphStyle: para,
             ])
         }
-        // Modes that never carry a FINAL contract (persona lists; hints reveal no answer)
-        // render exactly as before.
-        guard p.mode != "personality", p.depth != "hint" else { return body(answer, dim: false) }
+        if p.mode == "personality" {
+            // Keep `TutorModel.answer` as the untouched protocol stream. Rendering and measuring
+            // both pass through this exact composition call, so JSON/prose cannot leak and the
+            // panel height always matches the visible choices (including a provisional last line).
+            let composition = PersonalityAnswer.compose(raw: answer, streaming: !p.finished)
+            return body(composition.visibleChoices, dim: false)
+        }
+        // Hint mode never carries a FINAL contract and renders exactly as before.
+        guard p.depth != "hint" else { return body(answer, dim: false) }
 
         let parse = AnswerComposer.parse(answer, streaming: !p.finished)
         guard let final = parse.final, !(p.finished && final.isEmpty) else {
@@ -655,6 +662,7 @@ final class NotchControlButton: NSControl {
         self.baseImage = notchTintedSymbol(systemName, pointSize: 12, weight: .semibold, color: tint)
         super.init(frame: NSRect(x: 0, y: 0, width: 28, height: 24))
         toolTip = label
+        setAccessibilityElement(true)
         setAccessibilityLabel(label)
         setAccessibilityRole(.button)
     }
@@ -707,5 +715,10 @@ final class NotchControlButton: NSControl {
         let inside = bounds.contains(p)
         pressed = false
         if inside { onAction() }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onAction()
+        return true
     }
 }
