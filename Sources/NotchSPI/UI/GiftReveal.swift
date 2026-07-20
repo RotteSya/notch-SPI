@@ -35,7 +35,7 @@ final class DigitOdometerView: NSView {
     private var link: CADisplayLink?
     var onFinished: (() -> Void)?
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override var isFlipped: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -204,7 +204,7 @@ final class RewardBurstView: NSView {
 
     /// Fire the burst from the view's center. `intensity` scales the spark count (0.6…1.2).
     func burst(intensity: CGFloat = 1.0) {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard !onboardingReduceMotion() else { return }
         let now = CACurrentMediaTime()
         let c = CGPoint(x: bounds.midX, y: bounds.midY)
         let count = Int(56 * max(0.5, min(1.3, intensity)))
@@ -364,7 +364,7 @@ final class GiftSealView: NSControl {
     private var extraScale: CGFloat = 1          // charge squash / break scale
     var onBreakComplete: (() -> Void)?
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override var isFlipped: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -437,29 +437,36 @@ final class GiftSealView: NSControl {
 
         ctx.saveGState()
 
-        // — aurora glow halo (additive) —
+        // — a restrained halo: just enough to lift the seal off the field (the celebration is
+        //   the break itself, not a standing glow) —
         ctx.setBlendMode(.plusLighter)
-        drawBloom(ctx, center: center, radius: R * 1.85,
-                  color: NotchPalette.accent.withAlphaComponent(0.32 * glow * contentAlpha))
-        drawBloom(ctx, center: center, radius: R * 1.35,
-                  color: NotchPalette.accentHi.withAlphaComponent(0.28 * glow * contentAlpha))
+        drawBloom(ctx, center: center, radius: R * 1.6,
+                  color: NotchPalette.accent.withAlphaComponent(0.20 * glow * contentAlpha))
+        drawBloom(ctx, center: center, radius: R * 1.15,
+                  color: NotchPalette.accentHi.withAlphaComponent(0.14 * glow * contentAlpha))
         ctx.setBlendMode(.normal)
 
         guard contentAlpha > 0.02 else { ctx.restoreGState(); return }
 
-        // — dark-glass disc with an inner vertical sheen —
+        // — dark-glass disc, top-lit —
         let discR = R * 0.72
         let disc = NSBezierPath(ovalIn: NSRect(x: center.x - discR, y: center.y - discR,
                                                width: discR * 2, height: discR * 2))
         ctx.saveGState()
         disc.addClip()
         let bodyGrad = notchGradient([
-            (NSColor(srgbRed: 0.10, green: 0.12, blue: 0.24, alpha: contentAlpha), 0.0),
+            (NSColor(srgbRed: 0.12, green: 0.15, blue: 0.30, alpha: contentAlpha), 0.0),
             (NSColor(srgbRed: 0.04, green: 0.05, blue: 0.11, alpha: contentAlpha), 1.0),
         ])
         ctx.drawLinearGradient(bodyGrad,
                                start: CGPoint(x: center.x, y: center.y + discR),
                                end: CGPoint(x: center.x, y: center.y - discR), options: [])
+        // Dome sheen: a soft radial pool of light falling from above, clipped to the glass —
+        // reads as curvature, not as a pasted-on shape.
+        ctx.setBlendMode(.plusLighter)
+        drawBloom(ctx, center: CGPoint(x: center.x, y: center.y + discR * 0.85),
+                  radius: discR * 1.15, color: NSColor(white: 1, alpha: 0.12 * contentAlpha))
+        ctx.setBlendMode(.normal)
         ctx.restoreGState()
 
         // — accent rim (two weights for depth) —
@@ -472,27 +479,55 @@ final class GiftSealView: NSControl {
         NotchPalette.accent.withAlphaComponent(0.35 * glow * contentAlpha).setStroke()
         outerRing.stroke()
 
-        // — specular sweep across the upper-left of the glass —
-        ctx.saveGState()
-        disc.addClip()
-        ctx.setBlendMode(.plusLighter)
-        let sweep = NSBezierPath(ovalIn: NSRect(x: center.x - discR * 0.7, y: center.y + discR * 0.05,
-                                                width: discR * 1.4, height: discR * 0.9))
-        NSColor(white: 1, alpha: 0.10 * contentAlpha).setFill()
-        sweep.fill()
-        ctx.setBlendMode(.normal)
-        ctx.restoreGState()
-
-        // — centered spark glyph —
-        if let glyph = notchTintedSymbol("sparkles", pointSize: discR * 0.9, weight: .medium,
-                                         color: NSColor(white: 1, alpha: 0.95)) {
+        // — rim shimmer: a slow bright arc travelling the outer ring, so the seal reads as a
+        //   lit object turning in aurora light rather than a static badge —
+        if !reduceMotion, breakStart == nil {
+            let angle = CGFloat((now - birth) * 0.5).truncatingRemainder(dividingBy: .pi * 2)
             ctx.saveGState()
             ctx.setBlendMode(.plusLighter)
+            for (span, alpha, width) in [(CGFloat(0.9), 0.55, 2.2), (CGFloat(1.6), 0.22, 1.2)] {
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: center, radius: R * 0.92,
+                              startAngle: (angle - span / 2) * 180 / .pi,
+                              endAngle: (angle + span / 2) * 180 / .pi)
+                arc.lineWidth = width
+                arc.lineCapStyle = .round
+                NotchPalette.accentHi.withAlphaComponent(alpha * glow * contentAlpha).setStroke()
+                arc.stroke()
+            }
+            ctx.restoreGState()
+        }
+
+        // — orbit spark: one tiny comet circling the seal while it waits, trailing ghosts —
+        if !reduceMotion, breakStart == nil {
+            let oa = CGFloat(-(now - birth) * 0.8)
+            ctx.saveGState()
+            ctx.setBlendMode(.plusLighter)
+            for i in 0..<4 {
+                let trail = CGFloat(i) * 0.10
+                let a = oa + trail
+                let p = CGPoint(x: center.x + cos(a) * R * 0.92, y: center.y + sin(a) * R * 0.92)
+                let fade = pow(1 - CGFloat(i) / 4, 2.0)
+                let rad = (2.2 - CGFloat(i) * 0.4)
+                if i == 0 {
+                    drawBloom(ctx, center: p, radius: 7,
+                              color: NotchPalette.accentHi.withAlphaComponent(0.7 * contentAlpha))
+                }
+                NSColor(white: 1, alpha: (0.95 * fade) * contentAlpha).setFill()
+                NSBezierPath(ovalIn: NSRect(x: p.x - rad, y: p.y - rad, width: rad * 2, height: rad * 2)).fill()
+            }
+            ctx.restoreGState()
+        }
+
+        // — the gift glyph, plainly: this is a present, so it looks like one —
+        if let glyph = notchTintedSymbol("gift.fill", pointSize: discR * 0.72, weight: .medium,
+                                         color: NSColor(white: 1, alpha: 0.95)) {
+            ctx.saveGState()
             let gs = glyph.size
-            glyph.draw(in: NSRect(x: center.x - gs.width / 2, y: center.y - gs.height / 2,
+            glyph.draw(in: NSRect(x: center.x - gs.width / 2,
+                                  y: center.y - gs.height / 2,
                                   width: gs.width, height: gs.height),
                        from: .zero, operation: .sourceOver, fraction: contentAlpha)
-            ctx.setBlendMode(.normal)
             ctx.restoreGState()
         }
 

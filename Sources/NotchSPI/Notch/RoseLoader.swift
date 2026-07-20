@@ -7,6 +7,11 @@ import QuartzCore
 final class RoseLoaderView: NSView {
     var color: NSColor = .white { didSet { needsDisplay = true } }
 
+    /// Welcome-page brand-moment mode: the trail is tinted accent→white toward the head, drawn
+    /// additively with a soft bloom under the leading particles, so the rose reads as a signature
+    /// of light instead of a dim gray glyph. Defaults off — the notch's quiet loader is unchanged.
+    var hero: Bool = false { didSet { needsDisplay = true } }
+
     /// Whether the pipeline is actively working. At rest the rose still breathes/rotates, but
     /// those motions are minutes-slow (28s/rev, 4.3s pulse) — 24fps is imperceptible from 60 and
     /// this indicator is ALWAYS on screen beside the notch, so the idle cost matters. Working
@@ -96,6 +101,8 @@ final class RoseLoaderView: NSView {
         ctx.scaleBy(x: scale, y: scale)
         ctx.translateBy(x: -50, y: -50)
 
+        if hero { ctx.setBlendMode(.plusLighter) }   // light accumulates on the dark aurora
+
         // faint full curve
         let path = CGMutablePath()
         for i in 0...pathSteps {
@@ -103,7 +110,8 @@ final class RoseLoaderView: NSView {
             if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
         }
         ctx.addPath(path)
-        ctx.setStrokeColor(color.withAlphaComponent(0.12).cgColor)
+        let curveColor = hero ? NotchPalette.accent.withAlphaComponent(0.22) : color.withAlphaComponent(0.12)
+        ctx.setStrokeColor(curveColor.cgColor)
         ctx.setLineWidth(strokeWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
@@ -116,8 +124,25 @@ final class RoseLoaderView: NSView {
             let fade = pow(1 - tail, 0.56)
             let radius = 0.9 + fade * 2.7
             let opacity = 0.04 + fade * 0.96
+            // Hero: accent at the tail warming to near-white at the head, with a soft bloom under
+            // the leading particles — the signature drawn in light.
+            let particle: NSColor = hero
+                ? (NotchPalette.accentHi.blended(withFraction: fade * 0.75, of: .white) ?? NotchPalette.accentHi)
+                : color
+            if hero, i < 6 {
+                let bloomR = radius * 3.4
+                let space = CGColorSpace(name: CGColorSpace.sRGB)!
+                let c = (NotchPalette.accentHi.usingColorSpace(.sRGB) ?? NotchPalette.accentHi)
+                if let g = CGGradient(colorsSpace: space,
+                                      colors: [c.withAlphaComponent(0.35 * fade).cgColor,
+                                               c.withAlphaComponent(0).cgColor] as CFArray,
+                                      locations: [0, 1]) {
+                    ctx.drawRadialGradient(g, startCenter: p, startRadius: 0,
+                                           endCenter: p, endRadius: bloomR, options: [])
+                }
+            }
             let rect = CGRect(x: p.x - radius, y: p.y - radius, width: radius * 2, height: radius * 2)
-            ctx.setFillColor(color.withAlphaComponent(CGFloat(opacity)).cgColor)
+            ctx.setFillColor(particle.withAlphaComponent(CGFloat(opacity)).cgColor)
             ctx.fillEllipse(in: rect)
         }
         ctx.restoreGState()

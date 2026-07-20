@@ -22,11 +22,13 @@ final class AuroraBackgroundView: NSView {
     private let startTime = CACurrentMediaTime()
     private var metalOK = false
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
-    /// MSL for a full-screen quad + the aurora field. Kept minimal: two uniforms (time,
-    /// resolution), three exp-falloff ribbons, a soft vignette, and a hash grain that keeps the
-    /// slow gradients from banding on wide-gamut panels.
+    /// MSL for a full-screen quad + the aurora field. Two uniforms (time, resolution). The field
+    /// is built from domain-warped value noise — three silk ribbons with luminous cores draped
+    /// through a deep-navy gradient — so the light has cloth-like structure instead of reading as
+    /// a flat blurred gradient. A gentle corner-only vignette and a hash grain (anti-banding)
+    /// finish it. uv.y = 0 is the bottom of the window.
     private static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
@@ -41,37 +43,70 @@ final class AuroraBackgroundView: NSView {
         return o;
     }
 
+    static float ahash(float2 p) {
+        return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
+    }
+    static float anoise(float2 p) {
+        float2 i = floor(p), f = fract(p);
+        float2 u = f * f * (3.0 - 2.0 * f);
+        float a = ahash(i), b = ahash(i + float2(1, 0));
+        float c = ahash(i + float2(0, 1)), d = ahash(i + float2(1, 1));
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+    static float afbm(float2 p) {
+        float v = 0.0, amp = 0.55;
+        for (int i = 0; i < 3; i++) {
+            v += anoise(p) * amp;
+            p = p * 2.03 + float2(17.3, 9.1);
+            amp *= 0.5;
+        }
+        return v;
+    }
+
     fragment float4 aurora_fragment(VOut in [[stage_in]],
                                     constant float &time [[buffer(0)]],
                                     constant float2 &res [[buffer(1)]]) {
         float2 uv = in.uv;
         float aspect = res.x / max(res.y, 1.0);
         float2 p = float2(uv.x * aspect, uv.y);
-        float t = time * 0.05;
+        float t = time * 0.045;
 
-        float3 col = float3(0.027, 0.035, 0.075); // deep navy base
+        // Deep-navy base, a breath lighter at the zenith so the field never reads flat.
+        float3 col = mix(float3(0.013, 0.015, 0.036),
+                         float3(0.034, 0.040, 0.082), smoothstep(0.0, 1.0, uv.y));
 
+        // Domain warp: the ribbons ride these curved coordinates, which is what makes them
+        // drape like silk instead of oscillating like sine waves. Amplitude stays low — at
+        // higher values the noise reads as blotches instead of folds.
+        float2 q = float2(afbm(p * 1.10 + float2(0.0, t * 0.35)),
+                          afbm(p * 1.10 - float2(t * 0.28, 0.0)));
+        float2 w = p + (q - 0.5) * 0.26;
+
+        // Three ribbons: periwinkle high, violet mid, teal low — desaturated, held just above
+        // the threshold of notice. Atmosphere, not a light show; the content is the show.
         for (int i = 0; i < 3; i++) {
             float fi = float(i);
-            float speed = 0.6 + fi * 0.25;
-            float yc = 0.30 + fi * 0.20;                       // ribbon center line
-            float wave = sin(p.x * (2.2 + fi * 1.3) + t * speed * 6.2831 + fi * 2.1)
-                       * sin(p.x * (1.1 + fi * 0.7) - t * speed * 3.7 + fi * 5.0);
-            float y = uv.y - yc + wave * 0.16;
-            float band = exp(-pow(y * (4.2 + fi * 1.4), 2.0));
-            float3 ribbon = (i == 0) ? float3(0.30, 0.42, 0.95)   // periwinkle
-                          : (i == 1) ? float3(0.52, 0.34, 0.92)   // violet
-                                     : float3(0.22, 0.66, 0.80);  // teal whisper
-            col += ribbon * band * (0.17 - fi * 0.035);
+            float yc     = (i == 0) ? 0.78 : (i == 1) ? 0.50 : 0.22;
+            float freq   = 1.35 + fi * 0.55;
+            float speed  = 0.55 + fi * 0.22;
+            float y      = w.y - yc + sin(w.x * freq + fi * 2.4 + t * speed * 6.2831) * 0.045;
+            float k      = 5.2 + fi * 1.1;
+            float band   = exp(-pow(y * k, 2.0));
+            float core   = exp(-pow(y * k * 3.0, 2.0));
+            float3 tint  = (i == 0) ? float3(0.30, 0.40, 0.82)
+                         : (i == 1) ? float3(0.42, 0.32, 0.74)
+                                    : float3(0.20, 0.50, 0.60);
+            float gain   = (i == 0) ? 0.050 : (i == 1) ? 0.062 : 0.075;
+            col += tint * (band * gain + core * gain * 0.6);
         }
 
-        // vignette centered slightly above middle, where the content sits
-        float d = distance(uv, float2(0.5, 0.42));
-        col *= 1.0 - d * 0.55;
+        // Corner-only vignette: gentle, never muddying the center.
+        float vd = distance(uv, float2(0.5, 0.52));
+        col *= 1.0 - 0.24 * smoothstep(0.45, 0.98, vd);
 
         // hash grain to break banding
         float g = fract(sin(dot(uv * res, float2(12.9898, 78.233))) * 43758.5453);
-        col += (g - 0.5) * 0.012;
+        col += (g - 0.5) * 0.010;
 
         return float4(col, 1.0);
     }
@@ -155,6 +190,8 @@ final class AuroraBackgroundView: NSView {
         }
         guard link == nil else { return }
         let l = displayLink(target: self, selector: #selector(tick))
+        // Decorative backdrop drifting minutes-slow: 30fps is indistinguishable and halves the cost.
+        l.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
         l.add(to: .main, forMode: .common)
         link = l
     }

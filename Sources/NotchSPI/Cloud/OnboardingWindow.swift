@@ -13,6 +13,10 @@ import CoreGraphics
 // Every step is skippable and failure never blocks: registration re-runs on first capture, and
 // the capture path already explains a missing screen-recording permission. Power users find the
 // custom-key / CLI channels later in 设置 → 高级.
+//
+// Motion language (shared by every page): elements enter on one cascade — a soft rise with a
+// whisper of overshoot — pages hand off with a springed slide + parallax, and state changes
+// morph instead of teleporting. Reduce Motion collapses all of it to settled poses.
 
 // DEBUG visual-QA: when a gift number is seeded (NSPI_QA_GIFT), keep the whole flow offline — no
 // registration network calls — so screenshots are deterministic and QA never creates throwaway
@@ -52,6 +56,74 @@ final class OnboardingWindow: NSWindow {
     }
 }
 
+// MARK: - Shared motion helpers
+
+/// A soft scale-up-and-rise entrance with a whisper of overshoot, scaling around the view's own
+/// center (baked into the matrix so the default AppKit anchor point can't drift it sideways).
+private func springIn(_ view: NSView, delay: CFTimeInterval) {
+    guard let layer = view.layer else { return }
+    layer.removeAnimation(forKey: "springIn-t")
+    layer.removeAnimation(forKey: "springIn-o")
+    let c = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+    var from = CATransform3DIdentity
+    from = CATransform3DTranslate(from, 0, -14, 0)          // start a touch low (rises up)
+    from = CATransform3DTranslate(from, c.x, c.y, 0)
+    from = CATransform3DScale(from, 0.955, 0.955, 1)
+    from = CATransform3DTranslate(from, -c.x, -c.y, 0)
+
+    let now = CACurrentMediaTime()
+    let t = CABasicAnimation(keyPath: "transform")
+    t.fromValue = NSValue(caTransform3D: from)
+    t.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+    t.duration = 0.62
+    t.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.32, 0.36, 1) // ease-out-back
+    t.beginTime = now + delay
+    t.fillMode = .backwards
+    layer.add(t, forKey: "springIn-t")
+
+    let o = CABasicAnimation(keyPath: "opacity")
+    o.fromValue = 0
+    o.toValue = 1
+    o.duration = 0.42
+    o.timingFunction = CAMediaTimingFunction(name: .easeOut)
+    o.beginTime = now + delay
+    o.fillMode = .backwards
+    layer.opacity = 1
+    layer.add(o, forKey: "springIn-o")
+}
+
+/// Stagger `springIn` across a list — the one entrance choreography every page shares.
+private func cascadeIn(_ views: [NSView], base: Double = 0.05, step: Double = 0.075) {
+    for (i, v) in views.enumerated() { springIn(v, delay: base + Double(i) * step) }
+}
+
+/// Leave cleanly so a re-entry replays from a blank slate (no half-finished springs).
+private func clearEntrance(_ views: [NSView]) {
+    for v in views {
+        v.layer?.removeAnimation(forKey: "springIn-t")
+        v.layer?.removeAnimation(forKey: "springIn-o")
+        v.alphaValue = 1
+    }
+}
+
+/// A small contented pop (used when a state lands: permission granted, etc.).
+private func popLayer(of view: NSView) {
+    guard !onboardingReduceMotion(), let layer = view.layer else { return }
+    let c = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+    var up = CATransform3DIdentity
+    up = CATransform3DTranslate(up, c.x, c.y, 0)
+    up = CATransform3DScale(up, 1.05, 1.05, 1)
+    up = CATransform3DTranslate(up, -c.x, -c.y, 0)
+    let k = CAKeyframeAnimation(keyPath: "transform")
+    k.values = [NSValue(caTransform3D: CATransform3DIdentity),
+                NSValue(caTransform3D: up),
+                NSValue(caTransform3D: CATransform3DIdentity)]
+    k.keyTimes = [0, 0.4, 1]
+    k.duration = 0.34
+    k.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+    layer.add(k, forKey: "statePop")
+}
+
 // MARK: - Page base
 
 /// One onboarding page. Subclasses lay out in a flipped coordinate space sized to `pageSize`.
@@ -81,6 +153,35 @@ private func onboardingLabel(_ text: String = "", size: CGFloat, weight: NSFont.
     return f
 }
 
+// MARK: - Panel rim light
+
+/// The hairline of light that makes the panel read as a physical sheet of glass: a 1px ring plus
+/// a 2px top bevel where the aurora catches the upper edge. Purely decorative, never intercepts.
+private final class PanelRimView: NSView {
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let rr: CGFloat = 22
+        let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: rr - 0.5, yRadius: rr - 0.5)
+        ring.lineWidth = 1
+        NSColor(white: 1, alpha: 0.09).setStroke()
+        ring.stroke()
+
+        ctx.saveGState()
+        NSBezierPath(roundedRect: bounds, xRadius: rr, yRadius: rr).addClip()
+        let grad = notchGradient([
+            (NSColor(white: 1, alpha: 0.13), 0),
+            (NSColor(white: 1, alpha: 0.0), 1),
+        ])
+        ctx.drawLinearGradient(grad, start: CGPoint(x: bounds.midX, y: 0),
+                               end: CGPoint(x: bounds.midX, y: 2.5), options: [])
+        ctx.restoreGState()
+    }
+}
+
 // MARK: - View controller
 
 final class OnboardingViewController: NSViewController {
@@ -92,6 +193,7 @@ final class OnboardingViewController: NSViewController {
 
     private let aurora = AuroraBackgroundView()
     private let pageHost = OnboardingFlippedView()
+    private let rim = PanelRimView()
     private let dots = StepDotsView()
     private let backButton = GlowButton(title: "", style: .ghost)
     private let nextButton = GlowButton(title: "", style: .primary)
@@ -99,9 +201,14 @@ final class OnboardingViewController: NSViewController {
     private var pages: [OnboardingPage] = []
     private var index = 0
     private var animating = false
+    private weak var currentPageView: OnboardingPage?
+    private var didAppearOnce = false
     private var langObserver: NSObjectProtocol?
+    #if DEBUG
+    private var autoplayTimer: Timer?
+    #endif
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override func loadView() {
         let root = OnboardingFlippedView(frame: NSRect(origin: .zero, size: Self.contentSize))
@@ -133,6 +240,10 @@ final class OnboardingViewController: NSViewController {
         nextButton.onClick = { [weak self] in self?.advance() }
         root.addSubview(nextButton)
 
+        rim.frame = root.bounds
+        rim.autoresizingMask = [.width, .height]
+        root.addSubview(rim)
+
         view = root
 
         var startPage = 0
@@ -159,8 +270,30 @@ final class OnboardingViewController: NSViewController {
         }
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard !didAppearOnce else { return }
+        didAppearOnce = true
+        // The start page's entrance plays only once the window is actually on screen — running
+        // it during loadView would burn the choreography before anyone can see it.
+        pages[index].pageDidAppear()
+        #if DEBUG
+        // Visual-QA hook: NSPI_QA_AUTOPLAY=1 walks forward through the pages on a fixed beat so
+        // transitions can be captured as a burst without simulating pointer clicks.
+        if ProcessInfo.processInfo.environment["NSPI_QA_AUTOPLAY"] == "1", autoplayTimer == nil {
+            autoplayTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: true) { [weak self] t in
+                guard let self else { t.invalidate(); return }
+                if self.index < self.pages.count - 1 { self.go(+1) } else { t.invalidate() }
+            }
+        }
+        #endif
+    }
+
     deinit {
         if let langObserver { NotificationCenter.default.removeObserver(langObserver) }
+        #if DEBUG
+        autoplayTimer?.invalidate()
+        #endif
     }
 
     // MARK: Navigation
@@ -176,10 +309,14 @@ final class OnboardingViewController: NSViewController {
         showPage(target, direction: delta)
     }
 
+    /// Pages hand off with depth: the incoming page slides in on a spring and settles while the
+    /// outgoing one yields with a shorter parallax drift — two planes, one gesture. All of it is
+    /// layer-transform work (no frame animation), so there is nothing to tear or gap.
     private func showPage(_ newIndex: Int, direction: Int) {
-        let old = pageHost.subviews.first as? OnboardingPage
+        let old = currentPageView
         let page = pages[newIndex]
         index = newIndex
+        currentPageView = page
         page.onStateChange = { [weak self] in self?.updateChrome() }
         updateChrome()
 
@@ -189,29 +326,68 @@ final class OnboardingViewController: NSViewController {
         guard let old, direction != 0, !reduceMotion else {
             old?.removeFromSuperview()
             pageHost.addSubview(page)
+            if view.window != nil { page.pageDidAppear() } // initial appear is driven by viewDidAppear
+            return
+        }
+
+        animating = true
+        pageHost.addSubview(page)
+        let w = pageHost.bounds.width
+        let dir = CGFloat(direction)
+        guard let inLayer = page.layer, let outLayer = old.layer else {
+            old.removeFromSuperview()
+            animating = false
             page.pageDidAppear()
             return
         }
 
-        // Horizontal slide + crossfade, both pages moving as one strip.
-        animating = true
-        let w = pageHost.bounds.width
-        page.frame.origin.x = CGFloat(direction) * w
-        page.alphaValue = 0
-        pageHost.addSubview(page)
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.34
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            page.animator().frame.origin.x = 0
-            page.animator().alphaValue = 1
-            old.animator().frame.origin.x = CGFloat(-direction) * w * 0.55
-            old.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            old.removeFromSuperview()
-            old.alphaValue = 1
-            self?.animating = false
-            page.pageDidAppear()
-        })
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak old] in
+            old?.removeFromSuperview()
+            old?.layer?.removeAllAnimations()
+            old?.alphaValue = 1
+        }
+
+        let slideIn = CASpringAnimation(keyPath: "transform.translation.x")
+        slideIn.fromValue = dir * w * 0.42
+        slideIn.toValue = 0
+        slideIn.mass = 1
+        slideIn.stiffness = 240
+        slideIn.damping = 28
+        slideIn.duration = min(slideIn.settlingDuration, 0.85)
+        inLayer.add(slideIn, forKey: "slideIn")
+
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0
+        fadeIn.toValue = 1
+        fadeIn.duration = 0.30
+        fadeIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        inLayer.add(fadeIn, forKey: "fadeIn")
+
+        let slideOut = CABasicAnimation(keyPath: "transform.translation.x")
+        slideOut.fromValue = 0
+        slideOut.toValue = -dir * w * 0.30
+        slideOut.duration = 0.32
+        slideOut.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.4, 1)
+        slideOut.fillMode = .forwards
+        slideOut.isRemovedOnCompletion = false
+        outLayer.add(slideOut, forKey: "slideOut")
+
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1
+        fadeOut.toValue = 0
+        fadeOut.duration = 0.26
+        fadeOut.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        outLayer.add(fadeOut, forKey: "fadeOut")
+
+        CATransaction.commit()
+
+        // The new page starts its own entrance cascade while it is still gliding in — layered
+        // choreography, not queued steps. Re-arm the tap guard once the hand-off reads as done.
+        page.pageDidAppear()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) { [weak self] in self?.animating = false }
     }
 
     /// Bottom-bar state for the current page (labels follow the live language).
@@ -249,22 +425,22 @@ private final class OnboardingFlippedView: NSView {
 
 private final class WelcomePage: OnboardingPage {
     private let rose = RoseLoaderView()
-    private let title = onboardingLabel(size: 30, weight: .bold, color: .white)
-    private let tagline = onboardingLabel(size: 14, weight: .regular, color: NSColor(white: 1, alpha: 0.65))
+    private let title = onboardingLabel(size: 32, weight: .bold, color: .white)
+    private let tagline = onboardingLabel(size: 13.5, weight: .regular, color: NSColor(white: 1, alpha: 0.68))
     private var pills: [LanguagePill] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         let size = OnboardingViewController.pageSize
 
-        rose.color = .white
-        rose.frame = NSRect(x: size.width / 2 - 36, y: 58, width: 72, height: 72)
+        rose.hero = true
+        rose.frame = NSRect(x: size.width / 2 - 48, y: 56, width: 96, height: 96)
         addSubview(rose)
 
-        title.frame = NSRect(x: 40, y: 150, width: size.width - 80, height: 40)
+        title.frame = NSRect(x: 40, y: 192, width: size.width - 80, height: 42)
         addSubview(title)
 
-        tagline.frame = NSRect(x: 60, y: 196, width: size.width - 120, height: 44)
+        tagline.frame = NSRect(x: 56, y: 246, width: size.width - 112, height: 24)
         addSubview(tagline)
 
         // Language pills — preselected from the system, applied live on click.
@@ -283,7 +459,7 @@ private final class WelcomePage: OnboardingPage {
         var x = (size.width - totalW) / 2
         for pill in pills {
             let w = pill.intrinsicContentSize.width
-            pill.frame = NSRect(x: x, y: 268, width: w, height: 28)
+            pill.frame = NSRect(x: x, y: 300, width: w, height: 28)
             addSubview(pill)
             x += w + 10
         }
@@ -293,6 +469,17 @@ private final class WelcomePage: OnboardingPage {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var entranceViews: [NSView] { [rose, title, tagline] + pills }
+
+    override func pageDidAppear() {
+        guard !onboardingReduceMotion() else { return }
+        cascadeIn(entranceViews, base: 0.04, step: 0.06)
+    }
+
+    override func pageWillDisappear() {
+        clearEntrance(entranceViews)
+    }
 
     private func refreshPills() {
         let resolved = L10n.lang
@@ -307,7 +494,17 @@ private final class WelcomePage: OnboardingPage {
     }
 
     override func rebuildStrings() {
-        title.stringValue = "NotchSPI"
+        // The wordmark: crisp white with a touch of air between letters — typography, not lettering.
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        title.attributedStringValue = NSAttributedString(
+            string: "NotchSPI",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 32, weight: .bold),
+                .foregroundColor: NSColor.white,
+                .kern: 0.6,
+                .paragraphStyle: para,
+            ])
         tagline.stringValue = L10n.t(
             "藏在刘海里的解题助手 — 一按快捷键，答案悄悄浮现。",
             "ノッチにひそむ解答アシスタント — ショートカットひとつで、答えがそっと現れる。",
@@ -319,58 +516,74 @@ private final class WelcomePage: OnboardingPage {
 // MARK: - Page 2 · How it works
 
 private final class HowItWorksPage: OnboardingPage {
-    private struct Row {
-        let icon: NSImageView
-        let iconCircle: CircleIconView
-        let title: NSTextField
-        let desc: NSTextField
-    }
-
     private let heading = onboardingLabel(size: 21, weight: .bold, color: .white)
-    private var rows: [Row] = []
     private var rowContainers: [NSView] = []
-    private let connector = ConnectorThreadView()
-    private var didAnimateIn = false
+    private var titleLabels: [NSTextField] = []       // rows 2 & 3 (row 1 composes the hotkey)
+    private var descLabels: [NSTextField] = []
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    // Row 1's title is text + real (mini) keycaps, matching the "Try it" page — one visual
+    // language for "press this" everywhere. Word order differs per language (按下 ⌘1 / ⌘1 を押す),
+    // hence prefix + caps + suffix. Single-line labels: a wrapping label would fold at a tight
+    // measured width and silently swallow characters.
+    private static func hotkeyLabel() -> NSTextField {
+        let f = NSTextField(labelWithString: "")
+        f.font = .systemFont(ofSize: 14.5, weight: .semibold)
+        f.textColor = .white
+        f.alignment = .left
+        f.isSelectable = false
+        return f
+    }
+    private let hotkeyPrefix = HowItWorksPage.hotkeyLabel()
+    private let hotkeyCaps = KeycapChipView(keys: [], capSize: 20)
+    private let hotkeySuffix = HowItWorksPage.hotkeyLabel()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         let size = OnboardingViewController.pageSize
 
         heading.wantsLayer = true
-        heading.frame = NSRect(x: 40, y: 44, width: size.width - 80, height: 30)
+        heading.frame = NSRect(x: 40, y: 42, width: size.width - 80, height: 30)
         addSubview(heading)
 
-        // The connector thread is drawn first so it sits *behind* the glass circles it strings
-        // together. It runs through the three icon centers; the segment between them stays visible.
-        let firstCenterY: CGFloat = 104 + 8 + 23      // container top + circle inset + radius
-        let lastCenterY: CGFloat = firstCenterY + 84 * 2
-        connector.frame = NSRect(x: 76 + 23 - 12, y: firstCenterY, width: 24, height: lastCenterY - firstCenterY)
-        addSubview(connector)
-
-        let icons = ["keyboard", "text.viewfinder", "sparkles"]
-        var y: CGFloat = 104
-        for name in icons {
-            let container = OnboardingFlippedView(frame: NSRect(x: 76, y: y, width: size.width - 152, height: 74))
+        // Three numbered beats — the heading promises "three steps", so the steps carry their
+        // numbers. Typography does the structure: an accent numeral in the gutter, title, one
+        // line of body. No icon chrome, no containers.
+        let rowX: CGFloat = 104
+        let rowStep: CGFloat = 86
+        var y: CGFloat = 118
+        for i in 0..<3 {
+            let container = OnboardingFlippedView(frame: NSRect(x: rowX, y: y, width: size.width - rowX - 84, height: 70))
             container.wantsLayer = true
 
-            let circle = CircleIconView(symbolName: name)
-            circle.frame = NSRect(x: 0, y: 8, width: 46, height: 46)
-            container.addSubview(circle)
+            let numeral = NSTextField(labelWithString: "\(i + 1)")
+            numeral.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+            numeral.textColor = NotchPalette.accentHi
+            numeral.alignment = .left
+            numeral.frame = NSRect(x: 8, y: i == 0 ? 4 : 3, width: 24, height: 20)
+            container.addSubview(numeral)
 
-            let t = onboardingLabel(size: 14.5, weight: .semibold, color: .white, align: .left)
-            t.frame = NSRect(x: 66, y: 6, width: container.bounds.width - 66, height: 20)
-            container.addSubview(t)
+            if i == 0 {
+                // Composite hotkey title: [prefix][keycaps][suffix], laid out in rebuildStrings.
+                let strip = OnboardingFlippedView(frame: NSRect(x: 40, y: 0, width: container.bounds.width - 40, height: 28))
+                strip.addSubview(hotkeyPrefix)
+                strip.addSubview(hotkeyCaps)
+                strip.addSubview(hotkeySuffix)
+                container.addSubview(strip)
+            } else {
+                let t = onboardingLabel(size: 14.5, weight: .semibold, color: .white, align: .left)
+                t.frame = NSRect(x: 40, y: 4, width: container.bounds.width - 40, height: 20)
+                container.addSubview(t)
+                titleLabels.append(t)
+            }
 
             let d = onboardingLabel(size: 12, weight: .regular, color: NSColor(white: 1, alpha: 0.6), align: .left)
-            d.frame = NSRect(x: 66, y: 28, width: container.bounds.width - 66, height: 34)
+            d.frame = NSRect(x: 40, y: i == 0 ? 32 : 28, width: container.bounds.width - 40, height: 34)
             container.addSubview(d)
+            descLabels.append(d)
 
             addSubview(container)
             rowContainers.append(container)
-            rows.append(Row(icon: NSImageView(), iconCircle: circle, title: t, desc: d))
-            y += 84
+            y += rowStep
         }
         rebuildStrings()
     }
@@ -379,12 +592,19 @@ private final class HowItWorksPage: OnboardingPage {
 
     override func rebuildStrings() {
         heading.stringValue = L10n.t("三步，答案到手", "3ステップで答えが手に入る", "Three beats to an answer")
-        let hotkey = Settings.displayString(Settings.shared.captureCombo)
+
+        // Row 1: the hotkey as real keycaps inside the sentence.
+        let prefix = L10n.t("按下", "", "Press")
+        let suffix = L10n.t("", "を押す", "")
+        hotkeyPrefix.stringValue = prefix
+        hotkeySuffix.stringValue = suffix
+        hotkeyCaps.keys = KeycapChipView.caps(from: Settings.shared.captureCombo)
+        layoutHotkeyStrip()
+
         let texts: [(String, String)] = [
-            (L10n.t("按下 \(hotkey)", "\(hotkey) を押す", "Press \(hotkey)"),
-             L10n.t("在任何题目界面按下快捷键 — 网页、PDF、题库软件都可以。",
-                    "問題が表示されている画面ならどこでも — Web、PDF、テストアプリでもOK。",
-                    "On any screen with a question — web pages, PDFs, quiz apps, anything.")),
+            ("", L10n.t("在任何题目界面按下快捷键 — 网页、PDF、题库软件都可以。",
+                        "問題が表示されている画面ならどこでも — Web、PDF、テストアプリでもOK。",
+                        "On any screen with a question — web pages, PDFs, quiz apps, anything.")),
             (L10n.t("屏幕被轻轻读取", "画面をそっと読み取る", "Your screen is read, gently"),
              L10n.t("NotchSPI 截取当前画面并识别其中的题目，全程无需复制粘贴。",
                     "NotchSPI が画面を読み取り問題を認識。コピー&ペーストは不要。",
@@ -394,219 +614,69 @@ private final class HowItWorksPage: OnboardingPage {
                     "解説がノッチの下に少しずつ現れます。画面録画や共有には映りません。",
                     "The explanation streams in below the notch — invisible to recordings and screen shares.")),
         ]
-        for (i, row) in rows.enumerated() {
-            row.title.stringValue = texts[i].0
-            row.desc.stringValue = texts[i].1
+        for (i, d) in descLabels.enumerated() { d.stringValue = texts[i].1 }
+        for (i, t) in titleLabels.enumerated() { t.stringValue = texts[i + 1].0 }
+    }
+
+    /// Position [prefix][caps][suffix] as one text line, caps optically centered on the cap line.
+    private func layoutHotkeyStrip() {
+        let gap: CGFloat = 7
+        let stripH: CGFloat = 28
+        var x: CGFloat = 0
+        hotkeyPrefix.sizeToFit()
+        if !hotkeyPrefix.stringValue.isEmpty {
+            hotkeyPrefix.frame.origin = NSPoint(x: 0, y: (stripH - hotkeyPrefix.frame.height) / 2)
+            x = hotkeyPrefix.frame.maxX + gap
+        } else {
+            hotkeyPrefix.frame = .zero
+        }
+        let capsSize = hotkeyCaps.intrinsicContentSize
+        hotkeyCaps.frame = NSRect(x: x, y: (stripH - capsSize.height) / 2,
+                                  width: capsSize.width, height: capsSize.height)
+        x += capsSize.width
+        hotkeySuffix.sizeToFit()
+        if !hotkeySuffix.stringValue.isEmpty {
+            hotkeySuffix.frame.origin = NSPoint(x: x + gap, y: (stripH - hotkeySuffix.frame.height) / 2)
+        } else {
+            hotkeySuffix.frame = .zero
         }
     }
 
     override func pageDidAppear() {
-        guard !reduceMotion else {
-            // Reduce Motion: everything already sits at its resting pose; just draw the thread.
-            connector.showComplete()
-            rowContainers.forEach { $0.layer?.removeAllAnimations(); $0.alphaValue = 1 }
+        guard !onboardingReduceMotion() else {
+            clearEntrance([heading] + rowContainers)
             return
         }
-        // Choreographed cascade: heading leads, the three beats settle in on a soft spring, the
-        // thread draws down through them, and each icon gives a single quiet ping as it lands.
-        didAnimateIn = true
+        // Choreographed cascade: heading leads, the three beats settle in on a soft spring.
         springIn(heading, delay: 0)
-        connector.animateIn(delay: 0.16)
         for (i, container) in rowContainers.enumerated() {
-            let delay = 0.10 + Double(i) * 0.11
-            springIn(container, delay: delay)
-            let circle = rows[i].iconCircle
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.24) { [weak circle] in
-                circle?.ping()
-            }
+            springIn(container, delay: 0.10 + Double(i) * 0.11)
         }
     }
 
     override func pageWillDisappear() {
-        // Leave cleanly so a re-entry replays from a blank slate (no half-finished springs).
-        connector.reset()
-        heading.layer?.removeAllAnimations()
-        heading.alphaValue = 1
-        for container in rowContainers {
-            container.layer?.removeAllAnimations()
-            container.alphaValue = 1
-        }
-    }
-
-    /// A soft scale-up-and-rise entrance with a whisper of overshoot, scaling around the view's own
-    /// center (baked into the matrix so the default AppKit anchor point can't drift it sideways).
-    private func springIn(_ view: NSView, delay: CFTimeInterval) {
-        guard let layer = view.layer else { return }
-        layer.removeAnimation(forKey: "springIn-t")
-        layer.removeAnimation(forKey: "springIn-o")
-        let c = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
-        var from = CATransform3DIdentity
-        from = CATransform3DTranslate(from, 0, -14, 0)          // start a touch low (rises up)
-        from = CATransform3DTranslate(from, c.x, c.y, 0)
-        from = CATransform3DScale(from, 0.955, 0.955, 1)
-        from = CATransform3DTranslate(from, -c.x, -c.y, 0)
-
-        let now = CACurrentMediaTime()
-        let t = CABasicAnimation(keyPath: "transform")
-        t.fromValue = NSValue(caTransform3D: from)
-        t.toValue = NSValue(caTransform3D: CATransform3DIdentity)
-        t.duration = 0.62
-        t.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1.32, 0.36, 1) // ease-out-back
-        t.beginTime = now + delay
-        t.fillMode = .backwards
-        layer.add(t, forKey: "springIn-t")
-
-        let o = CABasicAnimation(keyPath: "opacity")
-        o.fromValue = 0
-        o.toValue = 1
-        o.duration = 0.42
-        o.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        o.beginTime = now + delay
-        o.fillMode = .backwards
-        layer.opacity = 1
-        layer.add(o, forKey: "springIn-o")
-    }
-}
-
-/// A hairline of brand light strung vertically through the three icon circles, drawn on its own
-/// clock so it can "grow" downward as the beats land — a small designed detail that ties the three
-/// steps into one thought (and reads as deliberate, not stock).
-private final class ConnectorThreadView: NSView {
-    private var progress: CGFloat = 0
-    private var link: CADisplayLink?
-    private var startAt: CFTimeInterval = 0
-    private let duration: CFTimeInterval = 0.66
-
-    override var isFlipped: Bool { true }            // draw top→bottom, matching the page
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func animateIn(delay: CFTimeInterval) {
-        progress = 0
-        needsDisplay = true
-        startAt = CACurrentMediaTime() + delay
-        if link == nil {
-            let l = displayLink(target: self, selector: #selector(tick))
-            l.add(to: .main, forMode: .common)
-            link = l
-        }
-        link?.isPaused = false
-    }
-    func showComplete() { link?.isPaused = true; progress = 1; needsDisplay = true }
-    func reset() { link?.isPaused = true; progress = 0; needsDisplay = true }
-
-    @objc private func tick() {
-        let raw = (CACurrentMediaTime() - startAt) / duration
-        guard raw >= 0 else { return }
-        let t = min(1, raw)
-        progress = t * t * (3 - 2 * t)               // smoothstep
-        needsDisplay = true
-        if t >= 1 { link?.isPaused = true }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard progress > 0.001, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let x = bounds.width / 2
-        let h = bounds.height * progress
-
-        // The thread: a 2pt vertical gradient, brighter at the top where the first beat anchors it.
-        let lineRect = NSRect(x: x - 1, y: 0, width: 2, height: h)
-        ctx.saveGState()
-        NSBezierPath(roundedRect: lineRect, xRadius: 1, yRadius: 1).addClip()
-        let grad = notchGradient([
-            (NotchPalette.accentHi.withAlphaComponent(0.55), 0),
-            (NotchPalette.accent.withAlphaComponent(0.22), 1),
-        ])
-        ctx.drawLinearGradient(grad, start: CGPoint(x: x, y: 0),
-                               end: CGPoint(x: x, y: bounds.height), options: [])
-        ctx.restoreGState()
-
-        // A soft glowing tip while it's still growing.
-        if progress < 0.999 {
-            ctx.saveGState()
-            ctx.setBlendMode(.plusLighter)
-            let tip = CGPoint(x: x, y: h)
-            let space = CGColorSpace(name: CGColorSpace.sRGB)!
-            let c = (NotchPalette.accentHi.usingColorSpace(.sRGB) ?? NotchPalette.accentHi)
-            if let g = CGGradient(colorsSpace: space,
-                                  colors: [c.withAlphaComponent(0.8).cgColor,
-                                           c.withAlphaComponent(0).cgColor] as CFArray, locations: [0, 1]) {
-                ctx.drawRadialGradient(g, startCenter: tip, startRadius: 0, endCenter: tip, endRadius: 9, options: [])
-            }
-            c.withAlphaComponent(0.95).setFill()
-            NSBezierPath(ovalIn: NSRect(x: tip.x - 1.6, y: tip.y - 1.6, width: 3.2, height: 3.2)).fill()
-            ctx.restoreGState()
-        }
-    }
-
-    deinit { link?.invalidate() }
-}
-
-/// A soft glass circle holding a tinted SF Symbol — the "how it works" iconography. Layer-backed so
-/// it can emit a single expanding "ping" ring as its beat lands.
-private final class CircleIconView: NSView {
-    private let symbolName: String
-
-    init(symbolName: String) {
-        self.symbolName = symbolName
-        super.init(frame: .zero)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1))
-        NotchPalette.accent.withAlphaComponent(0.14).setFill()
-        circle.fill()
-        circle.lineWidth = 1
-        NotchPalette.accentHi.withAlphaComponent(0.35).setStroke()
-        circle.stroke()
-        if let img = notchTintedSymbol(symbolName, pointSize: 19, weight: .medium, color: NotchPalette.accentHi) {
-            let s = img.size
-            img.draw(in: NSRect(x: bounds.midX - s.width / 2, y: bounds.midY - s.height / 2,
-                                width: s.width, height: s.height))
-        }
-    }
-
-    /// One quiet ring that expands and fades — a beat landing, not a spinner.
-    func ping() {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let host = layer else { return }
-        let ring = CAShapeLayer()
-        ring.path = CGPath(ellipseIn: bounds.insetBy(dx: 1, dy: 1), transform: nil)
-        ring.fillColor = nil
-        ring.strokeColor = NotchPalette.accentHi.withAlphaComponent(0.7).cgColor
-        ring.lineWidth = 1.5
-        ring.frame = bounds
-        ring.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        ring.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        host.addSublayer(ring)
-
-        let scale = CABasicAnimation(keyPath: "transform.scale")
-        scale.fromValue = 0.85
-        scale.toValue = 1.9
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0.75
-        fade.toValue = 0
-        let group = CAAnimationGroup()
-        group.animations = [scale, fade]
-        group.duration = 0.72
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        group.isRemovedOnCompletion = true
-        ring.opacity = 0
-        ring.add(group, forKey: "ping")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.74) { [weak ring] in ring?.removeFromSuperlayer() }
+        clearEntrance([heading] + rowContainers)
     }
 }
 
 // MARK: - Page 3 · Screen access
 
 private final class PermissionPage: OnboardingPage {
-    private let icon = CircleIconView(symbolName: "rectangle.inset.filled.badge.record")
+    // A bare tinted symbol — the system's own iconography, no decorative container.
+    private let icon: NSImageView = {
+        let iv = NSImageView()
+        iv.image = notchTintedSymbol("rectangle.inset.filled.badge.record", pointSize: 44,
+                                     weight: .regular, color: NotchPalette.accentHi)
+        iv.imageScaling = .scaleNone
+        iv.wantsLayer = true
+        return iv
+    }()
     private let heading = onboardingLabel(size: 21, weight: .bold, color: .white)
     private let body = onboardingLabel(size: 13, weight: .regular, color: NSColor(white: 1, alpha: 0.65))
     private let grantButton = GlowButton(title: "", style: .primary)
-    private let statusLabel = onboardingLabel(size: 13, weight: .medium, color: NotchPalette.accentHi)
+    private let statusLabel = onboardingLabel(size: 13, weight: .medium, color: NSColor(white: 1, alpha: 0.45))
     private var pollTimer: Timer?
+    private var wasGranted = false
 
     private var granted: Bool { CGPreflightScreenCaptureAccess() }
 
@@ -614,25 +684,28 @@ private final class PermissionPage: OnboardingPage {
         super.init(frame: frameRect)
         let size = OnboardingViewController.pageSize
 
-        icon.frame = NSRect(x: size.width / 2 - 30, y: 48, width: 60, height: 60)
+        icon.frame = NSRect(x: size.width / 2 - 36, y: 64, width: 72, height: 72)
         addSubview(icon)
 
-        heading.frame = NSRect(x: 40, y: 126, width: size.width - 80, height: 30)
+        heading.frame = NSRect(x: 40, y: 158, width: size.width - 80, height: 30)
         addSubview(heading)
 
-        body.frame = NSRect(x: 78, y: 162, width: size.width - 156, height: 62)
+        body.frame = NSRect(x: 75, y: 196, width: size.width - 150, height: 62)
         addSubview(body)
 
         grantButton.onClick = { [weak self] in self?.grantTapped() }
         addSubview(grantButton)
 
-        statusLabel.frame = NSRect(x: 40, y: 292, width: size.width - 80, height: 22)
+        statusLabel.frame = NSRect(x: 40, y: 332, width: size.width - 80, height: 22)
         addSubview(statusLabel)
 
+        wasGranted = granted
         rebuildStrings()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var entranceViews: [NSView] { [icon, heading, body, grantButton, statusLabel] }
 
     override func rebuildStrings() {
         heading.stringValue = L10n.t("允许 NotchSPI 看到屏幕", "画面へのアクセスを許可", "Let NotchSPI see your screen")
@@ -640,16 +713,39 @@ private final class PermissionPage: OnboardingPage {
             "为了读取屏幕上的题目，需要你在系统设置里勾选「屏幕录制」权限。截图只在按下快捷键的那一刻发生，用完即删。",
             "画面上の問題を読み取るために、システム設定で「画面収録」の許可が必要です。撮影はショートカットを押した瞬間だけ。使用後は即座に削除されます。",
             "To read questions on your screen, macOS asks you to allow Screen Recording. A capture happens only at the moment you press the hotkey, and is deleted right after use.")
-        layoutButton()
         refreshStatus(animated: false)
     }
 
+    /// One control tells the whole story: a primary "grant" action before, a quiet green settled
+    /// chip after — never a bright button that no longer does anything.
+    private func refreshStatus(animated: Bool) {
+        if granted {
+            grantButton.style = .confirm
+            grantButton.title = L10n.t("✓ 已授权，一切就绪", "✓ 許可されました。準備完了", "✓ Granted — all set")
+            statusLabel.isHidden = true
+            pollTimer?.invalidate()
+            pollTimer = nil
+        } else {
+            grantButton.style = .primary
+            grantButton.title = L10n.t("去授权", "許可する", "Grant Access")
+            statusLabel.isHidden = false
+            statusLabel.stringValue = L10n.t("尚未授权 — 也可以稍后在需要时再开",
+                                             "未許可 — あとで必要になったときでもOK",
+                                             "Not granted yet — you can also do this later")
+        }
+        layoutButton()
+        if animated, granted, !wasGranted {
+            // The grant lands live (user returns from System Settings): the chip morph gets a
+            // contented pop — the moment is acknowledged, not just repainted.
+            popLayer(of: grantButton)
+            popLayer(of: icon)
+        }
+        wasGranted = granted
+    }
+
     private func layoutButton() {
-        grantButton.title = granted
-            ? L10n.t("已授权", "許可済み", "Access granted")
-            : L10n.t("去授权", "許可する", "Grant Access")
         let w = grantButton.intrinsicContentSize.width
-        grantButton.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 244, width: w, height: 34)
+        grantButton.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 276, width: w, height: 34)
         grantButton.needsDisplay = true
     }
 
@@ -662,30 +758,13 @@ private final class PermissionPage: OnboardingPage {
         }
     }
 
-    private func refreshStatus(animated: Bool) {
-        if granted {
-            statusLabel.textColor = NSColor(srgbRed: 0.45, green: 0.85, blue: 0.60, alpha: 1)
-            statusLabel.stringValue = L10n.t("✓ 已授权，一切就绪", "✓ 許可されました。準備完了", "✓ Granted — all set")
-            pollTimer?.invalidate()
-            pollTimer = nil
-            if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                statusLabel.alphaValue = 0
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.5
-                    statusLabel.animator().alphaValue = 1
-                }
-            }
-        } else {
-            statusLabel.textColor = NSColor(white: 1, alpha: 0.45)
-            statusLabel.stringValue = L10n.t("尚未授权 — 也可以稍后在需要时再开", "未許可 — あとで必要になったときでもOK", "Not granted yet — you can also do this later")
-        }
-        layoutButton()
-    }
-
     override func pageDidAppear() {
         refreshStatus(animated: false)
+        if !onboardingReduceMotion() {
+            cascadeIn(entranceViews, base: 0.04, step: 0.07)
+        }
         guard !granted, pollTimer == nil else { return }
-        // Live-poll while the user is off in System Settings; the green check appears by itself.
+        // Live-poll while the user is off in System Settings; the green chip appears by itself.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             if self.granted { self.refreshStatus(animated: true) }
@@ -695,6 +774,7 @@ private final class PermissionPage: OnboardingPage {
     override func pageWillDisappear() {
         pollTimer?.invalidate()
         pollTimer = nil
+        clearEntrance(entranceViews)
     }
 
     deinit { pollTimer?.invalidate() }
@@ -702,11 +782,12 @@ private final class PermissionPage: OnboardingPage {
 
 // MARK: - Page 4 · The gift  (claim-to-reveal)
 
-/// The welcome gift is now *earned by a tap*: a sealed brand medallion the player opens to reveal a
+/// The welcome gift is *earned by a tap*: a sealed brand medallion the player opens to reveal a
 /// randomly-granted free balance (100–180, decided server-side at registration — see OfficialAPI /
 /// the register route). Opening plays a charge→break→count-up→burst sequence; the odometer lands on
 /// the real granted number. "Continue" stays hidden until the claim gesture, so the step can't be
 /// skipped past — but Back and Esc always work, and the gate flips on the tap, never on the network.
+/// The medallion itself is the hero and the button; the capsule below is a quiet secondary path.
 private final class GiftPage: OnboardingPage {
     private enum Phase { case sealed, revealing, revealed }
 
@@ -715,14 +796,13 @@ private final class GiftPage: OnboardingPage {
     private let odometer = DigitOdometerView()
     private let burst = RewardBurstView()
     private let caption = onboardingLabel(size: 12.5, weight: .regular, color: NSColor(white: 1, alpha: 0.5))
-    private let claimButton = GlowButton(title: "", style: .primary)
+    private let claimButton = GlowButton(title: "", style: .secondary)
     private let note = onboardingLabel(size: 13, weight: .regular, color: NSColor(white: 1, alpha: 0.66))
 
     private var phase: Phase = .sealed
     private var hasClaimed = false
-    private var didEnterOnce = false
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
     override var allowsAdvance: Bool { hasClaimed }
 
     override init(frame frameRect: NSRect) {
@@ -730,12 +810,12 @@ private final class GiftPage: OnboardingPage {
         let size = OnboardingViewController.pageSize
         let cx = size.width / 2
 
-        heading.frame = NSRect(x: 40, y: 40, width: size.width - 80, height: 30)
+        heading.frame = NSRect(x: 40, y: 38, width: size.width - 80, height: 30)
         addSubview(heading)
 
         // Seal + odometer share the same optical center so the number emerges where the seal broke.
-        let sealSide: CGFloat = 132
-        let sealCenterY: CGFloat = 142
+        let sealSide: CGFloat = 148
+        let sealCenterY: CGFloat = 168
         seal.frame = NSRect(x: cx - sealSide / 2, y: sealCenterY - sealSide / 2, width: sealSide, height: sealSide)
         seal.onClick = { [weak self] in self?.claim() }
         addSubview(seal)
@@ -747,13 +827,13 @@ private final class GiftPage: OnboardingPage {
         addSubview(odometer)
 
         caption.alignment = .center
-        caption.frame = NSRect(x: 40, y: 226, width: size.width - 80, height: 20)
+        caption.frame = NSRect(x: 40, y: 258, width: size.width - 80, height: 20)
         addSubview(caption)
 
         claimButton.onClick = { [weak self] in self?.claim() }
         addSubview(claimButton) // framed in rebuildStrings once its title width is known
 
-        note.frame = NSRect(x: 66, y: 232, width: size.width - 132, height: 56)
+        note.frame = NSRect(x: 66, y: 254, width: size.width - 132, height: 56)
         note.alphaValue = 0
         addSubview(note)
 
@@ -772,9 +852,9 @@ private final class GiftPage: OnboardingPage {
             ? L10n.t("你的见面礼", "はじめましての贈りもの", "A little welcome gift")
             : L10n.t("见面礼已到账", "贈りもの、届きました", "Your gift has arrived")
         odometer.suffix = L10n.t("题", "問", "questions")
-        caption.stringValue = L10n.t("轻点礼物，领取你的专属额度 · 数量随机",
-                                     "ギフトをタップして受け取る · 数量はランダム",
-                                     "Tap the gift to claim your questions · amount is random")
+        caption.stringValue = L10n.t("轻点领取 · 随机 100–180 题",
+                                     "タップして受け取る · 100–180問からランダム",
+                                     "Tap to claim · a random 100–180 questions")
         claimButton.title = L10n.t("领取见面礼", "受け取る", "Claim gift")
         layoutClaimButton()
         if phase == .revealed { note.stringValue = noteText() }
@@ -782,7 +862,7 @@ private final class GiftPage: OnboardingPage {
 
     private func layoutClaimButton() {
         let w = claimButton.intrinsicContentSize.width
-        claimButton.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 252, width: w, height: 40)
+        claimButton.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 290, width: w, height: 34)
         claimButton.needsDisplay = true
     }
 
@@ -899,7 +979,7 @@ private final class GiftPage: OnboardingPage {
     // MARK: Appearance
 
     override func pageDidAppear() {
-        if phase == .revealed {
+        if phase != .sealed {
             // Returning to an already-claimed gift: show the settled state, no re-animation.
             seal.isHidden = true
             caption.isHidden = true
@@ -916,22 +996,17 @@ private final class GiftPage: OnboardingPage {
         #if DEBUG
         // Visual-QA: NSPI_QA_AUTOCLAIM=1 fires the claim automatically (pair with NSPI_QA_GIFT=N)
         // so the reveal sequence can be screenshotted without simulating a pointer click.
-        if phase == .sealed, ProcessInfo.processInfo.environment["NSPI_QA_AUTOCLAIM"] == "1" {
+        if ProcessInfo.processInfo.environment["NSPI_QA_AUTOCLAIM"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.claim() }
         }
         #endif
 
-        guard !didEnterOnce, !reduceMotion else { return }
-        didEnterOnce = true
-        // A soft one-time entrance for the sealed medallion after the page slides in.
-        seal.alphaValue = 0
-        caption.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.5
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            seal.animator().alphaValue = 1
-            caption.animator().alphaValue = 1
-        }
+        guard !reduceMotion else { return }
+        cascadeIn([heading, seal, caption, claimButton], base: 0.04, step: 0.08)
+    }
+
+    override func pageWillDisappear() {
+        clearEntrance([heading, seal, caption, claimButton])
     }
 }
 
@@ -939,8 +1014,8 @@ private final class GiftPage: OnboardingPage {
 
 private final class TryItPage: OnboardingPage {
     private let heading = onboardingLabel(size: 21, weight: .bold, color: .white)
-    private let card = DemoQuestionCard(frame: NSRect(x: 0, y: 0, width: 420, height: 84))
-    private let keycaps = KeycapChipView(keys: [], capSize: 40)
+    private let card = DemoQuestionCard(frame: NSRect(x: 0, y: 0, width: 440, height: 72))
+    private let keycaps = KeycapChipView(keys: [], capSize: 44)
     private let hint = onboardingLabel(size: 13, weight: .regular, color: NSColor(white: 1, alpha: 0.65))
     private let subHint = onboardingLabel(size: 12, weight: .regular, color: NSColor(white: 1, alpha: 0.45))
 
@@ -948,19 +1023,19 @@ private final class TryItPage: OnboardingPage {
         super.init(frame: frameRect)
         let size = OnboardingViewController.pageSize
 
-        heading.frame = NSRect(x: 40, y: 40, width: size.width - 80, height: 30)
+        heading.frame = NSRect(x: 40, y: 36, width: size.width - 80, height: 30)
         addSubview(heading)
 
-        card.frame.origin = NSPoint(x: (size.width - 420) / 2, y: 86)
+        card.frame.origin = NSPoint(x: (size.width - 440) / 2, y: 96)
         addSubview(card)
 
         keycaps.wantsLayer = true
         addSubview(keycaps)
 
-        hint.frame = NSRect(x: 70, y: 254, width: size.width - 140, height: 40)
+        hint.frame = NSRect(x: 56, y: 284, width: size.width - 112, height: 20)
         addSubview(hint)
 
-        subHint.frame = NSRect(x: 70, y: 300, width: size.width - 140, height: 50)
+        subHint.frame = NSRect(x: 56, y: 318, width: size.width - 112, height: 48)
         addSubview(subHint)
 
         rebuildStrings()
@@ -968,25 +1043,26 @@ private final class TryItPage: OnboardingPage {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    private var entranceViews: [NSView] { [heading, card, keycaps, hint, subHint] }
+
     override func rebuildStrings() {
         heading.stringValue = L10n.t("现在就试一题", "さっそく1問解いてみよう", "Try one right now")
-        card.setTexts(
-            badge: L10n.t("示例题目", "サンプル問題", "SAMPLE QUESTION"),
-            question: L10n.t("解方程：x² − 5x + 6 = 0",
-                             "解きなさい：x² − 5x + 6 = 0",
-                             "Solve: x² − 5x + 6 = 0"))
+        card.setQuestion(L10n.t("解方程：x² − 5x + 6 = 0",
+                                "解きなさい：x² − 5x + 6 = 0",
+                                "Solve: x² − 5x + 6 = 0"))
         keycaps.keys = KeycapChipView.caps(from: Settings.shared.captureCombo)
         let w = keycaps.intrinsicContentSize.width
-        keycaps.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 194,
+        keycaps.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 214,
                                width: w, height: keycaps.intrinsicContentSize.height)
+        // One instruction, one line. The notch demonstrates the rest itself.
         hint.stringValue = L10n.t(
-            "就停在这个页面，按下组合键 — 上面这道题的答案会从屏幕顶部的刘海里浮现。",
-            "このページのまま、このキーを押すだけ — 上の問題の答えが画面上部のノッチから現れます。",
-            "Stay right here and press these keys — the answer to the question above appears from the notch at the top of your screen.")
+            "按下组合键。",
+            "このキーを押すだけ。",
+            "Press these keys.")
         subHint.stringValue = L10n.t(
-            "之后在任何题目界面都能这样用。快捷键、语言、外观？都在刘海右侧的 ⚙ 设置里。",
-            "この先はどんな問題画面でも同じように使えます。ショートカットや言語、外観はノッチ右側の ⚙ 設定から。",
-            "From now on this works on any question, anywhere. Hotkeys, language, appearance — all in ⚙ Settings, at the right edge of the notch.")
+            "之后在任何题目界面都能这样用。\n快捷键、语言、外观，都在刘海右侧的 ⚙ 设置里。",
+            "この先はどんな問題画面でも同じように使えます。\nショートカットや言語、外観はノッチ右側の ⚙ 設定から。",
+            "From now on this works on any question, anywhere. Hotkeys, language,\nappearance — all in ⚙ Settings, at the right edge of the notch.")
     }
 
     // The hotkey capture must SEE the sample question: SCScreenshotManager honors sharingType
@@ -1001,57 +1077,45 @@ private final class TryItPage: OnboardingPage {
 
     override func pageDidAppear() {
         window?.sharingType = .readWrite
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              let layer = keycaps.layer else { return }
-        // A gentle "press me" pulse on the keycaps.
-        let pulse = CABasicAnimation(keyPath: "transform.scale")
-        pulse.fromValue = 1.0
-        pulse.toValue = 0.96
-        pulse.duration = 0.9
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        layer.position = CGPoint(x: keycaps.frame.midX, y: keycaps.frame.midY)
-        layer.add(pulse, forKey: "pressPulse")
+        guard !onboardingReduceMotion() else { return }
+        cascadeIn(entranceViews, base: 0.04, step: 0.07)
     }
 
     override func pageWillDisappear() {
         window?.sharingType = ScreenShareGuard.windowSharingType
-        keycaps.layer?.removeAnimation(forKey: "pressPulse")
+        clearEntrance(entranceViews)
     }
 }
 
-/// A glass card printing a real sample question on the page, so the very first hotkey press has
-/// something to answer. Pairs with TryItPage.pageDidAppear flipping the window to `.readWrite`:
-/// without that, SCK would drop the (normally capture-hidden) onboarding window from the shot
-/// and the model would never see this card.
+/// A quiet surface printing a real sample question on the page, so the very first hotkey press
+/// has something to answer. Pairs with TryItPage.pageDidAppear flipping the window to
+/// `.readWrite`: without that, SCK would drop the (normally capture-hidden) onboarding window
+/// from the shot and the model would never see this question.
 private final class DemoQuestionCard: NSView {
     override var isFlipped: Bool { true }
-    private let badge = onboardingLabel(size: 11, weight: .semibold, color: NotchPalette.accentHi)
     private let question = onboardingLabel(size: 22, weight: .semibold, color: .white)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        badge.frame = NSRect(x: 20, y: 15, width: frameRect.width - 40, height: 15)
-        addSubview(badge)
-        question.frame = NSRect(x: 20, y: 38, width: frameRect.width - 40, height: 30)
+        question.frame = NSRect(x: 20, y: (frameRect.height - 32) / 2, width: frameRect.width - 40, height: 32)
         addSubview(question)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setTexts(badge: String, question: String) {
-        self.badge.stringValue = badge
-        self.question.stringValue = question
+    func setQuestion(_ text: String) {
+        question.stringValue = text
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14)
-        NotchPalette.accent.withAlphaComponent(0.10).setFill()
+        // A quiet document surface — this is the exhibit the capture will read, not a feature
+        // card. One elevated fill, one hairline; the typography carries it.
+        let r = bounds.insetBy(dx: 1, dy: 1)
+        let path = NSBezierPath(roundedRect: r, xRadius: 14, yRadius: 14)
+        NSColor(white: 1, alpha: 0.045).setFill()
         path.fill()
         path.lineWidth = 1
-        NotchPalette.accentHi.withAlphaComponent(0.30).setStroke()
+        NSColor(white: 1, alpha: 0.11).setStroke()
         path.stroke()
     }
 }
