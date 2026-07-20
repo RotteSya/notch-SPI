@@ -537,6 +537,7 @@ private final class NotchCapsuleButton: NSControl {
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NotchPalette.secondary,
             ])
+            setAccessibilityLabel(title)
             invalidateIntrinsicContentSize()
             needsDisplay = true
         }
@@ -546,6 +547,14 @@ private final class NotchCapsuleButton: NSControl {
     private let hPad: CGFloat = 8, vPad: CGFloat = 3
     private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
     private var trackingAreaRef: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -581,5 +590,10 @@ private final class NotchCapsuleButton: NSControl {
     override func mouseUp(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         if bounds.contains(p) { onClick?() }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
     }
 }

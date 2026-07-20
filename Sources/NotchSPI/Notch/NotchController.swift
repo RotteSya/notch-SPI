@@ -1,8 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
 
+@MainActor
 final class NotchController: NSObject {
     let model = TutorModel()
+    private let personalitySession = PersonalitySession()
     private let panel: NotchPanel
     private var notchView: NotchView!
     private var hovering = false
@@ -13,8 +15,51 @@ final class NotchController: NSObject {
     private var settingsController: MainSettingsWindowController?
     private var onboardingWindow: NSWindow?
     private var observers: [NSObjectProtocol] = []
+    private var observedPersonalityScope: PersonalitySessionScope?
 
     private let expandedWidth: CGFloat = 600
+
+    private struct RunSnapshot {
+        let mode: String
+        let depth: String
+        let personaID: String
+        let personaName: String
+        let personaText: String
+        let captureTarget: CaptureTarget
+        let channel: ServiceChannel
+        let cliID: String
+        let provider: APIProvider
+        let apiEndpoint: String
+        let apiModel: String
+
+        var captureTargetID: String {
+            switch captureTarget {
+            case .fullScreen: return "full-screen"
+            case .app(let bundleID): return "app:\(bundleID)"
+            }
+        }
+
+        var channelID: String {
+            switch channel {
+            case .official:
+                return "official:\(OfficialAPI.baseURL)"
+            case .customKey:
+                return "custom:\(provider.id):\(apiEndpoint):\(apiModel)"
+            case .cli:
+                return "cli:\(cliID)"
+            }
+        }
+
+        var personalityScope: PersonalitySessionScope {
+            PersonalitySessionScope(
+                personaID: personaID,
+                personaName: personaName,
+                personaText: personaText,
+                captureTargetID: captureTargetID,
+                channelID: channelID
+            )
+        }
+    }
 
     override init() {
         panel = NotchPanel(contentRect: .zero)
@@ -47,10 +92,10 @@ final class NotchController: NSObject {
         // Language / theme switches re-render the always-visible notch immediately.
         observers.append(NotificationCenter.default.addObserver(
             forName: L10n.languageDidChange, object: nil, queue: .main
-        ) { [weak self] _ in self?.refreshAfterLanguageChange() })
+        ) { [weak self] _ in Task { @MainActor in self?.refreshAfterLanguageChange() } })
         observers.append(NotificationCenter.default.addObserver(
             forName: Appearance.themeDidChange, object: nil, queue: .main
-        ) { [weak self] _ in self?.refreshAppearance() })
+        ) { [weak self] _ in Task { @MainActor in self?.refreshAppearance() } })
 
         // Pre-enumerate shareable content so the first hotkey press skips the ~100–300ms
         // window-server enumeration; kept fresh after each shot and across display changes.
@@ -176,6 +221,11 @@ final class NotchController: NSObject {
         検算：A=−30 < D=−20 < B=−10 < C=0 < E=20 ✓ 最小は A
         FINAL: **ADBCE**（A=−30 が最小）
         """
+        let personalityFixture = """
+        1. やや当てはまる
+        2. Bに近い
+        NSPI_CONTEXT_V1: {"last":{"ordinal":"2","summary":"二つの行動傾向から近い方を選ぶ項目","choice":"Bに近い"},"referenceable":[{"ordinal":"1","summary":"新しい役割を自分から引き受ける傾向","choice":"やや当てはまる"}]}
+        """
         switch state {
         case "running":
             model.answer = ""; model.status = .running; model.statusText = L10n.statusPreparing
@@ -221,6 +271,37 @@ final class NotchController: NSObject {
             model.status = .idle
             model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
             setExpanded(true); resizeToFit()
+        case "personality", "personality-menu":
+            // Repeatable end-to-end QA for the session reset affordance. This seeds one real,
+            // parser-validated in-memory record, renders the untouched raw protocol stream, and
+            // optionally opens the same gear menu used in production. `--visual-qa` only changes
+            // window sharing in DEBUG; menu construction, action dispatch, and reset semantics
+            // stay on the production path.
+            Settings.shared.mode = "personality"
+            Settings.shared.personaName = "QA Persona"
+            Settings.shared.personaText = "慎重だが一貫し、必要な場面では明確に判断する。"
+            model.mode = "personality"
+            model.modeLabel = L10n.modePersonality
+            model.personaLabel = "QA Persona"
+            model.answer = personalityFixture
+            model.status = .idle
+            model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
+
+            let scope = makeRunSnapshot(mode: "personality").personalityScope
+            personalitySession.reset(reason: .manual)
+            let token = personalitySession.begin(scope: scope)
+            if let context = PersonalityAnswer.compose(
+                raw: personalityFixture, streaming: false
+            ).context {
+                _ = personalitySession.record(context, token: token)
+            }
+            observedPersonalityScope = scope
+            setExpanded(true); resizeToFit()
+            if state == "personality-menu" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                    self?.showSettings()
+                }
+            }
         case "cycle":  // expand ⇄ collapse forever — for filming both morph directions
             model.answer = fixture; model.status = .idle
             model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(179)
@@ -343,6 +424,17 @@ final class NotchController: NSObject {
             menu.addItem(.separator())
         }
 
+        if Settings.shared.mode == "personality" {
+            let fresh = NSMenuItem(
+                title: L10n.startNewQuestionnaire,
+                action: #selector(startNewQuestionnaire),
+                keyEquivalent: ""
+            )
+            fresh.target = self
+            menu.addItem(fresh)
+            menu.addItem(.separator())
+        }
+
         let savedID = Settings.shared.captureTargetBundleID
         let savedName = Settings.shared.captureTargetName ?? savedID ?? ""
         let targetItem = NSMenuItem(
@@ -397,6 +489,7 @@ final class NotchController: NSObject {
             Settings.shared.captureTargetBundleID = nil
             Settings.shared.captureTargetName = nil
         }
+        invalidatePersonalitySessionIfScopeChanged()
     }
 
     @objc private func pickDepth(_ sender: NSMenuItem) {
@@ -409,6 +502,13 @@ final class NotchController: NSObject {
         guard let id = sender.representedObject as? String else { return }
         PersonaStore.shared.setActive(id)
         refreshModeLabels()
+        invalidatePersonalitySessionIfScopeChanged()
+    }
+
+    @objc private func startNewQuestionnaire() {
+        personalitySession.reset(reason: .manual)
+        observedPersonalityScope = currentPersonalityScope()
+        model.statusText = L10n.statusContextCleared
     }
 
     @objc private func openAccount() { openSettings(page: .account) }
@@ -435,6 +535,7 @@ final class NotchController: NSObject {
                 self?.refreshCLILabel()
                 self?.refreshModeLabels()
                 self?.model.depthLabel = L10n.depthLabel(Settings.shared.depth)
+                self?.invalidatePersonalitySessionIfScopeChanged()
             }
             settingsController = c
         }
@@ -559,6 +660,50 @@ final class NotchController: NSObject {
         scheduleCollapse(after: delay)
     }
 
+    private func makeRunSnapshot(mode: String) -> RunSnapshot {
+        let settings = Settings.shared
+        let provider = settings.activeProvider
+        return RunSnapshot(
+            mode: mode,
+            depth: settings.depth,
+            personaID: PersonaStore.shared.activeID ?? "unsaved-persona",
+            personaName: settings.personaName,
+            personaText: settings.personaText,
+            captureTarget: settings.captureTarget,
+            channel: currentChannel(),
+            cliID: settings.cli,
+            provider: provider,
+            apiEndpoint: settings.endpoint(for: provider),
+            apiModel: settings.apiModel(for: provider.storageKey)
+        )
+    }
+
+    private func currentPersonalityScope() -> PersonalitySessionScope? {
+        guard Settings.shared.mode == "personality" else { return nil }
+        return makeRunSnapshot(mode: "personality").personalityScope
+    }
+
+    private func invalidatePersonalitySessionIfScopeChanged() {
+        guard let current = currentPersonalityScope() else {
+            if observedPersonalityScope != nil {
+                let cleared = personalitySession.hasContinuity
+                personalitySession.reset(reason: .tutorMode)
+                observedPersonalityScope = nil
+                if cleared { model.statusText = L10n.statusContextCleared }
+            }
+            return
+        }
+        guard let observed = observedPersonalityScope else {
+            observedPersonalityScope = current
+            return
+        }
+        guard observed != current else { return }
+        let cleared = personalitySession.hasContinuity
+        personalitySession.reset(reason: .scopeChanged)
+        observedPersonalityScope = current
+        if cleared { model.statusText = L10n.statusContextCleared }
+    }
+
     // MARK: - Pipeline: capture → channel → stream
 
     private func runTapped(mode: String) {
@@ -568,6 +713,12 @@ final class NotchController: NSObject {
         if Settings.shared.mode != mode {
             Settings.shared.mode = mode
             refreshModeLabels()
+        }
+        var contextClearedForRun = false
+        if mode != "personality" {
+            contextClearedForRun = personalitySession.hasContinuity
+            personalitySession.reset(reason: .tutorMode)
+            observedPersonalityScope = nil
         }
         // Personality mode needs a target persona to answer toward.
         if Settings.shared.mode == "personality",
@@ -581,13 +732,35 @@ final class NotchController: NSObject {
             openSettings(page: .personas)
             return
         }
+
+        // Freeze every request input before the Task's first await. From here on, settings edits
+        // may change the NEXT capture only; they cannot create a mixed prompt/channel/target run.
+        let snapshot = makeRunSnapshot(mode: mode)
+        let sessionToken: PersonalitySessionToken?
+        if mode == "personality" {
+            let token = personalitySession.begin(scope: snapshot.personalityScope)
+            sessionToken = token
+            observedPersonalityScope = snapshot.personalityScope
+            contextClearedForRun = contextClearedForRun || personalitySession.lastBeginClearedContext
+        } else {
+            sessionToken = nil
+        }
+        let prompt = Prompts.capturePrompt(
+            mode: snapshot.mode,
+            depth: snapshot.depth,
+            personaName: snapshot.personaName,
+            personaText: snapshot.personaText,
+            sessionContext: sessionToken?.contextBlock ?? ""
+        )
+        let personalityRun = sessionToken.map { PersonalityCaptureRun(token: $0, prompt: prompt) }
+
         running = true
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
         model.answer = ""
         // Freeze this answer's presentation inputs: cycling the depth mid-stream must not
         // restyle an answer that was captured under another contract.
-        model.answerDepth = Settings.shared.depth
+        model.answerDepth = snapshot.depth
         model.reasoningRevealed = Appearance.revealReasoningByDefault
         model.status = .running
         model.statusText = L10n.statusPreparing
@@ -595,29 +768,20 @@ final class NotchController: NSObject {
         setExpanded(true) // expands to a small empty panel; grows as the answer streams
 
         Task { @MainActor in
-            let cliId = Settings.shared.cli
-            // Routing: the chosen 答题通道 decides the channel. Official (question quota) is the
-            // default for fresh installs; custom key and CLI behave exactly as before.
-            let channel = self.currentChannel()
-            // Custom-key mode targets one of the third-party providers; resolve it once so the
-            // warm-up, preflight, and run all agree on endpoint/model/protocol.
-            let provider = Settings.shared.activeProvider
-            let apiEndpoint = Settings.shared.endpoint(for: provider)
-            let apiModel = Settings.shared.apiModel(for: provider.storageKey)
-
             // The screenshot takes a few hundred ms — use that window to warm the network path
             // (DNS + TLS + serverless cold start + DB wake for official; vendor TLS for custom
             // key) so the capture POST rides a hot connection. Fire-and-forget.
-            switch channel {
+            switch snapshot.channel {
             case .official: OfficialAPI.warmUp()
-            case .customKey: APIKeyRunner.warmUp(endpoint: apiEndpoint)
+            case .customKey: APIKeyRunner.warmUp(endpoint: snapshot.apiEndpoint)
             case .cli: break
             }
 
             // Custom provider needs a Base URL + model before it can answer; a preset always has
             // both, so this only bites the "custom" entry left half-filled. Guide the user there
             // rather than firing a doomed request after spending a capture.
-            if case .customKey = channel, apiEndpoint.isEmpty || apiModel.isEmpty {
+            if case .customKey = snapshot.channel,
+               snapshot.apiEndpoint.isEmpty || snapshot.apiModel.isEmpty {
                 self.finishError(L10n.t(
                     "请先在设置 →「高级」填好该厂商的 Base URL 和模型名。",
                     "設定→「詳細」でこのプロバイダの Base URL とモデル名を入力してください。",
@@ -628,13 +792,13 @@ final class NotchController: NSObject {
 
             // 额度鉴权拦截：QuotaGate 只可能拦下官方通道 —— 自定义 Key / CLI 直接放行，
             // 不读取任何账户或额度状态（见 QuotaGate.preflight 的第一行守卫）。
-            if case .official = channel {
+            if case .official = snapshot.channel {
                 if OfficialAPI.deviceToken == nil {
                     self.model.statusText = L10n.t("正在准备服务…", "サービスを準備中…", "Getting things ready…")
                     _ = await OfficialAPI.registerIfNeeded()
                 }
                 let verdict = QuotaGate.preflight(
-                    channel: channel,
+                    channel: snapshot.channel,
                     hasDeviceToken: OfficialAPI.deviceToken != nil,
                     balanceQuestions: OfficialAPI.balanceQuestions
                 )
@@ -650,24 +814,24 @@ final class NotchController: NSObject {
             // when the cache doesn't yield a runnable CLI — including after an uninstall or
             // logout went stale — re-probe fresh once before surfacing an error.
             var binPath: String?
-            if case .cli = channel {
+            if case .cli = snapshot.channel {
                 var det = await CLIRunner.detectCached()
-                if !(det[cliId]?.installed == true && det[cliId]?.loggedIn != false) {
+                if !(det[snapshot.cliID]?.installed == true && det[snapshot.cliID]?.loggedIn != false) {
                     det = await CLIRunner.detectFresh()
                 }
-                guard let info = det[cliId], info.installed, let path = info.path else {
+                guard let info = det[snapshot.cliID], info.installed, let path = info.path else {
                     self.finishError(L10n.t(
-                        "未找到 \(cliId) 命令行。请安装并登录后重试，或在设置 →「高级」切换回官方服务。",
-                        "\(cliId) CLI が見つかりません。インストール後に再試行するか、設定→「詳細」で公式サービスに切り替えてください。",
-                        "The \(cliId) CLI wasn't found. Install and sign in, or switch back to the official service in Settings → Advanced."))
+                        "未找到 \(snapshot.cliID) 命令行。请安装并登录后重试，或在设置 →「高级」切换回官方服务。",
+                        "\(snapshot.cliID) CLI が見つかりません。インストール後に再試行するか、設定→「詳細」で公式サービスに切り替えてください。",
+                        "The \(snapshot.cliID) CLI wasn't found. Install and sign in, or switch back to the official service in Settings → Advanced."))
                     return
                 }
                 if info.loggedIn == false {
-                    let cmd = cliId == "codex" ? "`codex login`" : "`claude`"
+                    let cmd = snapshot.cliID == "codex" ? "`codex login`" : "`claude`"
                     self.finishError(L10n.t(
-                        "\(cliId) 未登录。请在终端运行 \(cmd) 后重试，或在设置 →「高级」切换回官方服务。",
-                        "\(cliId) が未ログインです。ターミナルで \(cmd) を実行後に再試行するか、設定→「詳細」で公式サービスへ。",
-                        "\(cliId) isn't signed in. Run \(cmd) in a terminal and retry, or switch back to the official service in Settings → Advanced."))
+                        "\(snapshot.cliID) 未登录。请在终端运行 \(cmd) 后重试，或在设置 →「高级」切换回官方服务。",
+                        "\(snapshot.cliID) が未ログインです。ターミナルで \(cmd) を実行後に再試行するか、設定→「詳細」で公式サービスへ。",
+                        "\(snapshot.cliID) isn't signed in. Run \(cmd) in a terminal and retry, or switch back to the official service in Settings → Advanced."))
                     return
                 }
                 binPath = path
@@ -676,15 +840,14 @@ final class NotchController: NSObject {
             // Full-screen shots must not contain our own panel. Fast path: exclude the panel
             // window from the capture filter, so it never has to be hidden (no blink, no
             // settle delay). A target window can't contain our panel, so it needs neither.
-            let target = Settings.shared.captureTarget
             #if DEBUG
             let captureStart = Date()
             #endif
             let result: Result<ScreenCapture.Shot, CaptureError>
-            if target == .fullScreen {
+            if snapshot.captureTarget == .fullScreen {
                 result = await self.captureFullScreenExcludingPanel()
             } else {
-                result = await ScreenCapture.capture(target: target)
+                result = await ScreenCapture.capture(target: snapshot.captureTarget)
             }
             #if DEBUG
             print("[NotchSPI] capture took \(Int(Date().timeIntervalSince(captureStart) * 1000))ms")
@@ -707,17 +870,16 @@ final class NotchController: NSObject {
                 return
             }
 
-            let mode = Settings.shared.mode
-            let statusVerb = mode == "personality" ? L10n.statusAnswering : L10n.statusExplaining
+            let statusVerb = snapshot.mode == "personality" ? L10n.statusAnswering : L10n.statusExplaining
             // Brief runs narrate their two phases: scratch work streams as 推理中…, and the
             // moment the FINAL marker lands the line flips to 作答中… — the status text tells
             // the same story the de-emphasized text + answer card are telling.
-            let briefRun = mode != "personality" && self.model.answerDepth == "brief"
-
+            let briefRun = snapshot.mode != "personality" && snapshot.depth == "brief"
             // Shared by both channels so CLI mode and direct-API mode render identically.
             let onDelta: (String) -> Void = { [weak self] delta in
                 guard let self else { return }
-                self.model.answer += delta
+                if let personalityRun { personalityRun.append(delta, to: self.model) }
+                else { self.model.answer += delta }
                 self.model.status = .streaming
                 self.model.statusText = briefRun
                     ? (AnswerComposer.hasMarker(self.model.answer) ? L10n.statusAnswering : L10n.statusReasoning)
@@ -726,35 +888,63 @@ final class NotchController: NSObject {
             }
             let onDone: (Bool, String) -> Void = { [weak self] ok, stderr in
                 guard let self else { return }
-                if !ok, case .cli = channel {
+                if !ok, case .cli = snapshot.channel {
                     // The failure may mean the CLI was uninstalled or logged out since the
                     // cached probe — drop the cache so the next press re-checks.
                     Task { @MainActor in CLIRunner.invalidateDetectCache() }
                 }
-                if self.model.answer.isEmpty {
-                    self.model.answer = ok
-                        ? L10n.noOutput
-                        : L10n.t("出错了：", "エラー：", "Something went wrong:") + "\n\n```\n\(String(stderr.suffix(600)))\n```"
-                    self.model.status = ok ? .idle : .error
-                } else {
-                    self.model.status = .idle
-                }
-                self.model.statusText = ok ? L10n.statusDone : L10n.statusError
-                if case .official = channel {
-                    if ok, let balance = OfficialAPI.balanceQuestions {
-                        // 让用户对额度心里有数：完成时直接显示剩余题数。
-                        self.model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(balance)
-                        if balance <= OfficialAPI.lowQuotaThreshold {
-                            self.model.statusText += L10n.t(" · 额度即将用完", " · 残りわずか", " · running low")
-                        }
-                    } else if !ok, let balance = OfficialAPI.balanceQuestions, balance <= 0 {
-                        // 截屏中途遇到 402：直接打开账户页引导充值，而不是让用户自己找入口。
-                        self.openSettings(page: .account)
+                if snapshot.mode == "personality" {
+                    guard let personalityRun else {
+                        self.finishError("internal error: personality run missing")
+                        return
                     }
+                    let currentScope = self.currentPersonalityScope()
+                    let outcome = personalityRun.complete(
+                        session: self.personalitySession,
+                        currentScope: currentScope,
+                        transportOK: ok
+                    )
+                    self.model.status = outcome.isError ? .error : .idle
+                    var suffixes = PersonalityCompletionSuffixes(
+                        contextWasCleared: contextClearedForRun
+                            || currentScope != personalityRun.token.scope
+                            || outcome.sessionMutation == .discardedStaleResult
+                    )
+                    if case .official = snapshot.channel, ok,
+                       let balance = OfficialAPI.balanceQuestions {
+                        suffixes.questionsRemaining = balance
+                        suffixes.quotaRunningLow = balance <= OfficialAPI.lowQuotaThreshold
+                    }
+                    self.model.statusText = outcome.statusText(suffixes: suffixes)
+                } else {
+                    if self.model.answer.isEmpty {
+                        self.model.answer = ok
+                            ? L10n.noOutput
+                            : L10n.t("出错了：", "エラー：", "Something went wrong:") + "\n\n```\n\(String(stderr.suffix(600)))\n```"
+                        self.model.status = ok ? .idle : .error
+                    } else {
+                        self.model.status = .idle
+                    }
+                    self.model.statusText = ok ? L10n.statusDone : L10n.statusError
+                    if contextClearedForRun {
+                        self.model.statusText += " · " + L10n.statusContextCleared
+                    }
+                    if case .official = snapshot.channel, ok,
+                       let balance = OfficialAPI.balanceQuestions {
+                        self.model.statusText += " · " + L10n.questionsLeft(balance)
+                        if balance <= OfficialAPI.lowQuotaThreshold {
+                            self.model.statusText += " · " + L10n.statusQuotaRunningLow
+                        }
+                    }
+                }
+                if case .official = snapshot.channel, !ok,
+                   let balance = OfficialAPI.balanceQuestions, balance <= 0 {
+                    // 截屏中途遇到 402：直接打开账户页引导充值，而不是让用户自己找入口。
+                    self.openSettings(page: .account)
                 }
                 // Auto-copy the answer card's payload the moment it's ready (opt-in). No marker
                 // (personality lists, hints, error text) → nothing to copy, so it stays silent.
-                if ok, self.autoCopyAnswerIfEnabled() {
+                if snapshot.mode != "personality", ok, self.autoCopyAnswerIfEnabled() {
                     self.model.statusText += " · " + L10n.statusCopied
                 }
                 self.resizeToFit()
@@ -764,34 +954,26 @@ final class NotchController: NSObject {
                 self.scheduleCollapseAfterAnswer()
             }
 
-            switch channel {
+            switch snapshot.channel {
             case .cli:
                 guard let binPath else {
                     onDone(false, "internal error: CLI path missing")
                     return
                 }
                 CLIRunner.run(
-                    cliId: cliId, binPath: binPath, imagePath: shot.path, depth: Settings.shared.depth,
-                    mode: mode,
-                    personaName: Settings.shared.personaName,
-                    personaText: Settings.shared.personaText,
+                    cliId: snapshot.cliID, binPath: binPath, imagePath: shot.path, prompt: prompt,
                     onDelta: onDelta, onDone: onDone
                 )
             case .customKey(let apiKey):
                 APIKeyRunner.run(
-                    proto: provider.proto, endpoint: apiEndpoint, apiKey: apiKey, model: apiModel,
-                    imagePath: shot.path, depth: Settings.shared.depth,
-                    mode: mode,
-                    personaName: Settings.shared.personaName,
-                    personaText: Settings.shared.personaText,
+                    proto: snapshot.provider.proto, endpoint: snapshot.apiEndpoint,
+                    apiKey: apiKey, model: snapshot.apiModel,
+                    imagePath: shot.path, prompt: prompt,
                     onDelta: onDelta, onDone: onDone
                 )
             case .official:
                 OfficialAPI.run(
-                    imagePath: shot.path, depth: Settings.shared.depth,
-                    mode: mode,
-                    personaName: Settings.shared.personaName,
-                    personaText: Settings.shared.personaText,
+                    imagePath: shot.path, prompt: prompt,
                     onDelta: onDelta, onDone: onDone
                 )
             }
@@ -855,9 +1037,12 @@ final class NotchController: NSObject {
     }
 
     private func finishError(_ msg: String) {
-        model.answer = msg
+        // Personality answer storage is reserved for the untouched model protocol stream. Local
+        // capture/preflight errors belong in status, never in the choice body or future context.
+        if model.mode == "personality" { model.answer = "" }
+        else { model.answer = msg }
         model.status = .error
-        model.statusText = L10n.statusError
+        model.statusText = model.mode == "personality" ? msg : L10n.statusError
         resizeToFit()
         running = false
         pinned = false
