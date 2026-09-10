@@ -15,12 +15,12 @@ import {MemoryStore} from '../src/db-memory.ts';
 import {SqliteStore} from '../src/db-sqlite.ts';
 import {StubPaymentProvider} from '../src/payments.ts';
 import {qualityReviewSubject} from '../src/quality.ts';
-import {pngBytes} from './helpers/images.ts';
+import {pngBytes,pngChunk} from './helpers/images.ts';
 import {SCREEN_QUERY_VERSION,composeScreenQuery} from '../src/screen-query.ts';
 import {EvaluationBudget,type EvaluationCallBound} from '../../scripts/lib/evaluation-budget.mts';
 import {bytesSHA,loadReadingCorpus,parseReadingManifest,parseReadingStream,readingManifestSubject,scoreReadingCase,
   type ReadingManifest,type ReadingCase} from '../../scripts/lib/reading-evaluation.mts';
-import {runReadingEvaluation,type ReadingCandidate} from '../../scripts/lib/reading-runner.mts';
+import {runReadingEvaluation,readingRequestBody,READING_REQUEST_MAX_BYTES,type ReadingCandidate} from '../../scripts/lib/reading-runner.mts';
 import {openEvaluationAccess} from '../../scripts/lib/evaluation-access.mts';
 import {loadReadingArchive,prepareReadingQuality} from '../../scripts/lib/reading-quality.mts';
 import {READING_ANSWER_SCORING_VERSION,readingAnswerScoringDigest} from '../../scripts/lib/reading-answer-scoring.mts';
@@ -88,9 +88,10 @@ async function fixture(t:{after:(fn:()=>unknown)=>void},behavior:Behavior={},cou
   const budget=new EvaluationBudget(join(dir,'budget.sqlite3'),{schema_version:1,campaign_id:'test-only',currency:'CNY',limit_micros:100_000_000},bound,candidate.model,base);
   t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));budget.close();await rm(dir,{recursive:true,force:true});});
   const output=join(dir,'run');
-  const run=async()=>runReadingEvaluation({evaluationAccess:behavior.protected?await openEvaluationAccess(base,'synthetic-access'):undefined,corpus:await loadReadingCorpus(source.path,'executor'),candidate,budget,executor:'executor',deviceToken:'synthetic-test-token',outputDir:output,
+  let accessAttempts=0;
+  const run=async()=>runReadingEvaluation({evaluationAccess:async()=>{accessAttempts++;return behavior.protected?await openEvaluationAccess(base,'synthetic-access'):undefined;},corpus:await loadReadingCorpus(source.path,'executor'),candidate,budget,executor:'executor',deviceToken:'synthetic-test-token',outputDir:output,
     candidateBytes:json(candidate),candidateEvidenceBytes:evidence});
-  return {dir,source,requests,budget,bound,candidate,evidence,output,run};
+  return {dir,source,requests,budget,bound,candidate,evidence,output,run,accessAttempts:()=>accessAttempts};
 }
 async function reviewFiles(dir:string,archive:Awaited<ReturnType<typeof loadReadingArchive>>) {
   const answer={schema_version:1,reviewer:'independent-reviewer',reviewed_at:at(),subject_sha256:archive.completion.review_subject_sha256,
@@ -110,6 +111,62 @@ test('reading corpus validates image bytes, authorization, family separation and
   assert.throws(()=>parseReadingManifest({...f.source.manifest,unknown:true}));
   const traversal=structuredClone(f.source.manifest);traversal.cases[0]!.images[0]!.file='../image.png';assert.throws(()=>parseReadingManifest(traversal),/inside/);
   await writeFile(join(f.dir,'image.png'),Buffer.from('invalid'));await assert.rejects(loadReadingCorpus(f.source.path,'executor'),/digest/);
+});
+
+test('reading upload limit counts duplicated image, all pages and escaped explanation bytes',async t=>{
+  const f=await fixture(t),item=f.source.manifest.cases[0]!,id=randomUUID();
+  const base=Buffer.byteLength(readingRequestBody(item,[''],SCREEN_QUERY_VERSION,id));
+  const size=Math.floor((READING_REQUEST_MAX_BYTES-base)/2);
+  const image='A'.repeat(size);
+  const solve=readingRequestBody(item,[image],SCREEN_QUERY_VERSION,id);
+  assert.ok(Buffer.byteLength(solve)<=READING_REQUEST_MAX_BYTES);
+  assert.equal(JSON.parse(solve).image_base64,image);
+  assert.throws(()=>readingRequestBody(item,[image+'A'],SCREEN_QUERY_VERSION,id),/4 MiB/);
+  assert.throws(()=>readingRequestBody(item,['AAAA',image],SCREEN_QUERY_VERSION,id),/4 MiB/);
+  assert.throws(()=>readingRequestBody(item,[image],SCREEN_QUERY_VERSION,id,'\u0000'.repeat(512)),/4 MiB/);
+});
+
+test('oversized final corpus image stops the whole evaluation before earlier paid calls',async t=>{
+  const f=await fixture(t),before=f.budget.remainingMicros();
+  // A valid PNG with an ancillary chunk exceeds transport size while remaining
+  // far below pixel/decode limits; this isolates upload admission from decoding.
+  const large=Buffer.concat([pngBytes.subarray(0,-12),pngChunk('npAd',Buffer.alloc(1_600_000)),pngBytes.subarray(-12)]);
+  await writeFile(join(f.dir,'large.png'),large);
+  f.source.manifest.cases.at(-1)!.images=[{file:'large.png',sha256:bytesSHA(large)}];
+  await f.source.save();
+  await assert.rejects(f.run(),/4 MiB/);
+  assert.equal(f.requests.length,0);
+  assert.equal(f.accessAttempts(),0);
+  assert.equal(f.budget.remainingMicros(),before);
+  await assert.rejects(stat(f.output),{code:'ENOENT'});
+});
+
+test('whole-run admission reserves explanation headroom even when every solve fits',async t=>{
+  const f=await fixture(t),item=f.source.manifest.cases.at(-1)!,id=randomUUID();
+  const overhead=Buffer.byteLength(readingRequestBody(item,[''],SCREEN_QUERY_VERSION,id));
+  const totalBytes=Math.floor((READING_REQUEST_MAX_BYTES-overhead-1000)/8)*3;
+  const large=Buffer.concat([pngBytes.subarray(0,-12),pngChunk('npAd',Buffer.alloc(totalBytes-pngBytes.length-12)),pngBytes.subarray(-12)]);
+  assert.ok(Buffer.byteLength(readingRequestBody(item,[large.toString('base64')],SCREEN_QUERY_VERSION,id))<READING_REQUEST_MAX_BYTES);
+  await writeFile(join(f.dir,'near-limit.png'),large);
+  item.images=[{file:'near-limit.png',sha256:bytesSHA(large)}];await f.source.save();
+  const before=f.budget.remainingMicros();
+  await assert.rejects(f.run(),/4 MiB/);
+  assert.equal(f.requests.length,0);assert.equal(f.budget.remainingMicros(),before);
+  await assert.rejects(stat(f.output),{code:'ENOENT'});
+});
+
+test('zero-explanation diagnostic still reserves refusal-request bytes before opening access',async t=>{
+  const f=await fixture(t,{protected:true},4,0),item=f.source.manifest.cases.at(-1)!,id=randomUUID();
+  const overhead=Buffer.byteLength(readingRequestBody(item,[''],SCREEN_QUERY_VERSION,id));
+  const totalBytes=Math.floor((READING_REQUEST_MAX_BYTES-overhead-20)/8)*3;
+  const large=Buffer.concat([pngBytes.subarray(0,-12),pngChunk('npAd',Buffer.alloc(totalBytes-pngBytes.length-12)),pngBytes.subarray(-12)]);
+  assert.ok(readingRequestBody(item,[large.toString('base64')],SCREEN_QUERY_VERSION,id));
+  assert.throws(()=>readingRequestBody(item,[large.toString('base64')],SCREEN_QUERY_VERSION,id,''),/4 MiB/);
+  await writeFile(join(f.dir,'refusal-limit.png'),large);
+  item.images=[{file:'refusal-limit.png',sha256:bytesSHA(large)}];await f.source.save();
+  const before=f.budget.remainingMicros();await assert.rejects(f.run(),/4 MiB/);
+  assert.equal(f.requests.length,0);assert.equal(f.accessAttempts(),0);assert.equal(f.budget.remainingMicros(),before);
+  await assert.rejects(stat(f.output),{code:'ENOENT'});
 });
 
 test('manifest v2 freezes explicit scoring without changing schema1 subjects or accepting missing policies',async t=>{

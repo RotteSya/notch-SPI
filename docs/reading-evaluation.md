@@ -66,7 +66,7 @@ candidate 时间为规范 UTC ISO（含毫秒），最多 24h，URL 只允许 HT
 
 执行器先 GET account、client-config、healthz：余额须能覆盖全部答案、持有为 0，设备已分到 objective_v1，阅读合约能力/范围/配置修订匹配；holdout 拒绝 mock 和降级 provider。此检查不能替代真实隔离部署核验。之后按 manifest 原顺序运行一次，每题固定新 UUID，实时保留失败，不自动重试或恢复。
 
-每题重新检查授权有效期与实际图片摘要，使用生产 `screen_query_v1` 请求形态。JSON 最大 12 MiB；每次响应最多 2 MiB、单 SSE 事件 512 KiB、合成原文 64 KiB；严格检查 UTF-8、事件顺序、完整 DONE、绑定 ID/operation 与结算。传输中断、非法流及非 SSE MIME 记 failed，继续剩余题；候选拒绝、预算失效或输入变化停止后续调用，归档完整/部分状态。
+每题重新检查授权有效期与实际图片摘要，使用生产 `screen_query_v1` 请求形态。JSON 与官方客户端统一为 4 MiB，包含兼容字段重复题图；首个候选 HTTP 请求前检查整份题集，并为可能的解释预留 512 个 Unicode 字符的 JSON 最坏编码长度，发送前再次复核。超限不压图、不丢页、不消耗前面题目的模型预算；每次响应最多 2 MiB、单 SSE 事件 512 KiB、合成原文 64 KiB；严格检查 UTF-8、事件顺序、完整 DONE、绑定 ID/operation 与结算。传输中断、非法流及非 SSE MIME 记 failed，继续剩余题；候选拒绝、预算失效或输入变化停止后续调用，归档完整/部分状态。
 
 对每题型，按 manifest 顺序选前 N 个有可用答案且真值为 answerable 的父请求，立即使用原材料和实际规范化答案发一次解释，不以答案判对与否挑选。解释失败仍占抽样位置。首次实际 retake 和 no_result 父请求另各测一次解释入口，要求 409 binding_mismatch。没有出现足够 ready/review/fallback 父请求时，报告如实列出缺口，不能人为制造模型输出补齐。
 

@@ -53,6 +53,30 @@ export interface ReadingCompletion {
   answer_cases:number;explanation_calls:number;rejection_checks:number;
   unresolved_dispatches:number;
 }
+// Match the official macOS client's JSON ceiling, including the legacy duplicate image.
+export const READING_REQUEST_MAX_BYTES=4*1024*1024;
+export function readingRequestBody(item:ReadingCase,images:string[],scopeVersion:string,captureID:string,answer:string|null=null):string {
+  const body=JSON.stringify({capture_id:captureID,result_protocol:'objective_v1',response_contract:'screen_query_v1',operation:'solve',
+    profile_id:'reading_practice',profile_version:scopeVersion,prompt_version:scopeVersion,ui_language:item.language,
+    images_base64:images,image_base64:images.at(-1),image_media_type:item.image_media_type,scope:item.scope,
+    ...(answer!==null?{explanation_id:captureID,final_answer:answer}:{})});
+  if(Buffer.byteLength(body)>READING_REQUEST_MAX_BYTES)throw new ReadingEvidenceError('Corpus request exceeds official client 4 MiB limit');
+  return body;
+}
+async function preflightReadingRequests(corpus:LoadedReadingCorpus):Promise<void> {
+  // Check the entire corpus before any candidate access or paid dispatch. A late
+  // oversized case must not consume the earlier cases' campaign budget first.
+  const captureID='00000000-0000-4000-8000-000000000000';
+  for(const item of corpus.manifest.cases) {
+    const images=await readingImages(corpus,item);
+    readingRequestBody(item,images,corpus.manifest.scope_version,captureID);
+    // JSON uses at most six UTF-8 bytes per scalar. Reserve the full 512-scalar
+    // answer allowance even when a shorter answer is expected from the gold.
+    if(item.expectation==='answerable'&&corpus.manifest.explanations_per_kind>0)
+      readingRequestBody(item,images,corpus.manifest.scope_version,captureID,'\u0000'.repeat(512));
+    else readingRequestBody(item,images,corpus.manifest.scope_version,captureID,'');
+  }
+}
 async function candidateJSON(base:string,path:string,token:string,access?:EvaluationAccess):Promise<Record<string,unknown>> {
   const response=await fetch(base+path,{headers:{...access?.headersFor(base+path),authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(15_000)});
   if(!response.ok||response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()!=='application/json') {
@@ -98,7 +122,7 @@ export function draftReadingRun(corpus:LoadedReadingCorpus,plan:ReadingRunPlan,r
 }
 
 export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;candidate:ReadingCandidate;budget:EvaluationBudget;
-  evaluationAccess?:EvaluationAccess;executor:string;deviceToken:string;outputDir:string;candidateBytes:Buffer;candidateEvidenceBytes:Buffer;progress?:(completed:number,total:number)=>void}):Promise<ReadingCompletion> {
+  evaluationAccess?:EvaluationAccess|(()=>Promise<EvaluationAccess|undefined>);executor:string;deviceToken:string;outputDir:string;candidateBytes:Buffer;candidateEvidenceBytes:Buffer;progress?:(completed:number,total:number)=>void}):Promise<ReadingCompletion> {
   const {corpus,budget,executor}=input,candidate=validateReadingCandidate(input.candidate,corpus.manifest.scope_version);
   const bound=budget.candidateIdentity();
   if(bound.model!==candidate.model||bound.baseURL!==candidate.base_url||input.candidateBytes.length>1024*1024||
@@ -108,7 +132,9 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
   if(!input.deviceToken||input.deviceToken.length>512||/[\s\r\n]|\[SENSITIVE\]|\[REDACTED\]|placeholder|changeme/i.test(input.deviceToken))throw new ReadingEvidenceError('An isolated evaluation device credential is required');
   const totalCalls=corpus.manifest.cases.length+4*corpus.manifest.explanations_per_kind+2;
   budget.checkWholeRun(totalCalls);
-  const admission=await admitCandidate(corpus,candidate,input.deviceToken,input.evaluationAccess);
+  await preflightReadingRequests(corpus);
+  const evaluationAccess=typeof input.evaluationAccess==='function'?await input.evaluationAccess():input.evaluationAccess;
+  const admission=await admitCandidate(corpus,candidate,input.deviceToken,evaluationAccess);
   validateReadingCandidate(candidate,corpus.manifest.scope_version);
   if(Date.parse(corpus.review.expires_at)<=Date.now())throw new ReadingEvidenceError('Corpus authorization expired during admission');
   const allocation=budget.checkWholeRun(totalCalls);
@@ -139,18 +165,14 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
     validateReadingCandidate(candidate,corpus.manifest.scope_version);
     if(Date.parse(corpus.review.expires_at)<=Date.now())throw new ReadingEvidenceError('Corpus authorization expired');
     const dispatchID=randomUUID(),path=parentID?`/v1/captures/${parentID}/explanation`:'/v1/captures';
-    const body=JSON.stringify({capture_id:captureID,result_protocol:'objective_v1',response_contract:'screen_query_v1',operation:'solve',
-      profile_id:'reading_practice',profile_version:corpus.manifest.scope_version,prompt_version:corpus.manifest.scope_version,ui_language:item.language,
-      images_base64:images,image_base64:images.at(-1),image_media_type:item.image_media_type,scope:item.scope,
-      ...(parentID?{explanation_id:captureID,final_answer:answer??''}:{})});
-    if(Buffer.byteLength(body)>12*1024*1024)throw new ReadingEvidenceError('Corpus request exceeds 12 MiB');
+    const body=readingRequestBody(item,images,corpus.manifest.scope_version,captureID,parentID?answer??'':null);
     const started=performance.now(),at=new Date().toISOString();
     await writeReadingArtifact(resolve(output,'responses',dispatchID+'.dispatch.json'),{schema_version:1,case_id:item.id,capture_id:captureID,
       parent_capture_id:parentID,dispatch_id:dispatchID,purpose,started_at:at});
     dispatches++;
     let status:number|null=null,contentType:string|null=null,responseBody='',failure:ReadingResponse['failure']=null;
     try {
-      const response=await budget.fetchText(path,{method:'POST',headers:{...input.evaluationAccess?.headersFor(candidate.base_url+path),authorization:'Bearer '+input.deviceToken,
+      const response=await budget.fetchText(path,{method:'POST',headers:{...evaluationAccess?.headersFor(candidate.base_url+path),authorization:'Bearer '+input.deviceToken,
         'content-type':'application/json','x-app-version':candidate.app_version},body},item.id,purpose==='answer'?'answer':'explain',dispatchID);
       status=response.status;contentType=response.contentType;responseBody=response.body;
     } catch {failure=budget.dispatchEvidence(dispatchID)?'transport_failed':'not_dispatched';if(failure==='not_dispatched')halt='budget_or_dispatch_gate';}

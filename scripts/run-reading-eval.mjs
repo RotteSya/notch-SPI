@@ -17,7 +17,7 @@ async function main() {
   const candidateEvidenceBytes=await readEvidenceFile(resolve(root,process.env.NSPI_EVAL_CANDIDATE_EVIDENCE),1024*1024);
   const budget=openEvaluationBudget(root,candidate.model,candidate.base_url);
   try {
-    const evaluationAccess=await openEvaluationAccess(candidate.base_url,process.env.NSPI_EVAL_VERCEL_SHARE_TOKEN);
+    const evaluationAccess=()=>openEvaluationAccess(candidate.base_url,process.env.NSPI_EVAL_VERCEL_SHARE_TOKEN);
     const completion=await runReadingEvaluation({corpus,candidate,budget,evaluationAccess,executor:process.env.NSPI_EVAL_EXECUTOR,
       deviceToken:process.env.NSPI_EVAL_DEVICE_TOKEN,outputDir:resolve(root,process.env.NSPI_READING_EVAL_OUT),candidateBytes,candidateEvidenceBytes,
       progress:(done,total)=>console.log('Reading evaluation cases: '+done+'/'+total)});
