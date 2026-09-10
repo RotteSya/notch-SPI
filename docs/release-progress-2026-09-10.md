@@ -132,3 +132,14 @@ Cloudflare 持久日志确认 131 次 reaper_result、均 HTTP 200；其中一�
 因此本次自动恢复时效复验判为 **未通过**。已停止只读观察进程、将候选 cron 清空，并显式调用已验证的隔离恢复接口清理；01:14:28 UTC 返回 processed=1。之后只读核验第二条记录也只有一次 hold/release，账户恢复 30、held=0；两次释放共两条零题数/零 token usage 记录，模型尝试和模型费用记录仍为 0。此次手动清理不算自动调度通过。最终核对生产及候选均无 cron、公开/预览 URL 均关闭，Vercel 生产部署和保护凭证/规则不变。
 
 当前建议保留已完成的 Cloudflare 实现，暂停发布并进一步定位触发器启停/传播时效；正式运行前需要真实连续触发和新的有界到期证明。若需要替换用户指定的调度平台，应另行对齐后执行，不能静默换平台或用手动恢复替代分钟任务。私有 `reactivation-result.json`、`warm-before-manual-cleanup.json`、`warm-manual-cleanup.json` 与 `final-schedules.json` 明确区分失败验收和完成清理。
+
+
+### 官方确认 Cron 故障；保留 Cloudflare 方案等待修复
+
+2026-09-10 01:19:21 UTC 从 Cloudflare 官方单事件 API 获取当前原件：事件 `sjs8s0q2x4hw` / **Workers Cron Triggers degraded**，状态 **identified**、resolved_at=null。公告创建于 2026-09-09 19:17:26 UTC，说明 Cron 可能不执行或延迟执行，触发器更新也可能延迟生效；19:18:25 表示已定位并实施修复。来源：[官方事件](https://www.cloudflarestatus.com/incidents/sjs8s0q2x4hw)、[单事件 JSON](https://www.cloudflarestatus.com/api/v2/incidents/sjs8s0q2x4hw.json)。保存原件 SHA-256 `f3507277c4a6ba2a859dfabd8a88366f22dfe943026d04808c3f9794e8ed4067`。
+
+该官方事件覆盖第二次失败复验，描述与观测吻合，因此可以将当前触发故障与已知平台事件关联。首次激活时间早于公告，仍不声称已独立证明早期每一分钟延迟均由该事件造成。当前 HTTP/应用时钟比对中，服务端 checked_at 与本机请求中点差约 +0.306 秒，排除了本轮小时级时钟偏移解释；此检查不证明历史时钟永未变化。Worker 保留 standard usage、green_compute=false、100% 日志采样及正确两项 secret_text 绑定，当前无自定义 user_limits。267 条日志用量不等于完整请求计费审计，不据此虚称已核实所有配额。
+
+保持用户指定的 Cloudflare 免费方案，两个 schedule 继续暂停，付费跑题和发布继续关闭。官方恢复后再核实平台状态/时钟/隔离目标和账本，启用候选并先观察真实触发，再创建新的短期持有验证自动到期与随后 tick 幂等；保留既有失败记录，不以官方恢复公告代替实测通过。不更换平台、不重复重建 Worker、不在故障期间反复启停。完整证据和恢复准入步骤在私有 `incident-diagnostic.json`、`clock-probe.json`、`incident-resolution-plan.json`。
+
+本轮只做诊断、证据归档与文档更新，无模型调用、无产品代码变化、无生产切换。其他独立的题集和实机验收准备可以继续。
