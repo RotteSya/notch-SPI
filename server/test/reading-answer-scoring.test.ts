@@ -71,6 +71,38 @@ test('explicit literal policy does not inherit legacy unordered alternatives sem
   assert.equal(readingAnswerHit('B or A',['A or B'],policy),false);
   assert.equal(objectiveEvalAnswerHit('B or A',['A or B']),true);
 });
+test('currency prefixes require explicit same-unit permission and preserve signs',()=>{
+  const policy=parseReadingAnswerScoring({mode:'number',unit_aliases:['dollars','$','USD'],unit_prefix_aliases:['$','USD'],unit_optional:true},'short_fill',['180']);
+  for(const answer of ['$180','USD 180','**$180.00**','＄１８０','＋＄180','180 dollars','180$'])assert.equal(readingAnswerHit(answer,['180'],policy),true,answer);
+  for(const answer of ['-$180','$-180','USD −180','−USD 180','－$180'])assert.equal(readingAnswerHit(answer,['-180'],policy),true,answer);
+  for(const answer of ['-$-180','+$+180','€180','180 cents','$180 dollars','USD $180','$10²','dollars 180'])assert.equal(readingAnswerHit(answer,['180'],policy),false,answer);
+  const suffixOnly=parseReadingAnswerScoring({mode:'number',unit_aliases:['$'],unit_optional:true},'short_fill',['180']);
+  assert.equal(readingAnswerHit('$180',['180'],suffixOnly),false);
+  assert.throws(()=>parseReadingAnswerScoring({...policy,unit_prefix_aliases:['EUR']},'short_fill',['180']));
+  assert.throws(()=>parseReadingAnswerScoring({...policy,unit_prefix_aliases:['$','$']},'short_fill',['180']));
+});
+test('quantity order accepts printed-kg omission and exact values without unit conversion',()=>{
+  const gold=['0.009 kg;0.99 kg;1.025 kg;1.25 kg'];
+  const policy=parseReadingAnswerScoring({mode:'quantity_sequence',items:Array.from({length:4},()=>({unit_aliases:['kg','kilograms'],unit_optional:true}))},'ordering',gold);
+  for(const answer of ['0.009,0.99,1.025,1.25','0.009kg,0.990kg,1.025kg,1.250kg','9/1000 → 99/100 → 41/40 → 5/4','**0.009 kg\n0.99 kg\n1.025 kg\n1.25 kg**'])assert.equal(readingAnswerHit(answer,gold,policy),true,answer);
+  for(const answer of ['0.99,0.009,1.025,1.25','9 g;990 g;1025 g;1250 g','0.009 g;0.99 kg;1.025 kg;1.25 kg','0.009;0.99;1.025','0.009;0.99;1.025;1.25;1.25','0.009kg,0.990kg,1.025kg,1.250kg because this is ascending'])assert.equal(readingAnswerHit(answer,gold,policy),false,answer);
+});
+test('duration ordering retains unit identity even when all numeric amounts coincide',()=>{
+  const gold=['6 days;6 weeks;6 months;6 years'];
+  const items=[['day','days'],['week','weeks'],['month','months'],['year','years']].map(unit_aliases=>({unit_aliases,unit_optional:false}));
+  const policy=parseReadingAnswerScoring({mode:'quantity_sequence',items},'ordering',gold);
+  for(const answer of ['6 days,6 weeks,6 months,6 years','6.0 days;12/2 weeks;6months;6years','6 days\n6 weeks\n6 months\n6 years'])assert.equal(readingAnswerHit(answer,gold,policy),true,answer);
+  for(const answer of ['6,6,6,6','6 weeks;6 days;6 months;6 years','6 days;6 weeks;6 weeks;6 years','6 days;42 days;180 days;2190 days','6 days;6 weeks;6 months'])assert.equal(readingAnswerHit(answer,gold,policy),false,answer);
+  for(const invalid of [{mode:'quantity_sequence',items:[]},{mode:'quantity_sequence',items:[items[0]]},{mode:'quantity_sequence',items:[{unit_aliases:[],unit_optional:false},items[0]]}])assert.throws(()=>parseReadingAnswerScoring(invalid,'ordering',gold));
+  assert.throws(()=>parseReadingAnswerScoring({mode:'quantity_sequence',items},'single_choice',gold));
+});
+test('sequence line breaks are item boundaries while mixed fractions and thousands stay intact',()=>{
+  const policy=parseReadingAnswerScoring({mode:'number_sequence'},'ordering',['1.5;1000;2000']);
+  for(const answer of ['1 1/2\n1,000\n2,000','1.5,\r\n1000,\r\n2000','1.5;\n1000;\n2000','１½\u2028１，０００\u2028２，０００','［1.5；1000；2000］','（1.5；1000；2000）','1.5,\n1000\n2000'])assert.equal(readingAnswerHit(answer,['1.5;1000;2000'],policy),true,answer);
+  assert.equal(readingAnswerHit('1\n1/2;1000;2000',['1.5;1000;2000'],policy),false);
+  const quantities=parseReadingAnswerScoring({mode:'quantity_sequence',items:Array.from({length:3},()=>({unit_aliases:['kg'],unit_optional:true}))},'ordering',['1;200kg;2kg']);
+  assert.equal(readingAnswerHit('1,200kg,2kg',['1;200kg;2kg'],quantities),false,'ambiguous thousands cannot become an extra item');
+});
 test('invalid policies, incomplete gold and incompatible question kinds fail before dispatch',()=>{
   const bad:Array<[unknown,string,string[]]>=[
     [{mode:'literal',tolerance:1},'short_fill',['1']],

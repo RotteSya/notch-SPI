@@ -178,6 +178,7 @@ test('manifest v2 freezes explicit scoring without changing schema1 subjects or 
   const multiple=v2.cases[1]!;multiple.accepted_answers=['A,C'];multiple.answer_scoring={mode:'label_set',labels:['A','B','C','D']};
   assert.equal(parseReadingManifest(v2).schema_version,2);
   assert.throws(()=>parseReadingManifest({...v2,answer_scoring_version:'unreviewed'}),/implementation/);
+  assert.throws(()=>parseReadingManifest({...v2,answer_scoring_version:'reading-answer-v1'}),/implementation/);
   assert.throws(()=>parseReadingManifest({...v2,answer_scoring_sha256:'0'.repeat(64)}),/implementation/);
   assert.notEqual(readingManifestSubject(v2),readingManifestSubject(old));
   const changed=structuredClone(v2);changed.cases[1]!.answer_scoring={mode:'literal'};
@@ -206,6 +207,23 @@ test('v2 live scoring and offline archive replay use the same frozen set rule',a
   frozen.answer_scoring_sha256='0'.repeat(64);
   await writeFile(join(f.output,'manifest.json'),json(frozen));
   await assert.rejects(loadReadingArchive(f.output),/implementation/);
+});
+
+test('currency and quantity policies score identically through production parsing and archive replay',async t=>{
+  const responses=[rawAnswer(),rawAnswer('ready','C,A').replace('"kind":"single_choice"','"kind":"multiple_choice"'),
+    rawAnswer('ready','0.009,0.990,1.025,1.25').replace('"kind":"single_choice"','"kind":"ordering"'),
+    rawAnswer('ready','$180.00').replace('"kind":"single_choice"','"kind":"short_fill"')];
+  const f=await fixture(t,{responses},4,0),m=f.source.manifest;
+  m.schema_version=2;m.answer_scoring_version=READING_ANSWER_SCORING_VERSION;m.answer_scoring_sha256=readingAnswerScoringDigest();
+  m.cases[0]!.answer_scoring={mode:'literal'};
+  m.cases[1]!.answer_scoring={mode:'label_set',labels:['A','B','C','D']};m.cases[1]!.accepted_answers=['A,C'];
+  m.cases[2]!.answer_scoring={mode:'quantity_sequence',items:Array.from({length:4},()=>({unit_aliases:['kg'],unit_optional:true}))};
+  m.cases[2]!.accepted_answers=['0.009 kg;0.99 kg;1.025 kg;1.25 kg'];
+  m.cases[3]!.answer_scoring={mode:'number',unit_aliases:['$'],unit_prefix_aliases:['$'],unit_optional:true};m.cases[3]!.accepted_answers=['180'];
+  await f.source.save();assert.equal((await f.run()).complete,true);
+  const draft=JSON.parse(await readFile(join(f.output,'quality-draft.json'),'utf8'));
+  assert.equal(draft.cases.length,4);assert.ok(draft.cases.every((c:{answer_correct:boolean})=>c.answer_correct));
+  const archive=await loadReadingArchive(f.output);assert.deepEqual(archive.draft,draft);
 });
 
 test('reading corpus rejects external processing denial, expiry, split overlap and symlink material',async t=>{
