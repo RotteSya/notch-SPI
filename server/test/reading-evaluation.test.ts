@@ -23,6 +23,7 @@ import {bytesSHA,loadReadingCorpus,parseReadingManifest,parseReadingStream,readi
 import {runReadingEvaluation,type ReadingCandidate} from '../../scripts/lib/reading-runner.mts';
 import {openEvaluationAccess} from '../../scripts/lib/evaluation-access.mts';
 import {loadReadingArchive,prepareReadingQuality} from '../../scripts/lib/reading-quality.mts';
+import {READING_ANSWER_SCORING_VERSION,readingAnswerScoringDigest} from '../../scripts/lib/reading-answer-scoring.mts';
 
 // Synthetic diagnostics stay in temporary test directories and never count as product evidence.
 const at=()=>new Date().toISOString(),future=()=>new Date(Date.now()+3600_000).toISOString();
@@ -109,6 +110,45 @@ test('reading corpus validates image bytes, authorization, family separation and
   assert.throws(()=>parseReadingManifest({...f.source.manifest,unknown:true}));
   const traversal=structuredClone(f.source.manifest);traversal.cases[0]!.images[0]!.file='../image.png';assert.throws(()=>parseReadingManifest(traversal),/inside/);
   await writeFile(join(f.dir,'image.png'),Buffer.from('invalid'));await assert.rejects(loadReadingCorpus(f.source.path,'executor'),/digest/);
+});
+
+test('manifest v2 freezes explicit scoring without changing schema1 subjects or accepting missing policies',async t=>{
+  const f=await fixture(t),old=f.source.manifest;
+  assert.deepEqual(parseReadingManifest(old),old);
+  const v2:ReadingManifest={...structuredClone(old),schema_version:2,answer_scoring_version:READING_ANSWER_SCORING_VERSION,answer_scoring_sha256:readingAnswerScoringDigest()};
+  assert.throws(()=>parseReadingManifest(v2));
+  for(const item of v2.cases)item.answer_scoring={mode:'literal'};
+  const multiple=v2.cases[1]!;multiple.accepted_answers=['A,C'];multiple.answer_scoring={mode:'label_set',labels:['A','B','C','D']};
+  assert.equal(parseReadingManifest(v2).schema_version,2);
+  assert.throws(()=>parseReadingManifest({...v2,answer_scoring_version:'unreviewed'}),/implementation/);
+  assert.throws(()=>parseReadingManifest({...v2,answer_scoring_sha256:'0'.repeat(64)}),/implementation/);
+  assert.notEqual(readingManifestSubject(v2),readingManifestSubject(old));
+  const changed=structuredClone(v2);changed.cases[1]!.answer_scoring={mode:'literal'};
+  assert.notEqual(readingManifestSubject(changed),readingManifestSubject(v2),'review subject binds semantics');
+  assert.throws(()=>parseReadingManifest({...v2,schema_version:1}));
+  multiple.expectation='retake';multiple.accepted_answers=[];
+  assert.throws(()=>parseReadingManifest(v2),/null answer scoring/);
+  multiple.answer_scoring=null;assert.equal(parseReadingManifest(v2).cases[1]!.answer_scoring,null);
+  multiple.expectation='answerable';multiple.accepted_answers=['A,C'];assert.throws(()=>parseReadingManifest(v2),/scoring/);
+});
+
+test('v2 live scoring and offline archive replay use the same frozen set rule',async t=>{
+  const f=await fixture(t,{responses:[rawAnswer(),rawAnswer('ready','C,A'),rawAnswer(),rawAnswer()]},4,0);
+  f.source.manifest.schema_version=2;
+  f.source.manifest.answer_scoring_version=READING_ANSWER_SCORING_VERSION;
+  f.source.manifest.answer_scoring_sha256=readingAnswerScoringDigest();
+  for(const item of f.source.manifest.cases)item.answer_scoring={mode:'literal'};
+  const item=f.source.manifest.cases[1]!;
+  item.accepted_answers=['A,C'];item.answer_scoring={mode:'label_set',labels:['A','B','C','D']};
+  await f.source.save();
+  assert.equal((await f.run()).complete,true);
+  const archive=await loadReadingArchive(f.output);
+  assert.equal(archive.draft.cases[1]!.answer_correct,true);
+  assert.equal(f.requests.length,4);
+  const frozen=JSON.parse(await readFile(join(f.output,'manifest.json'),'utf8'));
+  frozen.answer_scoring_sha256='0'.repeat(64);
+  await writeFile(join(f.output,'manifest.json'),json(frozen));
+  await assert.rejects(loadReadingArchive(f.output),/implementation/);
 });
 
 test('reading corpus rejects external processing denial, expiry, split overlap and symlink material',async t=>{

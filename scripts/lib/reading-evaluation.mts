@@ -5,6 +5,7 @@ import {dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {imageDigests,SCREEN_QUERY_VERSION,validateScope} from '../../server/src/screen-query.ts';
 import {composeScreenQuery} from '../../server/src/screen-query.ts';
 import {objectiveEvalAnswerHit} from '../../server/src/objective-eval-scoring.ts';
+import {parseReadingAnswerScoring,readingAnswerHit,readingAnswerScoringDigest,READING_ANSWER_SCORING_VERSION,type ReadingAnswerScoring} from './reading-answer-scoring.mts';
 import {qualityDigest,type QualityCase,type QualityCombination,type QualityRun} from '../../server/src/quality.ts';
 
 export class ReadingEvidenceError extends Error {
@@ -36,11 +37,13 @@ function reference(value:unknown):EvidenceFile {
 export interface ReadingCase {
   id:string;family_id:string;kind:QualityCase['kind'];language:QualityCase['language'];layout:QualityCase['layout'];
   expectation:QualityCase['expectation'];risk:QualityCase['risk'];accepted_answers:string[];
+  answer_scoring?:ReadingAnswerScoring|null;
   image_media_type:'image/png'|'image/jpeg';images:EvidenceFile[];
   scope:ReturnType<typeof validateScope>;
 }
 export interface ReadingManifest {
-  schema_version:1;dataset_id:string;dataset_role:'holdout'|'diagnostic';scope_version:string;
+  schema_version:1|2;dataset_id:string;dataset_role:'holdout'|'diagnostic';scope_version:string;
+  answer_scoring_version?:typeof READING_ANSWER_SCORING_VERSION;answer_scoring_sha256?:string;
   declarations:QualityCombination[];explanations_per_kind:number;
   family_split:EvidenceFile;authorization_review:EvidenceFile;cases:ReadingCase[];
 }
@@ -48,20 +51,36 @@ export function readingManifestSubject(manifest:ReadingManifest):string {
   const {authorization_review:_,...subject}=manifest;return qualityDigest(subject);
 }
 export function parseReadingManifest(value:unknown):ReadingManifest {
-  const raw=object(value,['schema_version','dataset_id','dataset_role','scope_version','declarations','explanations_per_kind','family_split','authorization_review','cases']);
-  if(raw.schema_version!==1||raw.scope_version!==SCREEN_QUERY_VERSION||!Array.isArray(raw.cases)||!raw.cases.length||raw.cases.length>5000||
+  const schema2=!!value&&typeof value==='object'&&(value as Record<string,unknown>).schema_version===2;
+  const raw=object(value,['schema_version','dataset_id','dataset_role','scope_version','declarations','explanations_per_kind','family_split','authorization_review','cases',
+    ...(schema2?['answer_scoring_version','answer_scoring_sha256']:[])]);
+  if(![1,2].includes(Number(raw.schema_version))||typeof raw.schema_version!=='number'||raw.scope_version!==SCREEN_QUERY_VERSION||!Array.isArray(raw.cases)||!raw.cases.length||raw.cases.length>5000||
     !Array.isArray(raw.declarations)||raw.declarations.length>12)return invalid();
+  if(schema2&&(raw.answer_scoring_version!==READING_ANSWER_SCORING_VERSION||raw.answer_scoring_sha256!==readingAnswerScoringDigest()))
+    return invalid('Reading scoring implementation differs from the frozen manifest');
   const cases=raw.cases.map(value=>{
-    const c=object(value,['id','family_id','kind','language','layout','expectation','risk','accepted_answers','image_media_type','images','scope']);
+    const c=object(value,['id','family_id','kind','language','layout','expectation','risk','accepted_answers','image_media_type','images','scope',
+      ...(raw.schema_version===2?['answer_scoring']:[])]);
     if(!Array.isArray(c.images)||!c.images.length||c.images.length>4||!Array.isArray(c.accepted_answers)||c.accepted_answers.length>16)return invalid();
     const expectation=choice(c.expectation,['answerable','retake','out_of_scope','multiple_targets','unlabelled']);
     const answers=c.accepted_answers.map(answer=>{
       if(typeof answer!=='string'||!answer.trim()||[...answer].length>512)return invalid();return answer;
     });
     if((expectation==='answerable')!==(answers.length>0)||new Set(answers).size!==answers.length)return invalid();
+    const kind=choice(c.kind,[...kinds,'other']);
+    let scoring:{answer_scoring?:ReadingAnswerScoring|null}={};
+    if(raw.schema_version===2) {
+      if(expectation==='answerable') {
+        try {scoring={answer_scoring:parseReadingAnswerScoring(c.answer_scoring,kind,answers)};}
+        catch {return invalid('Invalid reading answer scoring policy or gold');}
+      } else {
+        if(c.answer_scoring!==null)return invalid('Non-answerable cases require null answer scoring');
+        scoring={answer_scoring:null};
+      }
+    }
     let scope:ReturnType<typeof validateScope>;
     try {scope=validateScope(c.scope,c.images.length);}catch{return invalid('Invalid corpus target scope');}
-    return {id:id(c.id),family_id:id(c.family_id),kind:choice(c.kind,[...kinds,'other']),language:choice(c.language,['zh','ja','en']),
+    return {id:id(c.id),family_id:id(c.family_id),kind,language:choice(c.language,['zh','ja','en']),...scoring,
       layout:choice(c.layout,['web','pdf','practice_ui','multi_page','single_image','unknown']),expectation,
       risk:choice(c.risk,['none','missing_context','cropped','unreadable','ambiguous']),accepted_answers:answers,
       image_media_type:choice(c.image_media_type,['image/png','image/jpeg']),images:c.images.map(reference),scope};
@@ -75,7 +94,8 @@ export function parseReadingManifest(value:unknown):ReadingManifest {
     return {profile:choice(d.profile,['reading_practice']),kind:choice(d.kind,kinds),language:choice(d.language,['zh','ja','en'])};
   });
   if(new Set(declarations.map(qualityDigest)).size!==declarations.length)return invalid('Duplicate support declaration');
-  const manifest:ReadingManifest={schema_version:1,dataset_id:id(raw.dataset_id),dataset_role:choice(raw.dataset_role,['holdout','diagnostic']),
+  const manifest:ReadingManifest={schema_version:raw.schema_version as 1|2,dataset_id:id(raw.dataset_id),dataset_role:choice(raw.dataset_role,['holdout','diagnostic']),
+    ...(schema2?{answer_scoring_version:READING_ANSWER_SCORING_VERSION,answer_scoring_sha256:sha(raw.answer_scoring_sha256)}:{}),
     scope_version:SCREEN_QUERY_VERSION,declarations,explanations_per_kind:integer(raw.explanations_per_kind,100),
     family_split:reference(raw.family_split),authorization_review:reference(raw.authorization_review),cases};
   if(manifest.dataset_role==='holdout') {
@@ -207,7 +227,10 @@ export function scoreReadingCase(corpus:LoadedReadingCorpus,item:ReadingCase,str
     profile:'reading_practice',kind:item.kind,language:item.language,layout:item.layout,expectation:item.expectation,risk:item.risk,
     state:path==='none'?'failed':path==='screen_no_result'?'no_result':parsed!.objective.state!,parser_path:path,
     protocol_valid:path==='v1'||path==='screen_no_result',no_result_reason:path==='screen_no_result'?parsed!.reason as 'unsupported_scope'|'multiple_targets':null,
-    has_answer:hasAnswer,answer_correct:hasAnswer&&item.expectation!=='unlabelled'?item.expectation==='answerable'&&objectiveEvalAnswerHit(parsed!.objective.finalAnswer,item.accepted_answers):null,
+    has_answer:hasAnswer,answer_correct:hasAnswer&&item.expectation!=='unlabelled'?item.expectation==='answerable'&&
+      (corpus.manifest.schema_version===2
+        ?!!item.answer_scoring&&readingAnswerHit(parsed!.objective.finalAnswer,item.accepted_answers,item.answer_scoring)
+        :objectiveEvalAnswerHit(parsed!.objective.finalAnswer,item.accepted_answers)):null,
     request_ms:requestMS,input_tokens:stream&&stream.receipt.input_tokens>0?stream.receipt.input_tokens:null,
     output_tokens:stream&&stream.receipt.output_tokens>0?stream.receipt.output_tokens:null};
 }

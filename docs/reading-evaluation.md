@@ -8,9 +8,10 @@
 
 | 输入 | 内容和约束 |
 |---|---|
-| manifest | schema 1、dataset ID、holdout/diagnostic、范围版本、声明组合、每题型解释抽样数、家族/授权文件引用及有序 cases |
+| manifest | schema 1 或 2、dataset ID、holdout/diagnostic、范围版本、声明组合、每题型解释抽样数、家族/授权文件引用及有序 cases |
 | case | 唯一 ID、family ID、题型、语言、布局、预期、风险、标准答案集合、JPEG/PNG MIME、1–4 个有序图片引用、最后一图上的单目标 scope |
 | 答案真值 | 仅 answerable 有非空 `accepted_answers`；retake、范围外、多目标及 unlabelled 不填猜测答案。保留单位、符号、完整选项及顺序 |
+| schema 2 评分 | manifest 必需 `answer_scoring_version=reading-answer-v1` 与 `answer_scoring_sha256`；每题必需 `answer_scoring`，answerable 使用下表中的显式规则，其他预期必须为 null。版本、代码摘要、规则和金标都进入授权摘要 |
 | 图片 | 每文件不超过 6 MiB；相对路径不得越过题集目录，禁止最终符号链接、管道及损坏图片。完整解码沿用生产校验，保留原字节摘要和页序。完全相同图片集合与 scope 不能重复计样本 |
 | family split | schema 1、dataset ID、`development_families`、`holdout_families`；两组各自唯一且不相交，holdout 集合必须正好覆盖 manifest 的家族 |
 | corpus review | schema 1、reviewer、UTC reviewed_at/expires_at、`manifest_subject_sha256`，以及 authorized_materials、external_model_processing、labels_reviewed、family_split_verified 四项明确 true |
@@ -19,6 +20,26 @@
 | cost bound | [`EvaluationCallBound`](../scripts/lib/evaluation-budget.mts) 规定的币种、价格、输入/输出最大 token、换汇上界及来源。与模型和候选地址完全一致；核验有效期最多 24h |
 
 授权复核人必须与 executor 不同。`readingManifestSubject` 对去掉 `authorization_review` 引用后的完整规范化 manifest 求摘要，避免授权文件循环引用；最终 manifest 字节摘要仍绑定该授权文件。源文件复核包括向外部模型传输的授权，普通 feedback-v2 导出授权不满足这个条件。
+
+### schema 2 的逐题评分语义
+
+[`reading-answer-scoring.mts`](../scripts/lib/reading-answer-scoring.mts) 只服务新题集。schema 1 沿用原匹配器，现有 240 题的 fixture、评分程序和 FINAL/JSON 生产协议均不改变；不能通过升级评分规则重写历史跑题结果。schema 2 的实时评分与离线原始响应重放使用同一规则。
+
+| mode | 必需字段 | 规则 |
+|---|---|---|
+| literal | mode | Unicode/空白/完整 Markdown 外壳归一化后逐字匹配；不推测“或”两侧可交换 |
+| label_set | mode、labels | labels 为题面允许的大写 A–Z 标签；全部选中项相同即可，不看顺序，重复、漏选、多选及 OR 表达均拒绝 |
+| label_sequence | mode、labels、prefilled | 顺序必须完整一致；prefilled 是固定的零基 position/label 列表，无预填时填空数组。可接收完整排列或全部未预填空位，按固定位置展开后比较；不能改动预填项或省略其他项 |
+| number | mode、unit_aliases、unit_optional | 用 BigInt 有理数精确比较十进制、分数及带分数，不设误差容忍；单位只能是审定的同单位拼写别名，是否允许省略须明确 |
+| number_sequence | mode | 按位置比较至少两个精确数值；不排序、不删除重复值；只用于无单位数值序列 |
+
+标签允许紧凑字母、空格、逗号、顿号或分号；多选另允许 AND/和/及/と，排序另允许箭头。数值序列的分号、箭头和逗号加空格可保留项内千位逗号；裸逗号相邻整数可能构成千位分组或存在前导零时拒绝，要求明确边界。空项、尾分隔符和不完整括号不能获得正确分数。
+
+指数/下标不先做 NFKC 拼接为整数；`10²` 不等于 `102`。数值规则不执行数学表达式、科学记数法、比较符或单位换算，含不同单位的排序等特殊题应明确审查 literal 接受形式；不能随意把 m/cm 或 hour/minute 当拼写别名。输入中的完整 Markdown 外壳可去除，单位大小写仍有意义。超过长度上限、零分母、非法千位分组及无法解析的金标在调用前拒绝。
+
+新规则可表达评分政策，不自动证明某题的单位、预填空位、允许省略或完整标签集正确。正式策展必须逐题选择并独立复核；政策变更会改变授权摘要，旧签署不可沿用。
+
+`readingAnswerScoringDigest()` 绑定评分器、阅读评分集成及所用生产 objective/screen-query 解析文件的真实字节。加载或离线重放遇到算法摘要不符会拒绝，应使用原执行版本复现；不能只改摘要后沿用旧授权。该字段不改变既有 schema 1 档案。
 
 holdout 在调用前要求：声明组合中至少 400 个已标注样本、四题型各至少 100、每题型×语言组合至少 50；覆盖 web/PDF/practice_ui/multi_page、retake/out_of_scope/multiple_targets，以及 missing_context/cropped/unreadable/ambiguous；每题型解释计划至少 20。新增公开语言须补足各格样本。diagnostic 允许小题集，其结果不能作为新增范围放行依据。
 
