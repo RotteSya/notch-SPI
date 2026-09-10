@@ -102,6 +102,9 @@ test('sequence line breaks are item boundaries while mixed fractions and thousan
   assert.equal(readingAnswerHit('1\n1/2;1000;2000',['1.5;1000;2000'],policy),false);
   const quantities=parseReadingAnswerScoring({mode:'quantity_sequence',items:Array.from({length:3},()=>({unit_aliases:['kg'],unit_optional:true}))},'ordering',['1;200kg;2kg']);
   assert.equal(readingAnswerHit('1,200kg,2kg',['1;200kg;2kg'],quantities),false,'ambiguous thousands cannot become an extra item');
+  const currency=parseReadingAnswerScoring({mode:'quantity_sequence',items:Array.from({length:4},()=>({unit_aliases:['$'],unit_prefix_aliases:['$'],unit_optional:true}))},'ordering',['1;200;2;300']);
+  assert.equal(readingAnswerHit('$1,200,$2,300',['1;200;2;300'],currency),false);
+  assert.equal(readingAnswerHit('$1, 200, $2, 300',['1;200;2;300'],currency),true);
 });
 test('invalid policies, incomplete gold and incompatible question kinds fail before dispatch',()=>{
   const bad:Array<[unknown,string,string[]]>=[

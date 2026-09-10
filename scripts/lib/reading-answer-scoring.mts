@@ -153,6 +153,10 @@ function canonical(value:string,policy:ReadingAnswerScoring):string|null {
     }
     case 'quantity_sequence':{
       const sequence=sequenceParts(value);if(!sequence||sequence.parts.length!==policy.items.length)return null;
+      // A prefix can hide a thousands group from the unitless lexical check:
+      // "$1,200" must not become two answers merely because units are optional.
+      if(!sequence.thousands&&sequence.parts.some((part,index)=>index>0&&
+        numeric(sequence.parts[index-1]!+','+part,policy.items[index-1]!,true)!==null))return null;
       const values=sequence.parts.map((v,index)=>numeric(v,policy.items[index]!,sequence.thousands));
       return values.some(v=>v===null)?null:values.join(';');
     }
