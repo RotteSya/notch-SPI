@@ -58,6 +58,7 @@ for (const kind of ['memory', 'sqlite'] as const) {
     ['ready', ready, 1, 'usable'],
     ['review', output('B', 'review', 'ambiguous_options'), 1, 'usable'],
     ['retake', 'NSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"retake","answer":null,"reason":"missing_context"}', 0, 'retake'],
+    ['retake with a model disclaimer in FINAL', 'FINAL: Cannot determine — the question is cropped; the total number of lollipops is missing.\nNSPI_RESULT_V1: {"v":1,"kind":"short_fill","state":"retake","answer":null,"reason":"cropped"}', 0, 'failed'],
     ['fallback', 'FINAL: B', 1, 'usable'],
     ['multiple targets', 'NSPI_NO_RESULT_V1: {"v":1,"reason":"multiple_targets"}', 0, 'no_result'],
     ['unsupported', 'NSPI_NO_RESULT_V1: {"v":1,"reason":"unsupported_scope"}', 0, 'no_result'],

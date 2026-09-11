@@ -1,6 +1,14 @@
 # 2026-09-11 实际发布执行状态
 
-最新预算决定：用户随后明确要求“测试花费不要超过27元”。同一campaign及两份工作区政策已下调为27 CNY，139条既有费用记录完整保留，未重置或删除。新政策SHA `5dcbcf34b0ff59a4f7020cebb39fcff7d86a598976977bc55f5d9737a68d16df`。旧100元配置已停止派发，实测重新使用旧政策会被持久账本拒绝；当前评测暂停，尚未继续发送模型请求。供应商显示余额由27.20降至27.13，差额约0.07元；这是账户级、按分显示的变化，不把它冒充精确逐请求账单。原保守预留9.109504元保留在139条账本记录中，后续测试须重新核定27元总上限内的方案。下面100元与970次的数字是本次降额之前的启动记录。
+当前状态（2026-09-11 11:11 UTC账单核对）：本轮969次实际派发已完成，同一campaign累计上限27 CNY，包含此前139次。保守预留合计26.915840元，仍保留原始金额；账户余额从27.20降到26.13，账户级差额约1.07元。余额按分显示且包含账户其他活动，不冒充逐请求精确账单。没有追加付费调用、重置预算或释放历史预留。两份预算政策SHA仍为 `5dcbcf34b0ff59a4f7020cebb39fcff7d86a598976977bc55f5d9737a68d16df`。
+
+Objective同模型240+240比较完整通过：treatment可作答准确率94.6078%、ready精确率97.0238%、retake召回100%、V1合法率100%；平均token比legacy增加4.38%，p95降低9.76%。完整阅读408题和80解释也已执行结束，但新范围质量未通过。独立诊断确认单选原评分器不接受“标签＋完整选项文字”，造成98条格式误判：冻结得分1/100保留，另档内容等价诊断99/100。排序存在真实错序，不能把所有失败都归于评分格式；80条解释的独立AI复核已完成：61/80同时正确、一致且无无关推断；正确性单项70/80，一致性62/80，10条严重矛盾、5条静默改写、材料/协议泄漏0。全部父答案为ready/v1，其他状态路径覆盖仍不足；本配置不能开放该profile解释。
+
+真实阅读响应还暴露了软件缺陷：`browser-risk-cropped` 的有效retake JSON附带了模型误写的FINAL，原解析把“无法确定”的文字降级为可收费fallback并扣1题。已在独立 `codex/retake-no-charge` 工作树修复：矛盾封包以failed结束，无可用答案、完成态无复制正文并释放额度；协议违规仍保留，不计为合法V1或retake召回通过。544项Node测试通过，Swift 321项中317通过、4项按条件跳过（2个系统截图探针、2个模型/旧记录评测），warnings-as-errors及arm64 Release编译通过。既有截图路径未改，先前8846e61实际截图证据仍按原候选保留。独立反例45种和408条原响应重放确认，仅该失败条目的扣题判断改变，其余407条不变。原 `1364899` 工作树及原响应不动，继续用于冻结评分重放。此前已公证的8846e61安装包不包含此新修复，不可作为最终新候选发布。
+
+Stripe已通过临时受保护服务端诊断核验实际继承的项目密钥：Checkout Sessions读200；Charges、Refunds、Disputes、Balance Transactions均403。已定位notchSPI现有受限密钥checkout（尾号4uoQ）；所需Balance、Charges and Refunds、Payment Disputes三项只读授权正在等待浏览器操作当场确认，尚未选择或保存。生产部署仍为 `dpl_BStwrGFdwhRC7FP3g2m6snSpcgfC`，未公开发布。
+
+以下带“启动/续跑”的段落保留历史时点，不能当作当前仍有模型进程运行。
 
 用户已批准小用户量发布流程：内部必要验收通过即可向现有用户开放，七天费用与28天产品观察在上线后计算，不等待四档各72小时或200次请求。执行细则见 [发布调整](small-user-release-2026-09-11.md)。
 
@@ -13,7 +21,7 @@
 - 用户更新DeepSeek密钥后，09:57 UTC余额和型号查询均HTTP200；账户有27.20元人民币，deepseek-flash可用。实时官方页面确认当前V4.1 Flash支持图片，高峰输入/输出价格为2/8元每百万token。
 - 最终408题、457图经独立AI四项静态授权并通过当前完整corpus loader。manifest SHA `a6e6d5e7678b0a590146b0dc0fb88710433f7fb0d714b7bbf6b7c77f29f16fe0`；授权SHA `f33508571bda98e082c151146a1427c552e1be18474a07f91a347db2395109ab`。此授权不代表模型成绩或发布通过。
 
-## 隔离评测正在执行
+## 隔离评测启动与续跑历史
 
 27元方案实际进展：已解除有记录的操作员暂停，保留原139条费用记录。精确候选的Objective treatment 240题完整通过：V1合法率100%、可作答准确率94.6078%、ready精确率97.0238%、retake召回100%；平均1041.4625 token、p95为2405ms。同模型legacy 240题仍在执行，未提前宣布相对性能门槛通过。工具提交4199b94的CI 34589187229已成功。
 
@@ -29,6 +37,21 @@
 
 ## 发布仍需完成
 
-生产仍为 `dpl_BStwrGFdwhRC7FP3g2m6snSpcgfC`。实际模型质量、支付资源核验、停流备份与兼容迁移、最终支持目录及生产开关尚待完成。Stripe本地值只读请求401；生产变量为sensitive，读取返回decrypted=false，后续在服务器继承配置后验证实际读取能力。
+生产仍为 `dpl_BStwrGFdwhRC7FP3g2m6snSpcgfC`。实际模型质量、支付资源核验、停流备份与兼容迁移、最终支持目录及生产开关尚待完成。生产密钥的实际服务端权限已核验，见本文顶部；本地值401不能用于推断生产密钥失效。
 
 原始私有证据位于 native/.release-evidence/2026-09-11 下的 lean-release-current-ui、lean-scheduler、formal-composition、cheap-candidate 和 stripe-read-check；不进入App或公开发布资产。
+
+## 本轮完成证据索引
+
+以下均为私有本地证据，不随App分发：
+
+- `cheap-candidate/budget-completed-1789125071525.json`：最终969次、27元政策、26.13元账户余额的只读查询；无新增模型调用。
+- `cheap-candidate/objective-pair-execution.json` 与 `objective-eval-output/2026-09-11T10-35-13.458Z-legacy-comparison.json`：完整240+240同模型比较。
+- `cheap-candidate/reading-continued-27/completion.json`：408答案、80解释的完整执行；原档案和原评分不覆盖。
+- `cheap-candidate/answer-format-independent-diagnostic.json`：单选98条格式误判的来源绑定诊断；不是另一个预注册评测。
+- `cheap-candidate/partial-review-remaining-46.json`：补完46条解释并汇总全80；SHA `c7c1c59472a2b27956b8b958a747711bf5839ecb703c07cccc39109a4ebd82b3`。
+- `cheap-candidate/retake-fix-offline-replay-v2.json`：最终修复对408条已存响应的离线回归；旧成绩和历史扣题事件不被重写。
+- `cheap-candidate/retake-fix-v2-node-full.log`、`retake-fix-v2-swift.log`、`retake-fix-v2-release-build.log`：完整本地检查日志。
+- `stripe-read-check/actual-server-permissions.json`：服务端实际支付密钥的5种只读资源检查。
+
+已知usage按各次冻结价格计算并保留未知预留的只读测算为1.362435元，见`historical-usage-cost-feasibility.json`；这是保守测算，既不是供应商精确账单，也没有据此释放本地26.915840元历史预留。后续付费验证必须先解决费用准入口径并继续守住同一27元累计上限。

@@ -141,7 +141,10 @@ enum ObjectiveResultParser {
                 }
             } else if result?.state == .retake, final != nil {
                 append(.invalidStateCombination)
-                result = nil
+                // Preserve the unusable result instead of offering FINAL as an answer.
+                append(.missingUsableResult)
+                return .init(visibleText: "", finalAnswer: nil, result: nil, state: nil,
+                             parserPath: .none, violations: violations)
             }
         }
 

@@ -11,5 +11,8 @@
   {"id":"none","raw":"work only","path":"none","state":null,"violations":["missingUsableResult"]},
   {"id":"invalid-ready-other","raw":"FINAL: text\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"ready\",\"answer\":\"text\",\"reason\":\"none\"}","path":"legacy_fallback","state":"review","violations":["invalidStateCombination"]},
   {"id":"marker-not-last","raw":"FINAL: A\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"ready\",\"answer\":\"A\",\"reason\":\"none\"}\nafter","path":"legacy_fallback","state":"review","violations":["markerNotLast"]},
-  {"id":"machine-line-in-fence","raw":"FINAL: A\n```json\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"ready\",\"answer\":\"A\",\"reason\":\"none\"}","path":"legacy_fallback","state":"review","violations":["invalidStateCombination"]}
+  {"id":"machine-line-in-fence","raw":"FINAL: A\n```json\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"ready\",\"answer\":\"A\",\"reason\":\"none\"}","path":"legacy_fallback","state":"review","violations":["invalidStateCombination"]},
+  {"id":"retake-with-final-cropped","raw":"FINAL: Cannot determine — the question is cropped; the total number of lollipops is missing.\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"retake\",\"answer\":null,\"reason\":\"cropped\"}","path":"none","state":null,"violations":["invalidStateCombination","missingUsableResult"]},
+  {"id":"retake-with-final-unreadable","raw":"FINAL: B\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"retake\",\"answer\":null,\"reason\":\"unreadable\"}","path":"none","state":null,"violations":["invalidStateCombination","missingUsableResult"]},
+  {"id":"retake-with-final-missing_context","raw":"FINAL: A, C\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"retake\",\"answer\":null,\"reason\":\"missing_context\"}","path":"none","state":null,"violations":["invalidStateCombination","missingUsableResult"]}
 ]
