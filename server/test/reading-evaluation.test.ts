@@ -4,6 +4,7 @@ import {mkdtemp,readFile,writeFile,rm,symlink,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import {createServer,type ServerResponse} from 'node:http';
 import {once} from 'node:events';
 import {execFile} from 'node:child_process';
@@ -90,7 +91,7 @@ async function fixture(t:{after:(fn:()=>unknown)=>void},behavior:Behavior={},cou
   t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));budget.close();await rm(dir,{recursive:true,force:true});});
   const output=join(dir,'run');
   let accessAttempts=0;
-  const run=async()=>runReadingEvaluation({evaluationAccess:async()=>{accessAttempts++;return behavior.protected?await openEvaluationAccess(base,'synthetic-access'):undefined;},corpus:await loadReadingCorpus(source.path,'executor'),candidate,budget,executor:'executor',deviceToken:'synthetic-test-token',outputDir:output,
+  const run=async(options:{resumeFrom?:string;outputDir?:string;budget?:EvaluationBudget}={})=>runReadingEvaluation({evaluationAccess:async()=>{accessAttempts++;return behavior.protected?await openEvaluationAccess(base,'synthetic-access'):undefined;},corpus:await loadReadingCorpus(source.path,'executor'),candidate,budget,executor:'executor',deviceToken:'synthetic-test-token',outputDir:output,...options,
     candidateBytes:json(candidate),candidateEvidenceBytes:evidence});
   return {dir,source,requests,budget,bound,candidate,evidence,output,run,accessAttempts:()=>accessAttempts};
 }
@@ -415,4 +416,67 @@ test('reading protected admission, answers and explanations share transport acce
     const text=await readFile(join(f.output,name),'utf8');
     assert.ok(!text.includes('synthetic-access')&&!text.includes('synthetic-cookie')&&!text.includes('synthetic-test-token'));
   }
+});
+
+async function pausedFixture(t:{after:(fn:()=>unknown)=>void}) {
+  const f=await fixture(t),fetchText=f.budget.fetchText.bind(f.budget);let calls=0;
+  f.budget.fetchText=async(...args:Parameters<typeof fetchText>)=>{
+    if(++calls===3)throw new Error('Synthetic operator pause before reservation');
+    return fetchText(...args);
+  };
+  const stopped=await f.run();assert.equal(stopped.halt_reason,'budget_or_dispatch_gate');
+  f.budget.fetchText=fetchText;
+  return f;
+}
+
+test('reading continuation preserves paid bytes, prices and selection across a lower campaign cap',async t=>{
+  const f=await pausedFixture(t),prior=await loadReadingArchive(f.output);
+  assert.equal(prior.completion.answer_cases,2);assert.equal(f.requests.length,2);
+  const oldIndex=JSON.parse(await readFile(join(f.output,'results.json'),'utf8'));
+  const db=new DatabaseSync(join(f.dir,'budget.sqlite3'));
+  db.prepare('UPDATE evaluation_campaigns SET limit_micros=27000000 WHERE id=?').run('test-only');db.close();
+  const nextBudget=new EvaluationBudget(join(f.dir,'budget.sqlite3'),{schema_version:1,campaign_id:'test-only',currency:'CNY',limit_micros:27_000_000},
+    {...f.bound,explanation_output_token_upper:500,verified_at:at()},f.candidate.model,f.candidate.base_url);
+  t.after(()=>nextBudget.close());
+  const output=join(f.dir,'continued'),complete=await f.run({resumeFrom:f.output,outputDir:output,budget:nextBudget});
+  assert.equal(complete.complete,true);assert.equal(complete.answer_cases,4);assert.equal(complete.explanation_calls,4);
+  const archive=await loadReadingArchive(output),index=JSON.parse(await readFile(join(output,'results.json'),'utf8'));
+  assert.equal(archive.plan.run_id,prior.plan.run_id);assert.deepEqual(archive.plan.planned_cases,prior.plan.planned_cases);
+  assert.equal(archive.plan.continuation?.retained_responses,2);
+  assert.deepEqual(archive.plan.continuation?.budget.purpose_calls,{answer:3,explain:5});
+  assert.deepEqual(index.slice(0,2),oldIndex.slice(0,2));
+  assert.equal(f.requests.length,8);assert.equal(new Set(f.requests.map(r=>r.body.capture_id)).size,8);
+  assert.deepEqual(await readFile(join(output,'previous','completion.json')),await readFile(join(f.output,'completion.json')));
+  const rows=await Promise.all(index.map((entry:{file:string})=>readFile(join(output,entry.file),'utf8').then(JSON.parse)));
+  assert.deepEqual(rows.map(r=>r.upper_cny_micros),[2000,2000,2000,1500,2000,1500,2000,1500]);
+  await assert.rejects(f.run({resumeFrom:f.output,outputDir:join(f.dir,'duplicate'),budget:nextBudget}),/already claimed/);
+  await assert.rejects(f.run({resumeFrom:join(output,'previous'),outputDir:join(f.dir,'copied-duplicate'),budget:nextBudget}),/already claimed/);
+  const parentCompletion=await readFile(join(output,'previous','completion.json'));
+  await writeFile(join(output,'previous','completion.json'),Buffer.concat([parentCompletion,Buffer.from(' ')]));
+  await assert.rejects(f.run({resumeFrom:join(output,'previous'),outputDir:join(f.dir,'reformatted-duplicate'),budget:nextBudget}),/already claimed/);
+  await writeFile(join(output,'previous','completion.json'),parentCompletion);
+  assert.equal(f.requests.length,8);
+  await assert.rejects(f.run({resumeFrom:output,outputDir:join(f.dir,'nested'),budget:nextBudget}),/Nested/);
+  const original=await readFile(join(output,'continuation-cost-bound.json'));
+  await writeFile(join(output,'continuation-cost-bound.json'),Buffer.concat([original,Buffer.from(' ')]));
+  await assert.rejects(loadReadingArchive(output));
+});
+
+test('reading continuation rejects a missing paid ledger row before access or new requests',async t=>{
+  const f=await pausedFixture(t),index=JSON.parse(await readFile(join(f.output,'results.json'),'utf8'));
+  const row=JSON.parse(await readFile(join(f.output,index[0].file),'utf8'));
+  const db=new DatabaseSync(join(f.dir,'budget.sqlite3'));db.prepare('DELETE FROM evaluation_dispatches WHERE id=?').run(row.dispatch_id);db.close();
+  await assert.rejects(f.run({resumeFrom:f.output,outputDir:join(f.dir,'continued')}),/ledger differs/);
+  assert.equal(f.requests.length,2);assert.equal(f.accessAttempts(),1);
+});
+
+test('reading continuation refuses a charged last dispatch or changed corpus before access',async t=>{
+  const f=await pausedFixture(t),index=JSON.parse(await readFile(join(f.output,'results.json'),'utf8'));
+  const last=JSON.parse(await readFile(join(f.output,index.at(-1).file),'utf8'));
+  f.budget.reserve(last.dispatch_id,last.case_id,'answer');
+  await assert.rejects(f.run({resumeFrom:f.output,outputDir:join(f.dir,'charged')}),/ledger differs/);
+  assert.equal(f.requests.length,2);assert.equal(f.accessAttempts(),1);
+  f.source.manifest.cases[0]!.accepted_answers=['C'];await f.source.save();
+  await assert.rejects(f.run({resumeFrom:f.output,outputDir:join(f.dir,'changed')}),/identity differs/);
+  assert.equal(f.requests.length,2);assert.equal(f.accessAttempts(),1);
 });

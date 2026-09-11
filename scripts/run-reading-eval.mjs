@@ -20,6 +20,7 @@ async function main() {
     const evaluationAccess=()=>openEvaluationAccess(candidate.base_url,process.env.NSPI_EVAL_VERCEL_SHARE_TOKEN);
     const completion=await runReadingEvaluation({corpus,candidate,budget,evaluationAccess,executor:process.env.NSPI_EVAL_EXECUTOR,
       deviceToken:process.env.NSPI_EVAL_DEVICE_TOKEN,outputDir:resolve(root,process.env.NSPI_READING_EVAL_OUT),candidateBytes,candidateEvidenceBytes,
+      resumeFrom:process.env.NSPI_READING_EVAL_RESUME?resolve(root,process.env.NSPI_READING_EVAL_RESUME):undefined,
       progress:(done,total)=>console.log('Reading evaluation cases: '+done+'/'+total)});
     console.log(JSON.stringify({complete:completion.complete,answer_cases:completion.answer_cases,explanation_calls:completion.explanation_calls,
       halt_reason:completion.halt_reason,review_subject_sha256:completion.review_subject_sha256,release_ready:false}));

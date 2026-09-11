@@ -37,13 +37,15 @@ export interface ReadingArchive {
 }
 
 /** Offline only: reconstruct scores from every indexed raw response, never trust edited scores. */
-export async function loadReadingArchive(directory:string,now=Date.now()):Promise<ReadingArchive> {
+export async function loadReadingArchive(directory:string,now=Date.now(),allowContinuation=true):Promise<ReadingArchive> {
   const root=await realpath(resolve(directory));
   const responseDirectory=await realpath(resolve(root,'responses'));
   if(responseDirectory!==resolve(root,'responses'))fail();
   const read=(name:string,limit=1024*1024)=>readEvidenceFile(resolve(root,name),limit);
   const planBytes=await read('run.json',8*1024*1024),rawPlan=evidenceJSON(planBytes);
-  keys(rawPlan,['schema_version','run_id','started_at','executor','candidate','candidate_sha256','manifest_sha256','family_split_sha256','corpus_review_sha256','cost_bound_sha256','budget_policy_sha256','planned_cases','explanation_policy','budget','admission']);
+  const continuing=Boolean(rawPlan&&typeof rawPlan==='object'&&Object.hasOwn(rawPlan,'continuation'));
+  if(continuing&&!allowContinuation)fail('Nested continuations are not supported');
+  keys(rawPlan,['schema_version','run_id','started_at','executor','candidate','candidate_sha256','manifest_sha256','family_split_sha256','corpus_review_sha256','cost_bound_sha256','budget_policy_sha256','planned_cases','explanation_policy','budget','admission',...(continuing?['continuation']:[])]);
   if(rawPlan.schema_version!==1)fail();identifier(rawPlan.run_id);identifier(rawPlan.executor);time(rawPlan.started_at,now);
   for(const field of ['candidate_sha256','manifest_sha256','family_split_sha256','corpus_review_sha256','cost_bound_sha256','budget_policy_sha256'])hash(rawPlan[field]);
   const manifestBytes=await read('manifest.json',8*1024*1024),manifest=parseReadingManifest(evidenceJSON(manifestBytes));
@@ -78,6 +80,34 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
   if(rawPlan.admission.checked_at>rawPlan.started_at||rawPlan.admission.account_balance<manifest.cases.length||rawPlan.admission.config_revision!==candidate.config_revision||
     typeof rawPlan.admission.provider!=='string'||manifest.dataset_role==='holdout'&&!['anthropic','deepseek','openai'].includes(rawPlan.admission.provider))fail();
   const plan=rawPlan as unknown as ReadingRunPlan;
+  let continuationBound:EvaluationCallBound|null=null,continuationPrefix:ReadingResponseIndex[]=[];
+  if(continuing) {
+    const c=rawPlan.continuation;
+    keys(c,['previous_completion_sha256','retained_responses','resumed_at','cost_bound_sha256','budget_policy_sha256','budget','admission']);
+    for(const field of ['previous_completion_sha256','cost_bound_sha256','budget_policy_sha256'])hash(c[field]);
+    number(c.retained_responses,callCount);time(c.resumed_at,now);
+    if(await realpath(resolve(root,'previous'))!==resolve(root,'previous'))fail();
+    const previous=await loadReadingResumeSource(resolve(root,'previous'),now);
+    const {continuation:ignored,...originalPlan}=plan;equal(originalPlan,previous.archive.plan);
+    if(c.previous_completion_sha256!==previous.completionSHA||c.retained_responses!==previous.index.length-1||c.resumed_at<previous.archive.completion.finished_at)fail('Continuation parent differs');
+    validateReadingCandidate(candidate,manifest.scope_version,Date.parse(c.resumed_at));
+    if(c.resumed_at>=review.expires_at)fail();
+    continuationPrefix=previous.index.slice(0,-1);
+    const newBoundBytes=await read('continuation-cost-bound.json'),newPolicyBytes=await read('continuation-budget-policy.json');
+    if(bytesSHA(newBoundBytes)!==c.cost_bound_sha256||bytesSHA(newPolicyBytes)!==c.budget_policy_sha256)fail();
+    continuationBound=evidenceJSON(newBoundBytes) as EvaluationCallBound;
+    const newPolicy=evidenceJSON(newPolicyBytes) as EvaluationPolicy;validateEvaluationPolicy(newPolicy);
+    if(newPolicy.campaign_id!==policy.campaign_id||newPolicy.currency!==policy.currency||newPolicy.limit_micros>policy.limit_micros)fail();
+    const answerUpper=callUpperCNY(continuationBound,candidate.model,candidate.base_url,Date.parse(c.resumed_at)),auxUpper=callUpperCNY(continuationBound,candidate.model,candidate.base_url,Date.parse(c.resumed_at),'explain');
+    keys(c.budget,['calls','upper_cny_micros','remaining_cny_micros',...(continuationBound.explanation_output_token_upper===undefined?[]:['purpose_calls'])]);
+    for(const field of ['calls','upper_cny_micros','remaining_cny_micros'])number(c.budget[field]);
+    if(continuationBound.explanation_output_token_upper!==undefined)equal(c.budget.purpose_calls,previous.remaining);
+    const allocation=previous.remaining.answer*answerUpper+previous.remaining.explain*auxUpper;
+    if(c.budget.calls!==previous.remaining.answer+previous.remaining.explain||c.budget.upper_cny_micros!==allocation||allocation>Number(c.budget.remaining_cny_micros)||Number(c.budget.remaining_cny_micros)>newPolicy.limit_micros)fail();
+    keys(c.admission,['checked_at','account_balance','config_revision','provider']);time(c.admission.checked_at,now);number(c.admission.account_balance);
+    if(c.admission.checked_at<previous.archive.completion.finished_at||c.admission.checked_at>c.resumed_at||c.admission.account_balance<manifest.cases.length||
+      c.admission.config_revision!==candidate.config_revision||c.admission.provider!==plan.admission.provider)fail();
+  }
   const rawCompletion=evidenceJSON(await read('completion.json'));
   keys(rawCompletion,['schema_version','plan_sha256','finished_at','complete','halt_reason','results_sha256','draft_sha256','review_subject_sha256','answer_cases','explanation_calls','rejection_checks','unresolved_dispatches']);
   if(rawCompletion.schema_version!==1||typeof rawCompletion.complete!=='boolean')fail();time(rawCompletion.finished_at,now);
@@ -88,6 +118,10 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
   const completion=rawCompletion as unknown as ReadingCompletion;
   const indexBytes=await read('results.json',8*1024*1024),rawIndex=evidenceJSON(indexBytes);
   if(bytesSHA(indexBytes)!==completion.results_sha256||!Array.isArray(rawIndex)||rawIndex.length>callCount)fail();
+  if(continuing) {
+    if(rawIndex.length<continuationPrefix.length||completion.finished_at<plan.continuation!.resumed_at)fail();
+    equal(rawIndex.slice(0,continuationPrefix.length),continuationPrefix);
+  }
   const rows:ReadingResponse[]=[],index:ReadingResponseIndex[]=[],files=new Set<string>(),allIDs=new Set<string>();let previous=plan.started_at;
   const receipts=new Map<string,ReadingReceipt|null>(),refusals=new Map<string,boolean>(),answerScores:QualityCase[]=[];
   for(const value of rawIndex) {
@@ -102,11 +136,12 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
       value.file!==`responses/${raw.dispatch_id}.json`||raw.started_at<previous||raw.finished_at<raw.started_at||raw.finished_at>completion.finished_at||
       typeof raw.body!=='string'||Buffer.byteLength(raw.body)>2*1024*1024||raw.content_type!==null&&(typeof raw.content_type!=='string'||raw.content_type.length>4096))fail();
     if(raw.http_status!==null){number(raw.http_status,599);if(raw.http_status<100)fail();}
-    if(raw.upper_cny_micros!==null){number(raw.upper_cny_micros);if(raw.upper_cny_micros!==(raw.purpose==='answer'?upper:explanationUpper))fail();}
+    const activeBound=continuationBound&&index.length>=continuationPrefix.length?continuationBound:bound;
+    if(activeBound===continuationBound&&raw.started_at<plan.continuation!.resumed_at)fail();
+    if(raw.upper_cny_micros!==null){number(raw.upper_cny_micros);if(raw.upper_cny_micros!==callUpperCNY(activeBound,candidate.model,candidate.base_url,Date.parse(raw.started_at),raw.purpose==='answer'?'answer':'explain'))fail();}
     if(raw.failure!==null&&!['not_dispatched','transport_failed'].includes(String(raw.failure)))fail();
     if(raw.failure===null?(raw.http_status===null||raw.upper_cny_micros===null):raw.http_status!==null||raw.content_type!==null||raw.body!=='')fail();
     if((raw.failure==='not_dispatched')!==(raw.upper_cny_micros===null))fail();
-    if(raw.upper_cny_micros!==null)callUpperCNY(bound,candidate.model,candidate.base_url,Date.parse(raw.started_at),raw.purpose==='answer'?'answer':'explain');
     if(raw.purpose==='answer'){if(raw.parent_capture_id!==null)fail();}else uuid(raw.parent_capture_id);
     const dispatchFile=`responses/${raw.dispatch_id}.dispatch.json`,dispatch=evidenceJSON(await read(dispatchFile));
     equal(dispatch,{schema_version:1,case_id:raw.case_id,capture_id:raw.capture_id,parent_capture_id:raw.parent_capture_id,dispatch_id:raw.dispatch_id,purpose:raw.purpose,started_at:raw.started_at});
@@ -160,6 +195,25 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
       output_tokens:calls.length&&usage.every(s=>s&&s.output_tokens>0)?usage.reduce((sum,s)=>sum+s!.output_tokens,0):null};
   });
   return {draft,plan,completion,explanations,explanation_subject_sha256:qualityDigest({run_id:plan.run_id,results_sha256:completion.results_sha256,explanations,rejection_checks:rejections}),rejection_checks:rejections,cost_bounds:costBounds};
+}
+
+/** A continuation can remove only the final, provably unissued answer control row. */
+export async function loadReadingResumeSource(directory:string,now=Date.now()) {
+  const archive=await loadReadingArchive(directory,now,false),root=await realpath(directory);
+  if(archive.completion.complete||archive.completion.halt_reason!=='budget_or_dispatch_gate')fail('Continuation requires an operator/budget stop before dispatch');
+  const index=evidenceJSON(await readEvidenceFile(resolve(root,'results.json'),8*1024*1024)) as ReadingResponseIndex[];
+  const rows:ReadingResponse[]=[];
+  for(const entry of index) {
+    const bytes=await readEvidenceFile(resolve(root,entry.file),13*1024*1024);
+    if(bytesSHA(bytes)!==entry.sha256)fail();
+    rows.push({...evidenceJSON(bytes) as ReadingResponse,body:''});
+  }
+  const last=rows.at(-1);
+  if(!last||last.purpose!=='answer'||last.failure!=='not_dispatched'||last.upper_cny_micros!==null||rows.slice(0,-1).some(r=>r.failure==='not_dispatched')||archive.draft.cases.length<2)fail('Continuation cannot retry an issued or ambiguous request');
+  const policy=evidenceJSON(await readEvidenceFile(resolve(root,'budget-policy.json'),1024*1024)) as EvaluationPolicy;
+  return {archive,index,rows,policy,completionSHA:bytesSHA(await readEvidenceFile(resolve(root,'completion.json'),1024*1024)),
+    remaining:{answer:archive.plan.planned_cases.length-archive.draft.cases.length+1,
+      explain:4*archive.plan.explanation_policy.per_kind+2-archive.completion.explanation_calls-archive.completion.rejection_checks}};
 }
 
 export async function prepareReadingQuality(directory:string,reviewFile:string,explanationReviewFile?:string,now=Date.now()) {

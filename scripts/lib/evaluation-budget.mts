@@ -111,7 +111,10 @@ export class EvaluationBudget {
           id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, bound_sha256 TEXT NOT NULL,
           model TEXT NOT NULL, fixture_id TEXT NOT NULL, purpose TEXT NOT NULL,
           upper_cny_micros INTEGER NOT NULL CHECK(upper_cny_micros>0),
-          outcome TEXT NOT NULL, input_tokens INTEGER, output_tokens INTEGER, created_at TEXT NOT NULL);`);
+          outcome TEXT NOT NULL, input_tokens INTEGER, output_tokens INTEGER, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS evaluation_continuations (
+          campaign_id TEXT NOT NULL, source_run_id TEXT NOT NULL, source_completion_sha256 TEXT NOT NULL, output_directory TEXT NOT NULL,
+          claimed_at TEXT NOT NULL, PRIMARY KEY(campaign_id,source_run_id));`);
       this.db.prepare('INSERT INTO evaluation_campaigns(id,currency,limit_micros) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING')
         .run(policy.campaign_id, policy.currency, policy.limit_micros);
       const row = this.db.prepare('SELECT currency,limit_micros FROM evaluation_campaigns WHERE id=?').get(policy.campaign_id)!;
@@ -202,6 +205,17 @@ export class EvaluationBudget {
   }
   candidateIdentity(): {model:string;baseURL:string} {return {model:this.model,baseURL:this.baseURL};}
   costEvidence(): {policy:EvaluationPolicy;bound:EvaluationCallBound} {return {policy:structuredClone(this.policy),bound:structuredClone(this.bound)};}
+
+  claimContinuation(sourceRunID: string, sourceCompletionSHA: string, outputDirectory: string): void {
+    nonempty(sourceRunID, 'continuation run');
+    if (!/^[a-f0-9]{64}$/.test(sourceCompletionSHA)) throw new Error('Invalid continuation source digest');
+    nonempty(outputDirectory, 'continuation output');
+    this.assertActive();
+    const result=this.db.prepare(`INSERT INTO evaluation_continuations(campaign_id,source_run_id,source_completion_sha256,output_directory,claimed_at)
+      VALUES (?,?,?,?,?) ON CONFLICT(campaign_id,source_run_id) DO NOTHING`)
+      .run(this.policy.campaign_id,sourceRunID,sourceCompletionSHA,resolve(outputDirectory),new Date().toISOString());
+    if (result.changes!==1) throw new Error('Continuation already claimed in the campaign ledger; inspect the existing successor');
+  }
 
   async fetchText(path: string, init: RequestInit, fixture: string, purpose: EvaluationPurpose, id: string = randomUUID()) {
     if (!/^\/v1\/captures(?:\/[0-9a-f-]+\/(?:explanation|recovery))?$/u.test(path) || init.method !== 'POST') {

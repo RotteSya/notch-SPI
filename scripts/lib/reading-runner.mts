@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {mkdir,open} from 'node:fs/promises';
+import {mkdir,open,copyFile,constants} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {qualityDigest,qualityReviewSubject,type QualityCase,type QualityRun} from '../../server/src/quality.ts';
 import {composeScreenQuery} from '../../server/src/screen-query.ts';
@@ -46,6 +46,8 @@ export interface ReadingRunPlan {
   explanation_policy:{per_kind:number;selection:'first_usable_in_manifest_order';rejection_checks:2};
   budget:{calls:number;upper_cny_micros:number;remaining_cny_micros:number;purpose_calls?:{answer:number;explain:number}};
   admission:{checked_at:string;account_balance:number;config_revision:string;provider:string};
+  continuation?:{previous_completion_sha256:string;retained_responses:number;resumed_at:string;
+    cost_bound_sha256:string;budget_policy_sha256:string;budget:ReadingRunPlan['budget'];admission:ReadingRunPlan['admission']};
 }
 export interface ReadingCompletion {
   schema_version:1;plan_sha256:string;finished_at:string;complete:boolean;halt_reason:string|null;
@@ -122,7 +124,7 @@ export function draftReadingRun(corpus:LoadedReadingCorpus,plan:ReadingRunPlan,r
 }
 
 export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;candidate:ReadingCandidate;budget:EvaluationBudget;
-  evaluationAccess?:EvaluationAccess|(()=>Promise<EvaluationAccess|undefined>);executor:string;deviceToken:string;outputDir:string;candidateBytes:Buffer;candidateEvidenceBytes:Buffer;progress?:(completed:number,total:number)=>void}):Promise<ReadingCompletion> {
+  evaluationAccess?:EvaluationAccess|(()=>Promise<EvaluationAccess|undefined>);executor:string;deviceToken:string;outputDir:string;resumeFrom?:string;candidateBytes:Buffer;candidateEvidenceBytes:Buffer;progress?:(completed:number,total:number)=>void}):Promise<ReadingCompletion> {
   const {corpus,budget,executor}=input,candidate=validateReadingCandidate(input.candidate,corpus.manifest.scope_version);
   const bound=budget.candidateIdentity();
   if(bound.model!==candidate.model||bound.baseURL!==candidate.base_url||input.candidateBytes.length>1024*1024||
@@ -130,14 +132,31 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
     qualityDigest(validateReadingCandidate(evidenceJSON(input.candidateBytes),corpus.manifest.scope_version))!==qualityDigest(candidate))throw new ReadingEvidenceError('Candidate and budget/evidence binding differ');
   if(! /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/.test(executor)||executor.toLowerCase()===corpus.review.reviewer.toLowerCase())throw new ReadingEvidenceError('Independent corpus reviewer must differ from executor');
   if(!input.deviceToken||input.deviceToken.length>512||/[\s\r\n]|\[SENSITIVE\]|\[REDACTED\]|placeholder|changeme/i.test(input.deviceToken))throw new ReadingEvidenceError('An isolated evaluation device credential is required');
-  const totalCalls=corpus.manifest.cases.length+4*corpus.manifest.explanations_per_kind+2;
+  const resume=input.resumeFrom?await (await import('./reading-quality.mts')).loadReadingResumeSource(input.resumeFrom):null;
+  if(resume) {
+    const prior=resume.archive.plan;
+    if(prior.executor!==executor||prior.manifest_sha256!==corpus.manifestSHA||prior.candidate_sha256!==bytesSHA(input.candidateBytes))throw new ReadingEvidenceError('Continuation identity differs');
+    const oldPolicy=resume.policy,newPolicy=budget.costEvidence().policy;
+    if(newPolicy.campaign_id!==oldPolicy.campaign_id||newPolicy.currency!==oldPolicy.currency||newPolicy.limit_micros>oldPolicy.limit_micros)throw new ReadingEvidenceError('Continuation must retain the same campaign without increasing its cap');
+    for(const row of resume.rows) {
+      const evidence=budget.dispatchEvidence(row.dispatch_id);
+      if(row.failure==='not_dispatched'?evidence!==null:!evidence||evidence.upperCNYMicros!==row.upper_cny_micros)throw new ReadingEvidenceError('Continuation ledger differs from preserved dispatches');
+    }
+  }
+  const purposeCalls=resume?.remaining??{answer:corpus.manifest.cases.length,explain:4*corpus.manifest.explanations_per_kind+2};
+  const totalCalls=purposeCalls.answer+purposeCalls.explain;
   const allocationForRun=():ReadingRunPlan['budget']=>{
     if(budget.costEvidence().bound.explanation_output_token_upper===undefined)return budget.checkWholeRun(totalCalls);
-    const purpose_calls={answer:corpus.manifest.cases.length,explain:4*corpus.manifest.explanations_per_kind+2};
+    const purpose_calls=purposeCalls;
     return {...budget.checkPlan(purpose_calls),purpose_calls};
   };
   allocationForRun();
   await preflightReadingRequests(corpus);
+  // One successor only. An interrupted local preparation needs inspection, never an automatic second attempt.
+  if(resume) {
+    budget.claimContinuation(resume.archive.plan.run_id,resume.completionSHA,input.outputDir);
+    await writeReadingArtifact(resolve(input.resumeFrom!,'.continuation-claim.json'),{output:resolve(input.outputDir),claimed_at:new Date().toISOString()});
+  }
   const evaluationAccess=typeof input.evaluationAccess==='function'?await input.evaluationAccess():input.evaluationAccess;
   const admission=await admitCandidate(corpus,candidate,input.deviceToken,evaluationAccess);
   validateReadingCandidate(candidate,corpus.manifest.scope_version);
@@ -145,9 +164,10 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
   const allocation=allocationForRun();
   const output=resolve(input.outputDir);
   await mkdir(dirname(output),{recursive:true,mode:0o700});await mkdir(output,{mode:0o700});await mkdir(resolve(output,'responses'),{mode:0o700});
-  const runID='reading-'+randomUUID(),startedAt=new Date().toISOString();
-  const cost=budget.costEvidence(),costSHA=await writeReadingArtifact(resolve(output,'cost-bound.json'),cost.bound),policySHA=await writeReadingArtifact(resolve(output,'budget-policy.json'),cost.policy);
-  const plan:ReadingRunPlan={schema_version:1,run_id:runID,started_at:startedAt,executor,candidate,candidate_sha256:bytesSHA(input.candidateBytes),
+  const resumedAt=new Date().toISOString(),runID=resume?.archive.plan.run_id??'reading-'+randomUUID(),startedAt=resume?.archive.plan.started_at??resumedAt;
+  const cost=budget.costEvidence(),prefix=resume?'continuation-':'',costSHA=await writeReadingArtifact(resolve(output,prefix+'cost-bound.json'),cost.bound),policySHA=await writeReadingArtifact(resolve(output,prefix+'budget-policy.json'),cost.policy);
+  const plan:ReadingRunPlan=resume?{...resume.archive.plan,continuation:{previous_completion_sha256:resume.completionSHA,retained_responses:resume.index.length-1,
+    resumed_at:resumedAt,cost_bound_sha256:costSHA,budget_policy_sha256:policySHA,budget:allocation,admission}}:{schema_version:1,run_id:runID,started_at:startedAt,executor,candidate,candidate_sha256:bytesSHA(input.candidateBytes),
     manifest_sha256:corpus.manifestSHA,family_split_sha256:corpus.manifest.family_split.sha256,corpus_review_sha256:corpus.manifest.authorization_review.sha256,
     cost_bound_sha256:costSHA,budget_policy_sha256:policySHA,
     planned_cases:corpus.manifest.cases.map(c=>({case_id:c.id,capture_id:randomUUID()})),
@@ -163,9 +183,21 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
     const data=await corpusFile(corpus.root,ref,1024*1024),file=await open(resolve(output,name),'wx',0o600);
     try {await file.writeFile(data);await file.sync();}finally{await file.close();}
   }
-  const planSHA=await writeReadingArtifact(resolve(output,'run.json'),plan),rows:ReadingResponse[]=[],index:ReadingResponseIndex[]=[],answerScores:QualityCase[]=[];
-  let dispatches=0;
+  if(resume) {
+    await mkdir(resolve(output,'previous'),{mode:0o700});await mkdir(resolve(output,'previous/responses'),{mode:0o700});
+    const names=['run.json','completion.json','manifest.json','family-split.json','corpus-review.json','candidate.json','candidate-evidence.bin','cost-bound.json','budget-policy.json','results.json','quality-draft.json',
+      ...resume.index.flatMap(entry=>[entry.file,entry.file.replace(/\.json$/,'.dispatch.json')])];
+    for(const name of names)await copyFile(resolve(input.resumeFrom!,name),resolve(output,'previous',name),constants.COPYFILE_EXCL);
+    const copied=await (await import('./reading-quality.mts')).loadReadingResumeSource(resolve(output,'previous'));
+    if(copied.completionSHA!==resume.completionSHA)throw new ReadingEvidenceError('Continuation source changed during copy');
+    for(const name of ['cost-bound.json','budget-policy.json',...resume.index.slice(0,-1).flatMap(entry=>[entry.file,entry.file.replace(/\.json$/,'.dispatch.json')])])
+      await copyFile(resolve(output,'previous',name),resolve(output,name),constants.COPYFILE_EXCL);
+  }
+  const planSHA=await writeReadingArtifact(resolve(output,'run.json'),plan),rows:ReadingResponse[]=resume?.rows.slice(0,-1)??[],index:ReadingResponseIndex[]=resume?.index.slice(0,-1)??[],answerScores:QualityCase[]=resume?.archive.draft.cases.slice(0,-1)??[];
+  let dispatches=index.length;
   const selected=new Map<string,number>(),rejectionStates=new Set<string>();let halt:string|null=null;
+  for(const evidence of resume?.archive.explanations??[])selected.set(evidence.kind,(selected.get(evidence.kind)??0)+1);
+  for(const evidence of resume?.archive.rejection_checks??[])rejectionStates.add(evidence.parent_state);
   const call=async(item:ReadingCase,images:string[],purpose:ReadingResponse['purpose'],captureID:string,parentID:string|null,answer:string|null):Promise<ReadingResponse>=>{
     validateReadingCandidate(candidate,corpus.manifest.scope_version);
     if(Date.parse(corpus.review.expires_at)<=Date.now())throw new ReadingEvidenceError('Corpus authorization expired');
@@ -195,6 +227,7 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
     return row;
   };
   for(const [position,item] of corpus.manifest.cases.entries()) {
+    if(position<(resume?.archive.draft.cases.length??1)-1)continue;
     if(halt)break;
     try {
       const images=await readingImages(corpus,item),id=plan.planned_cases[position]!.capture_id;

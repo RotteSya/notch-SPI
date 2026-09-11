@@ -64,6 +64,7 @@ candidate 时间为规范 UTC ISO（含毫秒），最多 24h，URL 只允许 HT
 | `NSPI_EVAL_VERCEL_SHARE_TOKEN` | 可选；受保护 Vercel 预览地址的临时访问 token，仅用于传输鉴权 |
 | `NSPI_EVAL_COST_BOUND` | 绑定该候选的有效成本上界文件 |
 | `NSPI_READING_EVAL_OUT` | 尚不存在的私有输出目录 |
+| `NSPI_READING_EVAL_RESUME` | 可选；因预算或操作员暂停、且最后一条答案确定未派发的原始部分归档 |
 
 受保护预览使用同一个 `evaluation-access.mts` 入口取得 Cookie，供账户准入、答案和解释请求使用。交换最多等待 15 秒，不跟随重定向；Cookie 只可发送至已绑定的同一 origin，过期立即停止。访问 token/Cookie 不进入候选声明、费用账本或评测归档。生产域名或未保护的诊断服务省略该变量。此入口同时用于 Objective treatment 和 legacy 基线，不能为了运行基线关闭部署保护。
 
@@ -78,6 +79,10 @@ candidate 时间为规范 UTC ISO（含毫秒），最多 24h，URL 只允许 HT
 成本上界可以声明 `explanation_output_token_upper`，但必须由实际候选解释端点的输出限制提供证据，不改变产品配置。声明后计划分别计算答案和解释（包括解释入口拒绝检查），将数量写入 `purpose_calls`；离线工具按逐条操作重算预留。旧上界与旧档案仍使用原单价计算方式。将solve误标为explain会在HTTP前拒绝；解释实际usage超过较小上界同样会永久暂停campaign。运行中的预算实例会读取持久化的新低上限，不能继续沿用缓存的较大额度。按时段核定价格时，证据有效期必须落在已核实的价格窗口内，每次派发重新检查有效期。
 
 ## 原始归档与离线重算
+
+续跑仅支持最后一条为 `answer/not_dispatched`、没有费用账本行的确定边界。执行器先验证完整原档案、候选、材料、同一 campaign 的逐条历史预留；保留原计划、题目顺序及捕获 ID，只继续尚未派发的题目。解释按已经选取的数量恢复，失败解释也占原位置。新预算只覆盖剩余调用，不能提高 campaign 上限或重算历史预留。
+
+原始完整归档复制到新输出的 `previous/`；顶层保留已派发响应原字节，最后的未派发暂停记录仍留在 previous 中。`run.json` 的 continuation 字段分别绑定旧完成记录、新准入、价格、预算和恢复时刻。离线读取器检查两段价格与时间，按全体实际响应重新评分。共享账本按 campaign 与原 run ID 原子登记唯一续跑者，复制目录或重新序列化完成记录也不能再派发。只允许一层续跑；若登记后本地准备中断，必须核对现场，不能自动换目录重启。
 
 输出目录 0700、文件 0600，独占创建并同步落盘。它包含 manifest、家族/授权文件、候选签署和核验原件、成本政策、冻结 `run.json`、`responses/*.dispatch.json` / `*.json`、`results.json`、`quality-draft.json`、`completion.json`。原题图片仍在受控题集目录，标准答案和模型原文仅在私有评测归档中；不放入 App、遥测、公共发布资产或管理员质量摘要。
 
