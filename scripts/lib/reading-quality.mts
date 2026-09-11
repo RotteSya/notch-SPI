@@ -60,15 +60,20 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
     if(item.case_id!==manifest.cases[i]!.id||captureIDs.has(item.capture_id))fail();captureIDs.add(item.capture_id);
   }
   equal(rawPlan.explanation_policy,{per_kind:manifest.explanations_per_kind,selection:'first_usable_in_manifest_order',rejection_checks:2});
-  keys(rawPlan.budget,['calls','upper_cny_micros','remaining_cny_micros']);
-  for(const value of Object.values(rawPlan.budget))number(value);
+  const operationPlan=Boolean(rawPlan.budget&&typeof rawPlan.budget==='object'&&Object.hasOwn(rawPlan.budget,'purpose_calls'));
+  keys(rawPlan.budget,['calls','upper_cny_micros','remaining_cny_micros',...(operationPlan?['purpose_calls']:[])]);
+  for(const name of ['calls','upper_cny_micros','remaining_cny_micros'])number(rawPlan.budget[name]);
   const callCount=manifest.cases.length+4*manifest.explanations_per_kind+2;
-  if(rawPlan.budget.calls!==callCount||Number(rawPlan.budget.upper_cny_micros)<=0||Number(rawPlan.budget.upper_cny_micros)>Number(rawPlan.budget.remaining_cny_micros)||Number(rawPlan.budget.upper_cny_micros)%callCount!==0)fail();
+  if(rawPlan.budget.calls!==callCount||Number(rawPlan.budget.upper_cny_micros)<=0||Number(rawPlan.budget.upper_cny_micros)>Number(rawPlan.budget.remaining_cny_micros))fail();
   const boundBytes=await read('cost-bound.json'),policyBytes=await read('budget-policy.json');
   if(bytesSHA(boundBytes)!==rawPlan.cost_bound_sha256||bytesSHA(policyBytes)!==rawPlan.budget_policy_sha256)fail();
   const bound=evidenceJSON(boundBytes) as EvaluationCallBound,policy=evidenceJSON(policyBytes) as EvaluationPolicy;validateEvaluationPolicy(policy);
   const upper=callUpperCNY(bound,candidate.model,candidate.base_url,Date.parse(rawPlan.started_at));
-  if(upper*callCount!==rawPlan.budget.upper_cny_micros||Number(rawPlan.budget.remaining_cny_micros)>policy.limit_micros)fail();
+  const explanationUpper=callUpperCNY(bound,candidate.model,candidate.base_url,Date.parse(rawPlan.started_at),'explain');
+  if(operationPlan)equal(rawPlan.budget.purpose_calls,{answer:manifest.cases.length,explain:4*manifest.explanations_per_kind+2});
+  if(operationPlan!==(bound.explanation_output_token_upper!==undefined))fail('Operation cost plan does not match its bound');
+  const expectedUpper=operationPlan?upper*manifest.cases.length+explanationUpper*(4*manifest.explanations_per_kind+2):upper*callCount;
+  if(expectedUpper!==rawPlan.budget.upper_cny_micros||Number(rawPlan.budget.remaining_cny_micros)>policy.limit_micros)fail();
   keys(rawPlan.admission,['checked_at','account_balance','config_revision','provider']);time(rawPlan.admission.checked_at,now);number(rawPlan.admission.account_balance);
   if(rawPlan.admission.checked_at>rawPlan.started_at||rawPlan.admission.account_balance<manifest.cases.length||rawPlan.admission.config_revision!==candidate.config_revision||
     typeof rawPlan.admission.provider!=='string'||manifest.dataset_role==='holdout'&&!['anthropic','deepseek','openai'].includes(rawPlan.admission.provider))fail();
@@ -97,11 +102,11 @@ export async function loadReadingArchive(directory:string,now=Date.now()):Promis
       value.file!==`responses/${raw.dispatch_id}.json`||raw.started_at<previous||raw.finished_at<raw.started_at||raw.finished_at>completion.finished_at||
       typeof raw.body!=='string'||Buffer.byteLength(raw.body)>2*1024*1024||raw.content_type!==null&&(typeof raw.content_type!=='string'||raw.content_type.length>4096))fail();
     if(raw.http_status!==null){number(raw.http_status,599);if(raw.http_status<100)fail();}
-    if(raw.upper_cny_micros!==null){number(raw.upper_cny_micros);if(raw.upper_cny_micros!==plan.budget.upper_cny_micros/callCount)fail();}
+    if(raw.upper_cny_micros!==null){number(raw.upper_cny_micros);if(raw.upper_cny_micros!==(raw.purpose==='answer'?upper:explanationUpper))fail();}
     if(raw.failure!==null&&!['not_dispatched','transport_failed'].includes(String(raw.failure)))fail();
     if(raw.failure===null?(raw.http_status===null||raw.upper_cny_micros===null):raw.http_status!==null||raw.content_type!==null||raw.body!=='')fail();
     if((raw.failure==='not_dispatched')!==(raw.upper_cny_micros===null))fail();
-    if(raw.upper_cny_micros!==null)callUpperCNY(bound,candidate.model,candidate.base_url,Date.parse(raw.started_at));
+    if(raw.upper_cny_micros!==null)callUpperCNY(bound,candidate.model,candidate.base_url,Date.parse(raw.started_at),raw.purpose==='answer'?'answer':'explain');
     if(raw.purpose==='answer'){if(raw.parent_capture_id!==null)fail();}else uuid(raw.parent_capture_id);
     const dispatchFile=`responses/${raw.dispatch_id}.dispatch.json`,dispatch=evidenceJSON(await read(dispatchFile));
     equal(dispatch,{schema_version:1,case_id:raw.case_id,capture_id:raw.capture_id,parent_capture_id:raw.parent_capture_id,dispatch_id:raw.dispatch_id,purpose:raw.purpose,started_at:raw.started_at});

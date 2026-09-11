@@ -44,7 +44,7 @@ export interface ReadingRunPlan {
   cost_bound_sha256:string;budget_policy_sha256:string;
   planned_cases:Array<{case_id:string;capture_id:string}>;
   explanation_policy:{per_kind:number;selection:'first_usable_in_manifest_order';rejection_checks:2};
-  budget:{calls:number;upper_cny_micros:number;remaining_cny_micros:number};
+  budget:{calls:number;upper_cny_micros:number;remaining_cny_micros:number;purpose_calls?:{answer:number;explain:number}};
   admission:{checked_at:string;account_balance:number;config_revision:string;provider:string};
 }
 export interface ReadingCompletion {
@@ -131,13 +131,18 @@ export async function runReadingEvaluation(input:{corpus:LoadedReadingCorpus;can
   if(! /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/.test(executor)||executor.toLowerCase()===corpus.review.reviewer.toLowerCase())throw new ReadingEvidenceError('Independent corpus reviewer must differ from executor');
   if(!input.deviceToken||input.deviceToken.length>512||/[\s\r\n]|\[SENSITIVE\]|\[REDACTED\]|placeholder|changeme/i.test(input.deviceToken))throw new ReadingEvidenceError('An isolated evaluation device credential is required');
   const totalCalls=corpus.manifest.cases.length+4*corpus.manifest.explanations_per_kind+2;
-  budget.checkWholeRun(totalCalls);
+  const allocationForRun=():ReadingRunPlan['budget']=>{
+    if(budget.costEvidence().bound.explanation_output_token_upper===undefined)return budget.checkWholeRun(totalCalls);
+    const purpose_calls={answer:corpus.manifest.cases.length,explain:4*corpus.manifest.explanations_per_kind+2};
+    return {...budget.checkPlan(purpose_calls),purpose_calls};
+  };
+  allocationForRun();
   await preflightReadingRequests(corpus);
   const evaluationAccess=typeof input.evaluationAccess==='function'?await input.evaluationAccess():input.evaluationAccess;
   const admission=await admitCandidate(corpus,candidate,input.deviceToken,evaluationAccess);
   validateReadingCandidate(candidate,corpus.manifest.scope_version);
   if(Date.parse(corpus.review.expires_at)<=Date.now())throw new ReadingEvidenceError('Corpus authorization expired during admission');
-  const allocation=budget.checkWholeRun(totalCalls);
+  const allocation=allocationForRun();
   const output=resolve(input.outputDir);
   await mkdir(dirname(output),{recursive:true,mode:0o700});await mkdir(output,{mode:0o700});await mkdir(resolve(output,'responses'),{mode:0o700});
   const runID='reading-'+randomUUID(),startedAt=new Date().toISOString();

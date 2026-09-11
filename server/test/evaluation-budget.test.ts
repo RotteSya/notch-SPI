@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 import { callUpperCNY, EvaluationBudget, type EvaluationCallBound } from '../../scripts/lib/evaluation-budget.mts';
 
 const model = 'deepseek-v4-flash-vision-exp';
@@ -23,6 +24,64 @@ function bound(overrides: Partial<EvaluationCallBound> = {}): EvaluationCallBoun
   };
 }
 const policy = { schema_version: 1, campaign_id: 'test', currency: 'CNY', limit_micros: 100_000 } as const;
+
+test('operation plans reserve the enforced explanation cap without refunding completed calls', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nspi-eval-operations-'));
+  const evidence = bound({ explanation_output_token_upper: 100 });
+  const budget = new EvaluationBudget(join(dir, 'budget.sqlite3'), policy, evidence, model, candidate);
+  try {
+    assert.deepEqual(budget.checkPlan({ answer: 1, explain: 1 }), { calls: 2, upper_cny_micros: 69_900, remaining_cny_micros: 100_000 });
+    assert.equal(budget.reserve('answer', 'f', 'answer'), 39_000);
+    assert.equal(budget.reserve('explain', 'f', 'explain'), 30_900);
+    budget.observeUsage('answer', 1, 1);budget.observeUsage('explain', 1, 1);
+    assert.equal(budget.remainingMicros(), 30_100);
+    assert.throws(() => budget.reserve('more', 'f', 'explain'), /exhausted/);
+    assert.throws(() => budget.checkPlan({ answer: -1 }), /Invalid/);
+    assert.throws(() => budget.checkPlan({ answer: 0 }), /positive/);
+    assert.throws(() => budget.checkPlan({ bogus: 1 } as never), /Invalid/);
+  } finally { budget.close();rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('explanation usage cannot exceed its smaller bound or restore earlier reservations', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nspi-eval-explanation-bound-')), file = join(dir, 'budget.sqlite3');
+  const evidence = bound({ explanation_output_token_upper: 100 });
+  const budget = new EvaluationBudget(file, policy, evidence, model, candidate);
+  try {
+    budget.reserve('explain', 'f', 'explain');
+    assert.throws(() => budget.observeUsage('explain', 1, 101), /exceeded/);
+    assert.equal(budget.remainingMicros(), 0);
+    assert.equal(budget.dispatchEvidence('explain')?.upperCNYMicros, 30_900);
+  } finally { budget.close(); }
+  const restarted = new EvaluationBudget(file, policy, evidence, model, candidate);
+  try { assert.throws(() => restarted.reserve('next', 'f', 'answer'), /halted/); }
+  finally { restarted.close();rmSync(dir, { recursive: true, force: true }); }
+  for (const invalid of [0, -1, 1001, NaN]) assert.throws(() => callUpperCNY(bound({ explanation_output_token_upper: invalid }), model, candidate));
+});
+
+test('lowering the persistent cap constrains an already running budget instance', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nspi-eval-lower-cap-')), file = join(dir, 'budget.sqlite3');
+  const budget = new EvaluationBudget(file, policy, bound(), model, candidate);
+  try {
+    budget.reserve('first', 'f', 'answer');
+    const admin = new DatabaseSync(file);
+    try { admin.prepare('UPDATE evaluation_campaigns SET limit_micros=? WHERE id=?').run(40_000, 'test'); } finally { admin.close(); }
+    assert.equal(budget.remainingMicros(), 1000);
+    assert.throws(() => budget.reserve('second', 'f', 'answer'), /exhausted/);
+    assert.equal(budget.dispatchEvidence('second'), null);
+  } finally { budget.close();rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a solve cannot be labelled as an inexpensive explanation before dispatch', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nspi-eval-purpose-'));
+  let requests = 0;const server = createServer((_req,res) => { requests++;res.end(); });
+  server.listen(0, '127.0.0.1');await once(server, 'listening');const address=server.address();assert.ok(address&&typeof address==='object');
+  const base = `http://127.0.0.1:${address.port}`, budget = new EvaluationBudget(join(dir, 'budget.sqlite3'), policy, bound({ base_url: base, explanation_output_token_upper: 100 }), model, base);
+  try {
+    await assert.rejects(budget.fetchText('/v1/captures', { method: 'POST' }, 'f', 'explain'), /does not match/);
+    await assert.rejects(budget.fetchText('/v1/captures/00000000-0000-4000-8000-000000000000/explanation', { method: 'POST' }, 'f', 'answer'), /does not match/);
+    assert.equal(requests, 0);assert.equal(budget.remainingMicros(), 100_000);
+  } finally { budget.close();server.close();await once(server, 'close');rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('evaluation cost bound uses integer arithmetic and upward CNY conversion', () => {
   assert.equal(callUpperCNY(bound(), model, candidate), 39_000);

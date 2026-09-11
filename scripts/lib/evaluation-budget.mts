@@ -20,6 +20,8 @@ export interface EvaluationCallBound {
   output_micros_per_million: number;
   input_token_upper: number;
   output_token_upper: number;
+  /** Optional, separately evidenced cap enforced by the candidate's explanation endpoint. */
+  explanation_output_token_upper?: number;
   cny_micros_per_currency_unit: number;
   pricing_source: string;
   currency_evidence: string;
@@ -50,12 +52,18 @@ export function validateEvaluationPolicy(policy: EvaluationPolicy): void {
   integer(policy.limit_micros, 'limit_micros');
 }
 
-export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL: string, now = Date.now()): number {
+export type EvaluationPurpose = 'answer' | 'baseline' | 'explain' | 'recover';
+
+export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL: string, now = Date.now(), purpose: EvaluationPurpose = 'answer'): number {
   if (bound.schema_version !== 1 || !['CNY', 'USD'].includes(bound.billing_currency)) throw new Error('Unsupported evaluation bound');
   nonempty(bound.model, 'model');
   if (bound.model !== model || candidateURL(bound.base_url) !== candidateURL(baseURL)) throw new Error('Evaluation model/candidate does not match its cost bound');
   for (const key of ['input_micros_per_million', 'output_micros_per_million', 'input_token_upper',
     'output_token_upper', 'cny_micros_per_currency_unit'] as const) integer(bound[key], key);
+  if (bound.explanation_output_token_upper !== undefined) {
+    integer(bound.explanation_output_token_upper, 'explanation_output_token_upper');
+    if (bound.explanation_output_token_upper > bound.output_token_upper) throw new Error('Explanation bound exceeds the candidate output bound');
+  }
   for (const key of ['pricing_source', 'currency_evidence', 'bounds_evidence'] as const) nonempty(bound[key], key);
   if (new URL(bound.pricing_source).protocol !== 'https:') throw new Error('Pricing evidence requires an HTTPS source');
   if (bound.billing_currency === 'CNY' && bound.cny_micros_per_currency_unit !== 1_000_000) throw new Error('CNY must not be converted');
@@ -65,7 +73,7 @@ export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL:
       expires <= verified || expires - verified > 86_400_000) throw new Error('Evaluation pricing/bounds need verification within the last 24 hours');
   // All quantities are integral; round upward only after converting to CNY micros.
   const numerator = (BigInt(bound.input_token_upper) * BigInt(bound.input_micros_per_million) +
-    BigInt(bound.output_token_upper) * BigInt(bound.output_micros_per_million)) * BigInt(bound.cny_micros_per_currency_unit);
+    BigInt(purpose === 'explain' ? bound.explanation_output_token_upper ?? bound.output_token_upper : bound.output_token_upper) * BigInt(bound.output_micros_per_million)) * BigInt(bound.cny_micros_per_currency_unit);
   const result = Number((numerator + 999_999_999_999n) / 1_000_000_000_000n);
   integer(result, 'call_upper_cny_micros');
   return result;
@@ -112,10 +120,27 @@ export class EvaluationBudget {
   }
 
   remainingMicros(): number {
-    if (this.db.prepare('SELECT halted FROM evaluation_campaigns WHERE id=?').get(this.policy.campaign_id)!.halted) return 0;
+    const campaign = this.db.prepare('SELECT halted,limit_micros FROM evaluation_campaigns WHERE id=?').get(this.policy.campaign_id)!;
+    if (campaign.halted) return 0;
     const row = this.db.prepare(`SELECT COALESCE(SUM(upper_cny_micros),0) AS consumed
       FROM evaluation_dispatches WHERE campaign_id=?`).get(this.policy.campaign_id)!;
-    return Math.max(0, this.policy.limit_micros - Number(row.consumed));
+    // A user may lower the shared cap while a process is alive. Its cached policy
+    // must not permit spending above the new persistent limit.
+    return Math.max(0, Math.min(this.policy.limit_micros, Number(campaign.limit_micros)) - Number(row.consumed));
+  }
+
+  checkPlan(plan: Partial<Record<EvaluationPurpose, number>>): { calls: number; upper_cny_micros: number; remaining_cny_micros: number } {
+    let calls = 0, required = 0n;
+    for (const [purpose, count] of Object.entries(plan)) {
+      if (!['answer', 'baseline', 'explain', 'recover'].includes(purpose) || !Number.isSafeInteger(count) || count < 0) throw new Error('Invalid evaluation operation plan');
+      calls += count;
+      if (count) required += BigInt(count) * BigInt(callUpperCNY(this.bound, this.model, this.baseURL, Date.now(), purpose as EvaluationPurpose));
+    }
+    integer(calls, 'calls');
+    this.assertActive();
+    const remaining = this.remainingMicros();
+    if (required > BigInt(remaining)) throw new Error(`Entire evaluation exceeds remaining CNY budget (${remaining / 1_000_000} yuan)`);
+    return { calls, upper_cny_micros: Number(required), remaining_cny_micros: remaining };
   }
 
   checkWholeRun(calls: number): { calls: number; upper_cny_micros: number; remaining_cny_micros: number } {
@@ -128,9 +153,9 @@ export class EvaluationBudget {
     return { calls, upper_cny_micros: Number(required), remaining_cny_micros: remaining };
   }
 
-  reserve(id: string, fixture: string, purpose: 'answer' | 'baseline' | 'explain' | 'recover'): number {
+  reserve(id: string, fixture: string, purpose: EvaluationPurpose): number {
     nonempty(id, 'dispatch id'); nonempty(fixture, 'fixture id');
-    const upper = callUpperCNY(this.bound, this.model, this.baseURL);
+    const upper = callUpperCNY(this.bound, this.model, this.baseURL, Date.now(), purpose);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.assertActive();
@@ -151,11 +176,13 @@ export class EvaluationBudget {
   }
 
   observeUsage(id: string, input: unknown, output: unknown): void {
-    if (!this.db.prepare('SELECT id FROM evaluation_dispatches WHERE id=? AND campaign_id=?').get(id, this.policy.campaign_id)) throw new Error('Unknown evaluation dispatch');
+    const dispatch = this.db.prepare('SELECT id,purpose FROM evaluation_dispatches WHERE id=? AND campaign_id=?').get(id, this.policy.campaign_id);
+    if (!dispatch) throw new Error('Unknown evaluation dispatch');
     // Missing, malformed and failed usage retains the entire bound. Do not interpret it as zero.
     if (typeof input !== 'number' || typeof output !== 'number' || !Number.isSafeInteger(input) ||
         !Number.isSafeInteger(output) || input < 0 || output < 0) return;
-    if (input > this.bound.input_token_upper || output > this.bound.output_token_upper) {
+    const outputBound = dispatch.purpose === 'explain' ? this.bound.explanation_output_token_upper ?? this.bound.output_token_upper : this.bound.output_token_upper;
+    if (input > this.bound.input_token_upper || output > outputBound) {
       // Keep the evidence of an invalid bound. Never cap the observed token counts.
       this.db.exec('BEGIN IMMEDIATE');
       try {
@@ -176,9 +203,12 @@ export class EvaluationBudget {
   candidateIdentity(): {model:string;baseURL:string} {return {model:this.model,baseURL:this.baseURL};}
   costEvidence(): {policy:EvaluationPolicy;bound:EvaluationCallBound} {return {policy:structuredClone(this.policy),bound:structuredClone(this.bound)};}
 
-  async fetchText(path: string, init: RequestInit, fixture: string, purpose: 'answer' | 'baseline' | 'explain' | 'recover', id: string = randomUUID()) {
+  async fetchText(path: string, init: RequestInit, fixture: string, purpose: EvaluationPurpose, id: string = randomUUID()) {
     if (!/^\/v1\/captures(?:\/[0-9a-f-]+\/(?:explanation|recovery))?$/u.test(path) || init.method !== 'POST') {
       throw new Error('Unexpected evaluation endpoint');
+    }
+    if ((path.endsWith('/explanation') ? purpose !== 'explain' : path.endsWith('/recovery') ? purpose !== 'recover' : !['answer', 'baseline'].includes(purpose))) {
+      throw new Error('Evaluation operation does not match its endpoint');
     }
     const upper = this.reserve(id, fixture, purpose);
     // No redirect following, retry, or automatic release: the vendor may bill a lost response.

@@ -56,7 +56,7 @@ async function corpusFixture(dir:string,count=4,explanations=1) {
   };
   await save();return {manifest,save,path:join(dir,'manifest.json')};
 }
-type Behavior={protected?:boolean;responses?:string[];statusAt?:number;status?:number;mimeAt?:number;breakAt?:number;tokenAt?:number;quota?:number;configuration?:string;negativeFails?:boolean;mutate?:()=>Promise<void>};
+type Behavior={protected?:boolean;responses?:string[];statusAt?:number;status?:number;mimeAt?:number;breakAt?:number;tokenAt?:number;quota?:number;configuration?:string;negativeFails?:boolean;explanationOutputBound?:number;mutate?:()=>Promise<void>};
 async function fixture(t:{after:(fn:()=>unknown)=>void},behavior:Behavior={},count=4,explanations=1) {
   const dir=await mkdtemp(join(tmpdir(),'nspi-reading-test-')),source=await corpusFixture(dir,count,explanations),requests:Array<{path:string;body:Record<string,unknown>}>=[];
   const send=(res:ServerResponse,body:unknown,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
@@ -84,7 +84,8 @@ async function fixture(t:{after:(fn:()=>unknown)=>void},behavior:Behavior={},cou
     config_revision:'test-r1',isolated:true,verified_by:'test-operator',verified_at:at(),expires_at:future(),verification_sha256:bytesSHA(evidence)};
   const bound:EvaluationCallBound={schema_version:1,model:candidate.model,base_url:base,billing_currency:'CNY',input_micros_per_million:1_000_000,
     output_micros_per_million:1_000_000,input_token_upper:1000,output_token_upper:1000,cny_micros_per_currency_unit:1_000_000,
-    pricing_source:'https://example.invalid/test-only',currency_evidence:'synthetic',bounds_evidence:'synthetic',verified_at:at(),expires_at:future()};
+    pricing_source:'https://example.invalid/test-only',currency_evidence:'synthetic',bounds_evidence:'synthetic',verified_at:at(),expires_at:future(),
+    ...(behavior.explanationOutputBound===undefined?{}:{explanation_output_token_upper:behavior.explanationOutputBound})};
   const budget=new EvaluationBudget(join(dir,'budget.sqlite3'),{schema_version:1,campaign_id:'test-only',currency:'CNY',limit_micros:100_000_000},bound,candidate.model,base);
   t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));budget.close();await rm(dir,{recursive:true,force:true});});
   const output=join(dir,'run');
@@ -101,6 +102,25 @@ async function reviewFiles(dir:string,archive:Awaited<ReturnType<typeof loadRead
   const answerPath=join(dir,'answer-review.json'),explanationPath=join(dir,'explanation-review.json');
   await writeFile(answerPath,json(answer));await writeFile(explanationPath,json(explanation));return {answer,explanation,answerPath,explanationPath};
 }
+
+test('operation-specific explanation reservations replay from frozen raw evidence',async t=>{
+  const f=await fixture(t,{explanationOutputBound:100});
+  assert.equal((await f.run()).complete,true);
+  const archive=await loadReadingArchive(f.output);
+  assert.deepEqual(archive.plan.budget.purpose_calls,{answer:4,explain:6});
+  assert.equal(archive.plan.budget.upper_cny_micros,14_600);
+  assert.equal(archive.cost_bounds.find(c=>c.purpose==='answer')?.reserved_cny_micros,8000);
+  assert.equal(archive.cost_bounds.find(c=>c.purpose==='explain')?.reserved_cny_micros,4400);
+  assert.equal(f.budget.remainingMicros(),100_000_000-12_400);
+  const reviews=await reviewFiles(f.dir,archive);
+  assert.equal((await prepareReadingQuality(f.output,reviews.answerPath,reviews.explanationPath)).submission.cases.length,4);
+  const index=JSON.parse(await readFile(join(f.output,'results.json'),'utf8'));
+  const explanation=index.find((r:{purpose:string})=>r.purpose==='explain'),file=join(f.output,explanation.file),row=JSON.parse(await readFile(file,'utf8'));
+  row.upper_cny_micros=2000;const bytes=json(row);await writeFile(file,bytes);explanation.sha256=bytesSHA(bytes);
+  const indexBytes=json(index);await writeFile(join(f.output,'results.json'),indexBytes);
+  const completionFile=join(f.output,'completion.json'),completion=JSON.parse(await readFile(completionFile,'utf8'));completion.results_sha256=bytesSHA(indexBytes);await writeFile(completionFile,json(completion));
+  await assert.rejects(loadReadingArchive(f.output),/integrity/);
+});
 
 test('reading corpus validates image bytes, authorization, family separation and immutable target identities',async t=>{
   const f=await fixture(t);assert.equal((await loadReadingCorpus(f.source.path,'executor')).manifest.cases.length,4);

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "campaign_id": "product-blueprint-2026-09-06",
   "currency": "CNY",
-  "limit_micros": 100000000,
-  "approved_on": "2026-09-06",
-  "authorization": "用户确认：最高花费100人民币。整轮评测累计上限，包含失败、解释、恢复和基线调用。"
+  "limit_micros": 27000000,
+  "approved_on": "2026-09-11",
+  "authorization": "用户最新确认：测试花费不要超过27元。沿用同一整轮campaign，已发生费用、失败、解释、恢复与基线均计入，不自动充值或提高上限。"
 }
