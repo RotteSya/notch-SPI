@@ -3,6 +3,22 @@ import XCTest
 @testable import NotchSPI
 
 final class CaptureFileLifecycleTests: XCTestCase {
+    func testDiscardRemovesOwnedScratchButDoesNotDeleteAnUnregisteredDirectory() throws {
+        let lifecycle = CaptureFileLifecycle()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owned = root.appendingPathComponent("owned")
+        try lifecycle.withWritableDirectory(owned) { try Data([1]).write(to: owned.appendingPathComponent("capture.png")) }
+        lifecycle.discardTemporaryDirectory(root)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: owned.path))
+        lifecycle.discardTemporaryDirectory(owned)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owned.path))
+        // A reused path now belongs to someone else and must not remain in the registry.
+        try FileManager.default.createDirectory(at: owned, withIntermediateDirectories: true)
+        XCTAssertTrue(lifecycle.removeAllForTermination())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: owned.path))
+    }
+
     func testShutdownRemovesOnlyOwnedDirectoriesAndRejectsLateWrites() throws {
         let lifecycle = CaptureFileLifecycle()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

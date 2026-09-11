@@ -1186,7 +1186,7 @@ final class NotchController: NSObject {
         // unattended session must not start blind. Quota preflight is NOT duplicated here —
         // runTapped runs the real QuotaGate moments later and a denial stops the session
         // through the completion hook with the right reason.
-        guard CGPreflightScreenCaptureAccess() else {
+        guard CapturePermission.requestAccess() else {
             if !visible { visible = true; panel.orderFrontRegardless() }
             setExpanded(true)
             finishError(Self.message(for: .noPermission))
@@ -1910,9 +1910,9 @@ final class NotchController: NSObject {
         switch error {
         case .noPermission:
             return L10n.t(
-                "截屏失败。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI，然后重启应用。",
-                "キャプチャに失敗しました。「システム設定→プライバシーとセキュリティ→画面収録」で NotchSPI を有効にして再起動してください。",
-                "Capture failed. Enable NotchSPI under System Settings → Privacy & Security → Screen Recording, then relaunch.")
+                "截图权限尚未开启。请允许系统授权弹窗，或在「系统设置 → 隐私与安全性 → 屏幕录制」开启 NotchSPI，再按系统提示重启应用。",
+                "画面収録の許可が必要です。システムの確認画面で許可するか、「システム設定→プライバシーとセキュリティ→画面収録」で NotchSPI を有効にし、再起動を求められた場合は従ってください。",
+                "Screen recording permission is needed. Allow the system prompt or enable NotchSPI in System Settings → Privacy & Security → Screen Recording. Relaunch if macOS asks you to.")
         case .appNotRunning(let name):
             return L10n.t(
                 "截图目标「\(name)」未在运行。请先打开它，或在设置中切回「整个屏幕」。",
@@ -1927,9 +1927,9 @@ final class NotchController: NSObject {
                           "キャプチャに失敗しました。対象ウィンドウが閉じられた可能性があります。再試行してください。",
                           "Capture failed — the target window may have just closed. Please try again.")
         case .captureTimedOut:
-            return L10n.t("系统截图服务响应超时，请稍后重试；若持续出现，请重启应用。",
-                          "画面収録サービスがタイムアウトしました。しばらくして再試行し、続く場合はアプリを再起動してください。",
-                          "The system capture service timed out. Try again shortly; if this continues, restart the app.")
+            return L10n.t("系统截图服务仍无响应。请结束录屏或屏幕共享后重试；若仍失败，请重启 Mac。",
+                          "画面収録サービスが応答しません。録画や画面共有を終了して再試行し、改善しない場合は Mac を再起動してください。",
+                          "The system capture service is still unresponsive. Stop screen recording or sharing and retry; if it persists, restart your Mac.")
         }
     }
 

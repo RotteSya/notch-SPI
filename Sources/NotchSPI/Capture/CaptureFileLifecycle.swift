@@ -29,6 +29,17 @@ final class CaptureFileLifecycle: @unchecked Sendable {
         }
     }
 
+    /// Discard a completed command's scratch directory without retaining one entry per
+    /// capture forever. Failed removals remain registered for final shutdown cleanup.
+    func discardTemporaryDirectory(_ directory: URL) {
+        lock.lock(); defer { lock.unlock() }
+        guard directories.contains(directory) else { return }
+        do { try FileManager.default.removeItem(at: directory) }
+        catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError { }
+        catch { return }
+        directories.remove(directory)
+    }
+
     /// False cancels termination so the user can retry; do not silently leave private files.
     func removeAllForTermination() -> Bool {
         lock.lock(); defer { lock.unlock() }
