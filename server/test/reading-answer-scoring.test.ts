@@ -127,3 +127,18 @@ test('invalid policies, incomplete gold and incompatible question kinds fail bef
   ];
   for(const [policy,kind,gold] of bad)assert.throws(()=>parseReadingAnswerScoring(policy,kind,gold),/scoring/);
 });
+
+test('source option literals preserve exponents, subscripts and label-text agreement',()=>{
+  const gold=['C','C. 40 km/h','40 km/h'];
+  const policy=parseReadingAnswerScoring({mode:'source_literal'},'single_choice',gold);
+  for(const answer of ['C','c','C. 40 km/h','**C. 40 km/h**','40  km/h'])assert.equal(readingAnswerHit(answer,gold,policy),true,answer);
+  for(const answer of ['C. 4⁰ km/h','C. 4₀ km/h','C. 40² km/h','C. ４０ km/h','B. 40 km/h','C. 50 km/h','C. 40 km/h or 50 km/h'])assert.equal(readingAnswerHit(answer,gold,policy),false,answer);
+  const chemical=['D','D. 2C₂H₆ + 7O₂ → 4CO₂ + 6H₂O'];
+  const science=parseReadingAnswerScoring({mode:'source_literal'},'single_choice',chemical);
+  assert.equal(readingAnswerHit(chemical[1],chemical,science),true);
+  for(const answer of ['D. 2C2H6 + 7O2 → 4CO2 + 6H2O','D. 2C²H⁶ + 7O² → 4CO² + 6H²O'])assert.equal(readingAnswerHit(answer,chemical,science),false,answer);
+  assert.equal(readingAnswerHit('C. Cafe\u0301',['C. Café'],policy),true,'canonical combining forms remain equivalent');
+  assert.throws(()=>parseReadingAnswerScoring({mode:'source_literal',case_insensitive:true},'single_choice',gold));
+  assert.throws(()=>parseReadingAnswerScoring({mode:'source_literal'},'multiple_choice',gold));
+  assert.equal(readingAnswerHit('C. 4⁰ km/h',gold,{mode:'literal'}),true,'historical literal behavior is not silently rewritten');
+});

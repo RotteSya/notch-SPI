@@ -2,7 +2,7 @@ import {normalizeObjectiveAnswer} from '../../server/src/objective-result.ts';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 
-export const READING_ANSWER_SCORING_VERSION='reading-answer-v2';
+export const READING_ANSWER_SCORING_VERSION='reading-answer-v3';
 /** Bind semantics and the production parsing dependencies used to derive scored answers. */
 export function readingAnswerScoringDigest():string {
   const files=['./reading-answer-scoring.mts','./reading-evaluation.mts',
@@ -17,6 +17,7 @@ export interface ReadingNumberUnit {
 }
 export type ReadingAnswerScoring =
   | {mode:'literal'}
+  | {mode:'source_literal'}
   | {mode:'label_set';labels:string[]}
   | {mode:'label_sequence';labels:string[];prefilled:Array<{position:number;label:string}>}
   | ({mode:'number'}&ReadingNumberUnit)
@@ -143,6 +144,12 @@ function canonical(value:string,policy:ReadingAnswerScoring):string|null {
   if(!value.trim()||[...value].length>512)return null;
   switch(policy.mode) {
     case 'literal':return normalizeObjectiveAnswer(value);
+    case 'source_literal':{
+      // Option text may contain meaningful exponents and subscripts. Compatibility
+      // normalization would silently turn 4⁰ into 40; compare only canonical spelling.
+      const source=rawText(value).normalize('NFC');
+      return /^[a-z]$/iu.test(source)?source.toUpperCase():source;
+    }
     case 'label_set':case 'label_sequence':return labels(value,policy);
     case 'number':return numeric(value,policy);
     case 'number_sequence':{
@@ -167,6 +174,7 @@ export function parseReadingAnswerScoring(value:unknown,kind:string,gold:string[
   const p=value as Record<string,unknown>;let policy:ReadingAnswerScoring;
   switch(p.mode) {
     case 'literal':keys(p,['mode']);policy={mode:'literal'};break;
+    case 'source_literal':keys(p,['mode']);if(kind!=='single_choice')return fail();policy={mode:'source_literal'};break;
     case 'label_set':case 'label_sequence':{
       keys(p,p.mode==='label_sequence'?['mode','labels','prefilled']:['mode','labels']);
       if(p.mode==='label_set'&&!['single_choice','multiple_choice'].includes(kind)||p.mode==='label_sequence'&&kind!=='ordering'||

@@ -11,7 +11,7 @@
 | manifest | schema 1 或 2、dataset ID、holdout/diagnostic、范围版本、声明组合、每题型解释抽样数、家族/授权文件引用及有序 cases |
 | case | 唯一 ID、family ID、题型、语言、布局、预期、风险、标准答案集合、JPEG/PNG MIME、1–4 个有序图片引用、最后一图上的单目标 scope |
 | 答案真值 | 仅 answerable 有非空 `accepted_answers`；retake、范围外、多目标及 unlabelled 不填猜测答案。保留单位、符号、完整选项及顺序 |
-| schema 2 评分 | manifest 必需 `answer_scoring_version=reading-answer-v2` 与 `answer_scoring_sha256`；每题必需 `answer_scoring`，answerable 使用下表中的显式规则，其他预期必须为 null。版本、代码摘要、规则和金标都进入授权摘要 |
+| schema 2 评分 | manifest 必需 `answer_scoring_version=reading-answer-v3` 与 `answer_scoring_sha256`；每题必需 `answer_scoring`，answerable 使用下表中的显式规则，其他预期必须为 null。版本、代码摘要、规则和金标都进入授权摘要 |
 | 图片 | 每文件不超过 6 MiB；相对路径不得越过题集目录，禁止最终符号链接、管道及损坏图片。完整解码沿用生产校验，保留原字节摘要和页序。完全相同图片集合与 scope 不能重复计样本 |
 | family split | schema 1、dataset ID、`development_families`、`holdout_families`；两组各自唯一且不相交，holdout 集合必须正好覆盖 manifest 的家族 |
 | corpus review | schema 1、reviewer、UTC reviewed_at/expires_at、`manifest_subject_sha256`，以及 authorized_materials、external_model_processing、labels_reviewed、family_split_verified 四项明确 true |
@@ -28,6 +28,7 @@
 | mode | 必需字段 | 规则 |
 |---|---|---|
 | literal | mode | Unicode/空白/完整 Markdown 外壳归一化后逐字匹配；不推测“或”两侧可交换 |
+| source_literal | mode | 仅单选；按NFC、空白与外层Markdown规范化后匹配审定的完整拼写，保留上下标、数学符号和选项文字大小写。不能把4⁰折叠成40；全角/化学排版等别名须逐题显式列入金标，不抽取任意文本的首字母 |
 | label_set | mode、labels | labels 为题面允许的大写 A–Z 标签；全部选中项相同即可，不看顺序，重复、漏选、多选及 OR 表达均拒绝 |
 | label_sequence | mode、labels、prefilled | 顺序必须完整一致；prefilled 是固定的零基 position/label 列表，无预填时填空数组。可接收完整排列或全部未预填空位，按固定位置展开后比较；不能改动预填项或省略其他项 |
 | number | mode、unit_aliases、unit_optional；可选 unit_prefix_aliases | 用 BigInt 有理数精确比较，不设误差容忍；单位只能是审定的同单位拼写别名。前缀只接受 unit_prefix_aliases 声明的既有别名；不声明则不接受前缀 |
@@ -38,11 +39,13 @@
 
 指数/下标不先做 NFKC 拼接为整数；`10²` 不等于 `102`。数值规则不执行数学表达式、科学记数法、比较符或单位换算。不同单位排序须逐项审查 quantity_sequence；只有答案框已印单位等题面依据时才允许省略。不能把 m/cm 或 hour/minute 当拼写别名。完整 Markdown 外壳可去除，单位大小写仍有意义。超过长度上限、零分母、非法千位分组及无法解析的金标在调用前拒绝。
 
+source_literal比较解析得到的最终答案，不修改生产FINAL/JSON双通道现有的NFKC一致性定义；不能由它推导出原始两通道数学符号完全一致。遇到原文和结构化答案符号冲突应保留原始响应并单列审查。
+
 新规则可表达评分政策，不自动证明某题的单位、预填空位、允许省略或完整标签集正确。正式策展必须逐题选择并独立复核；政策变更会改变授权摘要，旧签署不可沿用。
 
 `readingAnswerScoringDigest()` 绑定评分器、阅读评分集成及所用生产 objective/screen-query 解析文件的真实字节。加载或离线重放遇到算法摘要不符会拒绝，应使用原执行版本复现；不能只改摘要后沿用旧授权。该字段不改变既有 schema 1 档案。
 
-当前评分版本为 `reading-answer-v2`，新增逐项数量、显式前缀和换行语法。旧 schema 2 的 reading-answer-v1 档案须回到原代码版本复现，不能直接换版本/摘要后沿用授权；schema 1 与原240基线保持原行为。
+当前评分版本为 `reading-answer-v3`，新增保留数学符号的source_literal单选原文比较；其余模式行为保留。旧schema 2的v1/v2档案须回到原代码版本复现，不能直接换版本/摘要后沿用授权；schema 1与原240基线保持原行为。原literal兼容归一化不适合新增包含有意义上下标的选项全文政策，不能用它绕过source_literal。
 
 holdout 在调用前要求：声明组合中至少 400 个已标注样本、四题型各至少 100、每题型×语言组合至少 50；覆盖 web/PDF/practice_ui/multi_page、retake/out_of_scope/multiple_targets，以及 missing_context/cropped/unreadable/ambiguous；每题型解释计划至少 20。新增公开语言须补足各格样本。diagnostic 允许小题集，其结果不能作为新增范围放行依据。
 
