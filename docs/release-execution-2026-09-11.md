@@ -54,4 +54,4 @@ Stripe已通过临时受保护服务端诊断核验实际继承的项目密钥�
 - `cheap-candidate/retake-fix-v2-node-full.log`、`retake-fix-v2-swift.log`、`retake-fix-v2-release-build.log`：完整本地检查日志。
 - `stripe-read-check/actual-server-permissions.json`：服务端实际支付密钥的5种只读资源检查。
 
-已知usage按各次冻结价格计算并保留未知预留的只读测算为1.362435元，见`historical-usage-cost-feasibility.json`；这是保守测算，既不是供应商精确账单，也没有据此释放本地26.915840元历史预留。后续付费验证必须先解决费用准入口径并继续守住同一27元累计上限。
+费用测算勘误（2026-09-12）：原`historical-usage-cost-feasibility.json`的1.362435元错误地把两条缺失usage的0/0当作零费用。独立复核逐条绑定969次派发、响应和当时价格后，966条正用量向上取整合计1.351171元，另外3条未知保留原上界0.060416元，正确的保守合计为1.411587元。原错误报告保留为历史，不用于费用准入；账户级差额约1.07元也不作为逐请求账单。审计结算执行前，账本仍保留全部26.915840元原预留，累计上限始终27元。工具和后续实际执行状态见[费用结算记录](evaluation-settlement-2026-09-13.md)。

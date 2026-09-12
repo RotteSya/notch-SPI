@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -81,7 +81,8 @@ export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL:
 
 /**
  * Local campaign ledger shared by all runs. Every dispatched call consumes its full reviewed
- * upper bound, including timeouts and crashes. Observed usage never creates a fresh allowance.
+ * upper bound, including timeouts and crashes. Observing usage never releases a reservation;
+ * a separate evidence-bound audit may settle a completed call conservatively.
  * This is a conservative spend ceiling, separate from the server's actual-cost ledger.
  */
 export class EvaluationBudget {
@@ -92,7 +93,8 @@ export class EvaluationBudget {
   private readonly model: string;
   private readonly baseURL: string;
 
-  constructor(path: string, policy: EvaluationPolicy, bound: EvaluationCallBound, model: string, baseURL: string) {
+  constructor(path: string, policy: EvaluationPolicy, bound: EvaluationCallBound, model: string, baseURL: string,
+    options: {requireExistingCampaign?:boolean} = {}) {
     validateEvaluationPolicy(policy);
     callUpperCNY(bound, model, baseURL);
     this.policy = structuredClone(policy);
@@ -104,6 +106,11 @@ export class EvaluationBudget {
     this.db = new DatabaseSync(path);
     chmodSync(path, 0o600);
     try {
+      if(options.requireExistingCampaign) {
+        const existing=this.db.prepare('SELECT currency,limit_micros FROM evaluation_campaigns WHERE id=?').get(policy.campaign_id);
+        if(!existing||existing.currency!==policy.currency||existing.limit_micros!==policy.limit_micros)
+          throw new Error('An existing matching evaluation campaign is required; do not create a replacement ledger');
+      }
       this.db.exec(`PRAGMA busy_timeout=5000;
         CREATE TABLE IF NOT EXISTS evaluation_campaigns (
           id TEXT PRIMARY KEY, currency TEXT NOT NULL, limit_micros INTEGER NOT NULL, halted INTEGER NOT NULL DEFAULT 0);
@@ -115,6 +122,7 @@ export class EvaluationBudget {
         CREATE TABLE IF NOT EXISTS evaluation_continuations (
           campaign_id TEXT NOT NULL, source_run_id TEXT NOT NULL, source_completion_sha256 TEXT NOT NULL, output_directory TEXT NOT NULL,
           claimed_at TEXT NOT NULL, PRIMARY KEY(campaign_id,source_run_id));`);
+      ensureEvaluationSettlementSchema(this.db);
       this.db.prepare('INSERT INTO evaluation_campaigns(id,currency,limit_micros) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING')
         .run(policy.campaign_id, policy.currency, policy.limit_micros);
       const row = this.db.prepare('SELECT currency,limit_micros FROM evaluation_campaigns WHERE id=?').get(policy.campaign_id)!;
@@ -125,8 +133,9 @@ export class EvaluationBudget {
   remainingMicros(): number {
     const campaign = this.db.prepare('SELECT halted,limit_micros FROM evaluation_campaigns WHERE id=?').get(this.policy.campaign_id)!;
     if (campaign.halted) return 0;
-    const row = this.db.prepare(`SELECT COALESCE(SUM(upper_cny_micros),0) AS consumed
-      FROM evaluation_dispatches WHERE campaign_id=?`).get(this.policy.campaign_id)!;
+    const row = this.db.prepare(`SELECT COALESCE(SUM(COALESCE(s.settled_cny_micros,d.upper_cny_micros)),0) AS consumed
+      FROM evaluation_dispatches d LEFT JOIN evaluation_settlements s ON s.dispatch_id=d.id AND s.campaign_id=d.campaign_id
+      WHERE d.campaign_id=?`).get(this.policy.campaign_id)!;
     // A user may lower the shared cap while a process is alive. Its cached policy
     // must not permit spending above the new persistent limit.
     return Math.max(0, Math.min(this.policy.limit_micros, Number(campaign.limit_micros)) - Number(row.consumed));
@@ -257,5 +266,31 @@ export function openEvaluationBudget(root: string, model: string, baseURL: strin
   const path = process.env.NSPI_EVAL_COST_BOUND;
   if (!path) throw new Error('NSPI_EVAL_COST_BOUND is required: verify candidate token limits, provider currency and dated prices before paid evaluation');
   const bound = JSON.parse(readFileSync(resolve(root, path), 'utf8')) as EvaluationCallBound;
-  return new EvaluationBudget(resolve(root, '.eval-results/budget-ledger.sqlite3'), policy, bound, model, baseURL);
+  // Paid entrypoints must never silently replenish a campaign via a typo or a new worktree.
+  // Initial campaign creation is a separate, explicit operation; execution only opens it.
+  const ledger=realpathSync(process.env.NSPI_EVAL_LEDGER ? resolve(process.env.NSPI_EVAL_LEDGER)
+    : resolve(root, '.eval-results/budget-ledger.sqlite3'));
+  return new EvaluationBudget(ledger, policy, bound, model, baseURL, {requireExistingCampaign:true});
+}
+
+/** Append-only audit rows. Historical dispatch amounts and settled usage cannot be rewritten. */
+export function ensureEvaluationSettlementSchema(db: DatabaseSync): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS evaluation_settlements (
+    dispatch_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL,
+    dispatch_sha256 TEXT NOT NULL, bound_sha256 TEXT NOT NULL, receipt_sha256 TEXT NOT NULL,
+    batch_sha256 TEXT NOT NULL, review_sha256 TEXT NOT NULL,
+    original_upper_cny_micros INTEGER NOT NULL CHECK(original_upper_cny_micros>0),
+    settled_cny_micros INTEGER NOT NULL CHECK(settled_cny_micros>0 AND settled_cny_micros<=original_upper_cny_micros),
+    input_tokens INTEGER NOT NULL CHECK(input_tokens>0), output_tokens INTEGER NOT NULL CHECK(output_tokens>0),
+    settled_at TEXT NOT NULL);
+    CREATE TRIGGER IF NOT EXISTS evaluation_settlement_no_update BEFORE UPDATE ON evaluation_settlements
+      BEGIN SELECT RAISE(ABORT,'Evaluation settlement is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS evaluation_settlement_no_delete BEFORE DELETE ON evaluation_settlements
+      BEGIN SELECT RAISE(ABORT,'Evaluation settlement is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS evaluation_settled_dispatch_no_update BEFORE UPDATE ON evaluation_dispatches
+      WHEN EXISTS(SELECT 1 FROM evaluation_settlements WHERE dispatch_id=OLD.id)
+      BEGIN SELECT RAISE(ABORT,'Settled evaluation dispatch is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS evaluation_settled_dispatch_no_delete BEFORE DELETE ON evaluation_dispatches
+      WHEN EXISTS(SELECT 1 FROM evaluation_settlements WHERE dispatch_id=OLD.id)
+      BEGIN SELECT RAISE(ABORT,'Settled evaluation dispatch is immutable'); END;`);
 }
