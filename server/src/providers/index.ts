@@ -8,6 +8,7 @@ interface ProviderSelection {
   provider: Config['provider'];
   model: string;
   maxTokens: number;
+  deepseekReasoningEffort: Config['deepseekReasoningEffort'];
   configurationError: string | null;
   settingName: 'OFFICIAL_PROVIDER' | 'OBJECTIVE_RESULT_V1_PROVIDER';
 }
@@ -30,6 +31,7 @@ export function makeProvider(
     provider: config.provider,
     model: config.model,
     maxTokens: config.maxTokens,
+    deepseekReasoningEffort: config.deepseekReasoningEffort,
     configurationError: config.providerConfigurationError,
     settingName: 'OFFICIAL_PROVIDER',
   }, warn);
@@ -44,6 +46,7 @@ export function makeObjectiveProvider(
     provider: config.objectiveProvider,
     model: config.objectiveModel,
     maxTokens: config.objectiveMaxTokens,
+    deepseekReasoningEffort: config.objectiveDeepseekReasoningEffort,
     configurationError: config.objectiveProviderConfigurationError,
     settingName: 'OBJECTIVE_RESULT_V1_PROVIDER',
   }, warn);
@@ -89,10 +92,12 @@ function makeSelectedProvider(
           {
             name: 'deepseek',
             endpointPath: 'chat/completions',
-            // V4 defaults to thinking mode. The notch needs the final answer stream with bounded
-            // latency; explicit non-thinking mode also avoids paying for hidden reasoning tokens.
-            // DeepSeek recommends temperature 0 for math; it also reduces protocol variation.
-            extraBody: { thinking: { type: 'disabled' }, temperature: 0 },
+            // Keep the existing non-thinking default. A reviewed candidate may explicitly use
+            // thinking; its total completion tokens still obey the same request/output cap.
+            // The adapter streams only content and counts the vendor's full completion usage.
+            extraBody: selection.deepseekReasoningEffort === 'none'
+              ? { thinking: { type: 'disabled' }, temperature: 0 }
+              : { thinking: { type: 'enabled' }, reasoning_effort: selection.deepseekReasoningEffort },
           },
         ),
         degraded: null,

@@ -26,6 +26,11 @@ function boundedInt(value: number, fallback: number, minimum: number, maximum: n
 // Which vendor the official service proxies to. "mock" streams a canned answer with synthetic
 // usage so the whole billing pipeline runs end-to-end without any real API key.
 export type ProviderName = 'anthropic' | 'deepseek' | 'openai' | 'mock';
+export type DeepSeekReasoningEffort = 'none' | 'low' | 'high' | 'max';
+
+function parseDeepSeekEffort(value: string): DeepSeekReasoningEffort | null {
+  return value === 'none' || value === 'low' || value === 'high' || value === 'max' ? value : null;
+}
 
 function parseProvider(value: string): ProviderName | null {
   const v = value.toLowerCase();
@@ -45,6 +50,8 @@ const officialModel = envStr(
 const objectiveProviderRaw = envStr('OBJECTIVE_RESULT_V1_PROVIDER', '');
 const parsedObjectiveProvider = objectiveProviderRaw === '' ? officialProvider : parseProvider(objectiveProviderRaw);
 const objectiveProvider = parsedObjectiveProvider ?? 'mock';
+const officialDeepSeekEffortRaw = envStr('OFFICIAL_DEEPSEEK_REASONING_EFFORT', 'none');
+const objectiveDeepSeekEffortRaw = envStr('OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT', officialDeepSeekEffortRaw);
 const objectiveModelDefault = objectiveProvider === officialProvider
   ? officialModel
   : objectiveProvider === 'deepseek'
@@ -114,10 +121,13 @@ export const config = {
   provider: officialProvider,
   providerConfigurationError: parseProvider(officialProviderRaw) === null
     ? `OFFICIAL_PROVIDER has unsupported value: ${officialProviderRaw}`
+    : officialProvider === 'deepseek' && parseDeepSeekEffort(officialDeepSeekEffortRaw) === null
+      ? 'OFFICIAL_DEEPSEEK_REASONING_EFFORT must be none, low, high or max'
     : null,
   // Model the official service uses. The client never chooses; the server decides.
   model: officialModel,
   maxTokens: envInt('OFFICIAL_MAX_TOKENS', 4096),
+  deepseekReasoningEffort: parseDeepSeekEffort(officialDeepSeekEffortRaw) ?? 'none',
 
   // Requests carrying Objective Result V1 can be routed to an isolated treatment provider.
   // Empty provider/model values inherit the official control path for full backwards
@@ -125,9 +135,12 @@ export const config = {
   objectiveProvider,
   objectiveProviderConfigurationError: parsedObjectiveProvider === null
     ? `OBJECTIVE_RESULT_V1_PROVIDER has unsupported value: ${objectiveProviderRaw}`
+    : objectiveProvider === 'deepseek' && parseDeepSeekEffort(objectiveDeepSeekEffortRaw) === null
+      ? 'OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT must be none, low, high or max'
     : null,
   objectiveModel: envStr('OBJECTIVE_RESULT_V1_MODEL', objectiveModelDefault),
   objectiveMaxTokens: envInt('OBJECTIVE_RESULT_V1_MAX_TOKENS', envInt('OFFICIAL_MAX_TOKENS', 4096)),
+  objectiveDeepseekReasoningEffort: parseDeepSeekEffort(objectiveDeepSeekEffortRaw) ?? 'none',
 
   anthropicKey: envStr('ANTHROPIC_API_KEY', ''),
   anthropicBaseURL: envStr('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
