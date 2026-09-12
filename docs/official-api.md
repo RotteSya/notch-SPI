@@ -256,6 +256,8 @@ explain/recover 终态为 `settlement_status=not_required`、`questions_charged=
 HMAC 比较。未知、其他父链、尚在运行、失败或绑定不一致的子请求返回 409，非法 selector 返回 422。
 恢复接口不接受此 selector。
 
+解释和恢复只在当前 `CLIENT_CONFIG_REVISION` 与父请求冻结版本一致时执行；否则返回 503 `feature_disabled`，不创建子请求、不预留成本、不消耗辅助调用名额。状态查询与重复 solve 的结算回执同时将跨版本的 `can_recover` 设为 false。运维修改模型、提示词、思考强度或输出上限时必须同步更新该版本；版本相同不代表服务端自动对环境配置做指纹比对。部署切换后，旧题可能在剩余材料保留期内无法使用辅助操作，原答案和账单保留。
+
 `answerCaptureId` 作为可选 capture 元数据持久化，解释的 `parentCaptureId`、成本归属和
 `explanation_requests.parent_request_id` 仍为原收费请求；原答案和恢复答案争用同一事务名额，失败也不能
 从另一个答案再领一次。期限从原父请求创建时间算起，恢复不延长 15 分钟窗口。旧元数据缺该字段仍指原答案；

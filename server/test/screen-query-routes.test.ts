@@ -70,6 +70,36 @@ for (const kind of ['memory', 'sqlite'] as const) {
       assert.deepEqual(purposes,[undefined,'explain']);
     }finally{await f.close();}
   });
+  for(const operation of ['explain','recover'] as const)test(`${kind}: ${operation} refuses another revision before consuming an attempt`,async()=>{
+    let calls=0;
+    const provider:Provider={name:'test',async stream(request,delta){calls++;delta(request.purpose==='explain'
+      ?JSON.stringify({consistent:true,explanation:'B is supported by the supplied material.'}):ready);
+      return {inputTokens:20,outputTokens:5};}};
+    const f=await fixture(provider,{clientConfigRevision:'original-policy'}),updated=Fastify({logger:false});
+    registerRoutes(updated,{config:{...f.settings,clientConfigRevision:'changed-policy',objectiveDeepseekReasoningEffort:'low'},
+      store:f.store,storeKind:kind,provider,objectiveProvider:provider,providerDegraded:null,objectiveProviderDegraded:null,payment:new StubPaymentProvider()});
+    try{
+      const parent=solveBody();await f.post('/v1/captures',parent);
+      const childID=randomUUID(),url=`/v1/captures/${parent.capture_id}/${operation==='explain'?'explanation':'recovery'}`;
+      const payload={...parent,...(operation==='explain'?{explanation_id:childID,final_answer:'B'}:{recovery_id:childID})};
+      const response=await updated.inject({method:'POST',url,headers:f.headers,payload});
+      assert.equal(response.statusCode,503);assert.equal(response.json().error.code,'feature_disabled');
+      assert.equal(calls,1);assert.equal(await f.store.billing.capture(f.token,childID),null);
+      const original=await f.store.billing.capture(f.token,parent.capture_id);
+      assert.ok(original);assert.equal(original.explanationCaptureId,undefined);assert.equal(original.recoveryCaptureId,undefined);
+      assert.equal((await f.store.billing.attempts(f.token)).length,1);
+      assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);
+      const status=await updated.inject({url:`/v1/captures/${parent.capture_id}/status`,headers:f.headers});
+      assert.equal(status.json().can_recover,false);assert.equal(status.json().questions_charged,1);
+      const duplicate=await updated.inject({method:'POST',url:'/v1/captures',headers:f.headers,payload:parent});
+      assert.equal(duplicate.statusCode,409);assert.equal(duplicate.json().settlement.can_recover,false);
+      assert.equal(duplicate.json().settlement.questions_charged,1);assert.equal(calls,1);
+      const samePolicy=await f.post(url,payload);
+      assert.equal(samePolicy.statusCode,200);assert.equal(usage(samePolicy.payload).questions_charged,0);
+      assert.equal(calls,2);assert.equal((await f.store.billing.capture(f.token,childID))?.configRevision,'original-policy');
+      assert.deepEqual((await f.store.billing.attempts(f.token)).map(a=>a.policyVersion),['original-policy','original-policy']);
+    }finally{await updated.close();await f.close();}
+  });
   for (const [label, raw, charged, terminal] of [
     ['ready', ready, 1, 'usable'],
     ['review', output('B', 'review', 'ambiguous_options'), 1, 'usable'],

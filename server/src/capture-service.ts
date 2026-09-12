@@ -46,7 +46,11 @@ export class CaptureService {
     if(!capture) throw new ApiError(404,'未找到请求','not_found');
     const quota=await this.ctx.store.billing.accountSnapshot(token);
     if(!quota) throw new ApiError(401,'服务凭证无效','invalid_token');
-    return reply.header('Cache-Control','no-store').send(settlementSnapshot(capture,quota));
+    return reply.header('Cache-Control','no-store').send(this.currentSnapshot(capture,quota));
+  }
+  private currentSnapshot(capture:CaptureRecord,quota:AccountSnapshot) {
+    const snapshot=settlementSnapshot(capture,quota);
+    return {...snapshot,can_recover:snapshot.can_recover && capture.configRevision===this.ctx.config.clientConfigRevision};
   }
   async solve(req:FastifyRequest,reply:FastifyReply):Promise<void> {
     return this.connected(req,reply,abort=>this.solveConnected(req,reply,abort));
@@ -173,7 +177,7 @@ export class CaptureService {
     if(previous) {
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
       reply.code(409).send({error:{code,message:'请查询原请求状态'},status_path:`/v1/captures/${captureId}/status`,
-        ...(code==='idempotency_conflict'?{}:{settlement:settlementSnapshot(previous,(await store.billing.accountSnapshot(token))!)})}); return;
+        ...(code==='idempotency_conflict'?{}:{settlement:this.currentSnapshot(previous,(await store.billing.accountSnapshot(token))!)})}); return;
     }
     await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion,parentCaptureId:parent,
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
@@ -185,6 +189,7 @@ export class CaptureService {
   }
   private explanationFields(answer: CaptureRecord, parent: CaptureRecord) {
     const available = this.ctx.config.screenQueryEnabled && this.ctx.config.explanationEnabled
+      && parent.configRevision === this.ctx.config.clientConfigRevision
       && parent.responseContract === 'screen_query_v1' && parent.operation === 'solve'
       && parent.settlementStatus === 'settled' && parent.usableResult && !!answer.answerHmac
       && (answer.captureId === parent.captureId || isRecoveredAnswerFor(parent, answer))
@@ -202,6 +207,9 @@ export class CaptureService {
     if(!parent) throw new ApiError(404,'未找到父请求','not_found');
     if(parent.responseContract!=='screen_query_v1'||parent.operation!=='solve'||parent.settlementStatus!=='settled'||!parent.usableResult) throw new ApiError(409,'父请求没有可用答案','binding_mismatch');
     if(Date.now()-Date.parse(parent.createdAt)>=900_000) throw new ApiError(410,'材料保留时间已结束','expired');
+    // A follow-up must execute the policy frozen for its parent. This instance cannot replay
+    // another revision's provider settings, so decline before holding quota or starting work.
+    if(parent.configRevision!==config.clientConfigRevision) throw new ApiError(503,'原模型策略已暂停','feature_disabled');
     if(!config.screenQueryEnabled || !config.enabledSupportProfiles.split(',').includes(parent.profileId??'') ||
        (operation==='explain'&&!config.explanationEnabled)) throw new ApiError(503,'此功能暂未开放','feature_disabled');
     const body=(req.body??{}) as Record<string,unknown>;
