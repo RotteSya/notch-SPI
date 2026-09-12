@@ -52,6 +52,9 @@ const parsedObjectiveProvider = objectiveProviderRaw === '' ? officialProvider :
 const objectiveProvider = parsedObjectiveProvider ?? 'mock';
 const officialDeepSeekEffortRaw = envStr('OFFICIAL_DEEPSEEK_REASONING_EFFORT', 'none');
 const objectiveDeepSeekEffortRaw = envStr('OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT', officialDeepSeekEffortRaw);
+const officialDeepSeekExplanationEffortRaw = envStr('OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT', officialDeepSeekEffortRaw);
+const objectiveDeepSeekExplanationEffortRaw = envStr('OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT',
+  envStr('OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT', '') === '' ? officialDeepSeekExplanationEffortRaw : objectiveDeepSeekEffortRaw);
 const objectiveModelDefault = objectiveProvider === officialProvider
   ? officialModel
   : objectiveProvider === 'deepseek'
@@ -123,11 +126,14 @@ export const config = {
     ? `OFFICIAL_PROVIDER has unsupported value: ${officialProviderRaw}`
     : officialProvider === 'deepseek' && parseDeepSeekEffort(officialDeepSeekEffortRaw) === null
       ? 'OFFICIAL_DEEPSEEK_REASONING_EFFORT must be none, low, high or max'
+    : officialProvider === 'deepseek' && parseDeepSeekEffort(officialDeepSeekExplanationEffortRaw) === null
+      ? 'OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT must be none, low, high or max'
     : null,
   // Model the official service uses. The client never chooses; the server decides.
   model: officialModel,
   maxTokens: envInt('OFFICIAL_MAX_TOKENS', 4096),
   deepseekReasoningEffort: parseDeepSeekEffort(officialDeepSeekEffortRaw) ?? 'none',
+  deepseekExplanationReasoningEffort: parseDeepSeekEffort(officialDeepSeekExplanationEffortRaw) ?? 'none',
 
   // Requests carrying Objective Result V1 can be routed to an isolated treatment provider.
   // Empty provider/model values inherit the official control path for full backwards
@@ -137,10 +143,13 @@ export const config = {
     ? `OBJECTIVE_RESULT_V1_PROVIDER has unsupported value: ${objectiveProviderRaw}`
     : objectiveProvider === 'deepseek' && parseDeepSeekEffort(objectiveDeepSeekEffortRaw) === null
       ? 'OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT must be none, low, high or max'
+    : objectiveProvider === 'deepseek' && parseDeepSeekEffort(objectiveDeepSeekExplanationEffortRaw) === null
+      ? 'OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT must be none, low, high or max'
     : null,
   objectiveModel: envStr('OBJECTIVE_RESULT_V1_MODEL', objectiveModelDefault),
   objectiveMaxTokens: envInt('OBJECTIVE_RESULT_V1_MAX_TOKENS', envInt('OFFICIAL_MAX_TOKENS', 4096)),
   objectiveDeepseekReasoningEffort: parseDeepSeekEffort(objectiveDeepSeekEffortRaw) ?? 'none',
+  objectiveDeepseekExplanationReasoningEffort: parseDeepSeekEffort(objectiveDeepSeekExplanationEffortRaw) ?? 'none',
 
   anthropicKey: envStr('ANTHROPIC_API_KEY', ''),
   anthropicBaseURL: envStr('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),

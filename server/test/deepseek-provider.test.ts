@@ -142,3 +142,33 @@ test('environment validates DeepSeek thinking settings and only inherits when om
   const inheritedInvalid=await inspect('typo','');assert.ok(inheritedInvalid.officialError);assert.ok(inheritedInvalid.objectiveError);
   const independent=await inspect('typo','low','anthropic');assert.equal(independent.officialError,null);assert.equal(independent.objectiveError,null);
 });
+
+test('an explicit explanation policy changes only explanations and keeps recovery on the answer policy',async(t)=>{
+  const bodies:Array<Record<string,unknown>>=[];const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(_input,init)=>{bodies.push(JSON.parse(String(init?.body)));return new Response('data: {"choices":[{"delta":{"content":"answer"}}],"usage":{"prompt_tokens":5,"completion_tokens":7}}\n\ndata: [DONE]\n\n');};
+  t.after(()=>{globalThis.fetch=originalFetch;});
+  const settings={...config,provider:'deepseek' as const,objectiveProvider:'deepseek' as const,
+    providerConfigurationError:null,objectiveProviderConfigurationError:null,deepseekKey:'test',
+    deepseekReasoningEffort:'none' as const,deepseekExplanationReasoningEffort:'none' as const,
+    objectiveDeepseekReasoningEffort:'low' as const,objectiveDeepseekExplanationReasoningEffort:'none' as const};
+  const treatment=makeObjectiveProvider(settings,()=>{}).provider;
+  for(const purpose of ['answer','explain','recover'] as const)await treatment.stream({system:'s',task:'t',images:[],purpose,maxTokens:purpose==='explain'?768:4096},()=>{},new AbortController().signal);
+  await makeProvider(settings,()=>{}).provider.stream({system:'s',task:'t',images:[],purpose:'answer'},()=>{},new AbortController().signal);
+  assert.deepEqual(bodies.map(x=>x.thinking),[{type:'enabled'},{type:'disabled'},{type:'enabled'},{type:'disabled'}]);
+  assert.deepEqual(bodies.map(x=>x.reasoning_effort),['low',undefined,'low',undefined]);
+  assert.equal(bodies[1]!.max_tokens,768);assert.equal(bodies[1]!.temperature,0);
+});
+
+test('explanation settings inherit predictably and invalid explicit values fail closed',async()=>{
+  const code=`const {config:c}=await import(${JSON.stringify(new URL('../src/config.ts',import.meta.url).href)});console.log(JSON.stringify({official:c.deepseekExplanationReasoningEffort,objective:c.objectiveDeepseekExplanationReasoningEffort,officialError:c.providerConfigurationError,objectiveError:c.objectiveProviderConfigurationError}));`;
+  const run=promisify(execFile);
+  const inspect=async(a:string,e:string,o:string,x:string)=>JSON.parse((await run(process.execPath,['--input-type=module','-e',code],{env:{...process.env,
+    OFFICIAL_PROVIDER:'deepseek',OBJECTIVE_RESULT_V1_PROVIDER:'deepseek',OFFICIAL_DEEPSEEK_REASONING_EFFORT:a,OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT:e,
+    OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT:o,OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT:x},timeout:15000})).stdout);
+  assert.deepEqual(await inspect('low','','',''),{official:'low',objective:'low',officialError:null,objectiveError:null});
+  assert.deepEqual(await inspect('low','none','',''),{official:'none',objective:'none',officialError:null,objectiveError:null});
+  assert.deepEqual(await inspect('none','','low',''),{official:'none',objective:'low',officialError:null,objectiveError:null});
+  assert.deepEqual(await inspect('none','','low','none'),{official:'none',objective:'none',officialError:null,objectiveError:null});
+  const invalid=await inspect('none','','low','typo');assert.equal(invalid.officialError,null);assert.match(invalid.objectiveError,/EXPLANATION_REASONING_EFFORT/);
+  const inherited=await inspect('none','typo','','');assert.match(inherited.officialError,/EXPLANATION_REASONING_EFFORT/);assert.match(inherited.objectiveError,/EXPLANATION_REASONING_EFFORT/);
+});

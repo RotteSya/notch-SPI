@@ -54,6 +54,22 @@ for (const kind of ['memory', 'sqlite'] as const) {
       post: (url: string, payload: object) => app.inject({ method: 'POST', url, headers, payload }),
       close: async () => { await app.close(); await store.close(); } };
   }
+  test(`${kind}: server assigns explanation purpose and ignores client provider-purpose injection`,async()=>{
+    const purposes:Array<string|undefined>=[];
+    const f=await fixture({name:'test',async stream(request,delta){
+      purposes.push(request.purpose);
+      delta(request.purpose==='explain'?JSON.stringify({consistent:true,explanation:'The supplied evidence supports B.'}):ready);
+      if(request.purpose==='explain')assert.equal(request.maxTokens,768);
+      return {inputTokens:20,outputTokens:5};
+    }});
+    try{
+      const body={...solveBody(),purpose:'explain'};
+      assert.equal(usage((await f.post('/v1/captures',body)).payload).questions_charged,1);
+      const response=await f.post(`/v1/captures/${body.capture_id}/explanation`,{...body,purpose:'recover',explanation_id:randomUUID(),final_answer:'B'});
+      assert.equal(usage(response.payload).questions_charged,0);
+      assert.deepEqual(purposes,[undefined,'explain']);
+    }finally{await f.close();}
+  });
   for (const [label, raw, charged, terminal] of [
     ['ready', ready, 1, 'usable'],
     ['review', output('B', 'review', 'ambiguous_options'), 1, 'usable'],

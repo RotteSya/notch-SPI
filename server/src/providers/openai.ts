@@ -11,6 +11,7 @@ export class OpenAIProvider implements Provider {
   private readonly model: string;
   private readonly maxTokens: number;
   private readonly extraBody: Record<string, unknown>;
+  private readonly explanationExtraBody: Record<string, unknown>;
 
   constructor(
     apiKey: string,
@@ -21,6 +22,7 @@ export class OpenAIProvider implements Provider {
       name?: string;
       endpointPath?: string;
       extraBody?: Record<string, unknown>;
+      explanationExtraBody?: Record<string, unknown>;
     } = {},
   ) {
     this.name = options.name ?? 'openai';
@@ -29,6 +31,7 @@ export class OpenAIProvider implements Provider {
     this.model = model;
     this.maxTokens = maxTokens;
     this.extraBody = options.extraBody ?? {};
+    this.explanationExtraBody = options.explanationExtraBody ?? this.extraBody;
   }
 
   async stream(
@@ -41,7 +44,7 @@ export class OpenAIProvider implements Provider {
       max_tokens: Math.min(req.maxTokens ?? this.maxTokens, this.maxTokens),
       stream: true,
       stream_options: { include_usage: true },
-      ...this.extraBody,
+      ...(req.purpose === 'explain' ? this.explanationExtraBody : this.extraBody),
       messages: [
         { role: 'system', content: req.system },
         {

@@ -256,7 +256,7 @@ export class CaptureService {
         });
         const generate=async()=>{
           admission.providerStarted=true;
-          return selected.stream({...prompt,images,maxTokens:operation==='explain'?768:undefined},chunk=>{
+          return selected.stream({...prompt,images,purpose:operation,maxTokens:operation==='explain'?768:undefined},chunk=>{
             if(completed||abort.signal.aborted)return;
             if(Buffer.byteLength(raw+chunk)>64*1024){abort.abort();return;}raw+=chunk;
           },abort.signal);
