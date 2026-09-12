@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-09-13 进一步诊断：mixed16调用完成，答案8/8但解释严格7/8，gsm1145出现假冲突/自相矛盾；仍未放行解释。本轮48次全部最高预留保留，27元campaign占用3.918339元、剩余23.081661元。已支持显式EXPLANATION_MAX_TOKENS（默认768；1..4096；与slot cap取min），不自动开启或调整生产。后续先冻结新的一致性验证与费用证明，不能复用旧768上界或宣称8题为正式留出集。详情及跨配置绑定实证见[混合候选记录](docs/mixed-thinking-candidate-2026-09-13.md)。
+
 2026-09-13 小范围真测：8ab68ed的32调用完成，独立复核none答案3/8、low8/8；low解释7/8正确可用，一条在768总token后失败。已新增按通道单独配置解释思考强度，下一步以新父答案验证low答题+none解释；Node557/557、类型检查通过。原32调用最高预留仍保留，27元campaign累计保守占用3.082755元。详见[混合候选与既有配置绑定待办](docs/mixed-thinking-candidate-2026-09-13.md)。
 
 2026-09-13 模型候选准备：DeepSeek可按control/treatment分别配置none/low/high/max思考强度，默认none不变；总生成上界仍生效，隐藏reasoning不转发，总usage不重复计数。Node553/553、类型检查及独立代码复核通过，尚未部署/产生新付费模型结果。下一步固定小范围none/low诊断对照，见[候选说明](docs/deepseek-thinking-candidate-2026-09-13.md)。

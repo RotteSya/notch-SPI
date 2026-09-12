@@ -109,6 +109,9 @@ export const config = {
   cronSecret: envStr('CRON_SECRET', ''),
   screenQueryEnabled: envStr('SCREEN_QUERY_ENABLED', '0') === '1',
   explanationEnabled: envStr('EXPLANATION_ENABLED', '0') === '1',
+  // Includes all provider-generated thinking and visible text. Candidates must re-admit cost
+  // before increasing it; no request from the client can raise this server-owned limit.
+  explanationMaxTokens: Number(envStr('EXPLANATION_MAX_TOKENS', '768')),
   enabledSupportProfiles: envStr('ENABLED_SUPPORT_PROFILES', ''),
   modelCostCurrency: envStr('MODEL_COST_CURRENCY', 'USD'),
 
@@ -211,6 +214,9 @@ export const config = {
 export type Config = typeof config;
 
 export function validateTrialPolicy(c: Config): void {
+  if (!Number.isSafeInteger(c.explanationMaxTokens) || c.explanationMaxTokens < 1 || c.explanationMaxTokens > 4096) {
+    throw new Error('EXPLANATION_MAX_TOKENS must be an integer from 1 to 4096');
+  }
   if (!Number.isInteger(c.modelBudgetUtcOffsetMinutes) || c.modelBudgetUtcOffsetMinutes < -720 || c.modelBudgetUtcOffsetMinutes > 840) {
     throw new Error('MODEL_BUDGET_UTC_OFFSET_MINUTES must be an integer from -720 to 840');
   }
