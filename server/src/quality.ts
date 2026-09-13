@@ -10,7 +10,7 @@ type Kind=typeof QUALITY_KINDS[number];
 type Language=typeof QUALITY_LANGUAGES[number];
 export interface QualityCombination {profile:Profile;kind:Exclude<Kind,'other'>;language:Language}
 export interface QualityRun {
-  id:string;dataset_id:string;dataset_role:'legacy_regression'|'holdout'|'diagnostic';
+  id:string;dataset_id:string;dataset_role:'legacy_regression'|'holdout'|'regression'|'diagnostic';
   dataset_sha256:string;results_sha256:string;family_split_sha256:string|null;
   contract:'objective_v1'|'screen_query_v1';scope_version:string;model:string;commit:string;app_version:string;
   started_at:string|null;finished_at:string;executor:string;
@@ -65,7 +65,7 @@ export function qualityReviewSubject(input:Pick<QualitySubmission,'run'|'declara
 export function parseQualitySubmission(raw:unknown,now=Date.now()):QualitySubmission {
   const root=object(raw,['schema_version','run','declarations','cases','review']);if(root.schema_version!==1)return invalid();
   const r=object(root.run,['id','dataset_id','dataset_role','dataset_sha256','results_sha256','family_split_sha256','contract','scope_version','model','commit','app_version','started_at','finished_at','executor','expected_cases']);
-  const run:QualityRun={id:identifier(r.id),dataset_id:identifier(r.dataset_id),dataset_role:choice(r.dataset_role,['legacy_regression','holdout','diagnostic']),
+  const run:QualityRun={id:identifier(r.id),dataset_id:identifier(r.dataset_id),dataset_role:choice(r.dataset_role,['legacy_regression','holdout','regression','diagnostic']),
     dataset_sha256:sha(r.dataset_sha256),results_sha256:sha(r.results_sha256),family_split_sha256:r.family_split_sha256===null?null:sha(r.family_split_sha256),
     contract:choice(r.contract,['objective_v1','screen_query_v1']),scope_version:identifier(r.scope_version),model:identifier(r.model,150),
     commit:typeof r.commit==='string'&&/^[a-f0-9]{40}$/.test(r.commit)?r.commit:invalid(),app_version:identifier(r.app_version,64),
@@ -106,6 +106,7 @@ export function parseQualitySubmission(raw:unknown,now=Date.now()):QualitySubmis
     results_reviewed:bool(v.results_reviewed),complete_run:bool(v.complete_run),no_selection_reruns:bool(v.no_selection_reruns),authorized_materials:bool(v.authorized_materials),family_split_verified:bool(v.family_split_verified)};
   if(review.reviewer.toLowerCase()===run.executor.toLowerCase()||review.reviewed_at<run.finished_at)return invalid();
   if(review.complete_run&&cases.length!==run.expected_cases)return invalid();
+  if(run.dataset_role==='regression'&&(run.contract!=='screen_query_v1'||review.family_split_verified))return invalid();
   if(review.family_split_verified&&(!run.family_split_sha256||cases.some(c=>c.family_sha256===null)))return invalid();
   const input:QualitySubmission={schema_version:1,run,declarations,cases,review};
   if(review.binding==='case_digest'&&review.subject_sha256!==qualityReviewSubject(input))return invalid();

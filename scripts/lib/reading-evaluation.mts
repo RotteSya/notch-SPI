@@ -42,7 +42,7 @@ export interface ReadingCase {
   scope:ReturnType<typeof validateScope>;
 }
 export interface ReadingManifest {
-  schema_version:1|2;dataset_id:string;dataset_role:'holdout'|'diagnostic';scope_version:string;
+  schema_version:1|2;dataset_id:string;dataset_role:'holdout'|'regression'|'diagnostic';scope_version:string;
   answer_scoring_version?:typeof READING_ANSWER_SCORING_VERSION;answer_scoring_sha256?:string;
   declarations:QualityCombination[];explanations_per_kind:number;
   family_split:EvidenceFile;authorization_review:EvidenceFile;cases:ReadingCase[];
@@ -94,19 +94,19 @@ export function parseReadingManifest(value:unknown):ReadingManifest {
     return {profile:choice(d.profile,['reading_practice']),kind:choice(d.kind,kinds),language:choice(d.language,['zh','ja','en'])};
   });
   if(new Set(declarations.map(qualityDigest)).size!==declarations.length)return invalid('Duplicate support declaration');
-  const manifest:ReadingManifest={schema_version:raw.schema_version as 1|2,dataset_id:id(raw.dataset_id),dataset_role:choice(raw.dataset_role,['holdout','diagnostic']),
+  const manifest:ReadingManifest={schema_version:raw.schema_version as 1|2,dataset_id:id(raw.dataset_id),dataset_role:choice(raw.dataset_role,['holdout','regression','diagnostic']),
     ...(schema2?{answer_scoring_version:READING_ANSWER_SCORING_VERSION,answer_scoring_sha256:sha(raw.answer_scoring_sha256)}:{}),
     scope_version:SCREEN_QUERY_VERSION,declarations,explanations_per_kind:integer(raw.explanations_per_kind,100),
     family_split:reference(raw.family_split),authorization_review:reference(raw.authorization_review),cases};
-  if(manifest.dataset_role==='holdout') {
+  if(manifest.dataset_role!=='diagnostic') {
     const declared=cases.filter(c=>c.expectation!=='unlabelled'&&declarations.some(d=>d.kind===c.kind&&d.language===c.language));
     if(declared.length<400||kinds.some(kind=>declared.filter(c=>c.kind===kind).length<100)||!declarations.length||
       declarations.some(d=>declared.filter(c=>c.kind===d.kind&&c.language===d.language).length<50)||manifest.explanations_per_kind<20)
-      return invalid('Holdout requires 400 labelled cases, 100 per kind, 50 per declaration and an 80-explanation plan');
+      return invalid('Full evaluation requires 400 labelled cases, 100 per kind, 50 per declaration and an 80-explanation plan');
     if(['web','pdf','practice_ui','multi_page'].some(layout=>!cases.some(c=>c.layout===layout))||
       ['retake','out_of_scope','multiple_targets'].some(expectation=>!cases.some(c=>c.expectation===expectation))||
       ['missing_context','cropped','unreadable','ambiguous'].some(risk=>!cases.some(c=>c.risk===risk)))
-      return invalid('Holdout layout and risk coverage is incomplete');
+      return invalid('Full evaluation layout and risk coverage is incomplete');
   }
   return manifest;
 }
@@ -148,18 +148,26 @@ export async function loadReadingCorpus(path:string,executor:string,now=Date.now
 }
 export function validateCorpusReview(manifest:ReadingManifest,splitBytes:Buffer,reviewBytes:Buffer,executor:string,now:number):LoadedReadingCorpus['review'] {
   if(bytesSHA(splitBytes)!==manifest.family_split.sha256||bytesSHA(reviewBytes)!==manifest.authorization_review.sha256)return invalid('Corpus metadata digest mismatch');
-  const split=object(evidenceJSON(splitBytes),
-    ['schema_version','dataset_id','development_families','holdout_families']);
-  if(split.schema_version!==1||split.dataset_id!==manifest.dataset_id||!Array.isArray(split.development_families)||!Array.isArray(split.holdout_families))return invalid();
-  const development=split.development_families.map(id),holdout=split.holdout_families.map(id),families=new Set(manifest.cases.map(c=>c.family_id));
-  if(new Set(development).size!==development.length||new Set(holdout).size!==holdout.length||development.some(f=>holdout.includes(f))||
-    holdout.length!==families.size||holdout.some(f=>!families.has(f)))return invalid('Family split overlaps or differs from the frozen corpus');
+  const regression=manifest.dataset_role==='regression',families=new Set(manifest.cases.map(c=>c.family_id));
+  if(regression) {
+    const provenance=object(evidenceJSON(splitBytes),['schema_version','dataset_id','regression_families','previously_used_for_development']);
+    if(provenance.schema_version!==2||provenance.dataset_id!==manifest.dataset_id||provenance.previously_used_for_development!==true||!Array.isArray(provenance.regression_families))return invalid('Regression requires explicit previously seen family provenance');
+    const recorded=provenance.regression_families.map(id);
+    if(new Set(recorded).size!==recorded.length||recorded.length!==families.size||recorded.some(f=>!families.has(f)))return invalid('Regression families differ from the frozen corpus');
+  } else {
+    const split=object(evidenceJSON(splitBytes),
+      ['schema_version','dataset_id','development_families','holdout_families']);
+    if(split.schema_version!==1||split.dataset_id!==manifest.dataset_id||!Array.isArray(split.development_families)||!Array.isArray(split.holdout_families))return invalid();
+    const development=split.development_families.map(id),holdout=split.holdout_families.map(id);
+    if(new Set(development).size!==development.length||new Set(holdout).size!==holdout.length||development.some(f=>holdout.includes(f))||
+      holdout.length!==families.size||holdout.some(f=>!families.has(f)))return invalid('Family split overlaps or differs from the frozen corpus');
+  }
   const review=object(evidenceJSON(reviewBytes),
     ['schema_version','reviewer','reviewed_at','expires_at','manifest_subject_sha256','authorized_materials','external_model_processing','labels_reviewed','family_split_verified']);
   const reviewer=id(review.reviewer),reviewedAt=timestamp(review.reviewed_at),expiresAt=timestamp(review.expires_at);
   if(review.schema_version!==1||reviewer.toLowerCase()===executor.toLowerCase()||Date.parse(reviewedAt)>now||Date.parse(expiresAt)<=now||
     review.manifest_subject_sha256!==readingManifestSubject(manifest)||
-    ['authorized_materials','external_model_processing','labels_reviewed','family_split_verified'].some(key=>review[key]!==true))
+    ['authorized_materials','external_model_processing','labels_reviewed'].some(key=>review[key]!==true)||review.family_split_verified!==!regression)
     return invalid('Corpus requires current, independent authorization/label/family review including external model processing');
   return {reviewer,reviewed_at:reviewedAt,expires_at:expiresAt};
 }

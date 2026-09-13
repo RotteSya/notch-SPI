@@ -99,7 +99,7 @@ async function admitCandidate(corpus:LoadedReadingCorpus,candidate:ReadingCandid
     !Array.isArray(screen.capabilities)||!screen.capabilities.includes('screen_query_v1')||!Array.isArray(screen.enabled_profiles)||!screen.enabled_profiles.includes('reading_practice'))
     throw new ReadingEvidenceError('Candidate configuration differs from the frozen evaluation');
   const provider=health.objective_provider==='inherit'?health.provider:health.objective_provider;
-  if(health.ok!==true||health.objective_provider_error!==undefined||typeof provider!=='string'||corpus.manifest.dataset_role==='holdout'&&!['anthropic','deepseek','openai'].includes(provider))
+  if(health.ok!==true||health.objective_provider_error!==undefined||typeof provider!=='string'||corpus.manifest.dataset_role!=='diagnostic'&&!['anthropic','deepseek','openai'].includes(provider))
     throw new ReadingEvidenceError('Holdout requires a healthy real provider');
   return {checked_at:new Date().toISOString(),account_balance:account.balance_questions,config_revision:candidate.config_revision,provider};
 }

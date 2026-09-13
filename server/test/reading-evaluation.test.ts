@@ -19,7 +19,7 @@ import {qualityReviewSubject} from '../src/quality.ts';
 import {pngBytes,pngChunk} from './helpers/images.ts';
 import {SCREEN_QUERY_VERSION,composeScreenQuery} from '../src/screen-query.ts';
 import {EvaluationBudget,type EvaluationCallBound} from '../../scripts/lib/evaluation-budget.mts';
-import {bytesSHA,loadReadingCorpus,parseReadingManifest,parseReadingStream,readingManifestSubject,scoreReadingCase,
+import {bytesSHA,loadReadingCorpus,parseReadingManifest,parseReadingStream,readingManifestSubject,scoreReadingCase,validateCorpusReview,
   type ReadingManifest,type ReadingCase} from '../../scripts/lib/reading-evaluation.mts';
 import {runReadingEvaluation,readingRequestBody,READING_REQUEST_MAX_BYTES,type ReadingCandidate} from '../../scripts/lib/reading-runner.mts';
 import {openEvaluationAccess} from '../../scripts/lib/evaluation-access.mts';
@@ -259,8 +259,8 @@ test('reading corpus rejects external processing denial, expiry, split overlap a
   await assert.rejects(loadReadingCorpus(other.path,'executor'),/unavailable/);
 });
 
-test('holdout declarations require independently counted kinds, cells, layouts and risk cases',async t=>{
-  const f=await fixture(t,{},420,20),m=f.source.manifest;m.dataset_role='holdout';
+for(const role of ['holdout','regression'] as const)test(`${role} declarations require independently counted kinds, cells, layouts and risk cases`,async t=>{
+  const f=await fixture(t,{},420,20),m=f.source.manifest;m.dataset_role=role;
   for(const [i,item] of m.cases.entries()) {
     item.layout=(['web','pdf','practice_ui','multi_page'] as const)[i%4]!;
     if(i<4) {item.expectation=(['retake','out_of_scope','multiple_targets','retake'] as const)[i]!;item.accepted_answers=[];item.risk=(['missing_context','cropped','unreadable','ambiguous'] as const)[i]!;}
@@ -269,6 +269,24 @@ test('holdout declarations require independently counted kinds, cells, layouts a
   assert.throws(()=>parseReadingManifest({...m,declarations:[...m.declarations,{profile:'reading_practice',kind:'single_choice',language:'en'}]}),/50/);
   assert.throws(()=>parseReadingManifest({...m,explanations_per_kind:19}),/80/);
   assert.throws(()=>parseReadingManifest({...m,cases:m.cases.map(c=>({...c,layout:'web'}))}),/coverage/);
+});
+
+test('previously seen regression families cannot be represented as an independent holdout',async t=>{
+  const f=await fixture(t),m=f.source.manifest;m.dataset_role='regression';
+  const provenance={schema_version:2,dataset_id:m.dataset_id,regression_families:m.cases.map(c=>c.family_id),previously_used_for_development:true};
+  const check=(metadata:unknown,familyVerified=false)=>{
+    const bytes=json(metadata);m.family_split.sha256=bytesSHA(bytes);
+    const review=json({schema_version:1,reviewer:'independent-reviewer',reviewed_at:at(),expires_at:future(),manifest_subject_sha256:readingManifestSubject(m),
+      authorized_materials:true,external_model_processing:true,labels_reviewed:true,family_split_verified:familyVerified});
+    m.authorization_review.sha256=bytesSHA(review);
+    return validateCorpusReview(m,bytes,review,'executor',Date.now());
+  };
+  assert.equal(check(provenance).reviewer,'independent-reviewer');
+  assert.throws(()=>check(provenance,true),/independent/);
+  assert.throws(()=>check({...provenance,previously_used_for_development:false}),/previously seen/);
+  assert.throws(()=>check({...provenance,regression_families:provenance.regression_families.slice(1)}),/families differ/);
+  assert.throws(()=>check({...provenance,regression_families:[...provenance.regression_families,provenance.regression_families[0]]}),/families differ/);
+  m.dataset_role='holdout';assert.throws(()=>check(provenance,true));
 });
 
 test('reading SSE requires complete, bound, correctly ordered settlement and preserves protocol scoring',async t=>{

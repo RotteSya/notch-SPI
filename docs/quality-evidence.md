@@ -8,6 +8,8 @@
 
 权威结构位于 [`QualitySubmission`](../server/src/quality.ts)，必须包含所有字段；未知值使用契约允许的 `null` 或明确的未标注枚举，不填零冒充测量。
 
+新增 `regression` 数据用途表示screen-query已见题全量回归，界面明确标记“已见题”，复核不能声明 `family_split_verified=true`。它保留数值门槛以及缺少新留出证据的提示，不与仅用于旧objective契约的 `legacy_regression` 混用。基于回归而非新盲测的发布决定另行记录用户授权，质量接口本身不签发发布批准。
+
 | 部分 | 必需内容与校验 |
 |---|---|
 | `run` | 执行 ID、数据集 ID/用途及 SHA-256、原始结果 SHA-256、家族划分 SHA-256 或 null、合约、范围/Prompt 版本、模型、40 位 Git 提交、App 版本、起止时间、执行者、计划样本数 |

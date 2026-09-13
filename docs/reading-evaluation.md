@@ -8,7 +8,7 @@
 
 | 输入 | 内容和约束 |
 |---|---|
-| manifest | schema 1 或 2、dataset ID、holdout/diagnostic、范围版本、声明组合、每题型解释抽样数、家族/授权文件引用及有序 cases |
+| manifest | schema 1 或 2、dataset ID、holdout/regression/diagnostic、范围版本、声明组合、每题型解释抽样数、家族/授权文件引用及有序 cases |
 | case | 唯一 ID、family ID、题型、语言、布局、预期、风险、标准答案集合、JPEG/PNG MIME、1–4 个有序图片引用、最后一图上的单目标 scope |
 | 答案真值 | 仅 answerable 有非空 `accepted_answers`；retake、范围外、多目标及 unlabelled 不填猜测答案。保留单位、符号、完整选项及顺序 |
 | schema 2 评分 | manifest 必需 `answer_scoring_version=reading-answer-v3` 与 `answer_scoring_sha256`；每题必需 `answer_scoring`，answerable 使用下表中的显式规则，其他预期必须为 null。版本、代码摘要、规则和金标都进入授权摘要 |
@@ -20,6 +20,8 @@
 | cost bound | [`EvaluationCallBound`](../scripts/lib/evaluation-budget.mts) 规定的币种、价格、输入/输出最大 token、换汇上界及来源。与模型和候选地址完全一致；核验有效期最多 24h |
 
 授权复核人必须与 executor 不同。`readingManifestSubject` 对去掉 `authorization_review` 引用后的完整规范化 manifest 求摘要，避免授权文件循环引用；最终 manifest 字节摘要仍绑定该授权文件。源文件复核包括向外部模型传输的授权，普通 feedback-v2 导出授权不满足这个条件。
+
+`regression` 用于已参与模型调整的原题全量回归，与 `legacy_regression` 的旧240题契约区分。它保持400题、各题型100、各声明组合50、80解释、布局/风险覆盖及真实provider准入要求。其家族文件使用 schema 2，字段为 `dataset_id`、`regression_families`（唯一且完整覆盖原题家族）和 `previously_used_for_development=true`；不得伪造新的development/holdout隔离。材料授权及结果复核中的 `family_split_verified` 必须为false，其他授权/审题要求不变。管理员显示“全量回归（已见题）”，数值门槛继续计算，留出证据缺口继续保留；正式发布所采用的回归证据标准必须另有用户明确决定，不能由工具自行批准。
 
 ### schema 2 的逐题评分语义
 

@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-09-13 用户恢复Apple公证及Stripe财务读取权限，并明确“全量回归后直接推出正式版”。当前原生2.12/19包已公证Accepted并staple/Gatekeeper通过，Stripe五类只读接口均200；生产未切换。新增regression评测身份，保留全题量/风险/真实provider要求，明确已见家族与family_split_verified=false；数值质量门槛不变，不伪造新盲测。累计测试仍27元、当前保守占用4.704771元；下一步在同一账本运行原408题、80解释与同模型基线后正式放行。见[发布调整](docs/small-user-release-2026-09-11.md)。
+
 2026-09-13 解释/评分后续：low+2048的16次真实解释核心推导和冲突判断全部正确，具体错因6/8完整、2条部分；它是合成父答案诊断，不是正式留出验收。累计保守费用4.704771/27元、剩余22.295229元，测试实例已关闭。另补reading-answer-v3的source_literal单选原文规则，保留上下标以拒绝4⁰误当40；旧literal行为保留，旧v1/v2必须原版本重放。Node565/565、类型检查通过，100题原文政策需独立冻结后用于新manifest；详见[阅读评测](docs/reading-evaluation.md)。
 
 2026-09-13 配置绑定修复：不同CLIENT_CONFIG_REVISION的实例会在辅助请求预留/调用前拒绝旧父请求；status与重复solve回执均关闭对应恢复能力，同版本可重试且名额未消耗。模型、提示词或输出上限变更须同时更新revision；不自动检测同revision环境漂移。Node564/564、类型检查通过；纯本地修复后复现仅一次mock调用，真实模型新增0，累计保守费用仍3.918339/27元。说明见[HTTP契约](docs/official-api.md)。

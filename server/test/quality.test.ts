@@ -12,6 +12,15 @@ test('independent quality uses case denominators and Wilson intervals, without i
   assert.equal(report.assessment,'thresholds_met');assert.match(report.release_interpretation,/requires_exact_candidate_binding/);
   assert.doesNotMatch(JSON.stringify(report),/case_sha256|family_sha256|normalized_answer|accepted_answers/);
 });
+test('full regression keeps numerical quality checks without claiming independent holdout evidence',()=>{
+  const input=qualityFixture();input.run.dataset_role='regression';input.review.family_split_verified=false;
+  const report=aggregateQuality(parseQualitySubmission(signFixture(input)));
+  assert.ok(report.thresholds.every(t=>t.status==='met'));
+  assert.equal(report.run.dataset_role,'regression');assert.equal(report.assessment,'insufficient_evidence');
+  assert.ok(report.evidence_gaps.includes('not_new_scope_holdout'));
+  assert.ok(report.evidence_gaps.includes('family_split_evidence_missing'));
+  input.review.family_split_verified=true;assert.throws(()=>parseQualitySubmission(signFixture(input)),QualityValidationError);
+});
 test('rejecting every answer cannot improve coverage or answerable accuracy into a passing gate',()=>{
   const input=qualityFixture();for(const c of input.cases)if(c.expectation==='answerable'){c.state='retake';c.has_answer=false;c.answer_correct=null;}
   const report=aggregateQuality(parseQualitySubmission(signFixture(input)));

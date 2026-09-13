@@ -78,7 +78,7 @@ export async function loadReadingArchive(directory:string,now=Date.now(),allowCo
   if(expectedUpper!==rawPlan.budget.upper_cny_micros||Number(rawPlan.budget.remaining_cny_micros)>policy.limit_micros)fail();
   keys(rawPlan.admission,['checked_at','account_balance','config_revision','provider']);time(rawPlan.admission.checked_at,now);number(rawPlan.admission.account_balance);
   if(rawPlan.admission.checked_at>rawPlan.started_at||rawPlan.admission.account_balance<manifest.cases.length||rawPlan.admission.config_revision!==candidate.config_revision||
-    typeof rawPlan.admission.provider!=='string'||manifest.dataset_role==='holdout'&&!['anthropic','deepseek','openai'].includes(rawPlan.admission.provider))fail();
+    typeof rawPlan.admission.provider!=='string'||manifest.dataset_role!=='diagnostic'&&!['anthropic','deepseek','openai'].includes(rawPlan.admission.provider))fail();
   const plan=rawPlan as unknown as ReadingRunPlan;
   let continuationBound:EvaluationCallBound|null=null,continuationPrefix:ReadingResponseIndex[]=[];
   if(continuing) {

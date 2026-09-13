@@ -26,7 +26,7 @@ export const QUALITY_SCRIPT=String.raw`
     const title={thresholds_met:'已测点估计达到阈值',thresholds_failed:'部分阈值未通过',insufficient_evidence:'证据不足'}[report.assessment];
     node('h2',record.withdrawal?'已撤回 · '+run.id:title+' · '+run.id,card);
     if(record.withdrawal)node('p','撤回原因：'+record.withdrawal.reason+' · '+record.withdrawal.recorded_at+' · 审计引用 '+record.withdrawal.reference,card).className='error';
-    node('p','数据用途：'+{legacy_regression:'历史回归',holdout:'留出集',diagnostic:'诊断'}[run.dataset_role]+' · '+run.dataset_id+' · '+run.contract+' / '+run.scope_version,card);
+    node('p','数据用途：'+{legacy_regression:'历史回归',holdout:'留出集',regression:'全量回归（已见题）',diagnostic:'诊断'}[run.dataset_role]+' · '+run.dataset_id+' · '+run.contract+' / '+run.scope_version,card);
     node('p','模型 '+run.model+' · App '+run.app_version+' · 提交 '+run.commit,card);
     node('p','评测窗口：'+(run.started_at??'开始时间未记录')+' → '+run.finished_at+' · 定义 '+report.definition_version+' · 归档修订 '+record.revision,card);
     node('p','已记录 '+report.execution.recorded_cases+' / 计划 '+report.execution.expected_cases+' 题 · 缺失 '+report.execution.missing_cases+' 题 · 真值未标注 '+report.overall.unlabelled+' 题',card);
