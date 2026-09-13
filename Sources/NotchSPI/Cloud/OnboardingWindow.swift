@@ -650,7 +650,7 @@ private final class HowItWorksPage: OnboardingPage {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func rebuildStrings() {
-        heading.stringValue = L10n.t("三步，答案到手", "3ステップで答えが手に入る", "Three beats to an answer")
+        heading.stringValue = L10n.t("截图飞入，自动提问", "画像から自動で質問", "Capture, fly in, ask")
 
         // Row 1: the hotkey as real keycaps inside the sentence.
         let prefix = L10n.t("按下", "", "Press")
@@ -661,17 +661,10 @@ private final class HowItWorksPage: OnboardingPage {
         layoutHotkeyStrip()
 
         let texts: [(String, String)] = [
-            ("", L10n.t("在任何题目界面按下快捷键 — 网页、PDF、题库软件都可以。",
-                        "問題が表示されている画面ならどこでも — Web、PDF、テストアプリでもOK。",
-                        "On any screen with a question — web pages, PDFs, quiz apps, anything.")),
-            (L10n.t("屏幕被轻轻读取", "画面をそっと読み取る", "Your screen is read, gently"),
-             L10n.t("NotchSPI 截取当前画面并识别其中的题目，全程无需复制粘贴。",
-                    "NotchSPI が画面を読み取り問題を認識。コピー&ペーストは不要。",
-                    "NotchSPI captures the screen and reads the question — no copy-paste, ever.")),
-            (L10n.t("答案从刘海流出", "ノッチから答えが流れ出す", "The answer flows from the notch"),
-             L10n.t("答案在刘海下方逐字显示。共享前请先确认录屏工具是否会捕获此窗口。",
-                    "答えがノッチの下に表示されます。共有前に、録画ツールがこのウィンドウを映すか確認してください。",
-                    "The answer streams in below the notch. Before sharing, check whether your recording tool captures this window.")),
+            ("", CaptureAction.single.detail),
+            (CaptureAction.multiple.title + "  " + Settings.displayString(CaptureAction.multiple.combo),
+             CaptureAction.multiple.detail + L10n.t("第 2 张起，成功截图 4 秒后自动提问；捕获时暂停。", "2枚目から4秒後に自動送信。キャプチャ中は一時停止。", "From image two, send after 4 seconds; capture pauses the timer.")),
+            (CaptureAction.personality.title + "  " + Settings.displayString(CaptureAction.personality.combo), CaptureAction.personality.detail),
         ]
         for (i, d) in descLabels.enumerated() { d.stringValue = texts[i].1 }
         for (i, t) in titleLabels.enumerated() { t.stringValue = texts[i + 1].0 }
@@ -1113,21 +1106,21 @@ private final class TryItPage: OnboardingPage {
 
     override func rebuildStrings() {
         heading.stringValue = L10n.t("现在就试一题", "さっそく1問解いてみよう", "Try one right now")
-        card.setQuestion(L10n.t("解方程：x² − 5x + 6 = 0",
-                                "解きなさい：x² − 5x + 6 = 0",
-                                "Solve: x² − 5x + 6 = 0"))
+        card.setQuestion(L10n.t("在网页或 PDF 中打开一道题",
+                                "Web や PDF で問題を開く",
+                                "Open a question in a web page or PDF"))
         keycaps.keys = KeycapChipView.caps(from: Settings.shared.captureCombo)
         let w = keycaps.intrinsicContentSize.width
         keycaps.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 214,
                                width: w, height: keycaps.intrinsicContentSize.height)
         // One instruction, one line. The notch demonstrates the rest itself.
         hint.stringValue = stuck
-            ? L10n.t("按了没反应？这个组合键多半被其他 App 占用了。",
+            ? L10n.t("尚未收到快捷键。需要时可在设置中检查绑定。",
                      "反応がありませんか？このキーの組み合わせは他のアプリが使用中の可能性があります。",
-                     "Nothing happening? Another app is probably holding this combo.")
-            : L10n.t("按下组合键。",
-                     "このキーを押すだけ。",
-                     "Press these keys.")
+                     "No shortcut received yet. You can check its binding in Settings.")
+            : L10n.t("打开题目窗口，按快捷键自动捕获已配置目标。",
+                     "問題を開き、キーを押すと設定した対象を自動キャプチャ。",
+                     "Open your question and press these keys to capture the configured target.")
         hint.textColor = stuck ? NSColor.systemOrange : NSColor(white: 1, alpha: 0.65)
         subHint.stringValue = stuck
             ? L10n.t("在刘海右侧的 ⚙ 设置 →「快捷键」里换一个组合键，然后回来再试。",
@@ -1138,18 +1131,7 @@ private final class TryItPage: OnboardingPage {
                      "Use it on any question. In ⚙ Settings you can change hotkeys or turn off anonymous reliability sharing.")
     }
 
-    // The hotkey capture must SEE the sample question: SCScreenshotManager honors sharingType
-    // and drops `.none` windows from the shot (verified empirically), so this page — and only
-    // this page — opts the onboarding window back into capture. Both hooks are needed: when
-    // this is the START page, pageDidAppear runs during loadView where `window` is still nil,
-    // and viewDidMoveToWindow covers that moment.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if superview != nil { window?.sharingType = .readWrite }
-    }
-
     override func pageDidAppear() {
-        window?.sharingType = .readWrite
         rebuildStrings()
         // A dead hotkey cannot be detected up front: RegisterEventHotKey happily succeeds while
         // another app keeps the keystroke, and macOS offers no way to ask who won. So this page
@@ -1176,13 +1158,10 @@ private final class TryItPage: OnboardingPage {
     deinit { stuckTimer?.invalidate() }
 }
 
-/// A quiet surface printing a real sample question on the page, so the very first hotkey press
-/// has something to answer. Pairs with TryItPage.pageDidAppear flipping the window to
-/// `.readWrite`: without that, SCK would drop the (normally capture-hidden) onboarding window
-/// from the shot and the model would never see this question.
+/// A quiet first-run instruction card. The app itself remains excluded from capture.
 private final class DemoQuestionCard: NSView {
     override var isFlipped: Bool { true }
-    private let question = onboardingLabel(size: 22, weight: .semibold, color: .white)
+    private let question = onboardingLabel(size: 18, weight: .semibold, color: .white)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

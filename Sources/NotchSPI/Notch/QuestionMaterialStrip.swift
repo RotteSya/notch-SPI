@@ -4,23 +4,25 @@ import AppKit
 final class QuestionMaterialStrip: NSView {
     var onExplain: (() -> Void)?
     private var explanationAvailable = false
+    private var personality = false
     var onAdd: (() -> Void)?
     var onClear: (() -> Void)?
     var onSelect: (() -> Void)?
     var onRemove: ((UUID) -> Void)?
     private var assets: [ContextAsset] = []
-    private var buttons: [MaterialActionButton] = []
+    private var buttons: [NotchActionButton] = []
     override var isFlipped: Bool { true }
 
-    func update(_ next: [ContextAsset], explanationAvailable: Bool) {
-        guard next != assets || buttons.isEmpty || self.explanationAvailable != explanationAvailable else { return }
+    func update(_ next: [ContextAsset], explanationAvailable: Bool, personality: Bool = false) {
+        guard next != assets || buttons.isEmpty || self.explanationAvailable != explanationAvailable || self.personality != personality else { return }
         self.explanationAvailable = explanationAvailable
+        self.personality = personality
         assets = next
         subviews.forEach { $0.removeFromSuperview() }
         buttons = []
         for (ordinal, asset) in next.enumerated() {
             let assetID = asset.id
-            let button = MaterialActionButton(title: "\(ordinal + 1) ×") { [weak self] in self?.onRemove?(assetID) }
+            let button = NotchActionButton(title: "\(ordinal + 1) ×") { [weak self] in self?.onRemove?(assetID) }
             button.image = NSImage(contentsOf: asset.file.url)
             button.imagePosition = .imageAbove
             button.imageScaling = .scaleProportionallyDown
@@ -29,15 +31,15 @@ final class QuestionMaterialStrip: NSView {
             buttons.append(button); addSubview(button)
         }
         var actions: [(String, () -> Void)] = [
-            (L10n.t("补充材料", "資料を追加", "Add material"), { [weak self] in self?.onAdd?() }),
-            (L10n.t("框选题目", "範囲を選択", "Select region"), { [weak self] in self?.onSelect?() }),
-            (L10n.t("新题组", "新しいグループ", "New group"), { [weak self] in self?.onClear?() }),
+            (CaptureAction.multiple.title, { [weak self] in self?.onAdd?() }),
+            (personality ? CaptureAction.personality.title : CaptureAction.single.title, { [weak self] in self?.onSelect?() }),
+            (L10n.t("清空结果", "結果を消去", "Clear result"), { [weak self] in self?.onClear?() }),
         ]
         if explanationAvailable {
             actions.insert((L10n.t("查看解释", "解説を見る", "Explanation"), { [weak self] in self?.onExplain?() }), at: 0)
         }
         for (title, action) in actions {
-            let button = MaterialActionButton(title: title, action: action)
+            let button = NotchActionButton(title: title, action: action)
             buttons.append(button); addSubview(button)
         }
         needsLayout = true
@@ -47,14 +49,14 @@ final class QuestionMaterialStrip: NSView {
         var x: CGFloat = 0
         for (index, button) in buttons.enumerated() {
             let width: CGFloat = index < assets.count ? 56 : max(74, button.intrinsicContentSize.width + 4)
-            button.frame = NSRect(x: x, y: index < assets.count ? 2 : 24,
+            button.frame = NSRect(x: x, y: index < assets.count ? 2 : (assets.isEmpty ? 4 : 24),
                                   width: width, height: index < assets.count ? 66 : 26)
             x += width + 6
         }
     }
 }
 
-private final class MaterialActionButton: NSButton {
+final class NotchActionButton: NSButton {
     private let actionBlock: () -> Void
     // The notch deliberately cannot become key; material actions must still accept clicks.
     override var needsPanelToBecomeKey: Bool { false }
@@ -70,9 +72,16 @@ private final class MaterialActionButton: NSButton {
         self.title = title
         self.target = self
         self.action = #selector(performAction)
-        self.bezelStyle = .rounded
+        self.bezelStyle = .inline
+        self.contentTintColor = NotchPalette.primary
+        self.wantsLayer = true
+        self.layer?.cornerRadius = CaptureStyle.cardRadius
+        self.layer?.backgroundColor = NotchPalette.rule.cgColor
         self.controlSize = .small
-        self.font = .systemFont(ofSize: 11)
+        self.font = CaptureStyle.caption
+        self.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: CaptureStyle.caption, .foregroundColor: NotchPalette.primary,
+        ])
         self.setAccessibilityLabel(title)
     }
     required init?(coder: NSCoder) { nil }

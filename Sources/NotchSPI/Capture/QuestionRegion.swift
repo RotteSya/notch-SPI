@@ -14,10 +14,11 @@ struct QuestionRegion: Codable, Equatable {
 /// Selection uses the actual captured target image; coordinates cannot drift across displays.
 @MainActor
 final class QuestionRegionPicker: NSWindowController {
+    private(set) var selectionScreenFrame: NSRect?
     private var completion: ((QuestionRegion?) -> Void)?
     private let canvas: SelectionCanvas
     private let confirmButton = NSButton()
-    init(image: NSImage, completion: @escaping (QuestionRegion?) -> Void) {
+    init(image: NSImage, action: CaptureAction = .single, ordinal: Int = 1, completion: @escaping (QuestionRegion?) -> Void) {
         self.completion = completion
         canvas = SelectionCanvas(image: image)
         let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1000, height: 700)
@@ -27,7 +28,8 @@ final class QuestionRegionPicker: NSWindowController {
                           height: min(available.height, max(200, image.size.height * ratio)))
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = L10n.t("选择一个题目", "問題を1つ選択", "Select one question")
+        window.title = action.title
+        window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.sharingType = ScreenShareGuard.windowSharingType
@@ -35,15 +37,19 @@ final class QuestionRegionPicker: NSWindowController {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: size.width, height: size.height + 100))
         canvas.frame = NSRect(x: 0, y: 100, width: size.width, height: size.height)
         root.addSubview(canvas)
-        let help = NSTextField(wrappingLabelWithString: SelectionCanvas.instructions)
-        help.font = .systemFont(ofSize: 12)
+        let purpose = action == .multiple
+            ? L10n.t("添加第 \(ordinal) 张 · 选区期间暂停提交", "画像 \(ordinal) を追加 · 選択中は送信を一時停止", "Add image \(ordinal) · sending paused during selection")
+            : action.detail
+        let help = NSTextField(wrappingLabelWithString: purpose + "\n" + SelectionCanvas.instructions)
+        help.font = CaptureStyle.caption
+        help.textColor = .secondaryLabelColor
         help.frame = NSRect(x: 16, y: 46, width: size.width - 32, height: 46)
         root.addSubview(help)
         let cancel = NSButton(title: L10n.t("取消", "キャンセル", "Cancel"), target: nil, action: nil)
         cancel.frame = NSRect(x: size.width - 212, y: 10, width: 90, height: 28)
         cancel.keyEquivalent = "\u{1b}"
         root.addSubview(cancel)
-        confirmButton.title = L10n.t("使用选区", "選択範囲を使用", "Use selection")
+        confirmButton.title = action == .multiple ? L10n.t("添加截图", "画像を追加", "Add image") : action.title
         confirmButton.bezelStyle = .rounded
         confirmButton.frame = NSRect(x: size.width - 116, y: 10, width: 104, height: 28)
         confirmButton.keyEquivalent = "\r"
@@ -66,6 +72,7 @@ final class QuestionRegionPicker: NSWindowController {
     private func finish(_ rect: QuestionRegion?) {
         guard let callback = completion else { return }
         completion = nil
+        if let rect { selectionScreenFrame = canvas.screenFrame(for: rect) }
         close()
         callback(rect)
     }
@@ -91,6 +98,12 @@ private final class SelectionCanvas: NSView {
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
         return NSRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
                       width: size.width, height: size.height)
+    }
+    func screenFrame(for region: QuestionRegion) -> NSRect? {
+        let image = imageRect
+        let rect = NSRect(x: image.minX + region.x * image.width, y: image.minY + region.y * image.height,
+                          width: region.width * image.width, height: region.height * image.height)
+        return window?.convertToScreen(convert(rect, to: nil))
     }
     var hasSelection: Bool { selection.width >= 8 && selection.height >= 8 }
     override var isFlipped: Bool { true }
