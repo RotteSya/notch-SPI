@@ -1,28 +1,36 @@
 {
-  "approved_at": "2026-09-08",
+  "approved_at": "2026-09-13",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
     "currency": "CNY",
-    "usd_to_cny_ceiling": 8,
-    "basis": "Conservative budget valuation, not an exchange-rate quote or vendor invoice. DeepSeek uses peak cache-miss rates; no prepaid daily charge.",
+    "basis": "Conservative peak cache-miss valuation for all accepted input tokens and all completion tokens, including hidden reasoning. Not a vendor invoice or prepaid daily charge. A 3 CNY reservation covers even 1,048,576 input tokens plus 4,096 output tokens at 2/8 CNY per million; actual usage settles independently. No automatic model or budget increase.",
+    "context_input_upper_tokens": 1048576,
+    "output_upper_tokens": 4096,
+    "calculated_upper_micros": 2129920,
     "sources": [
-      "https://platform.claude.com/docs/en/about-claude/pricing",
-      "https://platform.claude.com/docs/en/build-with-claude/vision",
-      "https://api-docs.deepseek.com/quick_start/pricing/",
-      "https://www.boc.cn/sourcedb/whpj/"
+      "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
     ]
   },
   "environment": {
     "MODEL_COST_CURRENCY": "CNY",
     "MODEL_DAILY_BUDGET_MICROS": "20000000",
     "MODEL_BUDGET_UTC_OFFSET_MINUTES": "480",
-    "ATTEMPT_BUDGET_UPPER_MICROS": "10000000",
-    "MODEL_PRICING_VERSION": "2026-09-08-cny-usd-ceiling8-peak",
-    "MODEL_PRICING_JSON": "[{\"model\":\"anthropic:claude-opus-4-8\",\"input_micros_per_million_tokens\":40000000,\"output_micros_per_million_tokens\":200000000},{\"model\":\"deepseek:deepseek-v4-flash-vision-exp\",\"input_micros_per_million_tokens\":3520000,\"output_micros_per_million_tokens\":10560000}]",
-    "OFFICIAL_MODEL": "claude-opus-4-8",
+    "ATTEMPT_BUDGET_UPPER_MICROS": "3000000",
+    "MODEL_PRICING_VERSION": "2026-09-13-deepseek-flash-cny-peak",
+    "MODEL_PRICING_JSON": "[{\"model\":\"deepseek:deepseek-flash\",\"input_micros_per_million_tokens\":2000000,\"output_micros_per_million_tokens\":8000000}]",
+    "OFFICIAL_PROVIDER": "deepseek",
+    "OFFICIAL_MODEL": "deepseek-flash",
     "OFFICIAL_MAX_TOKENS": "4096",
-    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "4096"
+    "OFFICIAL_DEEPSEEK_REASONING_EFFORT": "low",
+    "OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
+    "OBJECTIVE_RESULT_V1_PROVIDER": "deepseek",
+    "OBJECTIVE_RESULT_V1_MODEL": "deepseek-flash",
+    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "4096",
+    "OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT": "low",
+    "OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
+    "EXPLANATION_MAX_TOKENS": "2048",
+    "CLIENT_CONFIG_REVISION": "production-2-12-flash-low-2048-20260913"
   }
 }
