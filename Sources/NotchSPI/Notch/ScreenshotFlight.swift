@@ -3,13 +3,19 @@ import ImageIO
 import QuartzCore
 
 enum ScreenshotThumbnail {
-    static func load(_ url: URL, maxPixelSize: Int = 480) -> NSImage? {
+    static func loadPixels(_ url: URL, maxPixelSize: Int = 480) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
                 kCGImageSourceCreateThumbnailWithTransform: true
               ] as CFDictionary) else { return nil }
+        return image
+    }
+
+    @MainActor
+    static func load(_ url: URL, maxPixelSize: Int = 480) -> NSImage? {
+        guard let image = loadPixels(url, maxPixelSize: maxPixelSize) else { return nil }
         return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 }

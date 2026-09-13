@@ -1182,10 +1182,11 @@ final class NotchController: NSObject {
         // Reserve the slot before yielding. Decode never delays intake or owns the countdown.
         model.flyingScreenshots.insert(asset.id)
         Task { @MainActor [weak self] in
-            let image = await Task.detached(priority: .userInitiated) { ScreenshotThumbnail.load(asset.file.url) }.value
+            let pixels = await Task.detached(priority: .userInitiated) { ScreenshotThumbnail.loadPixels(asset.file.url) }.value
             guard let self, self.intakeGeneration == generation,
                   self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
-            guard let image else { self.model.flyingScreenshots.remove(asset.id); return }
+            guard let pixels else { self.model.flyingScreenshots.remove(asset.id); return }
+            let image = NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height))
             #if DEBUG
             ScreenCapture.trace("intake.thumbnail.ready")
             #endif
