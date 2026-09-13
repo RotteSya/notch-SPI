@@ -109,7 +109,7 @@ enum Prompts {
     /// Task line for a context run: the first image is the remembered ⌘⇧1 shot, the last is the
     /// fresh capture. Swapped in for the plain tutor task only — the system prompt (depth
     /// contract, FINAL line) is unchanged, so a context answer renders exactly like a tutor one.
-    static let contextTask = "tutor me on the problem shown in the LAST image. The earlier image is reference material the user captured moments before (for example the reading passage, source text, or problem setup this question belongs to); read it first and treat it as the context the last image's problem builds on."
+    static let contextTask = "tutor me on the problem shown in the LAST image. The earlier images are reference material in capture order, captured moments before (for example the reading passage, source text, or problem setup this question belongs to); read them in order first and treat them as the context the last image's problem builds on."
 
     /// The user-turn text every transport sends alongside the image block(s). Kept here so the
     /// three channels can never drift on how the images are introduced. The single-image form is

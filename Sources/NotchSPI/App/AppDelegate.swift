@@ -18,7 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a main menu, the text fields in the settings / 人物像 windows can't cut, copy, or paste.
         NSApp.mainMenu = Self.makeMainMenu()
 
-        let controller = NotchController()
+        let controller: NotchController
+        #if DEBUG
+        controller = NotchController(activateServices: !CommandLine.arguments.contains("--qa-screenshot-demo"))
+        #else
+        controller = NotchController()
+        #endif
         controller.show()
         self.controller = controller
 
@@ -32,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Visual-QA hooks: `--qa-settings-page N` opens the settings window at page N;
         // `--qa-capture` fires one full capture as if the hotkey were pressed.
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("--qa-screenshot-demo") {
+            ScreenshotVisualQA.start(controller, localService: args.contains("--qa-screenshot-local-service"))
+        }
         if let i = args.firstIndex(of: "--qa-settings-page"), i + 1 < args.count,
            let n = Int(args[i + 1]),
            let page = MainSettingsWindowController.Page(rawValue: n) {

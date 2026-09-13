@@ -263,36 +263,45 @@ final class HotkeySettingsViewController: NSViewController {
     private let personalityControl = HotkeyRecorderControl(combo: Settings.shared.personalityCombo)
     private let toggleControl = HotkeyRecorderControl(combo: Settings.shared.toggleCombo)
     private let autoControl = HotkeyRecorderControl(combo: Settings.shared.autoModeCombo)
-    private let rowYs: [CGFloat] = [8, 46, 84, 122, 160]
+    private let rowYs: [CGFloat] = [0, 70, 140, 232, 276]
     private let hint = HotkeySettingsViewController.makeLabel(
         "", size: 11, weight: .regular, color: .secondaryLabelColor)
     private var conflictObserver: Any?
 
     override func loadView() {
-        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 420, height: 266))
+        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 568, height: 424))
 
         let rows: [(String, HotkeyRecorderControl, String)] = [
-            (L10n.t("截屏讲题（学习辅导）", "解説キャプチャ（学習）", "Capture & tutor"),
-             captureControl, "capture"),
-            (L10n.t("上下文追问（附上次截图）", "文脈つき質問（前回のキャプチャを添付）", "Ask with context (last shot attached)"),
-             contextControl, "context"),
-            (L10n.t("截屏作答（性格测试）", "回答キャプチャ（性格検査）", "Capture & answer (personality)"),
-             personalityControl, "personality"),
+            (CaptureAction.single.title, captureControl, "capture"),
+            (CaptureAction.multiple.title, contextControl, "context"),
+            (CaptureAction.personality.title, personalityControl, "personality"),
             (L10n.t("显示 / 隐藏", "表示 / 非表示", "Show / hide"),
              toggleControl, "toggle"),
             (L10n.t("自动连答（开始 / 停止）", "自動連続回答（開始 / 停止）", "Auto session (start / stop)"),
              autoControl, "autoMode"),
         ]
         for (i, (title, control, which)) in rows.enumerated() {
-            let label = Self.makeLabel(title, size: 13, weight: .regular, color: .labelColor)
-            label.frame = NSRect(x: 20, y: rowYs[i] + 8, width: 214, height: 18)
+            let label = Self.makeLabel(title, size: 13, weight: i < 3 ? .semibold : .regular, color: .labelColor)
+            label.frame = NSRect(x: 0, y: rowYs[i] + 8, width: 360, height: 18)
+            if i < 3 {
+                let detail = NSTextField(wrappingLabelWithString: CaptureAction.allCases[i].detail)
+                detail.font = CaptureStyle.caption
+                detail.textColor = .secondaryLabelColor
+                detail.frame = NSRect(x: 0, y: rowYs[i] + 32, width: 368, height: 32)
+                root.addSubview(detail)
+            }
             root.addSubview(label)
             control.setAccessibilityLabel(title)
             control.onBeginRecord = { [weak self] in self?.record(which) }
             root.addSubview(control)
         }
 
-        hint.frame = NSRect(x: 20, y: 204, width: 380, height: 40)
+        let rule = NSTextField(wrappingLabelWithString: CaptureAction.countdownRule)
+        rule.font = CaptureStyle.caption
+        rule.textColor = .secondaryLabelColor
+        rule.frame = NSRect(x: 0, y: 332, width: 560, height: 48)
+        root.addSubview(rule)
+        hint.frame = NSRect(x: 0, y: 388, width: 560, height: 34)
         hint.maximumNumberOfLines = 2
         hint.lineBreakMode = .byWordWrapping
         root.addSubview(hint)
@@ -374,7 +383,7 @@ final class HotkeySettingsViewController: NSViewController {
             control.isRecording = recording == role.rawValue
             // Keycap rows are content-sized and right-aligned; re-seat after every state change.
             let w = control.intrinsicContentSize.width
-            control.frame = NSRect(x: 420 - 20 - w, y: y, width: w, height: 34)
+            control.frame = NSRect(x: 568 - w, y: y, width: w, height: 34)
         }
         hint.stringValue = taken.isEmpty
             ? L10n.t("点击右侧键帽，然后按下新的组合键（需包含 ⌘/⇧/⌥/⌃ 至少一个）。",

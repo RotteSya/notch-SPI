@@ -5,6 +5,28 @@ import Carbon.HIToolbox
 final class NotchController: NSObject {
     let model = TutorModel()
     private let questions = QuestionSessionStore()
+    private let intakeStore = QuestionSessionStore()
+    private var screenshotRound = ScreenshotRound<ContextAsset>()
+    private var intakeTask: Task<Void, Never>?
+    private var intakeBinding: CaptureRequestBinding?
+    private var screenshotTimer: Timer?
+    private let screenshotFlight = ScreenshotFlight()
+    private var intakeNotice = ""
+    private var intakeGeneration = UUID()
+    private var pendingSingle: (assets: [ContextAsset], mode: String)?
+    #if DEBUG
+    var qaScreenshotCapture: (() async -> Result<ScreenCapture.Shot, CaptureError>)?
+    var qaScreenshotSubmit: (([ContextAsset], String) -> Void)?
+    var qaScreenshotClock: (() -> TimeInterval)?
+    func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple) }
+    func qaCancelScreenshotRound() { cancelRoundByUser() }
+    func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
+    func qaRefreshScreenshotLayout() { resizeToFit() }
+    func qaSynchronizeCaptureScope() { synchronizeMaterialScope() }
+    func qaTickScreenshotRound() { tickScreenshotRound() }
+    func qaSetRequestRunning(_ value: Bool) { running = value }
+    #endif
+
     private var currentRunSnapshot: RunSnapshot?
     private var currentQuestionSnapshot: QuestionCaptureSnapshot?
     private var materialTimer: Timer?
@@ -93,12 +115,14 @@ final class NotchController: NSObject {
         }
     }
 
-    override init() {
+    init(activateServices: Bool = true) {
         panel = NotchPanel(contentRect: .zero)
         super.init()
-        ClientConfigService.shared.refresh()
-        ProductTelemetry.shared.flush()
-        showReliabilityNoticeIfNeeded()
+        if activateServices {
+            ClientConfigService.shared.refresh()
+            ProductTelemetry.shared.flush()
+            showReliabilityNoticeIfNeeded()
+        }
         refreshCLILabel()
         model.statusText = L10n.statusReady
         model.depthLabel = L10n.depthLabel(Settings.shared.depth)
@@ -119,10 +143,14 @@ final class NotchController: NSObject {
             onStopAuto: { [weak self] in self?.stopAutoSession(.stopButton) }
         )
         view.autoresizingMask = [.width, .height]
+        view.onCancelScreenshotRound = { [weak self] in self?.cancelRoundByUser() }
         view.onExplanation = { [weak self] in self?.showExplanation() }
         view.onAddMaterial = { [weak self] in self?.saveMaterial() }
         view.onNewGroup = { [weak self] in self?.newQuestionGroup() }
-        view.onSelectRegion = { [weak self] in self?.selectQuestionRegion() }
+        view.onSelectRegion = { [weak self] in
+            guard let self else { return }
+            if self.model.mode == "personality" { self.capturePersonality() } else { self.selectQuestionRegion() }
+        }
         view.onRemoveMaterial = { [weak self] id in
             self?.questions.removeReference(id)
             self?.refreshMaterials()
@@ -132,11 +160,14 @@ final class NotchController: NSObject {
         panel.setFrame(frame(expanded: false), display: true)
 
         refreshModeLabels()
-        registerHotkeys()
+        if activateServices {
+            Settings.shared.migrateScreenshotHotkeys()
+            registerHotkeys()
+        }
         materialTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                if self.questions.expireIfNeeded() {
+                if self.questions.expireIfNeeded(), !self.screenshotRound.isActive, self.intakeTask == nil {
                     self.invalidateQuestionContext(clearAnswer: false)
                 }
                 self.synchronizeMaterialScope()
@@ -166,7 +197,7 @@ final class NotchController: NSObject {
 
         // Pre-enumerate shareable content so the first hotkey press skips the ~100–300ms
         // window-server enumeration; kept fresh after each shot and across display changes.
-        Task { @MainActor in ScreenCapture.prefetchShareableContent() }
+        if activateServices { Task { @MainActor in ScreenCapture.prefetchShareableContent() } }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { _ in
@@ -177,7 +208,7 @@ final class NotchController: NSObject {
         })
     }
 
-    deinit { materialTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
+    deinit { materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
 
     /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
     /// reads the key of the active third-party provider.
@@ -446,20 +477,18 @@ final class NotchController: NSObject {
         HotKeyCenter.shared.register(role: .capture, keyCode: cap.keyCode, modifiers: cap.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            else { self.runTapped(mode: "tutor") }
+            self.screenshotTapped(mode: "tutor", multiple: false)
         }
-        // Personality registers BEFORE context: a user who explicitly recorded personality on
-        // ⌘⇧2 (its pre-remap default, now context's default) keeps their working combo, and the
-        // context row shows the in-process conflict in red until they pick another.
+        // Legacy default collisions are migrated before registration. Every role has one entry.
         HotKeyCenter.shared.register(role: .personality, keyCode: persona.keyCode, modifiers: persona.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            self.runTapped(mode: "personality")
+            self.screenshotTapped(mode: "personality", multiple: false)
         }
         HotKeyCenter.shared.register(role: .context, keyCode: ctx.keyCode, modifiers: ctx.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            self.runTapped(mode: "tutor", withContext: true)
+            self.screenshotTapped(mode: "tutor", multiple: true)
         }
         HotKeyCenter.shared.register(role: .toggle, keyCode: tog.keyCode, modifiers: tog.modifiers) { [weak self] in
             self?.toggleVisibility()
@@ -490,6 +519,19 @@ final class NotchController: NSObject {
 
     private func buildQuickMenu() -> NSMenu {
         let menu = NSMenu()
+        let selectors = [#selector(selectQuestionRegion), #selector(saveMaterial), #selector(capturePersonality)]
+        for (index, entry) in CaptureAction.allCases.enumerated() {
+            // Carbon owns delivery. Showing the combo in the title avoids a second AppKit binding.
+            let item = NSMenuItem(title: entry.title + "    " + Settings.displayString(entry.combo),
+                                  action: selectors[index], keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        if model.screenshotRoundActive {
+            let cancel = NSMenuItem(title: L10n.t("取消本轮", "今回をキャンセル", "Cancel round"), action: #selector(cancelRoundByUser), keyEquivalent: "")
+            cancel.target = self; menu.addItem(cancel)
+        }
+        menu.addItem(.separator())
         if Settings.shared.mode != "personality" {
             if currentRunSnapshot?.screenQuery != nil, !running, model.status == .error {
                 let item = NSMenuItem(title: L10n.t("核对本次额度", "今回の残高を確認", "Check this request's charge"),
@@ -499,14 +541,6 @@ final class NotchController: NSObject {
             if model.recoveryAvailable && !model.recoveryAttempted {
                 let item = NSMenuItem(title: L10n.t("恢复本次答案 · 不另扣题", "今回の回答を復元・追加消費なし", "Recover this answer · no additional charge"),
                                       action: #selector(recoverAnswer), keyEquivalent: "")
-                item.target = self; menu.addItem(item)
-            }
-            for (title, action) in [
-                (L10n.t("保存为材料", "資料として保存", "Save as material"), #selector(saveMaterial)),
-                (L10n.t("选择题目区域", "問題の範囲を選択", "Select question region"), #selector(selectQuestionRegion)),
-                (L10n.t("新题组 / 清空材料", "新しいグループ / 資料を消去", "New group / clear material"), #selector(newQuestionGroup))
-            ] {
-                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
                 item.target = self; menu.addItem(item)
             }
             if !AnswerComposer.parse(model.answer, streaming: false).working.isEmpty || currentQuestionSnapshot != nil {
@@ -794,6 +828,7 @@ final class NotchController: NSObject {
     }
 
     private func invalidateQuestionContext(clearAnswer: Bool) {
+        cancelScreenshotRound()
         capturePreparation.cancel()
         officialTask?.cancel()
         officialTask = nil
@@ -839,7 +874,22 @@ final class NotchController: NSObject {
     }
 
     @objc private func selectQuestionRegion() {
-        runTapped(mode: "tutor", withContext: !questions.references.isEmpty, chooseRegion: true)
+        if autoEngine.isActive { stopAutoSession(.captureHotkey) }
+        screenshotTapped(mode: "tutor", multiple: false)
+    }
+
+    @objc private func capturePersonality() {
+        if autoEngine.isActive { stopAutoSession(.captureHotkey) }
+        screenshotTapped(mode: "personality", multiple: false)
+    }
+
+    @objc private func cancelRoundByUser() {
+        cancelScreenshotRound()
+        if !running {
+            model.status = .idle
+            model.captureFeedback = L10n.t("本轮已取消。按快捷键开始新的截图。", "今回をキャンセルしました。ショートカットで新しく開始できます。", "Round canceled. Use a shortcut to start again.")
+        }
+        resizeToFit()
     }
 
     @objc private func confirmReview() {
@@ -849,48 +899,8 @@ final class NotchController: NSObject {
     }
 
     @objc private func saveMaterial() {
-        guard !terminating else { return }
-        synchronizeMaterialScope()
-        guard !running else { return }
-        officialTask?.cancel(); model.explanationLoading = false
-        if Settings.shared.mode != "tutor" {
-            newQuestionGroup(); Settings.shared.mode = "tutor"; refreshModeLabels()
-        }
-        let snapshot = makeRunSnapshot(mode: "tutor")
-        questions.begin(scope: snapshot.binding.scopeID, newQuestionGroup: false)
-        lastMaterialScope = snapshot.binding.scopeID
-        guard questions.references.count < 3 else {
-            model.statusText = L10n.t("最多保存 3 张材料，请先删除一张。", "資料は3枚までです。先に1枚削除してください。", "You can keep three reference images. Remove one first.")
-            return
-        }
-        beginRun()
-        let generation = runGeneration
-        capturePreparation.start { [self] in
-            let result = snapshot.captureTarget == .fullScreen
-                ? await self.captureFullScreenExcludingPanel() : await ScreenCapture.capture(target: snapshot.captureTarget)
-            guard self.accepts(snapshot, generation: generation, requireCaptureID: false) else {
-                if case .success(let shot) = result { try? FileManager.default.removeItem(atPath: shot.path) }
-                return
-            }
-            let shot: ScreenCapture.Shot
-            switch result {
-            case .success(let value): shot = value
-            case .failure(let error): self.finishError(Self.message(for: error)); return
-            }
-            guard self.runGeneration == generation, !shot.blank else {
-                try? FileManager.default.removeItem(atPath: shot.path); self.endRun(); return
-            }
-            do {
-                _ = try await self.questions.adopt(path: shot.path, targetFingerprint: shot.targetFingerprint, asReference: true)
-                guard self.accepts(snapshot, generation: generation, requireCaptureID: false) else { return }
-                self.model.statusText = L10n.t("材料已保存在本地；翻页后按上下文快捷键查题。", "資料を端末に保存しました。次のページでコンテキストキーを押してください。", "Material saved locally. Turn the page and use the context hotkey.")
-            } catch {
-                try? FileManager.default.removeItem(atPath: shot.path)
-                guard self.accepts(snapshot, generation: generation, requireCaptureID: false) else { return }
-                self.model.statusText = L10n.t("材料未保存，请检查目标或清空题组后重试。", "資料を保存できません。対象を確認してください。", "The material could not be saved. Check the target or start a new group.")
-            }
-            self.endRun(); self.model.status = .idle; self.refreshMaterials(); self.setExpanded(true)
-        }
+        if autoEngine.isActive { stopAutoSession(.captureHotkey) }
+        screenshotTapped(mode: "tutor", multiple: true)
     }
 
     @objc private func pickTarget(_ sender: NSMenuItem) {
@@ -958,6 +968,238 @@ final class NotchController: NSObject {
     }
 
     func cancelTermination() { terminating = false }
+
+    // MARK: - Shortcut screenshot intake
+
+    private var screenshotNow: TimeInterval {
+        #if DEBUG
+        if let qaScreenshotClock { return qaScreenshotClock() }
+        #endif
+        return ProcessInfo.processInfo.systemUptime
+    }
+
+    private func submitScreenshots(_ assets: [ContextAsset], mode: String) {
+        #if DEBUG
+        if let qaScreenshotSubmit { qaScreenshotSubmit(assets, mode); return }
+        #endif
+        runTapped(mode: mode, prepared: assets)
+    }
+
+    private func cancelScreenshotRound() {
+        intakeGeneration = UUID()
+        intakeTask?.cancel(); intakeTask = nil
+        screenshotRound.cancel()
+        screenshotTimer?.invalidate(); screenshotTimer = nil
+        intakeStore.clear(); intakeBinding = nil; pendingSingle = nil
+        intakeNotice = ""
+        screenshotFlight.cancelAll()
+        model.flyingScreenshots = []
+        model.screenshots = []; model.screenshotImages = [:]
+        model.screenshotRoundActive = false; model.screenshotRemaining = nil
+        model.screenshotStatus = ""
+        model.screenshotCapturing = false; model.screenshotNotice = ""; model.captureFeedback = ""
+        resizeToFit()
+    }
+
+    private func updateScreenshotRound() {
+        let remaining = screenshotRound.remaining(now: screenshotNow)
+        if model.screenshotRemaining != remaining { model.screenshotRemaining = remaining }
+        model.screenshotCapturing = screenshotRound.captureToken != nil
+        model.screenshotRoundActive = screenshotRound.isActive || intakeTask != nil
+        let count = screenshotRound.items.count
+        let key = Settings.displayString(Settings.shared.contextCombo)
+        if screenshotRound.captureToken != nil {
+            model.screenshotStatus = L10n.t("正在捕获 · 已添加 \(count) 张 · 自动提交已暂停", "範囲をキャプチャ中 · \(count)枚 · 送信を一時停止", "Capturing · \(count) images · sending paused")
+        } else if count == 1 {
+            model.screenshotStatus = L10n.t("已添加 1 张，按 \(key) 继续截图", "1枚追加済み · \(key) で次の画像", "1 image added · press \(key) for the next")
+        } else if let remaining, count >= 2 {
+            let seconds = Int(ceil(remaining))
+            model.screenshotStatus = remaining <= 0 && running
+                ? L10n.t("\(count) 张已就绪 · 上一题完成后自动提交", "\(count)枚の準備完了 · 前の回答後に送信", "\(count) images ready · sending after the previous answer")
+                : L10n.t("已添加 \(count)/4 张 · \(seconds) 秒后自动查题", "\(count)/4枚 · \(seconds)秒後に送信", "\(count)/4 images · asking in \(seconds)s")
+        }
+        model.screenshotNotice = intakeNotice
+        if screenshotRound.deadline != nil, screenshotTimer == nil {
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.tickScreenshotRound() }
+            }
+            screenshotTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        } else if screenshotRound.deadline == nil {
+            screenshotTimer?.invalidate(); screenshotTimer = nil
+        }
+        resizeToFit()
+    }
+
+    private func tickScreenshotRound() {
+        guard !terminating else { return }
+        if let binding = intakeBinding, binding != makeRequestBinding(mode: Settings.shared.mode) {
+            cancelScreenshotRound(); return
+        }
+        if !running, let single = pendingSingle {
+            pendingSingle = nil
+            intakeBinding = nil
+            model.screenshotRoundActive = false
+            submitScreenshots(single.assets, mode: single.mode)
+            return
+        }
+        guard screenshotRound.isActive else { return }
+        if !running, let assets = screenshotRound.takeDue(now: screenshotNow) {
+            screenshotTimer?.invalidate(); screenshotTimer = nil
+            intakeBinding = nil
+            model.screenshotRemaining = nil; model.screenshotRoundActive = false
+            model.screenshotStatus = L10n.t("正在提交 \(assets.count) 张截图", "\(assets.count)枚を送信中", "Submitting \(assets.count) screenshots")
+            submitScreenshots(assets, mode: "tutor")
+        } else { updateScreenshotRound() }
+    }
+
+    private func screenshotTapped(mode: String, multiple: Bool) {
+        guard !terminating else { return }
+        synchronizeMaterialScope()
+        // Repeated presses during capture must not create a second capture or completion. Flights and an earlier tutor request do not block intake.
+        guard intakeTask == nil else { return }
+        guard !running || multiple && Settings.shared.mode == "tutor" else {
+            visible = true; panel.orderFrontRegardless(); setExpanded(true)
+            model.statusText = L10n.t("正在作答，请稍候", "回答中です。お待ちください", "Answering, please wait")
+            return
+        }
+        if !multiple { cancelScreenshotRound() }
+        if Settings.shared.mode != mode {
+            newQuestionGroup(); Settings.shared.mode = mode; refreshModeLabels()
+        }
+        if mode == "personality", Settings.shared.personaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            runTapped(mode: mode); return // Preserve the existing persona setup guidance.
+        }
+        let binding = makeRequestBinding(mode: mode)
+        // The selected mode already invalidated the preceding round. Adopt its scope before
+        // asynchronous capture yields to the periodic scope observer or runTapped's preflight.
+        lastMaterialScope = binding.scopeID
+        invalidatePersonalitySessionIfScopeChanged()
+        if multiple && screenshotRound.items.count >= ScreenshotRound<ContextAsset>.limit {
+            intakeNotice = L10n.t("本轮最多 4 张", "今回は4枚まで", "Maximum 4 images per round")
+            updateScreenshotRound(); return
+        }
+        let startsRound = screenshotRound.items.isEmpty
+        if startsRound {
+            intakeStore.begin(scope: binding.scopeID, newQuestionGroup: true)
+            model.screenshots = []; model.screenshotImages = [:]
+            model.flyingScreenshots = []
+            intakeBinding = binding
+        }
+        let token = multiple ? screenshotRound.beginCapture(now: screenshotNow) : UUID()
+        guard let token else { return }
+        intakeNotice = ""
+        model.captureFeedback = ""; model.screenshotNotice = ""; model.screenshotCapturing = true
+        let generation = intakeGeneration
+        let target = Settings.shared.captureTarget
+        let captureContext = ScreenCapture.Context.current(target: target)
+        collapseWork?.cancel()
+        visible = true; panel.orderFrontRegardless(); setExpanded(true)
+        model.screenshotRoundActive = true
+        model.screenshotStatus = L10n.t("正在捕获目标…", "画像をキャプチャ中…", "Capturing target…")
+        if multiple { updateScreenshotRound() }
+        notchView.screenshotLanded() // Immediate lightweight acknowledgment, separate from image arrival.
+        #if DEBUG
+        ScreenCapture.trace("intake.begin")
+        #endif
+        intakeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var temporaryPath: String?
+            defer { if let temporaryPath { try? FileManager.default.removeItem(atPath: temporaryPath) } }
+            @MainActor func valid() -> Bool {
+                !Task.isCancelled && self.intakeGeneration == generation && binding == self.makeRequestBinding(mode: Settings.shared.mode)
+            }
+            @MainActor func failed(_ message: String?) {
+                guard self.intakeGeneration == generation else { return }
+                self.intakeTask = nil
+                self.model.screenshotCapturing = false
+                if multiple {
+                    _ = self.screenshotRound.finishCapture(token: token, item: nil, now: self.screenshotNow)
+                    self.intakeNotice = message ?? ""
+                    self.updateScreenshotRound()
+                    if self.model.screenshots.isEmpty { self.model.screenshotRoundActive = false }
+                } else {
+                    self.model.screenshotRoundActive = false
+                }
+                if self.model.screenshots.isEmpty, !self.running {
+                    self.model.status = message == nil ? .idle : .error
+                    self.model.statusText = message == nil ? L10n.statusReady : L10n.statusError
+                    self.model.captureFeedback = message ?? L10n.t("截图已取消。按快捷键重新截图。", "キャプチャをキャンセルしました。ショートカットで再開できます。", "Capture canceled. Press the shortcut to capture again.")
+                }
+                self.resizeToFit()
+            }
+            let result: Result<ScreenCapture.Shot, CaptureError>
+            #if DEBUG
+            if let capture = self.qaScreenshotCapture { result = await capture() }
+            else { result = target == .fullScreen ? await self.captureFullScreenExcludingPanel(context: captureContext) : await ScreenCapture.capture(target: target, context: captureContext) }
+            #else
+            result = target == .fullScreen ? await self.captureFullScreenExcludingPanel(context: captureContext) : await ScreenCapture.capture(target: target, context: captureContext)
+            #endif
+            if case .success(let shot) = result { temporaryPath = shot.path }
+            guard valid() else { if self.intakeGeneration == generation { self.cancelScreenshotRound() }; return }
+            guard case .success(let shot) = result else {
+                if case .failure(let error) = result { failed(Self.message(for: error)) }; return
+            }
+            guard !shot.blank else { failed(Self.message(for: .captureFailed)); return }
+            #if DEBUG
+            ScreenCapture.trace("intake.capture.ready")
+            #endif
+            if let first = self.screenshotRound.items.first, first.targetFingerprint != shot.targetFingerprint {
+                failed(L10n.t("目标已变化，请返回原窗口或取消本轮", "対象が変更されました。元のウィンドウに戻るかキャンセルしてください", "Target changed. Return to the original window or cancel this round"))
+                return
+            }
+            do {
+                let asset = try await self.intakeStore.adopt(path: shot.path, targetFingerprint: shot.targetFingerprint, asReference: false)
+                guard valid() else { if self.intakeGeneration == generation { self.cancelScreenshotRound() }; return }
+                #if DEBUG
+                ScreenCapture.trace("intake.adopt.end")
+                #endif
+                // Commit the successful image and its timer BEFORE thumbnail decoding or flight.
+                if multiple {
+                    guard self.screenshotRound.finishCapture(token: token, item: asset, now: self.screenshotNow) else { return }
+                }
+                self.intakeTask = nil
+                self.model.screenshotCapturing = false
+                self.model.screenshots = multiple ? self.screenshotRound.items : [asset]
+                if multiple { self.updateScreenshotRound() }
+                else {
+                    self.model.screenshotRoundActive = false
+                    self.model.screenshotStatus = L10n.t("正在提交 1 张截图", "画像1枚を送信中", "Submitting 1 screenshot")
+                }
+                self.presentScreenshot(asset, from: shot.sourceFrame, generation: generation)
+                if !multiple {
+                    self.pendingSingle = ([asset], mode)
+                    self.tickScreenshotRound()
+                }
+            } catch {
+                guard valid() else { if self.intakeGeneration == generation { self.cancelScreenshotRound() }; return }
+                failed(L10n.t("截图未录入，请检查目标后重试", "画像を追加できません。対象を確認してください", "Image not added. Check the target and retry"))
+            }
+        }
+    }
+
+    private func presentScreenshot(_ asset: ContextAsset, from source: NSRect?, generation: UUID) {
+        // Reserve the slot before yielding. Decode never delays intake or owns the countdown.
+        model.flyingScreenshots.insert(asset.id)
+        Task { @MainActor [weak self] in
+            let image = await Task.detached(priority: .userInitiated) { ScreenshotThumbnail.load(asset.file.url) }.value
+            guard let self, self.intakeGeneration == generation,
+                  self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
+            guard let image else { self.model.flyingScreenshots.remove(asset.id); return }
+            #if DEBUG
+            ScreenCapture.trace("intake.thumbnail.ready")
+            #endif
+            self.model.screenshotImages[asset.id] = image
+            self.resizeToFit()
+            self.notchView.refreshScreenshotTray()
+            self.screenshotFlight.fly(id: asset.id, image: image, from: source,
+                destination: { [weak self] in self?.notchView.screenshotDestination(asset.id) },
+                landed: { [weak self] in
+                    self?.model.flyingScreenshots.remove(asset.id)
+                    self?.notchView.screenshotLanded()
+                })
+        }
+    }
 
     // MARK: - Settings window
 
@@ -1042,9 +1284,9 @@ final class NotchController: NSObject {
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
         let width = expandedWidth - NotchLayout.contentInsetH * 2
-        let answerH = NotchType.answerHeight(model.renderedAnswer,
+        let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                                              presentation: NotchType.presentation(for: model), width: width)
-        let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + (model.showMaterialStrip ? 74 : 0)
+        let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
 
@@ -1071,7 +1313,7 @@ final class NotchController: NSObject {
         if inside {
             collapseWork?.cancel()
             setExpanded(true)
-        } else if !pinned {
+        } else if !pinned && !screenshotRound.isActive {
             scheduleCollapse(after: 0.45)
         }
     }
@@ -1080,7 +1322,7 @@ final class NotchController: NSObject {
         collapseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if !self.pinned && !self.hovering { self.setExpanded(false) }
+            if !self.pinned && !self.hovering && !self.screenshotRound.isActive && self.intakeTask == nil { self.setExpanded(false) }
         }
         collapseWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -1173,6 +1415,7 @@ final class NotchController: NSObject {
     private static let autoPollInterval: TimeInterval = 0.5
 
     private func autoModeTapped() {
+        if screenshotRound.isActive || intakeTask != nil { cancelScreenshotRound() }
         if autoEngine.isActive {
             stopAutoSession(.userToggled)
             return
@@ -1359,7 +1602,7 @@ final class NotchController: NSObject {
 
     /// `withContext` (tutor mode only): send the remembered ⌘⇧1 shot together with the fresh
     /// capture, so a question whose passage has scrolled away still gets its context.
-    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false) {
+    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil) {
         #if DEBUG
         ScreenCapture.trace("run.enter running=\(running)")
         #endif
@@ -1367,6 +1610,7 @@ final class NotchController: NSObject {
         synchronizeMaterialScope()
         guard !running else { return }
         officialTask?.cancel()
+        model.captureFeedback = ""
         model.recoveryAvailable = false; model.recoveryAttempted = false
         if !fromAuto, autoEngine.isActive { stopAutoSession(.captureHotkey) }
         if let error = ServiceRouting.configurationError(mode: Settings.shared.serviceMode,
@@ -1420,7 +1664,7 @@ final class NotchController: NSObject {
                 self.lastMaterialScope = current.scopeID
                 self.endRun()
                 self.officialTask = nil
-                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto)
+                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared)
             }
             return
         }
@@ -1437,15 +1681,15 @@ final class NotchController: NSObject {
         if mode == "personality" { questions.clear(); currentQuestionSnapshot = nil }
         let snapshot: RunSnapshot = {
             var frozen = pendingSnapshot
-            frozen.questionSessionID = mode == "tutor" ? questions.sessionID : nil
+            frozen.questionSessionID = mode == "tutor" ? (prepared?.first?.sessionID ?? questions.sessionID) : nil
             return frozen
         }()
         if withContext && questions.references.isEmpty && !chooseRegion {
             try? questions.saveCurrentAsReference()
         }
-        let contextImagePaths = withContext ? questions.references.map { $0.file.url.path } : []
+        let contextImagePaths = prepared.map { $0.dropLast().map { $0.file.url.path } } ?? (withContext ? questions.references.map { $0.file.url.path } : [])
         if withContext && contextImagePaths.isEmpty && !chooseRegion {
-            finishError(L10n.t("请先使用「保存为材料」保存正文，再用上下文快捷键查题。", "先に「資料として保存」で本文を保存してください。", "Save the passage as material, then use the context hotkey."))
+            finishError(L10n.t("请使用多图查题快捷键依次截取正文和题目。", "複数画像のショートカットで本文と問題を順に追加してください。", "Use the multiple-image shortcut to capture the passage and question in order."))
             return
         }
         refreshMaterials()
@@ -1599,7 +1843,10 @@ final class NotchController: NSObject {
             self.recordCaptureTelemetry(name: "capture_started", snapshot: snapshot,
                                         contextCount: contextImagePaths.count)
             let result: Result<ScreenCapture.Shot, CaptureError>
-            if snapshot.captureTarget == .fullScreen {
+            if let asset = prepared?.last {
+                result = .success(ScreenCapture.Shot(path: asset.file.url.path, blank: false,
+                                                     targetFingerprint: asset.targetFingerprint))
+            } else if snapshot.captureTarget == .fullScreen {
                 result = await self.captureFullScreenExcludingPanel()
             } else {
                 result = await ScreenCapture.capture(target: snapshot.captureTarget)
@@ -1644,7 +1891,7 @@ final class NotchController: NSObject {
                 return
             }
 
-            if chooseRegion {
+            if chooseRegion && prepared == nil {
                 guard let image = NSImage(contentsOfFile: shot.path) else {
                     try? FileManager.default.removeItem(atPath: shot.path); self.finishError(Self.message(for: .captureFailed)); return
                 }
@@ -1665,7 +1912,7 @@ final class NotchController: NSObject {
                 }
                 self.selectedRegion = (rect, shot.targetFingerprint)
             }
-            if let selection = self.selectedRegion {
+            if prepared == nil, let selection = self.selectedRegion {
                 guard selection.fingerprint == shot.targetFingerprint else {
                     self.selectedRegion = nil
                     try? FileManager.default.removeItem(atPath: shot.path)
@@ -1684,7 +1931,12 @@ final class NotchController: NSObject {
                 try? FileManager.default.removeItem(atPath: shot.path); return
             }
             let materialSnapshot: QuestionCaptureSnapshot?
-            if snapshot.mode == "tutor" {
+            if let prepared, let first = prepared.first {
+                materialSnapshot = QuestionCaptureSnapshot(captureID: snapshot.captureID,
+                    sessionID: first.sessionID, generation: 0, assets: prepared,
+                    expiresAt: Date().addingTimeInterval(QuestionSessionStore.lifetime))
+                self.currentQuestionSnapshot = materialSnapshot
+            } else if snapshot.mode == "tutor" {
                 do {
                     _ = try await self.questions.adopt(path: shot.path, targetFingerprint: shot.targetFingerprint, asReference: false)
                     guard self.accepts(snapshot, generation: generation) else { return }
@@ -1804,7 +2056,7 @@ final class NotchController: NSObject {
                     }
                     if let reason = composition?.noResultReason {
                         self.model.statusText = reason == "multiple_targets"
-                            ? L10n.t("画面有多个题目，请框选一个目标。", "複数の問題があります。1つ選択してください。", "Several questions are visible. Select one target.")
+                            ? L10n.t("请在目标窗口只显示一道题，再按快捷键截图。", "対象のウィンドウに問題を1つ表示して再度キャプチャしてください。", "Show one question in the target window, then capture again.")
                             : L10n.t("此题目超出当前支持范围。", "現在の対応範囲外です。", "This question is outside the current scope.")
                     }
                     if composition?.state == .review {
@@ -1844,7 +2096,7 @@ final class NotchController: NSObject {
                 self.resizeToFit()
                 self.endRun()
                 self.pinned = false
-                if snapshot.mode != "tutor" { try? FileManager.default.removeItem(atPath: shot.path) }
+                if snapshot.mode != "tutor", prepared == nil { try? FileManager.default.removeItem(atPath: shot.path) }
                 self.scheduleCollapseAfterAnswer()
                 self.autoRunCompleted(ok: ok && composition?.state != .retake && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil))
             }
@@ -1887,11 +2139,11 @@ final class NotchController: NSObject {
     /// capture filter. If the panel can't be identified in the shareable content (no valid
     /// window number, or SCK doesn't list it), fall back to the legacy hide → settle → shoot.
     @MainActor
-    private func captureFullScreenExcludingPanel() async -> Result<ScreenCapture.Shot, CaptureError> {
+    private func captureFullScreenExcludingPanel(context: ScreenCapture.Context? = nil) async -> Result<ScreenCapture.Shot, CaptureError> {
         guard !Task.isCancelled else { return .failure(.captureFailed) }
         if panel.windowNumber > 0 {
             let r = await ScreenCapture.capture(target: .fullScreen,
-                                                excludingWindowID: CGWindowID(panel.windowNumber))
+                                                excludingWindowID: CGWindowID(panel.windowNumber), context: context)
             if case .failure(.panelNotExcludable) = r {} else { return r }
         }
         guard !Task.isCancelled else { return .failure(.captureFailed) }
@@ -1902,7 +2154,7 @@ final class NotchController: NSObject {
         defer { if visible && !terminating { panel.orderFrontRegardless() } }
         do { try await Task.sleep(nanoseconds: 130_000_000) }
         catch { return .failure(.captureFailed) }
-        let r = await ScreenCapture.capture(target: .fullScreen)
+        let r = await ScreenCapture.capture(target: .fullScreen, context: context)
         return r
     }
 
@@ -2106,6 +2358,14 @@ final class NotchController: NSObject {
         runWatchdog?.invalidate()
         runWatchdog = nil
         running = false
+        if !screenshotRound.isActive, !model.screenshots.isEmpty, model.status != .running {
+            model.screenshotStatus = model.status == .error
+                ? L10n.t("本次查题未完成", "今回の質問は未完了です", "This question could not be completed")
+                : L10n.t("已提交 \(model.screenshots.count) 张截图", "\(model.screenshots.count)枚を送信済み", "\(model.screenshots.count) screenshots submitted")
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.tickScreenshotRound()
+        }
     }
 
     private func finishError(_ msg: String) {
@@ -2115,7 +2375,8 @@ final class NotchController: NSObject {
         if model.mode == "personality" { model.answer = "" }
         else { model.answer = msg }
         model.status = .error
-        model.statusText = model.mode == "personality" ? msg : L10n.statusError
+        model.statusText = L10n.statusError
+        if model.mode == "personality" { model.captureFeedback = msg }
         resizeToFit()
         endRun()
         pinned = false
