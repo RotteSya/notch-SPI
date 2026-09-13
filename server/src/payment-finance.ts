@@ -21,7 +21,7 @@ export interface PaymentFinance {
   defer(claim:FinanceClaim):Promise<void>;
   inspect(reference:string):Promise<{job:FinanceJob|null;revision:FinanceRevision|null}>;
 }
-export const financeResource=(s:unknown):s is string=>typeof s==='string'&&/^(?:cs|pi|ch|re|du|dp)_[A-Za-z0-9_]{1,160}$/.test(s);
+export const financeResource=(s:unknown):s is string=>typeof s==='string'&&/^(?:cs|pi|ch|py|re|du|dp)_[A-Za-z0-9_]{1,160}$/.test(s);
 export function validateFinanceNotice(notice:FinanceNotice) {
   validateEvent(notice.event);
   if(!Array.isArray(notice.resources)||!notice.resources.length||notice.resources.length>4||notice.resources.some(r=>!financeResource(r))||!notice.resources.includes(notice.event.resourceId))throw new Error('Invalid finance notice');
@@ -40,7 +40,7 @@ export function validateFinanceSnapshot(order:FinanceOrder,s:FinanceSnapshot):vo
   const unique=(id:string)=>{if(identities.has(id))throw new Error('Duplicate finance resource');identities.add(id);};
   let captured=0n;
   for(const c of s.charges){
-    if(!/^ch_[A-Za-z0-9_]{1,160}$/.test(c.id)||!currency(c.currency)||!integer(c.capturedMinor)||typeof c.paid!=='boolean'||!nullableTx(c.transactionId)||
+    if(!/^(?:ch|py)_[A-Za-z0-9_]{1,160}$/.test(c.id)||!currency(c.currency)||!integer(c.capturedMinor)||typeof c.paid!=='boolean'||!nullableTx(c.transactionId)||
       (order.paymentIntentId!==null&&c.paymentIntentId!==order.paymentIntentId)||(order.paymentIntentId===null&&c.id!==order.chargeId))throw new Error('Finance charge binding mismatch');
     unique(c.id);if(c.paid){if(c.currency!==order.currency)throw new Error('Finance charge currency mismatch');captured+=BigInt(c.capturedMinor);}
   }

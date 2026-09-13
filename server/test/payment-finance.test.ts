@@ -51,6 +51,16 @@ if(process.env.TEST_POSTGRES_URL){const original=new URL(process.env.TEST_POSTGR
     store.close=async()=>{await close();await pool.query(`DROP SCHEMA ${schema} CASCADE`);await pool.end();};return store;}]);
 }
 for(const [name,make] of factories){
+  test(`${name}: py charge orders retain quota and accept charge-linked finance notices`,async()=>{
+    const store=await make();try{
+      const d=await store.registerDevice({platform:'macos',appVersion:'2.12',trialQuestions:0});
+      await store.payments.pay(event('py_paid'),{reference:order.reference,token:d.token,paymentIntentId:null,chargeId:'py_finance',questions:5,amountCents:1000,currency:'USD',packId:'five',catalogVersion:'v1',paidAt:financeAt(0)});
+      const notice={event:event('py_notice','py_finance','charge.refunded'),resources:['py_finance']};await store.finance.observe(notice);await store.finance.observe(notice);
+      const snapshot=financeSnapshot();snapshot.charges[0]!.id='py_finance';snapshot.charges[0]!.paymentIntentId=null;snapshot.transactions[0]!.sourceId='py_finance';
+      const claim=await store.finance.claim(order.reference);assert.ok(claim);assert.equal(await store.finance.finish(claim,snapshot),true);
+      assert.equal((await store.finance.inspect(order.reference)).revision?.snapshot.charges[0]!.id,'py_finance');assert.equal((await store.billing.quota(d.token))?.balanceQuestions,5);
+    }finally{await store.close();}
+  });
   test(`${name}: finance notices, claims and immutable revisions deduplicate money and respect historical as_of`,async t=>{
     t.mock.timers.enable({apis:['Date'],now:financeBase});const store=await make();
     try{const d=await pay(store);assert.deepEqual(await store.finance.pending(),['cs_finance']);

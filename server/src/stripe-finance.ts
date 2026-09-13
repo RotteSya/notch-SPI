@@ -19,7 +19,7 @@ export async function retrieveStripeFinance(key:string,order:FinanceOrder):Promi
     return object(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks))));
   };
   if(!order.paymentIntentId&&!order.chargeId)throw new Error('Order lacks Stripe resource binding');
-  if(order.paymentIntentId)reference(order.paymentIntentId,'pi');else reference(order.chargeId,'ch');
+  if(order.paymentIntentId)reference(order.paymentIntentId,'pi');else reference(order.chargeId,'(?:ch|py)');
   const list=async(path:string,expansions:string[])=>{
     const params=new URLSearchParams({limit:'100',[order.paymentIntentId?'payment_intent':'charge']:order.paymentIntentId??order.chargeId!});
     for(const value of expansions)params.append('expand[]',value);
@@ -43,14 +43,14 @@ export async function retrieveStripeFinance(key:string,order:FinanceOrder):Promi
   };
   const snapshot:FinanceSnapshot={charges:charges.map(c=>{
     if(c.object!=='charge'||typeof c.paid!=='boolean')throw new Error('Invalid Stripe charge');
-    return {id:reference(c.id,'ch'),paymentIntentId:c.payment_intent===null?null:reference(c.payment_intent,'pi'),currency:currency(c.currency),capturedMinor:minor(c.amount_captured),paid:c.paid,transactionId:balance(c.balance_transaction)};
+    return {id:reference(c.id,'(?:ch|py)'),paymentIntentId:c.payment_intent===null?null:reference(c.payment_intent,'pi'),currency:currency(c.currency),capturedMinor:minor(c.amount_captured),paid:c.paid,transactionId:balance(c.balance_transaction)};
   }),refunds:refunds.map(r=>{
     if(r.object!=='refund')throw new Error('Invalid Stripe refund');
-    return {id:reference(r.id,'re'),paymentIntentId:r.payment_intent===null?null:reference(r.payment_intent,'pi'),chargeId:reference(r.charge,'ch'),amountCents:Number(minor(r.amount)),currency:currency(r.currency),
+    return {id:reference(r.id,'re'),paymentIntentId:r.payment_intent===null?null:reference(r.payment_intent,'pi'),chargeId:reference(r.charge,'(?:ch|py)'),amountCents:Number(minor(r.amount)),currency:currency(r.currency),
       status:r.status as FinanceRefund['status'],transactionId:balance(r.balance_transaction),failureTransactionId:balance(r.failure_balance_transaction??null)};
   }),disputes:disputes.map(d=>{
     if(d.object!=='dispute'||!Array.isArray(d.balance_transactions)||d.balance_transactions.length>10)throw new Error('Invalid Stripe dispute');
-    return {id:reference(d.id,'(?:du|dp)'),chargeId:reference(d.charge,'ch'),paymentIntentId:d.payment_intent===null?null:reference(d.payment_intent,'pi'),currency:currency(d.currency),amountMinor:minor(d.amount),
+    return {id:reference(d.id,'(?:du|dp)'),chargeId:reference(d.charge,'(?:ch|py)'),paymentIntentId:d.payment_intent===null?null:reference(d.payment_intent,'pi'),currency:currency(d.currency),amountMinor:minor(d.amount),
       status:d.status as FinanceDispute['status'],transactionIds:d.balance_transactions.map(b=>{const id=balance(b);if(!id)throw new Error('Missing dispute transaction');return id;})};
   }),transactions:[]};
   snapshot.transactions=[...transactions.values()].sort((a,b)=>a.id.localeCompare(b.id));

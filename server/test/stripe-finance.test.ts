@@ -45,3 +45,22 @@ test('Stripe finance reads charge-bound legacy orders and captures refund revers
   });
   const snapshot=await retrieveStripeFinance('test_credential_only',{...order,paymentIntentId:null,chargeId:'ch_transport'});assert.equal(snapshot.refunds[0]!.status,'failed');assert.equal(financeTotals(snapshot,'USD').fees[0]!.amountMinor,'30');
 });
+
+// Real non-card Checkout receipts can expose object=charge with a py_ identifier.
+test('Stripe finance reconciles py charges, linked refunds and disputes without relaxing identity checks',async t=>{
+  let chargeID='py_transport';
+  t.mock.method(globalThis,'fetch',async(raw:unknown)=>{const url=new URL(String(raw));
+    if(url.pathname.startsWith('/v1/charges'))return url.pathname==='/v1/charges'
+      ?Response.json(list([{...charge(),id:chargeID,balance_transaction:transaction('txn_transport',1000,30,'charge',chargeID)}]))
+      :Response.json({...charge(),id:chargeID,balance_transaction:transaction('txn_transport',1000,30,'charge',chargeID)});
+    if(url.pathname==='/v1/refunds')return Response.json(list([{id:'re_transport',object:'refund',amount:200,currency:'usd',status:'succeeded',charge:{id:chargeID},payment_intent:'pi_transport',balance_transaction:transaction('txn_refund',-200,0,'refund','re_transport'),failure_balance_transaction:null}]));
+    return Response.json(list([{id:'dp_transport',object:'dispute',amount:800,currency:'usd',charge:chargeID,payment_intent:'pi_transport',status:'lost',balance_transactions:[transaction('txn_dispute',-800,1500,'dispute','dp_transport')]}]));
+  });
+  for(const selected of [order,{...order,paymentIntentId:null,chargeId:'py_transport'}]){
+    const snapshot=await retrieveStripeFinance('test_credential_only',selected);
+    assert.equal(snapshot.charges[0]!.id,'py_transport');assert.equal(snapshot.refunds[0]!.chargeId,'py_transport');assert.equal(snapshot.disputes[0]!.chargeId,'py_transport');
+    assert.equal(financeTotals(snapshot,'USD').fees[0]!.amountMinor,'1530');assert.equal(financeTotals(snapshot,'USD').disputeLossMinor,'800');
+  }
+  for(const invalid of ['py_','py_../other','pm_transport','py_transport?redirect=x']){chargeID=invalid;await assert.rejects(retrieveStripeFinance('test_credential_only',order));}
+  chargeID='py_other';await assert.rejects(retrieveStripeFinance('test_credential_only',{...order,paymentIntentId:null,chargeId:'py_transport'}),/binding mismatch/);
+});

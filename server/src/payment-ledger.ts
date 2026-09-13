@@ -62,7 +62,7 @@ export function validateOrder(order: PaidOrderInput): void {
       !Number.isSafeInteger(order.amountCents) || order.amountCents <= 0 ||
       !/^[A-Z]{3}$/.test(order.currency) || !Number.isFinite(Date.parse(order.paidAt)) ||
       (order.paymentIntentId !== null && !/^pi_[A-Za-z0-9_]{1,160}$/.test(order.paymentIntentId)) ||
-      (order.chargeId !== null && !/^ch_[A-Za-z0-9_]{1,160}$/.test(order.chargeId))) throw new Error('Invalid paid order');
+      (order.chargeId !== null && !/^(?:ch|py)_[A-Za-z0-9_]{1,160}$/.test(order.chargeId))) throw new Error('Invalid paid order');
   if(order.purchaseSessionId!==undefined&&!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(order.purchaseSessionId))throw new Error('Invalid paid purchase session');
 }
 export function validateRefund(refund: RefundSnapshot): void {
@@ -71,7 +71,7 @@ export function validateRefund(refund: RefundSnapshot): void {
       !['pending','requires_action','succeeded','failed','canceled'].includes(refund.status) ||
       (!refund.paymentIntentId && !refund.chargeId) ||
       (refund.paymentIntentId !== null && !/^pi_[A-Za-z0-9_]{1,160}$/.test(refund.paymentIntentId)) ||
-      (refund.chargeId !== null && !/^ch_[A-Za-z0-9_]{1,160}$/.test(refund.chargeId))) throw new Error('Invalid refund snapshot');
+      (refund.chargeId !== null && !/^(?:ch|py)_[A-Za-z0-9_]{1,160}$/.test(refund.chargeId))) throw new Error('Invalid refund snapshot');
 }
 export function sameEvent(a: PaymentEvent, b: PaymentEvent): boolean {
   return a.id === b.id && a.type === b.type && a.resourceId === b.resourceId && a.payloadHash === b.payloadHash;
