@@ -23,4 +23,10 @@ the physical display.
 
 Onboarding asks for **Screen Recording** permission.
 
+Default shortcuts: **⌘⇧1** captures the configured target and asks automatically;
+**⌘⇧2** collects 2–4 screenshots in order and submits 4 seconds after the latest
+successful capture; **⌘⇧9** captures the configured target for personality questions.
+One image keeps waiting. Each successful screenshot flies into the notch, with a
+reduced-motion alternative. See the [capture notes](docs/direct-target-capture.md).
+
 Engineering handover: [HANDOVER.md](HANDOVER.md).
