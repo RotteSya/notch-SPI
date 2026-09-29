@@ -19,6 +19,21 @@ import QuartzCore
 ///     ride retargetable critically-damped springs, so arriving tokens pour the card open in one
 ///     continuous glide instead of a staircase of `setFrame` jumps.
 final class NotchView: NSView {
+    let onboarding = NotchOnboardingView(frame: .zero)
+    var onExplanation: (() -> Void)?
+    var onAddMaterial: (() -> Void)?
+    var onNewGroup: (() -> Void)?
+    var onSelectRegion: (() -> Void)?
+    var onRemoveMaterial: ((UUID) -> Void)?
+    private let materialStrip = QuestionMaterialStrip()
+    private let screenshotTray = ScreenshotTray()
+    var onCancelScreenshotRound: (() -> Void)?
+
+    func screenshotDestination(_ id: UUID) -> NSRect? { screenshotTray.screenFrame(for: id) }
+    func refreshScreenshotTray() { refresh(); layoutSubtreeIfNeeded() }
+    func screenshotLanded() { if !reduceMotion { luma.pulse() } }
+
+
     private let model: TutorModel
     private let onHover: (Bool) -> Void
     private let onCycleDepth: () -> Void
@@ -41,6 +56,7 @@ final class NotchView: NSView {
 
     /// The one persistent rose (see note 1 above). Floats above the content plate, unmasked.
     private let rose = RoseLoaderView()
+    private let compactCount = NotchView.makeLabel(size: 10, weight: .medium, color: NotchPalette.secondary)
 
     // Expanded content plate (see note 2 above).
     private let expandedContent = FlippedContainer()
@@ -74,13 +90,15 @@ final class NotchView: NSView {
     private var heightSpring = CriticalSpring()
     private var scrollSpring = CriticalSpring()
 
+    private var lastOnboardingStep: NotchOnboardingStep?
     private var wasExpanded = false
     private var lastPlateSize = CGSize.zero
     private var hovering = false
     private var trackingAreaRef: NSTrackingArea?
     private var cancellables = Set<AnyCancellable>()
+    private var refreshPending = false
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     init(model: TutorModel,
          frameProvider: @escaping (Bool) -> NSRect,
@@ -126,13 +144,14 @@ final class NotchView: NSView {
         ])
 
         configureAnswerArea()
-        [modeLabel, statusText, capsule, gearButton, answerScroll].forEach { expandedContent.addSubview($0) }
+        [modeLabel, statusText, capsule, gearButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
         expandedContent.wantsLayer = true
         expandedContent.layer?.mask = contentMask
         addSubview(expandedContent)
         expandedContent.alphaValue = 0
 
-        addSubview(rose)   // above the plate; decorative, never intercepts clicks
+        addSubview(rose)
+        addSubview(compactCount)   // above the plate; decorative, never intercepts clicks
 
         // The capsule dispatches by the active mode: stop (auto session) / cycle depth (tutor)
         // / edit persona (personality). Auto wins — while a session is live the capsule IS
@@ -160,10 +179,17 @@ final class NotchView: NSView {
         answerScroll.borderType = .noBorder
         answerScroll.horizontalScrollElasticity = .none
         answerScroll.documentView = answerStream
+        screenshotTray.onCancel = { [weak self] in self?.onCancelScreenshotRound?() }
+        materialStrip.onExplain = { [weak self] in self?.onExplanation?() }
+        materialStrip.onAdd = { [weak self] in self?.onAddMaterial?() }
+        materialStrip.onClear = { [weak self] in self?.onNewGroup?() }
+        materialStrip.onSelect = { [weak self] in self?.onSelectRegion?() }
+        materialStrip.onRemove = { [weak self] id in self?.onRemoveMaterial?(id) }
         answerStream.onToggleReasoning = { [weak self] in self?.onToggleReasoning() }
         answerStream.canCopyAnswer = { [weak self] in
             guard let self else { return false }
-            return self.model.mode != "personality" && self.model.resultState != .retake
+            return !self.model.hidesAnswer && self.model.captureFeedback.isEmpty && self.model.mode != "personality" && self.model.resultState != .retake
+                && self.model.status != .running && self.model.status != .streaming
                 && AnswerComposer.clipboardAnswer(self.model.answer) != nil
         }
         answerStream.onCopyAnswer = { [weak self] in self?.onCopyAnswer() }
@@ -175,23 +201,58 @@ final class NotchView: NSView {
     private func observe() {
         // Any model change → refresh content + re-evaluate the morph after @Published commits.
         model.objectWillChange
-            .sink { [weak self] in DispatchQueue.main.async { self?.refresh() } }
+            .sink { [weak self] in
+                guard let self, !self.refreshPending else { return }
+                self.refreshPending = true
+                DispatchQueue.main.async { [weak self] in
+                    self?.refreshPending = false
+                    self?.refresh()
+                }
+            }
             .store(in: &cancellables)
     }
 
     // MARK: Refresh (content from model)
 
     private func refresh() {
+        let liveViews: [NSView] = [answerScroll, screenshotTray, materialStrip]
+        let previousOrigins = Dictionary(uniqueKeysWithValues: liveViews.filter { !$0.isHidden }.map {
+            (ObjectIdentifier($0), $0.frame.minY + ($0.layer?.presentation()?.transform.m42 ?? 0))
+        })
+        let previousOnboardingStep = lastOnboardingStep
+        let onboardingChanged = previousOnboardingStep != model.onboardingStep
+        lastOnboardingStep = model.onboardingStep
+        onboarding.isHidden = model.onboardingStep == nil
+        if let step = model.onboardingStep {
+            onboarding.update(step: step, granted: model.onboardingPermissionGranted,
+                              denied: model.onboardingPermissionDenied,
+                              failed: !model.screenshotCapturing && model.status != .running && model.status != .streaming
+                                && (model.status == .error || !model.captureFeedback.isEmpty || model.resultState == .retake))
+        }
+        [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = model.onboardingStep != nil }
         let tint = roseTint()
         let busy = model.status == .running || model.status == .streaming
         rose.color = tint; rose.busy = busy
+        compactCount.stringValue = model.status == .error ? "!" : busy ? "…" : model.screenshots.isEmpty ? "" : "\(model.screenshots.count)"
+        compactCount.textColor = model.status == .error ? NotchPalette.error : NotchPalette.secondary
 
         luma.setState(model.status)
         // Streaming token arrival → one ripple through the light field.
         if model.status == .streaming, model.answer.count > lastAnswerLen { luma.pulse() }
         lastAnswerLen = model.answer.count
 
-        statusText.stringValue = model.statusText
+        materialStrip.isHidden = !model.showMaterialStrip
+        screenshotTray.isHidden = !model.showScreenshotTray
+        screenshotTray.update(assets: model.screenshots, images: model.screenshotImages,
+            flying: model.flyingScreenshots, message: model.screenshotStatus,
+            remaining: model.screenshotRemaining, cancellable: model.screenshotRoundActive,
+            capturing: model.screenshotCapturing, notice: model.screenshotNotice)
+        // Hidden views still own their assets; clearing the last material must release them.
+        materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality")
+        statusText.stringValue = model.captureHeading
+        statusText.toolTip = model.captureHeading
+        toolTip = model.captureHeading + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
+        setAccessibilityLabel("NotchSPI · " + model.captureHeading)
         statusText.textColor = model.resultState == .review
             ? NSColor(calibratedRed: 0.95, green: 0.66, blue: 0.20, alpha: 1)
             : NotchPalette.secondary
@@ -203,7 +264,9 @@ final class NotchView: NSView {
                 ? (model.personaLabel.isEmpty ? L10n.t("设置人物像", "人物像を設定", "Set persona") : model.personaLabel)
                 : model.depthLabel
 
-        let attr = NotchType.answerString(model.answer, presentation: NotchType.presentation(for: model))
+        answerScroll.isHidden = model.hidesAnswer
+        let attr = model.hidesAnswer ? NSAttributedString(string: "")
+            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
         // While streaming, keep the newest text in view (a long answer scrolls within its region).
         if model.status == .streaming { followBottom = true }
@@ -215,17 +278,31 @@ final class NotchView: NSView {
             userDetached = false
         }
 
+        if let step = model.onboardingStep, !step.showsLiveContent {
+            answerScroll.isHidden = true; materialStrip.isHidden = true; screenshotTray.isHidden = true
+        }
         if model.expanded != wasExpanded { beginMorph(model.expanded) }
 
         // Content (labels, capsule, answer length) may have changed — re-lay the plate.
         if lastPlateSize != .zero { layoutPlate(lastPlateSize) }
         applyLayout()
+        if onboardingChanged, previousOnboardingStep?.showsLiveContent == true, !reduceMotion {
+            for view in liveViews {
+                guard !view.isHidden, let oldY = previousOrigins[ObjectIdentifier(view)] else { continue }
+                let shift = CABasicAnimation(keyPath: "transform.translation.y")
+                shift.fromValue = oldY - view.frame.minY; shift.toValue = 0
+                shift.duration = NotchPalette.morphDuration
+                shift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                view.layer?.add(shift, forKey: "onboarding-handoff")
+            }
+        }
         updateFollow()
     }
 
     /// Rose tint by state — white at rest (no "camera-in-use" green dot), accent while working,
     /// red on error. Mirrors the original SwiftUI `roseColor`.
     private func roseTint() -> NSColor {
+        if model.screenshotRoundActive { return NotchPalette.accent }
         switch model.status {
         case .running, .streaming: return NotchPalette.accent
         case .error: return NotchPalette.error
@@ -394,6 +471,9 @@ final class NotchView: NSView {
                      bottomRadius: notchLerp(14, 22, gr), depth: p)
 
         layoutRose(card: card, g: g)
+        compactCount.frame = NSRect(x: card.minX + 39, y: rose.frame.midY - 7, width: 17, height: 15)
+        compactCount.alphaValue = 1 - notchRamp(p, 0, 0.35)
+        compactCount.isHidden = p >= 0.35
         layoutContentPlate(card: card, p: p)
     }
 
@@ -462,14 +542,22 @@ final class NotchView: NSView {
 
         // Answer fills below the header; the panel height is sized by the controller, so a long
         // answer scrolls within this fixed region and a short one hugs it.
-        let top = NotchLayout.headerHeight
+        let onboardingHeight = model.onboardingStep?.height ?? 0
+        onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
+        let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight : onboardingHeight
+        let stripHeight = model.materialAreaHeight
+        let trayHeight: CGFloat = model.showScreenshotTray ? CaptureStyle.trayHeight : 0
+        screenshotTray.frame = CGRect(x: inset, y: headerHeight, width: size.width - inset * 2, height: trayHeight)
+        materialStrip.frame = CGRect(x: inset, y: headerHeight + trayHeight,
+                                     width: size.width - inset * 2, height: model.materialStripHeight)
+        let top = headerHeight + stripHeight
         let h = max(0, size.height - top - NotchLayout.answerBottomPad)
         let w = max(0, size.width - inset * 2)
         answerScroll.frame = CGRect(x: inset, y: top, width: w, height: h)
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
         // long answer scrolls; the CTFramesetter measure matches what it draws.
-        let docH = max(h, NotchType.answerHeight(model.answer,
+        let docH = max(h, NotchType.answerHeight(model.hidesAnswer ? "" : model.displayedAnswer,
                                                  presentation: NotchType.presentation(for: model), width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
         updateScrollFade()

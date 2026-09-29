@@ -13,11 +13,15 @@ export interface CaptureRequest {
   system: string;
   task: string;
   images: CaptureImage[];
+  maxTokens?: number;
+  /** Assigned by the server route; never read from client-supplied provider options. */
+  purpose?: 'answer' | 'explain' | 'recover';
 }
 
 export interface Usage {
-  inputTokens: number;
-  outputTokens: number;
+  /** null means the vendor completed without a usage record; never reinterpret it as zero. */
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export interface Provider {

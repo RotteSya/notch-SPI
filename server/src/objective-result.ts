@@ -168,7 +168,10 @@ export function composeObjectiveResult(text: string, protocolEnabled = true): Ob
       }
     } else if (result?.state === 'retake' && finalAnswer !== null) {
       pushUnique(violations, 'invalidStateCombination');
-      result = null;
+      // An explicitly unusable result must not become a chargeable FINAL fallback.
+      // The contradictory envelope is still invalid; do not turn it into a valid V1 score.
+      pushUnique(violations, 'missingUsableResult');
+      return { visibleText: '', finalAnswer: null, result: null, state: null, parserPath: 'none', violations };
     }
   }
 

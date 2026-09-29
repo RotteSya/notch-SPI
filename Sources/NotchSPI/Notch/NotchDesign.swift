@@ -166,9 +166,9 @@ enum NotchType {
         let caps = KeycapChipView.caps(from: combo)
         let (prefix, suffix) = mode == "personality"
             ? (L10n.t("按", "", "Press"),
-               L10n.t("截屏作答 · 悬停展开", "で回答 · ホバーで展開", "to answer · hover to expand"))
+               L10n.t("性格测试 · 自动作答", "で性格検査に自動回答", "to answer a personality test"))
             : (L10n.t("按", "", "Press"),
-               L10n.t("截屏讲题 · 悬停展开", "で解説 · ホバーで展開", "for tutoring · hover to expand"))
+               L10n.t("截屏查题 · 自动提问", "でキャプチャして質問", "to capture & ask automatically"))
 
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 2
@@ -202,6 +202,14 @@ enum NotchType {
             out.append(NSAttributedString(string: " ", attributes: gap))
             out.append(NSAttributedString(string: suffix, attributes: hint))
         }
+        if mode != "personality" {
+            let multi = Settings.displayString(Settings.shared.contextCombo)
+            out.append(NSAttributedString(string: L10n.t("\n\(multi) 多图查题 · 1 张等待，第二张起 4 秒提交", "\n\(multi) 複数画像 · 2枚目から4秒で送信", "\n\(multi) Multiple images · send 4s after image 2"), attributes: hint))
+        }
+        if mode != "personality" {
+            let key = Settings.displayString(Settings.shared.personalityCombo)
+            out.append(NSAttributedString(string: L10n.t("\n\(key) 性格测试 · 按当前人物像作答", "\n\(key) 性格検査 · 現在の人物像で回答", "\n\(key) Personality test · use the active persona"), attributes: hint))
+        }
         return out
     }
 
@@ -213,7 +221,7 @@ enum NotchType {
             depth: model.answerDepth,
             finished: !(model.status == .running || model.status == .streaming),
             revealed: model.reasoningRevealed,
-            failed: model.status == .error)
+            failed: model.status == .error || !model.captureFeedback.isEmpty)
     }
 
     static func answerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
@@ -254,21 +262,18 @@ enum NotchType {
         }
 
         let out = NSMutableAttributedString()
+        out.append(card(final, afterContent: false))
         let hasWorking = !parse.working.isEmpty
         if hasWorking {
+            out.append(NSAttributedString(string: "\n"))
             if p.depth == "brief" && p.finished {
-                // The condensation moment: scratch folds into a quiet, reopenable line.
                 out.append(toggleLine(expanded: p.revealed))
                 if p.revealed {
                     out.append(NSAttributedString(string: "\n"))
                     out.append(body(parse.working, dim: true))
                 }
-            } else {
-                out.append(body(parse.working, dim: p.depth == "brief"))
-            }
+            } else { out.append(body(parse.working, dim: p.depth == "brief")) }
         }
-        if out.length > 0 { out.append(NSAttributedString(string: "\n")) }
-        out.append(card(final, afterContent: out.length > 0))
         if !parse.overflow.isEmpty {
             // Contract-violating trailing scratch: quiet notes below the card, clear of the
             // chip's bottom inset (spacingBefore covers cardPadV plus breathing room).
@@ -442,7 +447,8 @@ final class DisplayTween {
 
     func animate(to target: CGFloat, duration: CFTimeInterval) {
         guard let host else { set(target); return }
-        if value == target { return }
+        // A reversal before the first display tick must cancel the previous destination.
+        if value == target { set(target); return }
         from = value
         to = target
         self.duration = max(0.001, duration)
@@ -764,6 +770,7 @@ final class NotchControlButton: NSControl {
     }
 
     override func accessibilityPerformPress() -> Bool {
+        guard isEnabled, !isHiddenOrHasHiddenAncestor else { return false }
         onAction()
         return true
     }

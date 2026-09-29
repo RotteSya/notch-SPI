@@ -64,6 +64,24 @@ final class ObjectiveResultTests: XCTestCase {
         XCTAssertNil(parsed.finalAnswer)
     }
 
+    func testRetakeSuppressesConflictingFinalAtEveryStreamBoundary() {
+        let raw = "FINAL: B\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"retake\",\"answer\":null,\"reason\":\"unreadable\"}"
+        for boundary in raw.indices {
+            var filter = ObjectiveResultStreamFilter()
+            _ = filter.append(String(raw[..<boundary]))
+            _ = filter.append(String(raw[boundary...]))
+            let parsed = filter.finish()
+            XCTAssertNil(parsed.state)
+            XCTAssertEqual(parsed.parserPath, .none)
+            XCTAssertNil(parsed.finalAnswer)
+            XCTAssertEqual(parsed.visibleText, "")
+            XCTAssertTrue(parsed.violations.contains(.invalidStateCombination))
+        }
+        let legacy = ObjectiveResultParser.compose(raw: raw, protocolEnabled: false)
+        XCTAssertEqual(legacy.parserPath, .legacy)
+        XCTAssertEqual(legacy.finalAnswer, "B")
+    }
+
     func testOfficialRequestAddsOptionalProtocolFieldsOnlyWhenProvided() throws {
         let legacy = OfficialAPI.makeCaptureRequest(
             baseURL: "https://example.com", deviceToken: "dev_token", prompt: .init(system: "s", task: "t"),

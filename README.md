@@ -23,4 +23,10 @@ the physical display.
 
 Onboarding asks for **Screen Recording** permission.
 
+Default shortcuts: **⌘⇧1** selects a screenshot and asks automatically; **⌘⇧2** collects
+2–4 screenshots in order and submits 4 seconds after the latest successful capture;
+**⌘⇧9** uses the same capture feedback for personality questions. One image keeps waiting.
+Selection pauses the countdown; Esc restores the remaining time. Each successful screenshot
+flies into the notch, with a reduced-motion alternative. See the [interaction notes](docs/screenshot-shortcut-flow.md).
+
 Engineering handover: [HANDOVER.md](HANDOVER.md).

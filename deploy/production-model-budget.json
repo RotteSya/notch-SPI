@@ -1,0 +1,36 @@
+{
+  "approved_at": "2026-09-13",
+  "review_after_production_days": 7,
+  "auto_increase": false,
+  "budget_timezone": "Asia/Shanghai",
+  "valuation": {
+    "currency": "CNY",
+    "basis": "Conservative peak cache-miss valuation for all accepted input tokens and all completion tokens, including hidden reasoning. Not a vendor invoice or prepaid daily charge. A 3 CNY reservation covers even 1,048,576 input tokens plus 4,096 output tokens at 2/8 CNY per million; actual usage settles independently. No automatic model or budget increase.",
+    "context_input_upper_tokens": 1048576,
+    "output_upper_tokens": 4096,
+    "calculated_upper_micros": 2129920,
+    "sources": [
+      "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+    ]
+  },
+  "environment": {
+    "MODEL_COST_CURRENCY": "CNY",
+    "MODEL_DAILY_BUDGET_MICROS": "20000000",
+    "MODEL_BUDGET_UTC_OFFSET_MINUTES": "480",
+    "ATTEMPT_BUDGET_UPPER_MICROS": "3000000",
+    "MODEL_PRICING_VERSION": "2026-09-13-deepseek-flash-cny-peak",
+    "MODEL_PRICING_JSON": "[{\"model\":\"deepseek:deepseek-flash\",\"input_micros_per_million_tokens\":2000000,\"output_micros_per_million_tokens\":8000000}]",
+    "OFFICIAL_PROVIDER": "deepseek",
+    "OFFICIAL_MODEL": "deepseek-flash",
+    "OFFICIAL_MAX_TOKENS": "4096",
+    "OFFICIAL_DEEPSEEK_REASONING_EFFORT": "low",
+    "OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
+    "OBJECTIVE_RESULT_V1_PROVIDER": "deepseek",
+    "OBJECTIVE_RESULT_V1_MODEL": "deepseek-flash",
+    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "4096",
+    "OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT": "low",
+    "OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
+    "EXPLANATION_MAX_TOKENS": "2048",
+    "CLIENT_CONFIG_REVISION": "production-2-12-flash-low-2048-20260913"
+  }
+}

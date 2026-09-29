@@ -12,15 +12,61 @@ enum CaptureError: Error {
     case appNotRunning(name: String)
     case noCapturableWindow(name: String)
     case captureFailed
+    case captureTimedOut
     /// Full screen only: the caller asked to exclude its own panel window but it wasn't in
     /// the shareable list. Internal signal — the controller falls back to hiding the panel.
     case panelNotExcludable
 }
 
 enum ScreenCapture {
+    #if DEBUG
+    /// Opt-in local timing diagnostics contain no image, window, account or prompt data.
+    static func trace(_ stage: String) {
+        guard ProcessInfo.processInfo.environment["NSPI_CAPTURE_TRACE"] == "1",
+              ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" else { return }
+        let line = "[CaptureTrace] \(ProcessInfo.processInfo.systemUptime) \(stage)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+    #endif
     struct Shot {
         let path: String
         let blank: Bool
+        var targetFingerprint: String = ""
+        /// AppKit global points, captured with the same display/window selection as the pixels.
+        var sourceFrame: NSRect? = nil
+    }
+
+    struct Context {
+        let displayID: CGDirectDisplayID
+        let primaryHeight: CGFloat
+        let foreground: String
+        let windowID: CGWindowID?
+        @MainActor static func current(target: CaptureTarget = .fullScreen) -> Context {
+            let windowID: CGWindowID?
+            if case .app(let bundleID) = target {
+                let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).map(\.processIdentifier))
+                let windows = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [NSDictionary] ?? []
+                let candidates: [(id: CGWindowID, area: CGFloat, visible: Bool)] = windows.compactMap { w in
+                    guard let pid = w[kCGWindowOwnerPID] as? pid_t, pids.contains(pid),
+                          pid != ProcessInfo.processInfo.processIdentifier,
+                          w[kCGWindowLayer] as? Int == 0,
+                          let id = w[kCGWindowNumber] as? CGWindowID,
+                          let bounds = w[kCGWindowBounds] as? NSDictionary,
+                          let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                          rect.width >= 80, rect.height >= 60 else { return nil }
+                    return (id, rect.width * rect.height, w[kCGWindowIsOnscreen] as? Bool ?? false)
+                }
+                windowID = candidates.first(where: { $0.visible })?.id ?? candidates.max(by: { $0.area < $1.area })?.id
+            } else { windowID = nil }
+            return Context(displayID: CGMainDisplayID(), primaryHeight: CGDisplayBounds(CGMainDisplayID()).height,
+                    foreground: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown", windowID: windowID)
+        }
+        func appKitFrame(_ quartz: CGRect) -> CGRect {
+            Self.appKitFrame(quartz, primaryHeight: primaryHeight)
+        }
+        static func appKitFrame(_ quartz: CGRect, primaryHeight: CGFloat) -> CGRect {
+            CGRect(x: quartz.minX, y: primaryHeight - quartz.maxY, width: quartz.width, height: quartz.height)
+        }
     }
 
     /// A running app that currently owns at least one capturable window.
@@ -80,20 +126,55 @@ enum ScreenCapture {
     /// stacking changes constantly, and a stale pick could capture the wrong window.
     @MainActor private static var cachedContent: SCShareableContent?
     @MainActor private static var refreshing = false
+    @MainActor private static var contentGeneration: UInt64 = 0
+    private struct EnumeratedContent {
+        let generation: UInt64
+        let content: SCShareableContent
+    }
+    @MainActor private static let fullScreenEnumeration = CaptureSystemOperation<EnumeratedContent>(coalescesRequests: true)
+    @MainActor private static let appEnumeration = CaptureSystemOperation<SCShareableContent>()
+    @MainActor private static let imageCapture = CaptureSystemOperation<CGImage>()
+    @MainActor private static let hashCapture = CaptureSystemOperation<CGImage>()
+    @MainActor private static let recovery = CaptureRecovery()
+    @MainActor private static let captureCommand = CaptureCommand()
+
+    @MainActor private static func fullScreenContent() async throws -> SCShareableContent {
+        let generation = contentGeneration
+        let content = try await fullScreenEnumeration.run {
+            #if DEBUG
+            trace("enumeration.system.begin")
+            defer { trace("enumeration.system.end") }
+            #endif
+            let value = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            // A slow background enumeration can still warm the next capture. Display
+            // changes invalidate its publication, and expired callers never take a shot.
+            if generation == contentGeneration { cachedContent = value }
+            return EnumeratedContent(generation: generation, content: value)
+        }
+        try Task.checkCancellation()
+        guard content.generation == contentGeneration else { throw CaptureError.captureFailed }
+        return content.content
+    }
 
     /// Refresh the cache off the critical path (launch, after each shot, display changes).
     @MainActor static func prefetchShareableContent() {
-        guard !refreshing else { return }
+        guard !refreshing, !recovery.usesFallback, CGPreflightScreenCaptureAccess() else { return }
         refreshing = true
         Task {
-            let c = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            if let c { cachedContent = c }
+            #if DEBUG
+            trace("prefetch.begin")
+            #endif
+            _ = try? await fullScreenContent()
+            #if DEBUG
+            trace("prefetch.wait.end")
+            #endif
             refreshing = false
         }
     }
 
     @MainActor static func invalidateShareableContent() {
         cachedContent = nil
+        contentGeneration &+= 1
     }
 
     // MARK: - Capture
@@ -102,18 +183,52 @@ enum ScreenCapture {
     /// `excludingWindowID` composites the shot WITHOUT that window — the controller passes
     /// the notch panel so it never has to be hidden (and blink) before the shot.
     static func capture(
-        target: CaptureTarget, maxLongEdge: CGFloat = 1568, excludingWindowID: CGWindowID? = nil
+        target: CaptureTarget, maxLongEdge: CGFloat = 1568, excludingWindowID: CGWindowID? = nil, context: Context? = nil
     ) async -> Result<Shot, CaptureError> {
+        let resolved: Context
+        if let context { resolved = context } else { resolved = await MainActor.run { Context.current(target: target) } }
+        let context = resolved
+        return await CapturePermission.withAccess {
+            await recovery.run {
+                await captureUsingScreenCaptureKit(target: target, maxLongEdge: maxLongEdge,
+                                                   excludingWindowID: excludingWindowID, context: context)
+            } fallback: {
+                await captureUsingSystemCommand(target: target, maxLongEdge: maxLongEdge,
+                                                 excludingWindowID: excludingWindowID, context: context)
+            }
+        }
+    }
+
+    private static func captureUsingScreenCaptureKit(
+        target: CaptureTarget, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
+    ) async -> Result<Shot, CaptureError> {
+        #if DEBUG
+        trace("capture.begin permission=\(CGPreflightScreenCaptureAccess())")
+        #endif
         guard case .app(let bundleID) = target else {
-            return await captureFullScreen(maxLongEdge: maxLongEdge, excludingWindowID: excludingWindowID)
+            return await captureFullScreen(maxLongEdge: maxLongEdge, excludingWindowID: excludingWindowID, context: context)
         }
 
-        // App targets enumerate off-screen windows too, so minimized ones are found.
-        let content: SCShareableContent
+        // Visible targets avoid the substantially slower all-Spaces/minimized enumeration.
+        // Enumerate off-screen windows only when the requested app has no visible content.
+        var content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+            #if DEBUG
+            trace("app.enumeration.begin")
+            #endif
+            content = try await appEnumeration.run {
+                try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            }
+            if !content.windows.contains(where: { $0.windowID == context.windowID && $0.owningApplication?.bundleIdentifier == bundleID && isCapturable($0) }) {
+                content = try await appEnumeration.run {
+                    try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+                }
+            }
+            #if DEBUG
+            trace("app.enumeration.end")
+            #endif
         } catch {
-            return .failure(.noPermission)
+            return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
         }
 
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
@@ -124,10 +239,9 @@ enum ScreenCapture {
         guard !owned.isEmpty else {
             return .failure(running.isEmpty ? .appNotRunning(name: name) : .noCapturableWindow(name: name))
         }
-        // SCShareableContent lists windows front-to-back: the first on-screen one
-        // is the app's frontmost. Fall back to the largest off-screen (minimized) window.
-        guard let window = owned.first(where: { $0.isOnScreen })
-            ?? owned.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+        // SCShareableContent is not a z-order contract. The WindowServer ID was frozen at
+        // the key press; a disappearing target must fail, never capture a neighboring document.
+        guard let id = context.windowID, let window = owned.first(where: { $0.windowID == id })
         else { return .failure(.noCapturableWindow(name: name)) }
 
         // Window-server composited: unaffected by occlusion, Space, or which display it's on.
@@ -140,42 +254,58 @@ enum ScreenCapture {
         config.ignoreShadowsSingleWindow = true
         // Blank-frame heuristic only makes sense for full screen; a small window's
         // JPEG can legitimately be tiny.
-        return await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 0)
+        let result = await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 0)
+        return result.map { shot in
+            var copy = shot
+            copy.targetFingerprint = "window:\(window.windowID):\(window.frame)"
+            copy.sourceFrame = context.appKitFrame(window.frame)
+            return copy
+        }
     }
 
     private static func captureFullScreen(
-        maxLongEdge: CGFloat, excludingWindowID: CGWindowID?
+        maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
     ) async -> Result<Shot, CaptureError> {
         // Fast path: the cached enumeration. Any failure — stale display handle, panel window
         // missing — falls through to a fresh enumeration below.
         if let cached = await MainActor.run(body: { cachedContent }) {
+            #if DEBUG
+            trace("fullscreen.cache.hit")
+            #endif
             let r = await attemptFullScreen(content: cached, maxLongEdge: maxLongEdge,
-                                            excludingWindowID: excludingWindowID)
+                                            excludingWindowID: excludingWindowID, context: context)
             if case .success = r {
                 await MainActor.run { prefetchShareableContent() } // keep the next press warm
                 return r
             }
+            if case .failure(.captureTimedOut) = r { return r }
         }
         let content: SCShareableContent
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            #if DEBUG
+            trace("fullscreen.enumeration.begin")
+            #endif
+            content = try await fullScreenContent()
+            #if DEBUG
+            trace("fullscreen.enumeration.end")
+            #endif
         } catch {
-            return .failure(.noPermission)
+            return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
         }
-        await MainActor.run { cachedContent = content }
         return await attemptFullScreen(content: content, maxLongEdge: maxLongEdge,
-                                       excludingWindowID: excludingWindowID)
+                                       excludingWindowID: excludingWindowID, context: context)
     }
 
     private static func attemptFullScreen(
-        content: SCShareableContent, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?
+        content: SCShareableContent, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
     ) async -> Result<Shot, CaptureError> {
-        let mainID = CGMainDisplayID()
-        guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first
+        guard let display = content.displays.first(where: { $0.displayID == context.displayID })
         else { return .failure(.captureFailed) }
 
         let filter: SCContentFilter
-        if let id = excludingWindowID {
+        if let app = content.applications.first(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) {
+            filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: [])
+        } else if let id = excludingWindowID {
             guard let panel = content.windows.first(where: { $0.windowID == id })
             else { return .failure(.panelNotExcludable) }
             filter = SCContentFilter(display: display, excludingWindows: [panel])
@@ -184,10 +314,28 @@ enum ScreenCapture {
         }
         let config = SCStreamConfiguration()
         config.showsCursor = false
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        setDimensions(config, width: CGFloat(display.width) * scale,
-                      height: CGFloat(display.height) * scale, maxLongEdge: maxLongEdge)
-        return await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 9000)
+        setDimensions(config, width: CGFloat(display.width),
+                      height: CGFloat(display.height), maxLongEdge: maxLongEdge)
+        let result = await shoot(filter: filter, config: config, maxLongEdge: maxLongEdge, blankThreshold: 9000)
+        return result.map { shot in
+            var copy = shot
+            copy.targetFingerprint = "display:\(display.displayID):\(display.width)x\(display.height):\(context.foreground)"
+            copy.sourceFrame = context.appKitFrame(display.frame)
+            return copy
+        }
+    }
+
+    static func cropped(_ shot: Shot, region: QuestionRegion) async -> Result<Shot, CaptureError> {
+        guard region.isValid else { return .failure(.captureFailed) }
+        return await Task.detached(priority: .userInitiated) {
+            guard let image = NSImage(contentsOfFile: shot.path),
+                  let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                  let cropped = cg.cropping(to: CGRect(x: region.x * Double(cg.width), y: region.y * Double(cg.height),
+                                                      width: region.width * Double(cg.width), height: region.height * Double(cg.height)).integral),
+                  var result = encode(cropped, maxLongEdge: 1568, blankThreshold: 0) else { return .failure(.captureFailed) }
+            result.targetFingerprint = shot.targetFingerprint
+            return .success(result)
+        }.value
     }
 
     // MARK: - Auto-mode hash sampling
@@ -201,13 +349,15 @@ enum ScreenCapture {
     /// nor re-warms the cache per tick (the cache isn't consumed; staleness surfaces as
     /// a failed attempt and the fresh-enumeration fallback re-caches).
     static func captureHashGrid(excludingWindowID: CGWindowID?) async -> [UInt8]? {
+        // Do not keep probing the unhealthy service at the automatic-mode poll rate.
+        // The command backend requires a hidden panel, so it is for user captures only.
+        guard CGPreflightScreenCaptureAccess(), await !recovery.usesFallback else { return nil }
         if let cached = await MainActor.run(body: { cachedContent }),
            let grid = await attemptHashGrid(content: cached, excludingWindowID: excludingWindowID) {
             return grid
         }
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let content = try? await fullScreenContent()
         else { return nil }
-        await MainActor.run { cachedContent = content }
         return await attemptHashGrid(content: content, excludingWindowID: excludingWindowID)
     }
 
@@ -227,7 +377,9 @@ enum ScreenCapture {
         let config = SCStreamConfiguration()
         config.showsCursor = false
         setDimensions(config, width: CGFloat(display.width), height: CGFloat(display.height), maxLongEdge: 128)
-        guard let cg = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        guard let cg = try? await hashCapture.run(operation: {
+            try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        })
         else { return nil }
         return ScreenHasher.lumaGrid(from: cg)
     }
@@ -247,13 +399,114 @@ enum ScreenCapture {
         filter: SCContentFilter, config: SCStreamConfiguration, maxLongEdge: CGFloat, blankThreshold: Int
     ) async -> Result<Shot, CaptureError> {
         do {
-            let cg = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            guard let shot = encode(cg, maxLongEdge: maxLongEdge, blankThreshold: blankThreshold)
-            else { return .failure(.captureFailed) }
+            #if DEBUG
+            trace("image.begin")
+            #endif
+            let cg = try await imageCapture.run {
+                try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            }
+            try Task.checkCancellation()
+            #if DEBUG
+            trace("image.end")
+            #endif
+            guard let shot = await Task.detached(priority: .userInitiated, operation: {
+                encode(cg, maxLongEdge: maxLongEdge, blankThreshold: blankThreshold)
+            }).value else { return .failure(.captureFailed) }
+            if Task.isCancelled {
+                try? FileManager.default.removeItem(atPath: shot.path)
+                return .failure(.captureFailed)
+            }
+            #if DEBUG
+            trace("encode.end")
+            #endif
             return .success(shot)
         } catch {
             // Window vanished mid-capture (closed / app quit), or capture was refused.
-            return .failure(.captureFailed)
+            #if DEBUG
+            trace("image.error code=\((error as NSError).code)")
+            #endif
+            return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
+        }
+    }
+
+    /// The system utility does not require SCShareableContent. Never invoke it for a
+    /// full-screen request until the controller has hidden the panel and let it settle.
+    @MainActor static func captureUsingSystemCommand(
+        target: CaptureTarget, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context? = nil
+    ) async -> Result<Shot, CaptureError> {
+        let context = context ?? Context.current(target: target)
+        guard !Task.isCancelled else { return .failure(.captureFailed) }
+        if target == .fullScreen, excludingWindowID != nil { return .failure(.panelNotExcludable) }
+        guard CGPreflightScreenCaptureAccess() else { return .failure(.noPermission) }
+        var arguments = ["-x", "-t", "png"]
+        let fingerprint: String
+        let blankThreshold: Int
+        let sourceFrame: CGRect
+        switch target {
+        case .fullScreen:
+            arguments += ["-m"]
+            let displayID = context.displayID
+            guard displayID == CGMainDisplayID() else { return .failure(.captureFailed) }
+            let bounds = CGDisplayBounds(displayID)
+            sourceFrame = context.appKitFrame(bounds)
+            fingerprint = "display:\(displayID):\(Int(bounds.width))x\(Int(bounds.height)):\(context.foreground)"
+            blankThreshold = 9000
+        case .app(let bundleID):
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            let name = running.first?.localizedName ?? bundleID
+            guard !running.isEmpty else { return .failure(.appNotRunning(name: name)) }
+            let pids = Set(running.map(\.processIdentifier))
+            let windows = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID)
+                as? [NSDictionary] ?? []
+            let candidates = windows.compactMap { info -> (id: CGWindowID, frame: CGRect, onScreen: Bool)? in
+                guard let pid = info[kCGWindowOwnerPID] as? pid_t, pids.contains(pid),
+                      pid != NSRunningApplication.current.processIdentifier,
+                      info[kCGWindowLayer] as? Int == 0,
+                      let id = info[kCGWindowNumber] as? CGWindowID,
+                      let bounds = info[kCGWindowBounds] as? NSDictionary,
+                      let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                      frame.width >= minContentSize.width, frame.height >= minContentSize.height
+                else { return nil }
+                return (id, frame, info[kCGWindowIsOnscreen] as? Bool ?? false)
+            }
+            guard let id = context.windowID, let window = candidates.first(where: { $0.id == id })
+            else { return .failure(.noCapturableWindow(name: name)) }
+            // -l selects the exact window; failure must never fall back to the desktop.
+            arguments += ["-o", "-l", String(window.id)]
+            fingerprint = "window:\(window.id):\(window.frame)"
+            sourceFrame = context.appKitFrame(window.frame)
+            blankThreshold = 0
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notchspi-command-" + UUID().uuidString, isDirectory: true)
+        let file = directory.appendingPathComponent("capture.png")
+        defer { CaptureFileLifecycle.shared.discardTemporaryDirectory(directory) }
+        do {
+            #if DEBUG
+            trace("command.begin")
+            #endif
+            try await captureCommand.run(executable: URL(fileURLWithPath: "/usr/sbin/screencapture"),
+                                         arguments: arguments + [file.path]) { process in
+                try CaptureFileLifecycle.shared.withWritableDirectory(directory) { try process.run() }
+            }
+            try Task.checkCancellation()
+            guard var shot = await Task.detached(priority: .userInitiated, operation: {
+                guard let image = NSImage(contentsOf: file),
+                      let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil as Shot? }
+                return encode(cg, maxLongEdge: maxLongEdge, blankThreshold: blankThreshold)
+            }).value else { return .failure(.captureFailed) }
+            if Task.isCancelled {
+                try? FileManager.default.removeItem(atPath: shot.path)
+                return .failure(.captureFailed)
+            }
+            shot.targetFingerprint = fingerprint
+            shot.sourceFrame = sourceFrame
+            #if DEBUG
+            trace("command.end")
+            #endif
+            return .success(shot)
+        } catch {
+            return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
         }
     }
 
@@ -282,12 +535,11 @@ enum ScreenCapture {
             return nil
         }
         let blank = jpg.count < blankThreshold
-        let file = NSTemporaryDirectory() + "notch-tutor-\(UUID().uuidString).jpg"
         do {
-            try jpg.write(to: URL(fileURLWithPath: file))
+            let file = try CaptureFileLifecycle.shared.writeJPEG(jpg)
+            return Shot(path: file, blank: blank)
         } catch {
             return nil
         }
-        return Shot(path: file, blank: blank)
     }
 }

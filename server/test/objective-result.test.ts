@@ -42,6 +42,20 @@ test('valid retake is not billable', () => {
   assert.equal(objectiveResultIsBillable(parsed), false);
 });
 
+test('a valid retake overrides a conflicting FINAL without changing legacy parsing', () => {
+  const raw = `FINAL: B\n${line({v:1,kind:'single_choice',state:'retake',answer:null,reason:'unreadable'})}`;
+  const parsed = composeObjectiveResult(raw);
+  assert.equal(parsed.state, null);
+  assert.equal(parsed.parserPath, 'none');
+  assert.equal(parsed.finalAnswer, null);
+  assert.equal(parsed.visibleText, '');
+  assert.ok(parsed.violations.includes('invalidStateCombination'));
+  assert.equal(objectiveResultIsBillable(parsed), false);
+  const legacy = composeObjectiveResult(raw, false);
+  assert.equal(legacy.parserPath, 'legacy');
+  assert.equal(legacy.finalAnswer, 'B');
+});
+
 test('invalid V1 with usable FINAL becomes legacy fallback', () => {
   const parsed = composeObjectiveResult(`FINAL: A\n${line({
     v: 1, kind: 'single_choice', state: 'ready', answer: 'B', reason: 'none',

@@ -28,7 +28,12 @@ final class NotchPanel: NSPanel {
         isReleasedWhenClosed = false
     }
 
-    override var canBecomeKey: Bool { false }
+    var onboardingActive = false
+    var onCancelOnboarding: (() -> Void)?
+    override var canBecomeKey: Bool { onboardingActive }
+    override func cancelOperation(_ sender: Any?) {
+        if onboardingActive { onCancelOnboarding?() } else { super.cancelOperation(sender) }
+    }
     override var canBecomeMain: Bool { false }
 }
 

@@ -96,7 +96,10 @@ final class HotKeyCenter {
                 let center = Unmanaged<HotKeyCenter>.fromOpaque(userData).takeUnretainedValue()
                 if let h = center.handlers[hkID.id] {
                     center.fired.insert(h.role)
-                    DispatchQueue.main.async { h.run() }
+                    // Carbon delivers on the application event loop. Pause a pending screenshot
+                    // deadline in this event, before a timer can run on the next queue turn.
+                    if Thread.isMainThread { h.run() }
+                    else { DispatchQueue.main.async { h.run() } }
                 }
                 return noErr
             },

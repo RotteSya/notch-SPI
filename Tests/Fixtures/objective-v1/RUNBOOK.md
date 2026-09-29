@@ -9,6 +9,12 @@
 
 ## 2. 正式评测
 
+付费前先执行 `node scripts/evaluation-preflight.mjs`。2026-09-06 本轮累计预算为 100 元人民币，
+其授权、题库查找结果和成本上界字段见 [评测准备记录](../../../docs/evaluation-readiness.md)。
+Objective 与 legacy runner 共用 `.eval-results/budget-ledger.sqlite3`，不得删除账本重置额度。
+两入口均要求 `NSPI_EVAL_COST_BOUND` 指向已核验币种、价格及候选 token 限制的有效上界文件；
+没有这些证据时不进行付费调用。该检查不替代题集授权或独立质量复核。
+
 准备一个隔离的测试设备令牌和已部署的候选服务，随后设置：
 
 ```sh
@@ -29,6 +35,8 @@ node scripts/run-objective-eval.mjs
 ```sh
 export NSPI_EVAL_VERCEL_SHARE_TOKEN=<temporary-share-token>
 ```
+
+Treatment 和 legacy baseline 现在共用有 15 秒期限的访问交换入口。Cookie 绑定同一 origin，过期、跨域重定向或访问失败均停止，不自动续期或重试；临时凭证不写入结果。
 
 Runner 对每张图片只调用一次，原始结果写入忽略跟踪的 `objective-eval-output/`。复核者只签署
 已有评分；不得重跑失败题来挑选较好结果。正式归档只保留脱敏 JSONL 和 Markdown 摘要。
@@ -87,6 +95,8 @@ node scripts/compare-objective-evals.mjs
 复核者只签署生成的比较结果。
 
 ## 4. 灰度与回滚
+
+> 2026-09-11用户已调整本次2.12的放量要求：[小用户量发布流程](../../../docs/small-user-release-2026-09-11.md)替代下述四档72小时/200次前提。必要模型、财务、兼容性及回退验证保留。下述原流程保留供历史记录复现。
 
 所有者在完整验证和正式评测通过后按 `内部 → 5% → 25% → 100%` 推进。每档观察至少 72 小时，
 且 treatment 捕获至少 200。协议无效率需 `<3%`，相对成功率下降 `<2pp`，p95 增幅 `≤10%`，

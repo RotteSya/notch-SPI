@@ -5,9 +5,15 @@
 /dist/
 /dist-qa/
 /.eval-results/
+/.release-evidence/
 /objective-eval-output/
 /.venv-fixtures/
 /server/node_modules/
 /server/data/
 /server/*.db*
 /server/.env
+/scheduler/node_modules/
+/scheduler/.wrangler/
+/scheduler/.dev.vars*
+/scheduler/.env*
+/.wrangler/

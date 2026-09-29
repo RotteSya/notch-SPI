@@ -2,6 +2,10 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: NotchController?
+    private var terminationPending = false
+    #if DEBUG
+    private var qaRegionPicker: QuestionRegionPicker?
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // MUST run before NotchController init: PersonaStore's migration writes persona keys
@@ -14,11 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a main menu, the text fields in the settings / 人物像 windows can't cut, copy, or paste.
         NSApp.mainMenu = Self.makeMainMenu()
 
-        let controller = NotchController()
+        let controller: NotchController
+        #if DEBUG
+        controller = NotchController(activateServices: !CommandLine.arguments.contains("--qa-screenshot-demo"))
+        #else
+        controller = NotchController()
+        #endif
         controller.show()
         self.controller = controller
 
-        // First-launch onboarding: fresh installs get the five-page flow; existing installs
+        // First-launch onboarding expands inside the notch; existing installs
         // are skipped silently inside.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             controller.showOnboardingIfNeeded()
@@ -28,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Visual-QA hooks: `--qa-settings-page N` opens the settings window at page N;
         // `--qa-capture` fires one full capture as if the hotkey were pressed.
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("--qa-screenshot-demo") {
+            ScreenshotVisualQA.start(controller, localService: args.contains("--qa-screenshot-local-service"))
+        }
         if let i = args.firstIndex(of: "--qa-settings-page"), i + 1 < args.count,
            let n = Int(args[i + 1]),
            let page = MainSettingsWindowController.Page(rawValue: n) {
@@ -74,14 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.qaDriveNotch(state)
             }
         }
-        if let i = args.firstIndex(of: "--qa-capture") {
+        if let i = args.firstIndex(where: { $0 == "--qa-capture" || $0 == "--qa-capture-region" }) {
             // Optional count after the flag (`--qa-capture 4`) fires that many captures 6s
             // apart — enough to drain a small trial quota and hit the deny path in one session.
             var count = 1
             if i + 1 < args.count, let n = Int(args[i + 1]) { count = n }
             for n in 0..<max(1, count) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(n) * 6.0) {
-                    controller.qaTriggerCapture()
+                    controller.qaTriggerCapture(chooseRegion: args[i] == "--qa-capture-region")
                 }
             }
         }
@@ -91,13 +103,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.qaStartAutoMode()
             }
         }
+        // Open the production picker over an explicit local fixture for keyboard/AX QA.
+        if let i = args.firstIndex(of: "--qa-region-image"), i + 1 < args.count,
+           let image = NSImage(contentsOfFile: args[i + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                self.qaRegionPicker = QuestionRegionPicker(image: image) { [weak self] region in
+                    if let region { print("[NotchSPI] QA region: \(region.x),\(region.y),\(region.width),\(region.height)") }
+                    else { print("[NotchSPI] QA region: cancelled") }
+                    self?.qaRegionPicker = nil
+                }
+                self.qaRegionPicker?.showWindow(nil)
+                self.qaRegionPicker?.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
         #endif
 
         // Quietly ask the service for a newer release (≤ once/day; only surfaces if one exists).
         // Delayed so the notch UI settles first and the alert never races app launch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" { return }
+            #endif
             UpdateChecker.autoCheckIfDue()
         }
+    }
+
+    @objc private func reopenWelcomeGuide() {
+        Task { @MainActor in controller?.replayOnboarding() }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminationPending else { return .terminateLater }
+        terminationPending = true
+        controller?.prepareForTermination()
+        Task { @MainActor in
+            let cleaned = await Task.detached(priority: .userInitiated) {
+                CaptureFileLifecycle.shared.removeAllForTermination()
+            }.value
+            terminationPending = false
+            if !cleaned { controller?.cancelTermination() }
+            sender.reply(toApplicationShouldTerminate: cleaned)
+            if !cleaned {
+                let alert = NSAlert()
+                alert.messageText = L10n.t("临时截图未能清理", "一時画像を削除できませんでした", "Temporary images could not be removed")
+                alert.informativeText = L10n.t("应用尚未退出，请重试退出。", "アプリはまだ終了していません。もう一度終了してください。", "The app is still open. Please try quitting again.")
+                alert.runModal()
+            }
+        }
+        return .terminateLater
     }
 
     private static func makeMainMenu() -> NSMenu {
@@ -107,6 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
+        let guide = appMenu.addItem(withTitle: L10n.t("新手引导", "はじめてのガイド", "Welcome Guide"),
+            action: #selector(reopenWelcomeGuide), keyEquivalent: "g")
+        guide.keyEquivalentModifierMask = [.command, .shift]
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L10n.quitApp, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 

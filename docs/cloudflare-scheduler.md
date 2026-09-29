@@ -1,0 +1,49 @@
+# Cloudflare recovery scheduler
+
+The `notchspi-reaper` Worker invokes the existing authenticated `GET https://notchspi-api.vercel.app/api/internal/reap`. Its payload has no database, payment, or model credentials. Only `CRON_SECRET` is shared with the Vercel production environment. Each invocation performs one request with a 45-second deadline, rejects redirects and non-200 responses, reads at most 4 KiB, validates the recovery counters, and fails the scheduled event on partial reconciliation failures. Logs contain counts, timestamps and status, never response bodies or credentials. Public Worker and preview URLs are disabled.
+
+The source configuration starts with **no active triggers**. Activate `* * * * *` only after the compatible production server, database migration, shared secret and authenticated endpoint probe have passed. The current production server predates this endpoint; calling it now cannot recover reservations. Vercel's minute cron has been removed from the candidate configuration, so deployment no longer requires a Vercel paid scheduler. No Cloudflare paid plan was purchased.
+
+Verification from `scheduler`: `npm ci`, `npm run typecheck`, `npm test`, `npm run build`. Unit tests cover credential handling, HTTP errors, malformed/oversized results, partial failures and public invocation. A separate workerd test dispatches a scheduled event against an isolated outbound service. This detected the runtime's rejection of `redirect: error`; the implementation uses `manual` and explicitly rejects 3xx. Tests never call production.
+
+Deployment order:
+
+1. Verify the stored production credential and the Worker binding match, without printing either.
+2. Complete the server migration and compatibility release gates. Probe the actual production endpoint with and without authorization; require a valid 200 recovery result and a 401 denial.
+3. Set `scheduler/wrangler.jsonc` triggers to `* * * * *` and apply that schedule through Cloudflare. Preserve the existing secret and disabled public URLs.
+4. Allow trigger propagation and collect successful real scheduled events, including a controlled expired reservation. Confirm exactly one release/settlement in the persistent ledger.
+5. Record activation time, deployment ID and evidence. Rollback removes the schedule first; the server's durable sweep tolerates overlaps and retries.
+
+Cloudflare documents [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/), [free-plan limits](https://developers.cloudflare.com/workers/platform/limits/) and [pricing](https://developers.cloudflare.com/workers/platform/pricing/). A minute schedule makes 1,440 invocations/day; deployment does not subscribe the account to a paid plan. The authenticated Workers plans dashboard confirmed this account's current plan is **Free / $0** on 2026-09-08; evidence is `cloudflare-free-plan.json`. The connector's billing-read limitation does not block this verification.
+
+## Initial model budget
+
+The approved production settings are in [`production-model-budget.json`](../deploy/production-model-budget.json): CNY 20 per Shanghai calendar day, shared by all official solves, explanations and recovery attempts. The test races 25 reservations across four accounts and verifies only 20 one-yuan reservations fit, with a fresh window only at Shanghai midnight. Server hosting is separate; no model call means no model debit. The seven-day review starts when production is activated and never increases the cap automatically.
+
+Model attempts retain their own currency/pricing version; historical rows are not relabelled. The 2026-09-13 release configuration uses the evaluated `deepseek-flash` model in both routes, low reasoning, 4,096 total answer tokens and 2,048 total explanation tokens. Peak cache-miss prices are CNY 2/8 per million input/output tokens, including reasoning in completion usage. Pricing was checked against the official Chinese pricing page; no currency conversion is needed.
+
+Each attempt reserves CNY 3. Even 1,048,576 input tokens plus 4,096 output tokens cost at most CNY 2.129920 at these rates. Observed usage settles the estimate; unknown usage retains its upper bound. Near the daily cap, new requests may stop before CNY 20 when the remaining amount cannot cover a complete reservation. Do not raise the daily cap to compensate. The payment catalog remains JPY, separately from model cost accounting.
+
+Before activation, validate the actual provider/model IDs, endpoints, output limits and price coverage. Freeze currency and budget timezone throughout a live budget window; do not reset or reprice earlier attempts. This configuration is prepared for the release, and its presence in source does not prove production activation.
+
+
+## 2026-09-10 开发依赖安全修复
+
+调度器的 Miniflare 依赖固定旧 sharp 0.35.2，触发 [GHSA-rgj7-g3m4-5g8c](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c)。package.json 使用精确 override `sharp: 0.35.4`，lockfile 同步其各平台原生依赖。Wrangler/Miniflare 版本保持原锁定；待上游直接使用修复版本后可评估移除 override。重新安装、0 漏洞审计、类型检查、14 项含 workerd 的测试及 dry-run 构建通过，最终 CI 10/10。此变更只修复本地/CI 工具依赖，不自动启用或重新部署生产定时任务；细节见 [发布记录](release-progress-2026-09-10.md)。
+
+
+## Isolated candidate scheduler
+
+`scheduler/wrangler.candidate.jsonc` builds `notchspi-reaper-eval-20260910` from a separate entrypoint. Its target is the immutable candidate deployment `https://notchspi-ckatjw33a-rottesyas-projects.vercel.app/api/internal/reap`, not an alias. The shared implementation retains the bounded single request, safe counters and no redirects. The production entrypoint still targets production and never sends a Vercel protection credential; environment variables cannot switch either target.
+
+The candidate requires its own `CRON_SECRET` and the project's existing automation protection secret in Cloudflare secret bindings. Vercel documents the [automation protection header](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation). No project protection rule was removed or changed. Actual candidate probes returned 302 anonymously, 401 with protection access alone, and 200 with both credentials. Secret values are absent from Worker source, public URLs and logs. Tests cover target isolation, invalid/missing bypass credentials, production header exclusion and both entrypoints running under workerd; 17 tests, typecheck and both dry-run builds passed locally.
+
+On 2026-09-10, Cloudflare rejected the first trigger activation with code 10063 because the account had no workers.dev subdomain. The account namespace `notchspi-maintenance` was registered through the supported API, then activation succeeded. Both production and candidate Workers retain `enabled=false` and `previews_enabled=false`; the production schedule remains empty. Creating this namespace did not subscribe to a paid plan or expose either Worker. Cloudflare warns that [schedule propagation can take up to 15 minutes](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+
+The source config starts with an empty schedule so a normal deployment cannot silently activate evaluation maintenance. Activation and expiry-proof evidence are recorded separately in `.release-evidence/2026-09-10/candidate-scheduler/`. Before paid evaluation, verify the candidate deployment/database identities, both credentials, a live minute schedule and its actual successful ticks. Pause the candidate schedule outside evaluation; leave production scheduling subject to the production rollout gates.
+
+
+Candidate activation acceptance is **not passed**. The first real reservation was released exactly once by a scheduled invocation, but only about 4 h 50 min after activation. During a second activation, a new expired reservation was still held 17 min 26.9 s after schedule creation and 6 min 34.2 s after expiry. It was then manually cleaned up through the authenticated candidate endpoint. Both schedules are now empty and both public/preview Worker URLs remain disabled. See the [release record](release-progress-2026-09-10.md) for timestamps and evidence. The 17 passing software tests and successful historical invocations do not waive this activation/expiry gate.
+
+
+As of 2026-09-10 01:19 UTC, Cloudflare officially reports [Workers Cron Triggers degraded](https://www.cloudflarestatus.com/incidents/sjs8s0q2x4hw), status identified and unresolved. Its described delayed/missing execution and delayed configuration updates match the second failed activation test. Keep the authorized Free implementation and both schedules paused until the incident is resolved; then require actual trigger and expiry tests before paid runs. The official incident does not retroactively make either failed timing test pass. Current clocks agree within one second. Evidence and the bounded resumption sequence are in the release record and private incident-resolution-plan.json.

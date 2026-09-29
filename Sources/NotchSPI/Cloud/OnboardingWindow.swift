@@ -2,13 +2,14 @@ import AppKit
 import CoreGraphics
 
 // First-launch onboarding v2 — the product's opening scene. A borderless obsidian window over a
-// live aurora shader, five pages, zero technical vocabulary (no API / CLI / Key / Token):
+// live aurora shader, six pages, zero technical vocabulary (no API / CLI / Key / Token):
 //
 //   1. Welcome        — brand moment + language choice (applies live)
 //   2. How it works   — hotkey → screen → answer, in three illustrated beats
 //   3. Screen access  — why we need it, one-click grant, live green check
-//   4. The gift       — tap the sealed medallion to claim a randomly-granted free balance (reveal)
-//   5. Try it         — a printed sample question + the hotkey as physical keycaps; finish
+//   4. The gift       — tap the sealed medallion to reveal the one-time registered free balance
+//   5. Source         — optional self-reported introduction source; skip sends nothing
+//   6. Try it         — a printed sample question + the hotkey as physical keycaps; finish
 //
 // Every step is skippable and failure never blocks: registration re-runs on first capture, and
 // the capture path already explains a missing screen-recording permission. Power users find the
@@ -139,6 +140,8 @@ private class OnboardingPage: NSView {
     /// user performs a required action (the gift page requires the claim tap). Never a hard trap:
     /// Back and Esc always work, and the gate flips on the *gesture*, not on network success.
     var allowsAdvance: Bool { true }
+    var advanceTitle: String? { nil }
+    func commitAdvance() -> Bool { true }
     /// Set by the controller; a page calls it when `allowsAdvance` changes so the chrome refreshes.
     var onStateChange: (() -> Void)?
 }
@@ -224,7 +227,7 @@ final class OnboardingViewController: NSViewController {
         pageHost.frame = NSRect(x: 0, y: 0, width: Self.pageSize.width, height: Self.pageSize.height)
         root.addSubview(pageHost)
 
-        pages = [WelcomePage(), HowItWorksPage(), PermissionPage(), GiftPage(), TryItPage()]
+        pages = [WelcomePage(), HowItWorksPage(), PermissionPage(), GiftPage(), SourcePage(), TryItPage()]
         dots.count = pages.count
 
         // Bottom bar: [back ghost] [dots] [continue primary]
@@ -299,7 +302,7 @@ final class OnboardingViewController: NSViewController {
     // MARK: Navigation
 
     private func advance() {
-        guard pages[index].allowsAdvance else { return } // page is withholding "continue" (e.g. claim)
+        guard pages[index].allowsAdvance, pages[index].commitAdvance() else { return }
         if index == pages.count - 1 { finish() } else { go(+1) }
     }
 
@@ -398,7 +401,7 @@ final class OnboardingViewController: NSViewController {
         let last = index == pages.count - 1
         nextButton.title = last
             ? L10n.t("开始使用", "使いはじめる", "Start Using")
-            : (index == 0 ? L10n.t("开始", "はじめる", "Get Started") : L10n.next)
+            : (pages[index].advanceTitle ?? (index == 0 ? L10n.t("开始", "はじめる", "Get Started") : L10n.next))
         // A page can withhold "continue" until a required action is done (the gift claim). Hide it
         // rather than show a dead, dimmed control — the page's own primary CTA carries the flow.
         nextButton.isHidden = !pages[index].allowsAdvance
@@ -420,6 +423,61 @@ final class OnboardingViewController: NSViewController {
 
 private final class OnboardingFlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+private final class SourcePage: OnboardingPage {
+    private let title = onboardingLabel(size: 26, weight: .bold, color: .white)
+    private let detail = onboardingLabel(size: 13, weight: .regular, color: NSColor(white: 1, alpha: 0.72))
+    private let status = onboardingLabel(size: 12, weight: .regular, color: NSColor(white: 1, alpha: 0.72))
+    private let choices = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let source = DeviceSourceSelection.shared
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        title.frame = NSRect(x: 40, y: 55, width: 500, height: 45)
+        detail.frame = NSRect(x: 55, y: 112, width: 470, height: 88)
+        choices.frame = NSRect(x: 70, y: 221, width: 440, height: 32)
+        status.frame = NSRect(x: 55, y: 275, width: 470, height: 75)
+        choices.target = self; choices.action = #selector(selectionChanged)
+        for view in [title, detail, choices, status] { addSubview(view) }
+        rebuildStrings()
+    }
+    required init?(coder: NSCoder) { nil }
+    override var advanceTitle: String? {
+        source.record == nil && choices.indexOfSelectedItem == 0
+            ? L10n.t("跳过", "スキップ", "Skip") : L10n.next
+    }
+    override func rebuildStrings() {
+        title.stringValue = L10n.t("从哪里认识 NotchSPI？", "NotchSPI を知ったきっかけは？", "How did you find NotchSPI?")
+        detail.stringValue = L10n.t(
+            "可跳过。选择会与本机注册记录关联，用于比较不同入口的使用情况。它不决定答题场景，也不影响功能或额度。",
+            "回答は任意です。選択内容を本機の登録に紐づけ、入口別の利用状況を比較します。問題の種類・機能・無料枠は変わりません。",
+            "Optional. Your choice is linked to this device's registration to compare usage by source. It does not select a question mode or affect features or credits.")
+        let previous = choices.indexOfSelectedItem
+        choices.removeAllItems()
+        choices.addItems(withTitles: [L10n.t("暂不回答", "回答しない", "Prefer not to answer")] + DeviceSourceGroup.allCases.map(\.title))
+        if let saved = source.record {
+            let index = saved.group.flatMap { DeviceSourceGroup.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+            choices.selectItem(at: index); choices.isEnabled = false
+            status.stringValue = L10n.t("已保存此前选择。来源不会重复提交给其他设备。", "以前の選択を保存済みです。別のデバイスには引き継ぎません。", "Your earlier choice is saved. It will not be submitted for another device.")
+        } else {
+            choices.selectItem(at: max(0, previous)); choices.isEnabled = true
+            status.stringValue = L10n.t("跳过时不会上传来源信息。", "スキップすると、入口の情報は送信されません。", "Skipping sends no source information.")
+        }
+        choices.setAccessibilityLabel(title.stringValue)
+    }
+    @objc private func selectionChanged() { onStateChange?() }
+    override func commitAdvance() -> Bool {
+        guard source.record == nil else { return true }
+        let index = choices.indexOfSelectedItem
+        guard source.choose(index > 0 ? DeviceSourceGroup.allCases[index - 1] : nil) else {
+            status.stringValue = L10n.t("未能保存，请重试或按 Esc 退出引导。", "保存できません。再試行するか Esc で終了してください。", "Could not save. Retry or press Esc to leave onboarding.")
+            return false
+        }
+        rebuildStrings()
+        return true
+    }
 }
 
 // MARK: - Page 1 · Welcome
@@ -592,7 +650,7 @@ private final class HowItWorksPage: OnboardingPage {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func rebuildStrings() {
-        heading.stringValue = L10n.t("三步，答案到手", "3ステップで答えが手に入る", "Three beats to an answer")
+        heading.stringValue = L10n.t("截图飞入，自动提问", "画像から自動で質問", "Capture, fly in, ask")
 
         // Row 1: the hotkey as real keycaps inside the sentence.
         let prefix = L10n.t("按下", "", "Press")
@@ -603,17 +661,10 @@ private final class HowItWorksPage: OnboardingPage {
         layoutHotkeyStrip()
 
         let texts: [(String, String)] = [
-            ("", L10n.t("在任何题目界面按下快捷键 — 网页、PDF、题库软件都可以。",
-                        "問題が表示されている画面ならどこでも — Web、PDF、テストアプリでもOK。",
-                        "On any screen with a question — web pages, PDFs, quiz apps, anything.")),
-            (L10n.t("屏幕被轻轻读取", "画面をそっと読み取る", "Your screen is read, gently"),
-             L10n.t("NotchSPI 截取当前画面并识别其中的题目，全程无需复制粘贴。",
-                    "NotchSPI が画面を読み取り問題を認識。コピー&ペーストは不要。",
-                    "NotchSPI captures the screen and reads the question — no copy-paste, ever.")),
-            (L10n.t("答案从刘海流出", "ノッチから答えが流れ出す", "The answer flows from the notch"),
-             L10n.t("讲解在刘海下方逐字浮现，且不会出现在录屏和共享画面里。",
-                    "解説がノッチの下に少しずつ現れます。画面録画や共有には映りません。",
-                    "The explanation streams in below the notch — invisible to recordings and screen shares.")),
+            ("", CaptureAction.single.detail),
+            (CaptureAction.multiple.title + "  " + Settings.displayString(CaptureAction.multiple.combo),
+             CaptureAction.multiple.detail + L10n.t("第 2 张起，成功截图 4 秒后自动提问；捕获时暂停。", "2枚目から4秒後に自動送信。キャプチャ中は一時停止。", "From image two, send after 4 seconds; capture pauses the timer.")),
+            (CaptureAction.personality.title + "  " + Settings.displayString(CaptureAction.personality.combo), CaptureAction.personality.detail),
         ]
         for (i, d) in descLabels.enumerated() { d.stringValue = texts[i].1 }
         for (i, t) in titleLabels.enumerated() { t.stringValue = texts[i + 1].0 }
@@ -711,9 +762,9 @@ private final class PermissionPage: OnboardingPage {
     override func rebuildStrings() {
         heading.stringValue = L10n.t("允许 NotchSPI 看到屏幕", "画面へのアクセスを許可", "Let NotchSPI see your screen")
         body.stringValue = L10n.t(
-            "为了读取屏幕上的题目，需要你在系统设置里勾选「屏幕录制」权限。截图只在按下快捷键的那一刻发生，用完即删。",
-            "画面上の問題を読み取るために、システム設定で「画面収録」の許可が必要です。撮影はショートカットを押した瞬間だけ。使用後は即座に削除されます。",
-            "To read questions on your screen, macOS asks you to allow Screen Recording. A capture happens only at the moment you press the hotkey, and is deleted right after use.")
+            "读取题目需要系统的「屏幕录制」权限。查题时会读取所选画面；保存的题目材料会临时保留，你可以随时清空题组。",
+            "問題を読み取るには「画面収録」の許可が必要です。解答時に選択した画面を読み取り、保存した問題資料は一時的に保持されます。問題セットはいつでも消去できます。",
+            "Reading questions requires Screen Recording permission. NotchSPI captures the selected content when solving. Saved question materials are kept temporarily; you can clear the question set at any time.")
         refreshStatus(animated: false)
     }
 
@@ -784,7 +835,7 @@ private final class PermissionPage: OnboardingPage {
 // MARK: - Page 4 · The gift  (claim-to-reveal)
 
 /// The welcome gift is *earned by a tap*: a sealed brand medallion the player opens to reveal a
-/// randomly-granted free balance (server-side at registration; the odometer uses the register
+/// one-time fixed free balance (server-side at registration; the odometer uses the register
 /// response). Opening plays a charge→break→count-up→burst sequence. "Continue" stays hidden until
 /// the claim gesture — Back and Esc always work, and the gate flips on the tap, never on the network.
 /// The medallion itself is the hero and the button; the capsule below is a quiet secondary path.
@@ -822,6 +873,7 @@ private final class GiftPage: OnboardingPage {
 
         odometer.color = .white
         odometer.fontSize = 58
+        odometer.minColumns = 1
         odometer.frame = NSRect(x: 40, y: sealCenterY - 58, width: size.width - 80, height: 116)
         odometer.isHidden = true
         addSubview(odometer)
@@ -852,9 +904,9 @@ private final class GiftPage: OnboardingPage {
             ? L10n.t("你的见面礼", "はじめましての贈りもの", "A little welcome gift")
             : L10n.t("见面礼已到账", "贈りもの、届きました", "Your gift has arrived")
         odometer.suffix = L10n.t("题", "問", "questions")
-        caption.stringValue = L10n.t("轻点领取 · 随机欢迎额度",
-                                     "タップして受け取る · ランダムなウェルカム枠",
-                                     "Tap to claim · a random welcome quota")
+        caption.stringValue = L10n.t("轻点查看 · 一次性免费额度",
+                                     "タップして確認 · 一度だけの無料枠",
+                                     "Tap to reveal · your one-time free grant")
         claimButton.title = L10n.t("领取见面礼", "受け取る", "Claim gift")
         layoutClaimButton()
         if phase == .revealed { note.stringValue = noteText() }
@@ -948,9 +1000,9 @@ private final class GiftPage: OnboardingPage {
         }
     }
 
-    /// Bigger gift, bigger celebration — a small, honest delight (100 ⇒ ~0.7, 180 ⇒ ~1.2).
+    /// Keep the celebration proportional to the fixed grant while still honoring legacy balances.
     private func burstIntensity(for n: Int) -> CGFloat {
-        let t = max(0, min(1, CGFloat(n - 100) / 80))
+        let t = max(0, min(1, CGFloat(n - 20) / 20))
         return 0.72 + t * 0.5
     }
 
@@ -1054,21 +1106,21 @@ private final class TryItPage: OnboardingPage {
 
     override func rebuildStrings() {
         heading.stringValue = L10n.t("现在就试一题", "さっそく1問解いてみよう", "Try one right now")
-        card.setQuestion(L10n.t("解方程：x² − 5x + 6 = 0",
-                                "解きなさい：x² − 5x + 6 = 0",
-                                "Solve: x² − 5x + 6 = 0"))
+        card.setQuestion(L10n.t("在网页或 PDF 中打开一道题",
+                                "Web や PDF で問題を開く",
+                                "Open a question in a web page or PDF"))
         keycaps.keys = KeycapChipView.caps(from: Settings.shared.captureCombo)
         let w = keycaps.intrinsicContentSize.width
         keycaps.frame = NSRect(x: (OnboardingViewController.pageSize.width - w) / 2, y: 214,
                                width: w, height: keycaps.intrinsicContentSize.height)
         // One instruction, one line. The notch demonstrates the rest itself.
         hint.stringValue = stuck
-            ? L10n.t("按了没反应？这个组合键多半被其他 App 占用了。",
+            ? L10n.t("尚未收到快捷键。需要时可在设置中检查绑定。",
                      "反応がありませんか？このキーの組み合わせは他のアプリが使用中の可能性があります。",
-                     "Nothing happening? Another app is probably holding this combo.")
-            : L10n.t("按下组合键。",
-                     "このキーを押すだけ。",
-                     "Press these keys.")
+                     "No shortcut received yet. You can check its binding in Settings.")
+            : L10n.t("打开题目窗口，按快捷键自动捕获已配置目标。",
+                     "問題を開き、キーを押すと設定した対象を自動キャプチャ。",
+                     "Open your question and press these keys to capture the configured target.")
         hint.textColor = stuck ? NSColor.systemOrange : NSColor(white: 1, alpha: 0.65)
         subHint.stringValue = stuck
             ? L10n.t("在刘海右侧的 ⚙ 设置 →「快捷键」里换一个组合键，然后回来再试。",
@@ -1079,18 +1131,7 @@ private final class TryItPage: OnboardingPage {
                      "Use it on any question. In ⚙ Settings you can change hotkeys or turn off anonymous reliability sharing.")
     }
 
-    // The hotkey capture must SEE the sample question: SCScreenshotManager honors sharingType
-    // and drops `.none` windows from the shot (verified empirically), so this page — and only
-    // this page — opts the onboarding window back into capture. Both hooks are needed: when
-    // this is the START page, pageDidAppear runs during loadView where `window` is still nil,
-    // and viewDidMoveToWindow covers that moment.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if superview != nil { window?.sharingType = .readWrite }
-    }
-
     override func pageDidAppear() {
-        window?.sharingType = .readWrite
         rebuildStrings()
         // A dead hotkey cannot be detected up front: RegisterEventHotKey happily succeeds while
         // another app keeps the keystroke, and macOS offers no way to ask who won. So this page
@@ -1117,13 +1158,10 @@ private final class TryItPage: OnboardingPage {
     deinit { stuckTimer?.invalidate() }
 }
 
-/// A quiet surface printing a real sample question on the page, so the very first hotkey press
-/// has something to answer. Pairs with TryItPage.pageDidAppear flipping the window to
-/// `.readWrite`: without that, SCK would drop the (normally capture-hidden) onboarding window
-/// from the shot and the model would never see this question.
+/// A quiet first-run instruction card. The app itself remains excluded from capture.
 private final class DemoQuestionCard: NSView {
     override var isFlipped: Bool { true }
-    private let question = onboardingLabel(size: 22, weight: .semibold, color: .white)
+    private let question = onboardingLabel(size: 18, weight: .semibold, color: .white)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

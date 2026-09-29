@@ -9,7 +9,8 @@ struct HotkeyCombo: Equatable {
 
 final class Settings {
     static let shared = Settings()
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.d = defaults }
 
     var cli: String {
         get { d.string(forKey: "cli") ?? "codex" }
@@ -17,7 +18,7 @@ final class Settings {
     }
 
     var depth: String {
-        get { d.string(forKey: "depth") ?? "guided" }
+        get { d.string(forKey: "depth") ?? "brief" }
         set { d.set(newValue, forKey: "depth") }
     }
 
@@ -219,15 +220,28 @@ final class Settings {
     // event after RegisterEventHotKey "succeeds" — an invisible-by-design dead combo.
     private static let defaultAutoMode = HotkeyCombo(keyCode: UInt32(kVK_ANSI_0), modifiers: UInt32(cmdKey | shiftKey), label: "0")
 
+    func migrateScreenshotHotkeys() {
+        guard !d.bool(forKey: "screenshotHotkeysV1") else { return }
+        let defaults = [("capture", Self.defaultCapture), ("context", Self.defaultContext),
+                        ("personality", Self.defaultPersonality)]
+        let reserved = defaults.map { $0.1 }
+        for (role, fallback) in defaults + [("toggle", Self.defaultToggle), ("autoMode", Self.defaultAutoMode)] {
+            let saved = combo(role, fallback)
+            if reserved.contains(where: { $0.keyCode == saved.keyCode && $0.modifiers == saved.modifiers }),
+               saved.keyCode != fallback.keyCode || saved.modifiers != fallback.modifiers {
+                setCombo(role, fallback)
+            }
+        }
+        d.set(true, forKey: "screenshotHotkeysV1")
+    }
+
     /// Capture-and-tutor (学习辅导). Bound to its own hotkey so the mode is chosen by which key
     /// you press — no manual mode switching.
     var captureCombo: HotkeyCombo {
         get { combo("capture", Settings.defaultCapture) }
         set { setCombo("capture", newValue) }
     }
-    /// Capture-and-ask WITH context (上下文追问): the new shot travels together with the last
-    /// ⌘⇧1 shot (see `ScreenshotCacheManager`), so a question whose passage scrolled away can
-    /// still be answered.
+    /// Multi-image intake. Keep the persisted "context" key so custom bindings survive updates.
     var contextCombo: HotkeyCombo {
         get { combo("context", Settings.defaultContext) }
         set { setCombo("context", newValue) }
