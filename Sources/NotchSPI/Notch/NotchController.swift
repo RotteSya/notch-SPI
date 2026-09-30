@@ -63,7 +63,7 @@ final class NotchController: NSObject {
     private var settingsController: MainSettingsWindowController?
     private let onboardingProgress: NotchOnboardingProgress
     private var onboardingAttempt = false
-    private var onboardingShowedPrivacy = false
+    private var onboardingPermissionReturnStep: NotchOnboardingStep = .practice
     private var onboardingPermissionTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var observedPersonalityScope: PersonalitySessionScope?
@@ -163,8 +163,10 @@ final class NotchController: NSObject {
         view.onboarding.onBack = { [weak self] in self?.backOnboarding() }
         view.onboarding.onDismiss = { [weak self] in self?.dismissOnboarding() }
         view.onboarding.onSecondary = { [weak self] in self?.onboardingSecondary() }
-        view.onboarding.onPrivacy = { [weak self] in self?.openSettings(page: .general) }
         panel.onCancelOnboarding = { [weak self] in self?.dismissOnboarding() }
+        panel.onMoveOnboardingFocus = { [weak view] backwards in
+            view?.onboarding.moveKeyboardFocus(backwards: backwards)
+        }
         notchView = view
         panel.contentView = view
         panel.setFrame(frame(expanded: false), display: true)
@@ -278,6 +280,17 @@ final class NotchController: NSObject {
         presentOnboarding(model.onboardingStep ?? (onboardingProgress.isComplete ? .welcome : onboardingProgress.resumeStep))
     }
 
+    private func restoreOnboardingControlFocus() {
+        // Restore a disabled primary's focus only if the guide still owns the keyboard.
+        // If the user has moved to their practice page, leave that page focused.
+        guard model.onboardingStep != nil, panel.isKeyWindow else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.model.onboardingStep != nil, self.panel.isKeyWindow,
+                  self.notchView.onboarding.primary.isEnabled else { return }
+            self.panel.makeFirstResponder(self.notchView.onboarding.primary)
+        }
+    }
+
     private func presentOnboarding(_ step: NotchOnboardingStep) {
         collapseWork?.cancel()
         visible = true; panel.orderFrontRegardless()
@@ -298,6 +311,7 @@ final class NotchController: NSObject {
                 let granted = self.onboardingHasAccess
                 if granted != self.model.onboardingPermissionGranted {
                     self.model.onboardingPermissionGranted = granted
+                    self.resizeToFit()
                     if granted { self.notchView.screenshotLanded() }
                 }
             }
@@ -306,7 +320,7 @@ final class NotchController: NSObject {
 
     private func setOnboardingStep(_ step: NotchOnboardingStep) {
         model.onboardingStep = step
-        if step == .permission { onboardingShowedPrivacy = true }
+        model.onboardingPracticeFailed = false
         model.onboardingPermissionGranted = onboardingHasAccess
         onboardingProgress.save(step)
         collapseWork?.cancel()
@@ -316,6 +330,8 @@ final class NotchController: NSObject {
 
     #if DEBUG
     var qaOnboardingPermission: (() -> Bool)?
+    var qaOpenPracticePage: ((URL) -> Bool)?
+    func qaOnboardingSecondary() { onboardingSecondary() }
     func qaPresentOnboarding(_ step: NotchOnboardingStep) { presentOnboarding(step) }
     func qaAdvanceOnboarding() { advanceOnboarding() }
     func qaBackOnboarding() { backOnboarding() }
@@ -342,29 +358,43 @@ final class NotchController: NSObject {
 
     private func advanceOnboarding() {
         switch model.onboardingStep {
-        case .welcome: setOnboardingStep(.permission)
+        case .welcome:
+            onboardingPermissionReturnStep = .practice
+            setOnboardingStep(onboardingHasAccess ? .practice : .permission)
         case .permission:
-            if onboardingHasAccess { setOnboardingStep(.capture) }
+            if onboardingHasAccess { setOnboardingStep(onboardingPermissionReturnStep) }
             else if model.onboardingPermissionDenied {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
             } else {
                 let granted = requestOnboardingPermission()
                 model.onboardingPermissionGranted = granted
                 model.onboardingPermissionDenied = !granted
+                resizeToFit()
                 if granted { notchView.screenshotLanded() }
             }
+        case .practice: openOnboardingPractice()
         case .capture: screenshotTapped(mode: "tutor", multiple: false)
         case .working:
             guard !running, intakeTask == nil else { return }
             screenshotTapped(mode: "tutor", multiple: false)
-        case .success: finishNotchOnboarding(collapse: false)
+        case .success: finishNotchOnboarding(collapse: true)
         case nil: break
         }
     }
 
     private func backOnboarding() {
-        if model.onboardingStep == .permission { setOnboardingStep(.welcome) }
-        else if model.onboardingStep == .capture { setOnboardingStep(.permission) }
+        if model.onboardingStep == .permission {
+            setOnboardingStep(onboardingPermissionReturnStep == .capture ? .capture : .welcome)
+        }
+        else if model.onboardingStep == .practice {
+            onboardingPermissionReturnStep = .practice
+            setOnboardingStep(onboardingHasAccess ? .welcome : .permission)
+        }
+        else if model.onboardingStep == .capture { setOnboardingStep(.practice) }
+        else if model.onboardingStep == .working, !running, intakeTask == nil {
+            cancelScreenshotRound()
+            setOnboardingStep(.capture)
+        }
     }
 
     private func dismissOnboarding() {
@@ -377,12 +407,11 @@ final class NotchController: NSObject {
     private func finishNotchOnboarding(collapse: Bool) {
         guard model.onboardingStep == .success else { return }
         onboardingProgress.complete()
-        if onboardingShowedPrivacy {
-            UserDefaults.standard.set(OfficialAPI.appVersion, forKey: ProductTelemetry.noticeKey)
-        }
+        // Collapse the existing composition before removing the guide. The view keeps its
+        // presentation for this morph; the next expansion uses the ordinary answer layout.
+        if collapse { setExpanded(false) }
         endOnboardingPresentation()
-        notchView.screenshotLanded()
-        if collapse { setExpanded(false) } else { resizeToFit(); scheduleCollapseAfterAnswer() }
+        if !collapse { resizeToFit(); scheduleCollapseAfterAnswer() }
     }
 
     private func endOnboardingPresentation() {
@@ -395,8 +424,7 @@ final class NotchController: NSObject {
 
     private func onboardingSecondary() {
         switch model.onboardingStep {
-        case .permission: setOnboardingStep(.capture)
-        case .capture: openOnboardingPractice()
+        case .permission: setOnboardingStep(onboardingPermissionReturnStep)
         case .working: openSettings(page: .general)
         default: break
         }
@@ -407,7 +435,7 @@ final class NotchController: NSObject {
         // real capturable material, with no prefilled answer or special model path.
         let html = """
         <!doctype html><html lang="en"><meta charset="utf-8"><title>NotchSPI · Practice</title>
-        <style>body{margin:0;background:#f0f1ee;color:#202922;font:20px -apple-system,sans-serif}main{max-width:680px;margin:140px auto;padding:48px;background:white;border-radius:24px}small{font-size:12px;letter-spacing:3px;color:#677369}h1{font-size:34px;letter-spacing:-1px}p{line-height:1.7}.answers{padding:24px;background:#f5f6f3;border-radius:12px;font-size:23px}footer{font-size:14px;color:#647168;line-height:1.7;margin-top:32px}</style>
+        <style>body{margin:0;background:#f0f1ee;color:#202922;font:20px -apple-system,sans-serif}main{max-width:680px;margin:270px auto 64px;padding:48px;background:white;border-radius:24px}small{font-size:12px;letter-spacing:3px;color:#677369}h1{font-size:34px;letter-spacing:-1px}p{line-height:1.7}.answers{padding:24px;background:#f5f6f3;border-radius:12px;font-size:23px}footer{font-size:14px;color:#647168;line-height:1.7;margin-top:32px}</style>
         <main><small>NOTCHSPI / PRACTICE 01</small><h1>A question. One shortcut.</h1>
         <p>A train travels 120 km in 2 hours.<br>What is its average speed?</p>
         <div class="answers">A. 40 km/h &nbsp; B. 60 km/h &nbsp; C. 80 km/h</div>
@@ -416,12 +444,17 @@ final class NotchController: NSObject {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("NotchSPI-Practice.html")
         do {
             try html.write(to: file, atomically: true, encoding: .utf8)
-            if !NSWorkspace.shared.open(file) { throw CocoaError(.fileReadUnknown) }
-            // Keep the learning checkpoint; free the browser's content and keyboard focus.
-            setExpanded(false)
+            let opened: Bool
+            #if DEBUG
+            opened = qaOpenPracticePage?(file) ?? NSWorkspace.shared.open(file)
+            #else
+            opened = NSWorkspace.shared.open(file)
+            #endif
+            guard opened else { throw CocoaError(.fileReadUnknown) }
+            setOnboardingStep(.capture)
         } catch {
-            model.captureFeedback = L10n.t("练习页未能打开。可打开自己的题目后重试。", "練習ページを開けません。別の問題を開いてください。", "Could not open the practice page. Open your own question to continue.")
-            setOnboardingStep(.working)
+            model.onboardingPracticeFailed = true
+            resizeToFit()
         }
     }
 
@@ -434,6 +467,7 @@ final class NotchController: NSObject {
         } else if model.status != .error && model.resultState != .retake {
             model.captureFeedback = L10n.t("未收到可用回答，请检查连接后重新捕获。", "有効な回答がありません。接続を確認して再度キャプチャしてください。", "No usable answer arrived. Check your connection and capture again.")
         }
+        restoreOnboardingControlFocus()
     }
 
     /// Push the active mode + persona name into the model.
@@ -1237,6 +1271,7 @@ final class NotchController: NSObject {
         if model.onboardingStep != nil {
             guard mode == "tutor", !multiple else { return }
             if !onboardingHasAccess {
+                onboardingPermissionReturnStep = .capture
                 setOnboardingStep(.permission)
                 return
             }
@@ -1271,7 +1306,8 @@ final class NotchController: NSObject {
         if model.onboardingStep != nil {
             onboardingAttempt = true
             setOnboardingStep(.working)
-            panel.resignKey()
+            // ScreenCapture excludes the panel independently of keyboard focus. Keep
+            // the guide's key window so Tab/Escape still work while the request runs.
         }
         let generation = intakeGeneration
         let target = Settings.shared.captureTarget
@@ -1466,7 +1502,7 @@ final class NotchController: NSObject {
 
     private func expandedCardHeight() -> CGFloat {
         if let step = model.onboardingStep {
-            guard step.showsLiveContent else { return step.height }
+            guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
             let width = expandedWidth - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                 presentation: NotchType.presentation(for: model), width: width)
@@ -2581,6 +2617,7 @@ final class NotchController: NSObject {
         if model.mode == "personality" { model.captureFeedback = msg }
         resizeToFit()
         endRun()
+        restoreOnboardingControlFocus()
         pinned = false
         if !hovering {
             let delay = Appearance.collapseDelay

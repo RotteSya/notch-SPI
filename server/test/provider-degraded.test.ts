@@ -60,7 +60,7 @@ test('a capture is refused and costs nothing', async () => {
   assert.equal(res.status, 503);
   const body = (await res.text()) as string;
   assert.doesNotMatch(body, /questions_charged/, 'a refused capture must never report a charge');
-  assert.doesNotMatch(body, /mock 模式/, 'the mock placeholder must never reach a paying client');
+  assert.doesNotMatch(body, /event:\s*delta/, 'a refused capture must never stream an answer');
 
   const acct = (await (
     await fetch(`${base}/v1/account`, { headers: { authorization: `Bearer ${token}` } })

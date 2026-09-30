@@ -15,6 +15,18 @@ func onboardingReduceMotion() -> Bool {
     return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 }
 
+/// Slow the real display-linked / layer transitions for visual inspection. No release override.
+func onboardingMotionDuration(_ seconds: TimeInterval) -> TimeInterval {
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1",
+       let raw = ProcessInfo.processInfo.environment["NSPI_QA_MOTION_SCALE"],
+       let scale = Double(raw), scale.isFinite {
+        return seconds * min(8, max(1, scale))
+    }
+    #endif
+    return seconds
+}
+
 // MARK: - Primary / secondary capsule button
 
 /// A capsule action button on the dark aurora field. `.primary` is a flat accent fill that
@@ -33,6 +45,7 @@ final class GlowButton: NSControl {
         }
     }
     var onClick: (() -> Void)?
+    var ignoresRepeatedClicks = false
 
     private var hovering = false {
         didSet { if hovering != oldValue { needsDisplay = true } }
@@ -61,11 +74,19 @@ final class GlowButton: NSControl {
     override func isAccessibilityEnabled() -> Bool { isEnabled }
     override func accessibilityPerformPress() -> Bool {
         guard isEnabled, isActionable, !isHiddenOrHasHiddenAncestor else { return false }
+        if ignoresRepeatedClicks {
+            window?.makeKey()
+            window?.makeFirstResponder(self)
+            setDepressed(true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075) { [weak self] in self?.setDepressed(false) }
+        }
         onClick?()
         return true
     }
     override func keyDown(with event: NSEvent) {
-        if [UInt16(36), 49, 76].contains(event.keyCode) { _ = accessibilityPerformPress() }
+        if [UInt16(36), 49, 76].contains(event.keyCode) {
+            if !ignoresRepeatedClicks || !event.isARepeat { _ = accessibilityPerformPress() }
+        }
         else { super.keyDown(with: event) }
     }
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return super.becomeFirstResponder() }
@@ -91,16 +112,29 @@ final class GlowButton: NSControl {
     /// Press spring: squash around the button's own center (matrix-baked so the default AppKit
     /// anchor point can't drift it), release with a lively settle.
     private func setDepressed(_ down: Bool) {
-        guard isActionable, let layer else { return }
+        guard (!down || isActionable), let layer else { return }
         var m = CATransform3DIdentity
         if down {
             let c = CGPoint(x: bounds.midX, y: bounds.midY)
             m = CATransform3DTranslate(m, c.x, c.y, 0)
-            m = CATransform3DScale(m, 0.955, 0.955, 1)
+            let scale: CGFloat = ignoresRepeatedClicks ? 0.982 : 0.955
+            m = CATransform3DScale(m, scale, scale, 1)
             m = CATransform3DTranslate(m, -c.x, -c.y, 0)
         }
         if onboardingReduceMotion() {
+            layer.removeAnimation(forKey: "press")
+            layer.transform = CATransform3DIdentity
+            needsDisplay = true
+            return
+        }
+        if ignoresRepeatedClicks {
+            let feedback = CABasicAnimation(keyPath: "transform")
+            feedback.fromValue = NSValue(caTransform3D: layer.presentation()?.transform ?? layer.transform)
+            feedback.toValue = NSValue(caTransform3D: m)
+            feedback.duration = down ? 0.075 : 0.16
+            feedback.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
             layer.transform = m
+            layer.add(feedback, forKey: "press")
             return
         }
         let s = CASpringAnimation(keyPath: "transform")
@@ -129,9 +163,9 @@ final class GlowButton: NSControl {
             let fill = hovering
                 ? (NotchPalette.accent.blended(withFraction: 0.35, of: NotchPalette.accentHi) ?? NotchPalette.accent)
                 : NotchPalette.accent
-            fill.setFill()
+            (isEnabled ? fill : NSColor(white: 1, alpha: 0.07)).setFill()
             capsule.fill()
-            textColor = NSColor(srgbRed: 0.04, green: 0.05, blue: 0.10, alpha: 1)
+            textColor = isEnabled ? NSColor(srgbRed: 0.04, green: 0.05, blue: 0.10, alpha: 1) : NotchPalette.secondary
         case .secondary:
             NSColor(white: 1, alpha: hovering ? 0.12 : 0.06).setFill()
             capsule.fill()
@@ -173,14 +207,19 @@ final class GlowButton: NSControl {
 
     override func mouseEntered(with event: NSEvent) { if isActionable { hovering = true } }
     override func mouseExited(with event: NSEvent) { hovering = false; pressed = false }
-    override func mouseDown(with event: NSEvent) { if isActionable { pressed = true } }
+    override func mouseDown(with event: NSEvent) {
+        if isActionable {
+            if ignoresRepeatedClicks { window?.makeFirstResponder(self) }
+            pressed = true
+        }
+    }
     override func mouseDragged(with event: NSEvent) {
         pressed = isActionable && bounds.contains(convert(event.locationInWindow, from: nil))
     }
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
         pressed = false
-        if inside { _ = accessibilityPerformPress() }
+        if inside && (!ignoresRepeatedClicks || event.clickCount <= 1) { _ = accessibilityPerformPress() }
     }
 }
 

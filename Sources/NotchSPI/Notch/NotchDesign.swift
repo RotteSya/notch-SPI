@@ -52,6 +52,13 @@ enum NotchMotion {
     /// Only for expanding — collapsing is a quiet exhale where a bounce would read as flippant.
     static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-6.0 * t) * cos(5.2 * t) }
 
+    /// A quiet start and stop gives guide content time to leave before the container contracts.
+    static func guideClose(_ t: CGFloat) -> CGFloat {
+        let cube = t * t * t
+        let polynomial = t * (t * 6 - 15) + 10
+        return cube * polynomial
+    }
+
     /// The original quiet out-cubic (collapse direction, and the opacity channel).
     static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
 }

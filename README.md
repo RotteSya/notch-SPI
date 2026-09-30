@@ -2,7 +2,7 @@
 
 A native macOS **notch-based AI study tutor** for Apple Silicon. A hotkey captures the
 problem on screen and a Dynamic Island-style panel **streams a tutoring explanation**.
-Walk onboarding, claim a **random welcome quota**, and start answering. UI in
+Complete onboarding and start answering with your account's available quota. UI in
 **简体中文 / 日本語 / English**.
 
 The notch panel and NotchSPI's own windows are excluded from **software** screen capture
@@ -18,8 +18,16 @@ the physical display.
 
 ```sh
 ./scripts/bootstrap.sh
-./scripts/dev.sh
+./scripts/run-local.sh
 ```
+
+This builds the current macOS app and opens it with your saved service and account.
+Fresh installs use the official service. Quit any running NotchSPI or QA copy first.
+
+For isolated UI development, use `./scripts/onboarding-qa.sh --mock` (onboarding)
+or `./scripts/dev.sh` (general development). Both use a local mock with fixed answers
+and temporary credentials; they cannot answer arbitrary questions. Normal builds
+use the configured provider throughout onboarding and daily use.
 
 Onboarding asks for **Screen Recording** permission.
 

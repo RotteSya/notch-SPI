@@ -30,7 +30,16 @@ final class NotchPanel: NSPanel {
 
     var onboardingActive = false
     var onCancelOnboarding: (() -> Void)?
+    var onMoveOnboardingFocus: ((Bool) -> Void)?
     override var canBecomeKey: Bool { onboardingActive }
+    override func keyDown(with event: NSEvent) {
+        // A busy primary button can relinquish first responder to the window. Tab must
+        // still reach the guide after it becomes available again.
+        if onboardingActive, event.keyCode == 48,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            onMoveOnboardingFocus?(event.modifierFlags.contains(.shift))
+        } else { super.keyDown(with: event) }
+    }
     override func cancelOperation(_ sender: Any?) {
         if onboardingActive { onCancelOnboarding?() } else { super.cancelOperation(sender) }
     }

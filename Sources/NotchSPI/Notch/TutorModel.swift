@@ -8,6 +8,11 @@ import AppKit
 @MainActor
 final class TutorModel: ObservableObject {
     @Published var onboardingStep: NotchOnboardingStep?
+    @Published var onboardingPracticeFailed = false
+    var onboardingContentHeight: CGFloat? {
+        guard let step = onboardingStep else { return nil }
+        return step.height
+    }
     @Published var onboardingPermissionGranted = false
     @Published var onboardingPermissionDenied = false
 

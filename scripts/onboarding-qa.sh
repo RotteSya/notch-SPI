@@ -2,6 +2,18 @@
 # Build and run the real onboarding against an isolated, key-free local mock service.
 # Does not replace /Applications/NotchSPI.app or use its defaults/account/observation journal.
 set -euo pipefail
+
+# This is a UI fixture, not a usable tutor. Require an explicit opt-in so the
+# canned practice answer cannot be mistaken for the normal application.
+if [[ "${1:-}" != "--mock" ]]; then
+  echo "Usage: $0 --mock [client arguments]" >&2
+  echo "UI-only fixture: all questions receive the same canned answer." >&2
+  echo "For normal use with the configured service: ./scripts/run-local.sh" >&2
+  exit 2
+fi
+shift
+echo "Starting MOCK onboarding preview: fixed answers, temporary account."
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 QA_PORT="${NSPI_ONBOARDING_PORT:-18929}"
@@ -28,6 +40,7 @@ cat > "$QA_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>com.rottesya.notchspi.onboarding-qa</string>
 <key>CFBundleExecutable</key><string>NotchSPI</string>
 <key>CFBundleName</key><string>NotchSPI Guide QA</string>
+<key>CFBundleDisplayName</key><string>NotchSPI Mock QA</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>NSHighResolutionCapable</key><true/>

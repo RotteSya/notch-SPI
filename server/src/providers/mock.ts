@@ -12,9 +12,9 @@ export class MockProvider implements Provider {
     onDelta: (text: string) => void,
     signal: AbortSignal,
   ): Promise<Usage> {
-    const answer =
-      '这是官方服务的示例回答（mock 模式）。真实部署时会由服务端配置的模型生成。' +
-      '题目已收到，正在按步骤讲解……';
+    // Match the bundled onboarding practice question; keep development metadata out of
+    // the answer surface. This remains a canned local fixture, not image recognition.
+    const answer = '答案：B，60 km/h。平均速度 = 路程 ÷ 时间 = 120 ÷ 2 = 60 km/h。';
     const chunks = answer.match(/.{1,8}/gu) ?? [answer];
     for (const chunk of chunks) {
       if (signal.aborted) break;

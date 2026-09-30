@@ -13,6 +13,103 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(tween.value, 0)
     }
 
+    @MainActor func testPrimaryTargetStaysFixedAcrossLanguagesStepsAndPractice() {
+        let language = L10n.setting
+        defer { L10n.setting = language }
+        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 420))
+        var anchor: NSRect?
+        for locale in [AppLanguage.zhHans, .ja, .en] {
+            L10n.setting = locale
+            for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
+                view.update(step: step, granted: true, denied: false, failed: false)
+                view.layoutSubtreeIfNeeded()
+                if let anchor { XCTAssertEqual(view.primary.frame, anchor) }
+                else { anchor = view.primary.frame }
+                XCTAssertGreaterThanOrEqual(view.primary.frame.width, view.primary.intrinsicContentSize.width)
+                XCTAssertFalse(view.primary.isHidden)
+            }
+        }
+    }
+
+    @MainActor func testVisibleActionsDoNotOverlapIncludingFailureRecovery() {
+        let language = L10n.setting
+        defer { L10n.setting = language }
+        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 400))
+        for locale in [AppLanguage.zhHans, .ja, .en] {
+            L10n.setting = locale
+            for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
+                view.update(step: step, granted: false, denied: true, failed: true, practiceFailed: true)
+                view.layoutSubtreeIfNeeded()
+                let actions = view.subviews.filter { ($0 is GlowButton || $0 is NSPopUpButton) && !$0.isHidden }
+                for (index, action) in actions.enumerated() {
+                    for other in actions.dropFirst(index + 1) {
+                        XCTAssertFalse(action.frame.intersects(other.frame), "Overlapping actions in \(locale) / \(step)")
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor func testPracticeAndCaptureAreSeparateSizedSteps() {
+        let model = TutorModel()
+        model.onboardingStep = .practice
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.practice.height)
+        model.onboardingStep = .capture
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.capture.height)
+        XCTAssertEqual(NotchOnboardingStep.practice.height, NotchOnboardingStep.capture.height)
+        model.onboardingStep = .working
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.working.height)
+        model.onboardingStep = nil
+        XCTAssertNil(model.onboardingContentHeight)
+    }
+
+    @MainActor func testGuideButtonRejectsSecondMouseUpOfDoubleClick() {
+        let button = GlowButton(title: "Continue")
+        button.ignoresRepeatedClicks = true
+        button.frame = .init(x: 0, y: 0, width: 200, height: 40)
+        var activations = 0
+        button.onClick = { activations += 1 }
+        for count in [1, 2] {
+            let event = NSEvent.mouseEvent(with: .leftMouseUp, location: .init(x: 20, y: 20),
+                modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                eventNumber: count, clickCount: count, pressure: 0)!
+            button.mouseUp(with: event)
+        }
+        XCTAssertEqual(activations, 1)
+    }
+
+    @MainActor func testClosingPreservesCompositionAndInterruptedReopenUsesDailyLayout() async throws {
+        let model = TutorModel()
+        let panel = NotchPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let view = NotchView(model: model,
+            frameProvider: { NSRect(x: 0, y: 0, width: $0 ? 600 : 200, height: $0 ? 400 : 32) },
+            onHover: { model.expanded = $0 }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view
+        panel.orderFront(nil) // A display-linked transition requires a visible host window.
+        defer { panel.orderOut(nil) }
+        model.answer = "Retained answer"
+        model.onboardingStep = .success
+        model.expanded = true
+        try await Task.sleep(for: .milliseconds(400))
+        let guideFrame = view.onboarding.frame
+        XCTAssertFalse(view.onboarding.isHidden)
+        model.expanded = false
+        model.onboardingStep = nil
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertFalse(view.onboarding.isHidden)
+        XCTAssertEqual(view.onboarding.frame, guideFrame)
+        let click = NSEvent.mouseEvent(with: .leftMouseUp, location: .init(x: 100, y: 16),
+            modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 0)!
+        view.mouseUp(with: click)
+        XCTAssertTrue(model.expanded)
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertTrue(view.onboarding.isHidden)
+        XCTAssertEqual(model.answer, "Retained answer")
+        panel.orderOut(nil)
+    }
+
     private var suites: [String] = []
     private func defaults() -> UserDefaults {
         let name = "NotchOnboardingTests." + UUID().uuidString
@@ -32,6 +129,8 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertFalse(progress.shouldPresent)
         XCTAssertFalse(progress.isComplete)
         XCTAssertEqual(progress.resumeStep, .permission)
+        progress.save(.practice)
+        XCTAssertEqual(progress.resumeStep, .practice)
     }
 
     func testInterruptedCaptureRestoresInstructionsAndCompletionPersists() {
@@ -71,8 +170,74 @@ final class NotchOnboardingTests: XCTestCase {
         controller.qaPresentOnboarding(.capture)
         controller.qaAdvanceOnboarding()
         XCTAssertEqual(controller.model.onboardingStep, .permission)
+        controller.qaBackOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .capture)
         XCTAssertFalse(controller.model.screenshotCapturing)
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))
+    }
+
+    @MainActor func testExistingPermissionOpensPracticeBeforeCaptureAndBacktracksInOrder() {
+        let controller = NotchController(activateServices: false, onboardingDefaults: defaults())
+        defer { controller.prepareForTermination() }
+        controller.qaOnboardingPermission = { true }
+        controller.qaOpenPracticePage = { _ in true }
+        controller.qaPresentOnboarding(.welcome)
+        controller.qaAdvanceOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .practice)
+        XCTAssertFalse(controller.model.screenshotCapturing)
+        controller.qaBackOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .welcome)
+        controller.qaAdvanceOnboarding()
+        controller.qaAdvanceOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .capture)
+        controller.qaBackOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .practice)
+    }
+
+    @MainActor func testPracticeFailureStaysAtPracticeAndRetryAdvancesToCapture() {
+        let controller = NotchController(activateServices: false, onboardingDefaults: defaults())
+        defer { controller.prepareForTermination() }
+        controller.qaOnboardingPermission = { true }
+        var opens = 0
+        controller.qaOpenPracticePage = { _ in opens += 1; return opens > 1 }
+        controller.qaPresentOnboarding(.practice)
+        controller.qaAdvanceOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .practice)
+        XCTAssertTrue(controller.model.onboardingPracticeFailed)
+        controller.qaAdvanceOnboarding()
+        XCTAssertFalse(controller.model.onboardingPracticeFailed)
+        XCTAssertEqual(controller.model.onboardingStep, .capture)
+        XCTAssertEqual(opens, 2)
+        controller.qaBackOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .practice)
+        XCTAssertEqual(opens, 2)
+    }
+
+    @MainActor func testRetargetDuringExpansionAndReversalDoesNotJumpWindow() async throws {
+        let model = TutorModel()
+        let collapsed = NSRect(x: 200, y: 700, width: 200, height: 32)
+        var destination = NSRect(x: 0, y: 400, width: 600, height: 332)
+        let panel = NotchPanel(contentRect: collapsed)
+        let view = NotchView(model: model, frameProvider: { $0 ? destination : collapsed },
+            onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view
+        panel.orderFront(nil)
+        defer { panel.orderOut(nil) }
+        model.onboardingStep = .welcome; model.expanded = true
+        try await Task.sleep(for: .milliseconds(110))
+        let before = panel.frame
+        destination = NSRect(x: 0, y: 232, width: 600, height: 500)
+        view.retargetExpandedFrame(destination)
+        XCTAssertEqual(panel.frame, before, "Retarget itself must never rewrite the displayed frame")
+        try await Task.sleep(for: .milliseconds(25))
+        XCTAssertLessThan(abs(panel.frame.height - before.height), 130)
+        model.expanded = false
+        try await Task.sleep(for: .milliseconds(45))
+        model.expanded = true
+        try await Task.sleep(for: .milliseconds(450))
+        XCTAssertEqual(panel.frame.height, destination.height, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxY, collapsed.maxY, accuracy: 1)
     }
 
     @MainActor func testDismissRejectsLateSuccessAndRepeatedCaptureIsSingleFlight() async throws {
@@ -122,6 +287,7 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(controller.model.onboardingStep, .success)
         controller.qaAdvanceOnboarding()
         XCTAssertNil(controller.model.onboardingStep)
+        XCTAssertFalse(controller.model.expanded)
         XCTAssertTrue(d.bool(forKey: "onboardingDone"))
     }
 
@@ -168,6 +334,14 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertFalse(panel.firstResponder === view.primary)
         XCTAssertEqual((panel.firstResponder as? NSView)?.accessibilityRole(), .button)
         view.moveKeyboardFocus(backwards: true)
+        XCTAssertTrue(panel.firstResponder === view.primary)
+        // AppKit may restore the window responder while the busy primary is disabled.
+        panel.makeFirstResponder(nil)
+        panel.onMoveOnboardingFocus = { [weak view] in view?.moveKeyboardFocus(backwards: $0) }
+        let tab = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+            characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48)!
+        panel.keyDown(with: tab)
         XCTAssertTrue(panel.firstResponder === view.primary)
     }
 

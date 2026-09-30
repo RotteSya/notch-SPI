@@ -84,6 +84,11 @@ final class NotchView: NSView {
     // so a reversal or a mid-stream height change can never cause a frame jump.
     private var collapsedAnchor: NSRect = .zero
     private var expandedAnchor: NSRect = .zero
+    private var morphFrameOrigin: NSRect = .zero
+    private var morphProgressOrigin: CGFloat = 0
+    private var morphProgressTarget: CGFloat = 1
+    private var opacityProgressOrigin: CGFloat = 0
+    private var contentAlphaOrigin: CGFloat = 0
 
     // Streaming springs (see note 3 above), stepped by one shared ticker.
     private lazy var ticker = NotchTicker(host: self)
@@ -91,6 +96,7 @@ final class NotchView: NSView {
     private var scrollSpring = CriticalSpring()
 
     private var lastOnboardingStep: NotchOnboardingStep?
+    private var closingOnboarding = false
     private var wasExpanded = false
     private var lastPlateSize = CGSize.zero
     private var hovering = false
@@ -167,6 +173,12 @@ final class NotchView: NSView {
         geoMorph.onChange = { [weak self] g in
             self?.applyMorphFrame(g)
             self?.applyLayout()
+            if g == 0, let self, self.closingOnboarding {
+                // Retire the held composition only once it is fully behind the closed mask.
+                self.closingOnboarding = false
+                self.lastOnboardingStep = nil
+                self.refresh()
+            }
         }
         ticker.onTick = { [weak self] dt in self?.springTick(dt) }
     }
@@ -215,6 +227,17 @@ final class NotchView: NSView {
     // MARK: Refresh (content from model)
 
     private func refresh() {
+        if model.expanded {
+            if closingOnboarding { lastOnboardingStep = nil }
+            closingOnboarding = false
+        }
+        if !model.expanded, model.onboardingStep == nil, lastOnboardingStep != nil {
+            closingOnboarding = true
+            // Keep the visible answer, guide and tray together during the closing morph.
+            // Do not relayout them to the daily header behind a shrinking mask.
+            if wasExpanded { beginMorph(false) }
+            return
+        }
         let liveViews: [NSView] = [answerScroll, screenshotTray, materialStrip]
         let previousOrigins = Dictionary(uniqueKeysWithValues: liveViews.filter { !$0.isHidden }.map {
             (ObjectIdentifier($0), $0.frame.minY + ($0.layer?.presentation()?.transform.m42 ?? 0))
@@ -227,7 +250,8 @@ final class NotchView: NSView {
             onboarding.update(step: step, granted: model.onboardingPermissionGranted,
                               denied: model.onboardingPermissionDenied,
                               failed: !model.screenshotCapturing && model.status != .running && model.status != .streaming
-                                && (model.status == .error || !model.captureFeedback.isEmpty || model.resultState == .retake))
+                                && (model.status == .error || !model.captureFeedback.isEmpty || model.resultState == .retake),
+                              practiceFailed: model.onboardingPracticeFailed)
         }
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = model.onboardingStep != nil }
         let tint = roseTint()
@@ -328,30 +352,49 @@ final class NotchView: NSView {
         heightSpring.snap(current.height)
 
         let target: CGFloat = on ? 1 : 0
+        morphFrameOrigin = current
+        morphProgressOrigin = geoMorph.value
+        morphProgressTarget = target
+        opacityProgressOrigin = morph.value
+        contentAlphaOrigin = expandedContent.isHidden ? 0 : expandedContent.alphaValue
         if reduceMotion {
             morph.set(target); geoMorph.set(target)
         } else {
-            morph.animate(to: target, duration: NotchPalette.morphDuration)
-            geoMorph.ease = on ? NotchMotion.springSettle : NotchMotion.outCubic
-            geoMorph.animate(to: target, duration: NotchPalette.morphDuration)
+            let guiding = model.onboardingStep != nil || closingOnboarding
+            morph.ease = guiding ? { $0 } : NotchMotion.outCubic
+            morph.animate(to: target, duration: guiding ? onboardingMotionDuration(on ? 0.38 : 0.26) : NotchPalette.morphDuration)
+            if guiding && !on { geoMorph.ease = NotchMotion.guideClose }
+            else { geoMorph.ease = on && !guiding ? NotchMotion.springSettle : NotchMotion.outCubic }
+            geoMorph.animate(to: target, duration: guiding ? onboardingMotionDuration(on ? 0.38 : 0.26) : NotchPalette.morphDuration)
         }
     }
 
     private func applyMorphFrame(_ g: CGFloat) {
         guard collapsedAnchor.width > 0, expandedAnchor.width > 0, let window else { return }
-        window.setFrame(notchLerpRect(collapsedAnchor, expandedAnchor, max(0, g)), display: true)
+        let target = morphProgressTarget == 1 ? expandedAnchor : collapsedAnchor
+        let distance = morphProgressTarget - morphProgressOrigin
+        let progress = abs(distance) < 0.0001 ? 1 : (g - morphProgressOrigin) / distance
+        window.setFrame(notchLerpRect(morphFrameOrigin, target, max(0, progress)), display: true)
     }
 
     /// The expanded target grew or shrank (answer streaming in, font/size change). While the
     /// morph is in flight the frame lerp retargets naturally; once settled, the height spring
     /// carries the frame — line-by-line growth becomes one continuous glide.
     func retargetExpandedFrame(_ f: NSRect) {
+        guard let window else { expandedAnchor = f; return }
+        if geoMorph.isAnimating {
+            // A fast step change can resize the destination during the first expansion.
+            // Rebase at the *displayed* frame, so changing that destination cannot jump it.
+            morphFrameOrigin = window.frame
+            morphProgressOrigin = geoMorph.value
+        }
         expandedAnchor = f
-        guard wasExpanded, !geoMorph.isAnimating, let window else { return }
+        guard wasExpanded, !geoMorph.isAnimating else { return }
         if reduceMotion {
             window.setFrame(f, display: true)
             return
         }
+        heightSpring.stiffness = model.onboardingStep == nil ? 210 : 360 / pow(onboardingMotionDuration(1), 2)
         if heightSpring.settled { heightSpring.snap(window.frame.height) }
         heightSpring.target = f.height
         if !heightSpring.settled { ticker.start() }
@@ -499,7 +542,17 @@ final class NotchView: NSView {
 
         // Staging: the slab leads, the content follows — in by ~half the morph on the way out of
         // the notch, and gone in the first exhale of a collapse.
-        let ca = notchRamp(p, 0.38, 0.88)
+        let guiding = model.onboardingStep != nil || closingOnboarding
+        let ca: CGFloat
+        if guiding {
+            let distance = morphProgressTarget - opacityProgressOrigin
+            let local = abs(distance) < 0.0001 ? 1 : max(0, min(1, (p - opacityProgressOrigin) / distance))
+            let reveal = wasExpanded ? min(notchRamp(geoMorph.value, 0.94, 1), local)
+                : notchRamp(local, 0, 0.26)
+            let smooth = reveal * reveal * (3 - 2 * reveal)
+            ca = wasExpanded ? contentAlphaOrigin + (1 - contentAlphaOrigin) * smooth
+                : contentAlphaOrigin * (1 - smooth)
+        } else { ca = notchRamp(p, 0.38, 0.88) }
         expandedContent.alphaValue = ca
         expandedContent.isHidden = ca <= 0.001
 
@@ -518,6 +571,7 @@ final class NotchView: NSView {
     /// Lay the plate at its FINAL size — called when the target size or the content changes,
     /// never per morph tick, so the CTFramesetter cache stays warm and nothing re-wraps.
     private func layoutPlate(_ size: CGSize) {
+        guard !closingOnboarding else { return }
         let inset = NotchLayout.contentInsetH
         let cy = NotchLayout.headerRowCenterY
 
@@ -542,7 +596,7 @@ final class NotchView: NSView {
 
         // Answer fills below the header; the panel height is sized by the controller, so a long
         // answer scrolls within this fixed region and a short one hugs it.
-        let onboardingHeight = model.onboardingStep?.height ?? 0
+        let onboardingHeight = model.onboardingContentHeight ?? 0
         onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
         let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight : onboardingHeight
         let stripHeight = model.materialAreaHeight
@@ -586,6 +640,14 @@ final class NotchView: NSView {
     #endif
 
     // MARK: Hover
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseUp(with event: NSEvent) {
+        // Completion may collapse beneath a stationary pointer. Clicking must still
+        // reopen the retained answer without requiring a fresh mouse-enter event.
+        if !model.expanded { onHover(true) }
+        else { super.mouseUp(with: event) }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
