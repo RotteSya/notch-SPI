@@ -30,6 +30,6 @@ DEBUG `--qa-screenshot-demo` 配合 `NSPI_QA_EPHEMERAL=1`，在生产截图 I/O 
 
 验证结果：Swift 全量 336 项（4 项模型/环境条件跳过），0 失败；最终相关复验 22 项通过。Node 571/571、TypeScript 类型检查、arm64 Release 构建及 `git diff --check` 通过。`scripts/verify.sh` 在 repo-health 被历史归档中的 2270 个失效链接阻断，后续检查已单独执行；没有修改历史归档来掩盖失败。
 
-截图： [单图等待](../output/screenshot-shortcuts/one-image-waiting.jpeg)、[新版倒计时](../output/ux-alignment/09-countdown.jpeg)、[提交中](../output/screenshot-shortcuts/submitting.jpeg)、[本地 mock 结果](../output/screenshot-shortcuts/mock-result.jpeg)。
+截图： 单图等待（本地验证素材：`output/screenshot-shortcuts/one-image-waiting.jpeg`，不随源码发布）、新版倒计时（本地验证素材：`output/ux-alignment/09-countdown.jpeg`，不随源码发布）、提交中（本地验证素材：`output/screenshot-shortcuts/submitting.jpeg`，不随源码发布）、本地 mock 结果（本地验证素材：`output/screenshot-shortcuts/mock-result.jpeg`，不随源码发布）。
 
 Codex 应用不允许 Computer Use 访问，参考动画未核验。系统全局热键实际投递、真实屏幕选区后的整段动效、减少动态效果的实机观感、多显示器轨迹和正式模型回答质量尚需实机验收。Carbon 注册、默认映射与迁移由自动化测试覆盖。

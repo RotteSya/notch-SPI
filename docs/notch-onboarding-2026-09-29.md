@@ -46,14 +46,14 @@
 从 `native` 运行：
 
 ```sh
-./scripts/onboarding-qa.sh
+./scripts/onboarding-qa.sh --mock
 ```
 
 该脚本构建独立测试 bundle、启动内存 mock 服务，并强制展示引导。使用独立 UserDefaults 域、进程内凭证和 DEBUG 临时观测日志目录；退出测试应用时关闭自己启动的服务。可用 `NSPI_ONBOARDING_PORT` 更换本地端口。已有正式版仍可运行；若占用相同快捷键，使用引导内捕获按钮。
 
 ```sh
-NSPI_QA_REDUCE_MOTION=1 ./scripts/onboarding-qa.sh
-NSPI_QA_ONBOARDING_DENIED=1 ./scripts/onboarding-qa.sh
+NSPI_QA_REDUCE_MOTION=1 ./scripts/onboarding-qa.sh --mock
+NSPI_QA_ONBOARDING_DENIED=1 ./scripts/onboarding-qa.sh --mock
 ```
 
 直接运行发行构建会使用常规产品通道。测试应通过上述脚本启动，不应将 mock 结果表述为正式模型验收。旧 `OnboardingWindow.swift` 中已有改动予以保留，但应用启动不再实例化该窗口。

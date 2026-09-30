@@ -7,8 +7,8 @@
 ## 审查与修改
 
 1. **入口不一致（高优先级，代码及菜单可访问性树确认）**：旧“保存为材料”“选择题目区域”含义与新方案冲突，后者绕过统一截图入口。现在菜单首先提供截屏查题、多图查题、性格测试，结果区也进入同一流程。Carbon 独占快捷键投递；菜单只展示当前绑定，不注册第二套组合键。
-2. **状态含义不清（高优先级，实机截图确认）**：[旧等待态](../output/ux-alignment/02-before-waiting.jpeg)标题显示“就绪”。现在明确显示正在选区、等待下一张、即将提问、提交及完成；收集时隐藏上一轮答案及恢复操作，取消后展示下一步提示。
-3. **信息层级拥挤（中优先级，实机截图确认）**：[旧快捷键页](../output/ux-alignment/01-before-hotkeys.jpeg)将规则塞进操作标题。现在以操作名、说明、键帽分层；三种截图与辅助快捷键分组，完整解释 4 秒规则。共享 `CaptureAction` 文案、`CaptureStyle` 字体与几何、`NotchActionButton` 控件样式。
+2. **状态含义不清（高优先级，实机截图确认）**：旧等待态（本地验证素材：`output/ux-alignment/02-before-waiting.jpeg`，不随源码发布）标题显示“就绪”。现在明确显示正在选区、等待下一张、即将提问、提交及完成；收集时隐藏上一轮答案及恢复操作，取消后展示下一步提示。
+3. **信息层级拥挤（中优先级，实机截图确认）**：旧快捷键页（本地验证素材：`output/ux-alignment/01-before-hotkeys.jpeg`，不随源码发布）将规则塞进操作标题。现在以操作名、说明、键帽分层；三种截图与辅助快捷键分组，完整解释 4 秒规则。共享 `CaptureAction` 文案、`CaptureStyle` 字体与几何、`NotchActionButton` 控件样式。
 4. **截图反馈不足（中优先级，实机交互确认）**：卡片保留稳定顺序及编号，增加大图预览与文字“取消本轮”；副标题解释等待、选区暂停与重新计时。预览显示 Esc 关闭提示，计时继续；提交、开始选区或轮次变化时关闭预览，避免遮住后续流程。卡槽与飞行共用圆角，保留轻微弹簧、阴影和减少动态效果路径。
 5. **模式切换会清空刚开始的截图（高优先级，实测发现并修复）**：新模式开始截图前立即同步上下文范围，防止周期检查误判。新增测试将上下文检查安排在选区尚未完成时，双向验证查题与性格测试切换。
 6. **错误与引导恢复不完整（高优先级）**：错误详情显示在正文，不只依赖可能截断的标题；性格测试无效回复转换为恢复提示，原始协议仍保留在业务缓冲区。引导改为打开网页/PDF 的题目，不再要求截取会被应用自身排除规则隐藏的引导示例。
@@ -23,13 +23,13 @@
 
 | 路径 | 结果与证据 |
 | --- | --- |
-| 单图 | 合成截图经过真实裁剪/录入及本地请求，自动提交一次，测试余额 30→29；[结果](../output/ux-alignment/08-single-result.jpeg) |
-| 多图 | 实际点击菜单，第一张持续等待，第二张显示倒计时，结束后自动提交一次，余额 29→28；[倒计时](../output/ux-alignment/09-countdown.jpeg)、[结果](../output/ux-alignment/10-multiple-result.jpeg) |
-| 性格测试 | 共用录入后调用本地服务；mock 回复不包含有效选项，正确进入可恢复错误态；[错误恢复](../output/ux-alignment/11-personality-request.jpeg)。有效选项组合/原始协议隔离由现有测试覆盖 |
+| 单图 | 合成截图经过真实裁剪/录入及本地请求，自动提交一次，测试余额 30→29；结果（本地验证素材：`output/ux-alignment/08-single-result.jpeg`，不随源码发布） |
+| 多图 | 实际点击菜单，第一张持续等待，第二张显示倒计时，结束后自动提交一次，余额 29→28；倒计时（本地验证素材：`output/ux-alignment/09-countdown.jpeg`，不随源码发布）、结果（本地验证素材：`output/ux-alignment/10-multiple-result.jpeg`，不随源码发布） |
+| 性格测试 | 共用录入后调用本地服务；mock 回复不包含有效选项，正确进入可恢复错误态；错误恢复（本地验证素材：`output/ux-alignment/11-personality-request.jpeg`，不随源码发布）。有效选项组合/原始协议隔离由现有测试覆盖 |
 | 跨模式 | 实际通过菜单进行性格测试→查题→性格测试，均产生请求；回归测试覆盖选区期间的周期上下文检查 |
-| 取消与恢复 | 实际打开原生选区，Esc 取消无卡片；再次进入，方向键选区、Return 确认成功。点击“取消本轮”清空卡片并显示恢复提示；[取消](../output/ux-alignment/07-canceled.jpeg)、[选区](../output/ux-alignment/13-picker.jpeg) |
-| 预览与等待 | 实際点击预览，Esc 返回保持同一轮；[等待](../output/ux-alignment/05-after-waiting.jpeg)、[预览](../output/ux-alignment/06-preview.jpeg) |
-| 设置与引导 | 检查原生界面，文字完整可读；[设置](../output/ux-alignment/04-after-hotkeys.jpeg)、[引导](../output/ux-alignment/12-onboarding.jpeg) |
+| 取消与恢复 | 实际打开原生选区，Esc 取消无卡片；再次进入，方向键选区、Return 确认成功。点击“取消本轮”清空卡片并显示恢复提示；取消（本地验证素材：`output/ux-alignment/07-canceled.jpeg`，不随源码发布）、选区（本地验证素材：`output/ux-alignment/13-picker.jpeg`，不随源码发布） |
+| 预览与等待 | 实際点击预览，Esc 返回保持同一轮；等待（本地验证素材：`output/ux-alignment/05-after-waiting.jpeg`，不随源码发布）、预览（本地验证素材：`output/ux-alignment/06-preview.jpeg`，不随源码发布） |
+| 设置与引导 | 检查原生界面，文字完整可读；设置（本地验证素材：`output/ux-alignment/04-after-hotkeys.jpeg`，不随源码发布）、引导（本地验证素材：`output/ux-alignment/12-onboarding.jpeg`，不随源码发布） |
 
 - Swift 全量：341 项，4 项环境/样本条件跳过，0 失败。
 - 最终相关复验：10 项，0 失败；包括跨模式选区、顺序/单次提交、取消、旧答案隔离、性格协议与恢复提示隔离。

@@ -19,12 +19,12 @@ Swift 全量 344 项、4 项按环境条件跳过、0 失败；arm64 Release 构
 
 实机使用 TextEdit 新建的合成题目文档，真实 ScreenCaptureKit 捕获，提交由明确标识的 QA 回调模拟。已检查完整窗口预览、单张等待、双图倒计时及自动提交、性格入口直接捕获；没有鼠标选区步骤。首次实测的离屏枚举发生约 10 秒超时，保留真实失败反馈；改为优先可见窗口后成功。成功样本的捕获阶段开始→缩略图就绪约 0.57–0.93 秒；编码约 7–27 毫秒、素材录入约 3–24 毫秒。这是本机少量样本，不是性能分位数承诺。
 
-- [完整窗口预览](../output/direct-capture/full-window-preview.jpeg)
-- [单图自动提交后](../output/direct-capture/live-target.jpeg)
-- [多图单张等待](../output/direct-capture/one-waiting.jpeg)
-- [双图倒计时](../output/direct-capture/countdown.jpeg)
-- [双图自动提交](../output/direct-capture/multiple-result.jpeg)
-- [性格入口（飞行中已返回 QA 结果）](../output/direct-capture/personality.jpeg)
+- 完整窗口预览（本地验证素材：`output/direct-capture/full-window-preview.jpeg`，不随源码发布）
+- 单图自动提交后（本地验证素材：`output/direct-capture/live-target.jpeg`，不随源码发布）
+- 多图单张等待（本地验证素材：`output/direct-capture/one-waiting.jpeg`，不随源码发布）
+- 双图倒计时（本地验证素材：`output/direct-capture/countdown.jpeg`，不随源码发布）
+- 双图自动提交（本地验证素材：`output/direct-capture/multiple-result.jpeg`，不随源码发布）
+- 性格入口（飞行中已返回 QA 结果）（本地验证素材：`output/direct-capture/personality.jpeg`，不随源码发布）
 
 ## 验证边界
 
