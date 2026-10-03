@@ -9,6 +9,7 @@ final class ScreenshotTray: NSView {
     private let status = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let progress = NSView()
+    private let nextSlot = ScreenshotNextSlot()
     private lazy var cancel = NotchActionButton(title: L10n.t("取消本轮", "今回を取消", "Cancel round")) { [weak self] in self?.onCancel?() }
     private var ids: [UUID] = []
     private var assets: [ContextAsset] = []
@@ -21,12 +22,13 @@ final class ScreenshotTray: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        status.font = CaptureStyle.status
-        status.textColor = NotchPalette.primary
+        status.font = .systemFont(ofSize: 12, weight: .medium)
+        status.textColor = NotchPalette.secondary
+        status.lineBreakMode = .byTruncatingTail
         detail.font = CaptureStyle.caption
         detail.textColor = NotchPalette.secondary
         detail.maximumNumberOfLines = 2
-        addSubview(status); addSubview(detail); addSubview(cancel)
+        addSubview(status); addSubview(detail); addSubview(cancel); addSubview(nextSlot)
         progress.wantsLayer = true
         progress.layer?.backgroundColor = NotchPalette.accent.cgColor
         progress.layer?.cornerRadius = 1
@@ -48,11 +50,11 @@ final class ScreenshotTray: NSView {
                 let id = asset.id // The closure must not retain the asset's temporary file.
                 let card = NotchActionButton(title: "") { [weak self] in self?.showPreview(id) }
                 card.layer?.backgroundColor = NSColor(calibratedWhite: 0.14, alpha: 1).cgColor
-                card.layer?.borderWidth = 0.7
-                card.layer?.borderColor = NSColor.white.withAlphaComponent(0.22).cgColor
+                card.layer?.borderWidth = 0.5
+                card.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
                 card.shadow = NSShadow()
                 card.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.3)
-                card.shadow?.shadowBlurRadius = 9
+                card.shadow?.shadowBlurRadius = 3
                 card.shadow?.shadowOffset = NSSize(width: 0, height: -3)
                 let image = NSImageView(frame: NSRect(x: 4, y: 4, width: 96, height: 60))
                 image.imageScaling = .scaleProportionallyUpOrDown
@@ -76,7 +78,7 @@ final class ScreenshotTray: NSView {
             thumbnails[asset.id]?.image = images[asset.id]
             let wasHidden = card.alphaValue < 1
             card.alphaValue = flying.contains(asset.id) ? 0 : 1
-            if wasHidden, card.alphaValue == 1, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            if wasHidden, card.alphaValue == 1, !onboardingReduceMotion() {
                 let settle = CASpringAnimation(keyPath: "transform.scale")
                 settle.fromValue = 0.97; settle.toValue = 1
                 settle.mass = 1; settle.stiffness = 260; settle.damping = 26
@@ -84,20 +86,23 @@ final class ScreenshotTray: NSView {
                 card.layer?.add(settle, forKey: "landing")
             }
         }
-        if status.stringValue != message { status.stringValue = message }
-        status.toolTip = message
+        let title = cancellable
+            ? L10n.t("收集题目 · \(assets.count) / 4", "問題を収集中 · \(assets.count) / 4", "Collecting question · \(assets.count) / 4")
+            : L10n.t("题目 · \(assets.count) 张截图", "問題 · 画像\(assets.count)枚", "Question · \(assets.count) image\(assets.count == 1 ? "" : "s")")
+        if status.stringValue != title { status.stringValue = title }
+        nextSlot.isHidden = !cancellable || assets.count >= 4
         let hint: String
         if !notice.isEmpty { hint = notice }
-        else if capturing { hint = L10n.t("正在读取目标画面 · 可取消本轮", "対象をキャプチャ中 · 今回全体を取消できます", "Reading the target · you can cancel this round") }
-        else if cancellable && assets.count == 1 { hint = L10n.t("1 张不会自动提交 · 点击缩略图可预览", "1枚では自動送信しません · クリックでプレビュー", "One image waits indefinitely · click a thumbnail to preview") }
-        else if cancellable { hint = L10n.t("捕获期间暂停计时 · 新图录入后重新计时 4 秒", "追加のキャプチャ中は一時停止 · 画像追加後に4秒から再開", "Capture pauses the timer · each new image restarts 4 seconds") }
-        else { hint = L10n.t("点击缩略图查看本次截图", "クリックで今回の画像を確認", "Click a thumbnail to inspect this question's images") }
+        else if cancellable { hint = message }
+        else { hint = L10n.t("点击截图，查看完整题目", "画像をクリックして問題全体を確認", "Click an image to view the full question") }
         if detail.stringValue != hint { detail.stringValue = hint }
         detail.toolTip = hint
         detail.textColor = notice.isEmpty ? NotchPalette.secondary : .systemOrange
         cancel.isHidden = !cancellable
         fraction = CGFloat(max(0, min(1, (remaining ?? 0) / 4)))
         progress.alphaValue = capturing ? 0.35 : 1
+        progress.isHidden = !cancellable || remaining == nil
+        needsDisplay = true
         needsLayout = true
     }
 
@@ -140,20 +145,56 @@ final class ScreenshotTray: NSView {
 
     override func layout() {
         super.layout()
+        // Slots stay fixed through capture, countdown and submission. The flight and
+        // preview use the same aspect-fit geometry, including portrait source pages.
+        let gap = CaptureStyle.cardGap
+        let cardSize = NSSize(width: min(CaptureStyle.cardSize.width, max(0, (bounds.width - 3 * gap) / 4)),
+                              height: CaptureStyle.cardSize.height)
+        func slot(_ index: Int) -> NSRect {
+            NSRect(x: CGFloat(index) * (cardSize.width + gap), y: 30,
+                   width: cardSize.width, height: cardSize.height)
+        }
         for (index, id) in ids.enumerated() {
-            let slot = NSRect(origin: NSPoint(x: CGFloat(index) * (CaptureStyle.cardSize.width + CaptureStyle.cardGap) + 2, y: 3), size: CaptureStyle.cardSize)
             if let card = cards[id], let asset = assets.first(where: { $0.id == id }) {
-                card.frame = ScreenshotFlightGeometry.cardFrame(image: NSSize(width: asset.width, height: asset.height), in: slot)
+                card.frame = ScreenshotFlightGeometry.cardFrame(image: NSSize(width: asset.width, height: asset.height), in: slot(index))
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 4, dy: 4)
             }
         }
-        status.frame = NSRect(x: 2, y: 80, width: max(0, bounds.width - (cancel.isHidden ? 4 : 100)), height: 20)
-        cancel.frame = NSRect(x: bounds.width - 90, y: 78, width: 90, height: 26)
-        detail.frame = NSRect(x: 2, y: 104, width: max(0, bounds.width - 4), height: 28)
-        progress.frame = NSRect(x: 2, y: 134, width: max(0, bounds.width - 4) * fraction, height: 2)
+        nextSlot.frame = slot(min(ids.count, 3))
+        status.frame = NSRect(x: 0, y: 3, width: max(0, bounds.width - (cancel.isHidden ? 0 : 104)), height: 18)
+        cancel.frame = NSRect(x: max(0, bounds.width - 90), y: 0, width: 90, height: 24)
+        detail.frame = NSRect(x: 0, y: 120, width: bounds.width, height: 30)
+        progress.frame = NSRect(x: 0, y: 113, width: bounds.width * fraction, height: 2)
     }
+
 }
 
 private final class ScreenshotPreviewWindow: NSWindow {
     override func cancelOperation(_ sender: Any?) { close() }
+}
+
+/// A passive continuation cue; the configured capture shortcut remains in the status.
+@MainActor
+private final class ScreenshotNextSlot: NSView {
+    override var isFlipped: Bool { true }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+        NSColor.white.withAlphaComponent(0.025).setFill(); outline.fill()
+        NSColor.white.withAlphaComponent(0.16).setStroke()
+        outline.setLineDash([3, 4], count: 2, phase: 0); outline.lineWidth = 1; outline.stroke()
+        let center = bounds.midX
+        let plus = NSBezierPath()
+        plus.move(to: NSPoint(x: center - 5, y: 28)); plus.line(to: NSPoint(x: center + 5, y: 28))
+        plus.move(to: NSPoint(x: center, y: 23)); plus.line(to: NSPoint(x: center, y: 33))
+        NSColor.white.withAlphaComponent(0.4).setStroke(); plus.lineWidth = 1; plus.stroke()
+        let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
+        (L10n.t("下一张截图", "次の画像", "Next image") as NSString).draw(
+            in: NSRect(x: 4, y: 43, width: bounds.width - 8, height: 18),
+            withAttributes: [.font: CaptureStyle.caption, .foregroundColor: NotchPalette.secondary, .paragraphStyle: paragraph])
+    }
 }

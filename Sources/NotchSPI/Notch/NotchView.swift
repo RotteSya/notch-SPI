@@ -51,6 +51,7 @@ final class NotchView: NSView {
     // Interior light field (Metal) — the obsidian's living light, between body and content.
     private let luma = NotchLumaView()
     private var lastAnswerLen = 0
+    private var hadAnswerCard = false
     private var followBottom = false
     private var userDetached = false   // the user scrolled up to read; never yank them back down
 
@@ -105,6 +106,18 @@ final class NotchView: NSView {
     private var refreshPending = false
 
     private var reduceMotion: Bool { onboardingReduceMotion() }
+
+    #if DEBUG
+    func qaUseManualMorphClock() {
+        morph.qaManualTime = 0
+        geoMorph.qaManualTime = 0
+    }
+
+    func qaAdvanceMorph(by interval: CFTimeInterval) {
+        morph.qaAdvance(by: interval)
+        geoMorph.qaAdvance(by: interval)
+    }
+    #endif
 
     init(model: TutorModel,
          frameProvider: @escaping (Bool) -> NSRect,
@@ -292,9 +305,15 @@ final class NotchView: NSView {
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
             : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
-        // While streaming, keep the newest text in view (a long answer scrolls within its region).
-        if model.status == .streaming { followBottom = true }
-        else if model.status != .running { followBottom = false }
+        // Once FINAL arrives, keep the answer at the top instead of following its reasoning
+        // to the bottom. Respect a reader who deliberately scrolled away from the live tail.
+        let hasAnswerCard = attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
+        if hasAnswerCard && !hadAnswerCard && !userDetached {
+            scrollSpring.snap(0)
+            scrollTo(0)
+        }
+        hadAnswerCard = hasAnswerCard
+        followBottom = model.status == .streaming && !hasAnswerCard
         if model.answer.isEmpty {
             // A new turn resets the reading position instantly — no smooth scroll to the top.
             scrollSpring.snap(0)
@@ -427,8 +446,10 @@ final class NotchView: NSView {
     }
 
     private func scrollTo(_ y: CGFloat) {
-        answerScroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: max(0, y)))
-        answerScroll.reflectScrolledClipView(answerScroll.contentView)
+        answerScroll.performProgrammaticScroll {
+            answerScroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: max(0, y)))
+            answerScroll.reflectScrolledClipView(answerScroll.contentView)
+        }
         updateScrollFade()
     }
 
@@ -600,14 +621,17 @@ final class NotchView: NSView {
         onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
         let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight : onboardingHeight
         let stripHeight = model.materialAreaHeight
-        let trayHeight: CGFloat = model.showScreenshotTray ? CaptureStyle.trayHeight : 0
-        screenshotTray.frame = CGRect(x: inset, y: headerHeight, width: size.width - inset * 2, height: trayHeight)
-        materialStrip.frame = CGRect(x: inset, y: headerHeight + trayHeight,
-                                     width: size.width - inset * 2, height: model.materialStripHeight)
-        let top = headerHeight + stripHeight
-        let h = max(0, size.height - top - NotchLayout.answerBottomPad)
+        let trayHeight = model.screenshotTrayHeight
         let w = max(0, size.width - inset * 2)
+        let h = max(0, size.height - headerHeight - stripHeight - NotchLayout.answerBottomPad)
+        // Keep the question in place as collection becomes an answer.
+        let top = headerHeight + trayHeight
         answerScroll.frame = CGRect(x: inset, y: top, width: w, height: h)
+        materialStrip.frame = CGRect(x: inset, y: top + h,
+                                     width: w, height: model.materialStripHeight)
+        screenshotTray.frame = CGRect(x: inset,
+            y: headerHeight,
+            width: w, height: trayHeight)
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
         // long answer scrolls; the CTFramesetter measure matches what it draws.
@@ -697,9 +721,36 @@ private final class FlippedContainer: NSView {
 /// reading user (scroll up to detach; return to the tail to re-engage).
 private final class FollowScrollView: NSScrollView {
     var onUserScroll: (() -> Void)?
-    override func scrollWheel(with event: NSEvent) {
-        super.scrollWheel(with: event)
-        onUserScroll?()
+    private var programmaticScroll = false
+    private var boundsObserver: NSObjectProtocol?
+    private var lastOrigin = NSPoint.zero
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        contentView.postsBoundsChangedNotifications = true
+        boundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: contentView, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let origin = self.contentView.bounds.origin
+                guard origin != self.lastOrigin else { return }
+                self.lastOrigin = origin
+                if !self.programmaticScroll { self.onUserScroll?() }
+            }
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func performProgrammaticScroll(_ operation: () -> Void) {
+        programmaticScroll = true
+        defer { programmaticScroll = false }
+        operation()
+    }
+
+    deinit {
+        if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
     }
 }
 

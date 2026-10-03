@@ -1,5 +1,15 @@
 # NotchSPI 工程交接
 
+2026-10-02 待机提示统一：截屏、多图、性格、自动模式四行共用按键胶囊、间距和对齐；动态读取自定义快捷键，补齐自动模式“随画面变化连答，再按停止”，性格模式空态也保留完整指南。新增 ready 离线视觉入口，QA 脚本通过 SwiftPM 查询产物路径以适配新工具链。DEBUG 实际窗口确认四行完整无裁切；Command Line Tools 构建 Release 并通过 Developer ID 签名校验，已退出隔离 QA 和旧进程并启动正常 dist-qa 本机包。Xcode 许可未接受、备用 CLT 缺少 XCTest，Swift 测试未完成；repo-health 仍为既有 2270 条历史断链。证据与日志位于 output/idle-ui-2026-10-02/。未推送或发布。
+
+2026-09-30 多图解锁补验与本机更新完成：实际367项XCTest（363通过、4跳过、0失败），原动效时序测试原样通过。Computer Use获取36份约21秒窗口样本，核对1→4张收集、倒计时重置和自动提交后题图位置保持稳定；样本不是逐显示帧性能录制。随后退出隔离QA及旧运行包，以 `scripts/run-local.sh` 打包、Developer ID验签并启动当前正常Release构建 `dist-qa/NotchSPI.app`。确认唯一运行进程无QA参数、serviceMode为official、无baseURL覆盖；此次多图改动已进入本机运行版本。未替换Applications、未推送或发布。日志 `gallery-tests-resumed.log`、`gallery-run-local.log`，证据见[设计记录](docs/notch-answer-design-2026-09-30.md)。
+
+2026-09-30 多图跟进（覆盖上一轮附件栏方向）：用户明确要求多图同步重做、不要把截图收为附件。已撤销提交后的64 pt底栏，改为始终位于答案上方的156 pt题目图区；128×80 pt稳定槽位、12 pt间距，加入下一张位置，统一张数/取消/倒计时。新增1～4张提交前后槽位不移动、图区始终在答案上方及不越界的回归测试。arm64 Release构建与diff检查通过，4项布局测试通过；全套367项中4跳过、1项既有动效时序测试首次失败，随后原样单独复跑通过。实际离线QA已走通四图收集→自动提交→答案，检查横竖宽图混排与第二张原图预览。继续记录连续帧时Mac锁屏，等待用户解锁；隔离QA进程已退出，正常运行包尚未更新为这次多图改动。详见[设计与证据](docs/notch-answer-design-2026-09-30.md)。
+
+2026-09-30 用户本机测试：按用户要求以 `scripts/run-local.sh` 打包并启动当前设计改动的正常 Release 构建 `dist-qa/NotchSPI.app`；Developer ID签名校验通过，运行进程无QA/样例参数，保存的服务模式为official、无baseURL覆盖。账户与设置沿用，未替换Applications、未发布。构建启动日志见 `output/design-review-2026-09-30/run-local-latest.log`。
+
+2026-09-30 答案面板设计重排：答案上移、已提交截图改64 pt附件栏、完成引导压缩至116 pt；修复Core Text首段背景裁切，统一测量/绘制/命中内边距，并减少重复排版与逐帧字符映射。解锁补验又修复滚动条/辅助功能滚到末端时最后一行仍淡出的缺陷。实际366项测试（4跳过、0失败），原两项显示时钟动效测试已通过；arm64 Release通过，verify仍为既有2270历史断链。真实离线窗口核对中英日文、四图、长答案首尾、失败重试及减少动态效果的完成/收起/重开。预览包直接打开固定离线入口，结束后已退出；未替换Applications、未推送或发布。详见[实现、截图与验收边界](docs/notch-answer-design-2026-09-30.md)。
+
 2026-09-30 引导后始终返回练习答案：用户确认换题仍收到固定答案，定位为交付运行了 `onboarding-qa.sh` 的 localhost mock 包，并非正常服务对题目识别失败。已退出该QA和18929 mock服务，以 `package.sh qa` 构建、Developer ID签名并启动当前代码的正常本机包 `dist-qa/NotchSPI.app`，沿用原账户/服务，无QA参数。官方healthz报告DeepSeek，实机账户页面成功刷新原账户额度与累计使用量；未提交新题、未消耗真实额度，因此本轮不声称验证了真实换题答案。新增 `scripts/run-local.sh`，检查重复进程后打包并打开正常应用；mock引导脚本必须显式 `--mock`，展示名标注Mock QA，README区分正常使用与固定答案预览。Swift363项（4跳过、0失败）、arm64 Release及签名通过；完整verify仍止于既有2270历史断链。Release禁止软件截取自身窗口，本轮以实际AX操作和账户刷新核对运行状态，未提供伪造截图。日志见 `output/onboarding-handoff-2026-09-30/`。未覆盖/更新 `/Applications`，未推送或部署。
 
 2026-09-29 练习步骤文案跟进：删除“打开后，回到刘海完成第一次查题。”，隐藏对应底部说明区，并将练习步骤从248 pt收至220 pt，与截图查题步骤同高。

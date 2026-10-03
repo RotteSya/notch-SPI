@@ -17,3 +17,5 @@
 /scheduler/.dev.vars*
 /scheduler/.env*
 /.wrangler/
+
+/output/

@@ -22,8 +22,8 @@ enum NotchOnboardingStep: String {
         case .permission: return 248
         case .practice: return 220
         case .capture: return 220
-        case .working: return 194
-        case .success: return 194
+        case .working: return 148
+        case .success: return 116
         }
     }
 }
@@ -142,7 +142,7 @@ final class NotchOnboardingView: NSView {
         primary.isEnabled = step != .working || failed
         secondary.isHidden = step != .permission || granted
         secondary.isEnabled = true
-        heading.font = .systemFont(ofSize: step.showsLiveContent ? 22 : 24, weight: .semibold)
+        heading.font = .systemFont(ofSize: step.showsLiveContent ? 20 : 24, weight: .semibold)
         eyebrow.stringValue = step == .welcome ? "NOTCHSPI / " + t("开始", "はじめに", "START")
             : step == .permission ? t("准备 · 连接屏幕", "準備 · 画面に接続", "SETUP · SCREEN ACCESS")
             : step == .practice ? t("第一步 · 打开练习题", "ステップ1 · 練習問題", "STEP 1 · OPEN PRACTICE")
@@ -172,17 +172,18 @@ final class NotchOnboardingView: NSView {
             detail.stringValue = t("按快捷键，或点击右侧按钮。答案会在下方出现。", "ショートカット、または右のボタンを押してください。答えは下に表示されます。", "Use the shortcut or click the button. Your answer appears below.")
             primary.title = t("按下⌘⇧1 或 点击查题", "⌘⇧1 またはクリックで質問", "Press ⌘⇧1 or click to ask")
         case .working:
-            heading.stringValue = failed ? t("这次还没完成。再试一次。", "まだ完了していません。もう一度。", "Not there yet. Try again.") : t("正在查题，答案会在下方出现。", "回答中です。答えはこの下に。", "Working. Your answer appears below.")
+            heading.stringValue = failed ? t("再试一次。", "もう一度お試しください。", "Let’s try again.") : t("正在读懂这道题。", "問題を読み取っています。", "Reading your question.")
             detail.stringValue = failed ? t("查看下方原因，调整后重新捕获。", "下の内容を確認し、もう一度キャプチャ。", "Check the message below, then capture again.") : t("截图、回答，都留在这里。", "画像も答えも、ここに残ります。", "Your capture and answer stay here.")
             primary.title = failed ? t("重新捕获", "再キャプチャ", "Capture again") : t("正在查题…", "回答中…", "Working…")
             secondary.title = t("检查设置", "設定を確認", "Check settings")
             secondary.isHidden = !failed
         case .success:
-            heading.stringValue = t("答案到了。可以继续做题了。", "答えが届きました。次の問題へ。", "Answer ready. Keep going.")
+            heading.stringValue = t("第一份答案，已就位。", "最初の答えが届きました。", "Your first answer is ready.")
             detail.stringValue = t("下次用 \(Settings.displayString(Settings.shared.captureCombo)) 查题。点击刘海可再看答案。", "次の質問は \(Settings.displayString(Settings.shared.captureCombo))。ノッチをクリックすると答えを再表示。", "Use \(Settings.displayString(Settings.shared.captureCombo)) for the next question. Click the notch to revisit this answer.")
-            primary.title = t("完成，收起引导", "完了・ノッチに戻る", "Done — back to the notch")
+            primary.title = t("完成引导", "ガイドを完了", "Finish setup")
             closeButton.title = t("收起", "閉じる", "Collapse")
         }
+        primary.style = step.showsLiveContent ? .secondary : .primary
         primary.toolTip = step == .practice ? t("在默认浏览器中打开内置练习题", "デフォルトのブラウザで練習問題を開きます", "Open the built-in practice question in your default browser")
             : step == .capture ? t("截取当前目标并立即查题", "対象画面を撮影して質問します", "Capture the selected target and ask immediately") : nil
         needsLayout = true
@@ -208,6 +209,18 @@ final class NotchOnboardingView: NSView {
         illustration.frame = .init(x: inset, y: step == .welcome ? 164 : 218,
                                    width: w - inset * 2, height: 28)
         note.frame = .init(x: inset, y: step.height - 40, width: w - inset * 2, height: 36)
+        if step.showsLiveContent {
+            let inset = NotchLayout.contentInsetH
+            let actionWidth: CGFloat = 148
+            heading.frame = .init(x: inset, y: 44, width: max(0, w - inset * 2 - actionWidth - 16), height: 28)
+            primary.frame = .init(x: w - inset - actionWidth, y: 41, width: actionWidth, height: 34)
+            detail.frame = .init(x: inset, y: 82, width: w - inset * 2, height: 32)
+            detail.font = .systemFont(ofSize: 11.5)
+            back.frame = .init(x: inset - 10, y: 113, width: 62, height: 28)
+            secondary.frame = .init(x: inset + 62, y: 113, width: 150, height: 28)
+        } else {
+            detail.font = .systemFont(ofSize: 13)
+        }
         if step == .permission {
             detail.frame.size.height = 36
             note.frame = .init(x: inset, y: 198, width: w - inset * 2, height: 40)

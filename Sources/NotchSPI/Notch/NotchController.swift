@@ -22,6 +22,7 @@ final class NotchController: NSObject {
     func qaCancelScreenshotRound() { cancelRoundByUser() }
     func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
     func qaRefreshScreenshotLayout() { resizeToFit() }
+    func qaPinDesignPreview() { pinned = true }
     func qaSynchronizeCaptureScope() { synchronizeMaterialScope() }
     func qaTickScreenshotRound() { tickScreenshotRound() }
     func qaSetRequestRunning(_ value: Bool) { running = value }

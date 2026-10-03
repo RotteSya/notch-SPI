@@ -16,6 +16,7 @@ final class StreamingAnswerView: NSView {
     private var attributed = NSAttributedString()
     private var plain = ""
     private var births: [CFTimeInterval] = []   // one per Character of `plain`
+    private var utf16Births: [CFTimeInterval] = []
     private var isPlaceholder = true
     private var link: CADisplayLink?
     private var proxy: StreamProxy?
@@ -35,7 +36,7 @@ final class StreamingAnswerView: NSView {
     private static let rise: CGFloat = 3
     private static let layoutHeight: CGFloat = 100_000
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override var isFlipped: Bool { true }   // top-aligned text inside the scroll view
 
@@ -73,6 +74,7 @@ final class StreamingAnswerView: NSView {
     /// new one. Common prefix keeps its births; everything after is born now, staggered. The diff
     /// is on the PARSED string, so an in-progress Markdown token only re-births the streaming tail.
     func setAnswer(_ attr: NSAttributedString, isPlaceholder: Bool) {
+        guard !attributed.isEqual(to: attr) || isPlaceholder != self.isPlaceholder else { return }
         let new = attr.string
         let accessibilityChanged = new != plain || isPlaceholder != self.isPlaceholder
         defer {
@@ -86,6 +88,8 @@ final class StreamingAnswerView: NSView {
         if isPlaceholder {
             plain = new
             births = []                    // placeholder never animates
+            utf16Births = []
+            link?.isPaused = true
             needsDisplay = true
             return
         }
@@ -105,6 +109,7 @@ final class StreamingAnswerView: NSView {
         }
         plain = new
         births = next
+        utf16Births = Self.utf16BirthTable(plain: plain, births: births)
         needsDisplay = true
         updateLink()
     }
@@ -133,7 +138,19 @@ final class StreamingAnswerView: NSView {
         let size = CTFramesetterSuggestFrameSizeWithConstraints(
             setter, CFRange(location: 0, length: 0), nil,
             CGSize(width: width, height: .greatestFiniteMagnitude), nil)
-        return ceil(size.height)
+        return ceil(size.height) + topInset(attr) + bottomInset(attr)
+    }
+
+    // Core Text ignores paragraphSpacingBefore on the first line. Reserve the card's
+    // inset in view coordinates, shared by measurement, drawing, and hit testing.
+    private static func topInset(_ attr: NSAttributedString) -> CGFloat {
+        attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
+            ? NotchType.cardPadV + 1 : 0
+    }
+
+    private static func bottomInset(_ attr: NSAttributedString) -> CGFloat {
+        attr.length > 0 && attr.attribute(.nspiAnswerCard, at: attr.length - 1, effectiveRange: nil) != nil
+            ? NotchType.cardPadV + 1 : 0
     }
 
     private func currentFrame() -> CTFrame? {
@@ -152,14 +169,13 @@ final class StreamingAnswerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let frame = currentFrame() else { return }
         let now = CACurrentMediaTime()
-        let utf16Births = isPlaceholder ? [] : Self.utf16BirthTable(plain: plain, births: births)
 
         // CT lays out y-up; the view is flipped (y-down). Flip once, then shift the tall layout
         // path so the first line sits at the view's top.
         ctx.saveGState()
         ctx.translateBy(x: 0, y: bounds.height)
         ctx.scaleBy(x: 1, y: -1)
-        let shift = Self.layoutHeight - bounds.height
+        let shift = Self.layoutHeight - bounds.height + Self.topInset(attributed)
 
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
@@ -260,16 +276,16 @@ final class StreamingAnswerView: NSView {
         }
         guard a > 0.001 else { return }
 
-        let rect = CGRect(x: 0, y: bottom - NotchType.cardPadV,
-                          width: bounds.width, height: (top - bottom) + NotchType.cardPadV * 2)
+        let rect = CGRect(x: 0.5, y: bottom - NotchType.cardPadV,
+                          width: bounds.width - 1, height: (top - bottom) + NotchType.cardPadV * 2)
         let path = CGPath(roundedRect: rect, cornerWidth: NotchType.cardCorner,
                           cornerHeight: NotchType.cardCorner, transform: nil)
         ctx.saveGState()
         ctx.addPath(path)
-        ctx.setFillColor(NotchPalette.accent.withAlphaComponent(0.10 * a).cgColor)
+        ctx.setFillColor(NSColor(white: 1, alpha: 0.045 * a).cgColor)
         ctx.fillPath()
         ctx.addPath(path)
-        ctx.setStrokeColor(NotchPalette.accentHi.withAlphaComponent(0.22 * a).cgColor)
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.10 * a).cgColor)
         ctx.setLineWidth(1)
         ctx.strokePath()
         ctx.restoreGState()
@@ -289,7 +305,7 @@ final class StreamingAnswerView: NSView {
             var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
             let w = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
             // Flipped-view y of the baseline (see draw(): view y = layoutHeight - origin.y).
-            let baseline = Self.layoutHeight - origins[li].y
+            let baseline = Self.layoutHeight - origins[li].y + Self.topInset(attributed)
             rects.append(CGRect(x: origins[li].x, y: baseline - ascent,
                                 width: CGFloat(w), height: ascent + descent))
         }

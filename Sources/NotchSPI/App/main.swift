@@ -1,5 +1,14 @@
 import AppKit
 
+#if DEBUG
+// A double-clicked design fixture must stay isolated even without shell arguments.
+// Set the vault switch before any singleton or application delegate is initialized.
+if Bundle.main.bundleIdentifier == "com.rottesya.notchspi.design-qa" {
+    setenv("NSPI_QA_EPHEMERAL", "1", 1)
+    setenv("NSPI_VISUAL_QA", "1", 1)
+}
+#endif
+
 if CommandLine.arguments.contains("--print-objective-eval-prompt") {
     let prompt = Prompts.capturePrompt(
         mode: "tutor", depth: "brief", personaName: "", personaText: "", sessionContext: "",

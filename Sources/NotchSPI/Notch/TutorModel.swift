@@ -55,7 +55,11 @@ final class TutorModel: ObservableObject {
         return renderedAnswer
     }
     var materialStripHeight: CGFloat { showMaterialStrip ? (materials.isEmpty ? CaptureStyle.actionHeight : 74) : 0 }
-    var materialAreaHeight: CGFloat { (showScreenshotTray ? CaptureStyle.trayHeight : 0) + materialStripHeight }
+    var screenshotTrayHeight: CGFloat {
+        guard showScreenshotTray else { return 0 }
+        return CaptureStyle.trayHeight
+    }
+    var materialAreaHeight: CGFloat { screenshotTrayHeight + materialStripHeight }
     var captureHeading: String {
         if screenshotRoundActive {
             if screenshotCapturing { return L10n.t("正在捕获", "キャプチャ中", "Capturing") }

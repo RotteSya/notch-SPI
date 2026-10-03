@@ -1,9 +1,9 @@
 {
   "devDependencies": {
     "esbuild": "0.28.2",
-    "miniflare": "5.20260907.0-alpha",
+    "miniflare": "5.20261001.0-alpha",
     "typescript": "5.9.3",
-    "wrangler": "4.129.1"
+    "wrangler": "4.147.0"
   },
   "name": "notchspi-reaper",
   "version": "1.0.0",

@@ -8,7 +8,7 @@ private final class SourceProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let request = request
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
             Self.requests.append(request)
             let status = Self.status
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in

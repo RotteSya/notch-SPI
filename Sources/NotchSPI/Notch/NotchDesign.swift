@@ -76,10 +76,10 @@ enum NotchMetrics {
 /// (subview layout) so the measured panel height always matches the laid-out content.
 /// `cardHeight = headerHeight + answerHeight + answerBottomPad`.
 enum NotchLayout {
-    static let headerHeight: CGFloat = 40     // rose + mode + status + controls row (incl. gap below)
-    static let contentInsetH: CGFloat = 16    // horizontal padding for header & answer
-    static let answerBottomPad: CGFloat = 14  // padding under the answer
-    static let headerRowCenterY: CGFloat = 18 // vertical center of the header row within the card
+    static let headerHeight: CGFloat = 48     // rose + mode + status + controls row (incl. gap below)
+    static let contentInsetH: CGFloat = 20    // horizontal padding for header & answer
+    static let answerBottomPad: CGFloat = 16  // padding under the answer
+    static let headerRowCenterY: CGFloat = 23 // vertical center of the header row within the card
 }
 
 // MARK: - Small helpers
@@ -158,9 +158,9 @@ enum NotchType {
     static var answerFontSize: CGFloat { Appearance.answerFontSize }
 
     // Answer-card metrics, shared by the renderer (chip rect) and the measurer (extra height).
-    static let cardCorner: CGFloat = 10
-    static let cardPadV: CGFloat = 8       // chip inner padding above first / below last card line
-    static let cardPadH: CGFloat = 12      // text indent inside the full-width chip
+    static let cardCorner: CGFloat = 14
+    static let cardPadV: CGFloat = 14       // chip inner padding above first / below last card line
+    static let cardPadH: CGFloat = 16      // text indent inside the full-width chip
     static let cardGapAbove: CGFloat = 10  // clear air between the chip and what precedes it
 
     /// The idle hint, with the hotkey set as inline mini keycaps (the same "press this" language
@@ -168,17 +168,21 @@ enum NotchType {
     /// character carries `.nspiKeycap`; the streaming view draws the glass cap behind it, and the
     /// kerned separators reserve the air the caps need. One string drives measure AND render.
     static func placeholderLine(mode: String) -> NSAttributedString {
-        let combo = mode == "personality" ? Settings.shared.personalityCombo
-                                          : Settings.shared.captureCombo
-        let caps = KeycapChipView.caps(from: combo)
-        let (prefix, suffix) = mode == "personality"
-            ? (L10n.t("按", "", "Press"),
-               L10n.t("性格测试 · 自动作答", "で性格検査に自動回答", "to answer a personality test"))
-            : (L10n.t("按", "", "Press"),
-               L10n.t("截屏查题 · 自动提问", "でキャプチャして質問", "to capture & ask automatically"))
+        // Keep the complete shortcut guide visible after either capture mode.
+        let rows: [(HotkeyCombo, String)] = [
+            (Settings.shared.captureCombo,
+             L10n.t("截屏查题 · 截图后提问", "画像で質問 · キャプチャして送信", "Screenshot & ask · capture once")),
+            (Settings.shared.contextCombo,
+             L10n.t("多图查题 · 1 张等待，第 2 张起 4 秒提交", "複数画像で質問 · 1枚は待機、2枚目から4秒で送信", "Multiple images · 1 waits, 2+ send after 4s")),
+            (Settings.shared.personalityCombo,
+             L10n.t("性格测试 · 按当前人物像作答", "性格検査 · 現在の人物像で回答", "Personality test · use the active persona")),
+            (Settings.shared.autoModeCombo,
+             L10n.t("自动模式 · 随画面变化连答，再按停止", "自動モード · 画面の変化で連続回答、再押下で停止", "Auto mode · answer changes, press again to stop")),
+        ]
 
         let para = NSMutableParagraphStyle()
-        para.lineSpacing = 2
+        para.lineSpacing = 4
+        para.paragraphSpacing = 8
         para.paragraphSpacingBefore = 3          // headroom for the caps' vertical bleed
         para.firstLineHeadIndent = 5             // keeps a leading cap's chip clear of the clip edge
         let hint: [NSAttributedString.Key: Any] = [
@@ -199,24 +203,25 @@ enum NotchType {
             .nspiKeycap: true,
         ]
 
+        let shortcuts = rows.map { combo, _ -> NSAttributedString in
+            let shortcut = NSMutableAttributedString()
+            for capText in KeycapChipView.caps(from: combo) {
+                if shortcut.length > 0 { shortcut.append(NSAttributedString(string: " ", attributes: gap)) }
+                shortcut.append(NSAttributedString(string: capText, attributes: cap))
+            }
+            return shortcut
+        }
+        // Align every description even when the user customizes a shortcut.
+        let labelIndent = ceil(shortcuts.map { $0.size().width }.max() ?? 0) + 22
+        para.tabStops = [NSTextTab(textAlignment: .left, location: labelIndent)]
+        para.headIndent = labelIndent
         let out = NSMutableAttributedString()
-        if !prefix.isEmpty { out.append(NSAttributedString(string: prefix, attributes: hint)) }
-        for capText in caps {
-            if out.length > 0 { out.append(NSAttributedString(string: " ", attributes: gap)) }
-            out.append(NSAttributedString(string: capText, attributes: cap))
+        for (index, row) in rows.enumerated() {
+            if index > 0 { out.append(NSAttributedString(string: "\n", attributes: hint)) }
+            out.append(shortcuts[index])
+            out.append(NSAttributedString(string: "\t" + row.1, attributes: hint))
         }
-        if !suffix.isEmpty {
-            out.append(NSAttributedString(string: " ", attributes: gap))
-            out.append(NSAttributedString(string: suffix, attributes: hint))
-        }
-        if mode != "personality" {
-            let multi = Settings.displayString(Settings.shared.contextCombo)
-            out.append(NSAttributedString(string: L10n.t("\n\(multi) 多图查题 · 1 张等待，第二张起 4 秒提交", "\n\(multi) 複数画像 · 2枚目から4秒で送信", "\n\(multi) Multiple images · send 4s after image 2"), attributes: hint))
-        }
-        if mode != "personality" {
-            let key = Settings.displayString(Settings.shared.personalityCombo)
-            out.append(NSAttributedString(string: L10n.t("\n\(key) 性格测试 · 按当前人物像作答", "\n\(key) 性格検査 · 現在の人物像で回答", "\n\(key) Personality test · use the active persona"), attributes: hint))
-        }
+        out.addAttribute(.paragraphStyle, value: para, range: NSRange(location: 0, length: out.length))
         return out
     }
 
@@ -279,7 +284,7 @@ enum NotchType {
                     out.append(NSAttributedString(string: "\n"))
                     out.append(body(parse.working, dim: true))
                 }
-            } else { out.append(body(parse.working, dim: p.depth == "brief")) }
+            } else { out.append(body(parse.working, dim: p.depth == "brief", spacingBefore: cardPadV + 12)) }
         }
         if !parse.overflow.isEmpty {
             // Contract-violating trailing scratch: quiet notes below the card, clear of the
@@ -295,12 +300,7 @@ enum NotchType {
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
         let attr = answerString(answer, presentation: presentation)
-        var h = StreamingAnswerView.measure(attr, width: width)
-        // The chip's bottom inset extends below its last text line.
-        if attr.length > 0, attr.attribute(.nspiAnswerCard, at: attr.length - 1, effectiveRange: nil) != nil {
-            h += cardPadV
-        }
-        return h
+        return StreamingAnswerView.measure(attr, width: width)
     }
 
     // MARK: Composition pieces
@@ -336,14 +336,14 @@ enum NotchType {
         para.firstLineHeadIndent = cardPadH
         para.headIndent = cardPadH
         para.tailIndent = -cardPadH
-        para.paragraphSpacingBefore = (afterContent ? cardGapAbove : 0) + cardPadV
+        para.paragraphSpacingBefore = afterContent ? cardGapAbove + cardPadV : 0
 
         let out = NSMutableAttributedString()
         let labelFont = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-        out.append(NSAttributedString(string: L10n.answerCardLabel + "  ", attributes: [
+        out.append(NSAttributedString(string: L10n.answerCardLabel + "\u{2028}", attributes: [
             .font: labelFont,
             .foregroundColor: NotchPalette.accentHi.withAlphaComponent(0.92),
-            .kern: 1.4,
+            .kern: 0.8,
             .paragraphStyle: para,
             .nspiAnswerCard: "label",
         ]))
@@ -352,8 +352,8 @@ enum NotchType {
         let text = final.replacingOccurrences(of: "\n", with: "\u{2028}")
         out.append(inlineMarkdown(
             text,
-            baseFont: .systemFont(ofSize: answerFontSize + 4, weight: .semibold),
-            codeFont: .monospacedSystemFont(ofSize: answerFontSize + 3, weight: .medium),
+            baseFont: .systemFont(ofSize: answerFontSize + 10, weight: .medium),
+            codeFont: .monospacedSystemFont(ofSize: answerFontSize + 8, weight: .medium),
             color: NotchPalette.primary,
             para: para,
             extra: [.nspiAnswerCard: "answer"]))
@@ -363,6 +363,8 @@ enum NotchType {
     private static func toggleLine(expanded: Bool) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 2
+        para.paragraphSpacingBefore = cardPadV + 10
+        para.firstLineHeadIndent = 2
         let title = L10n.t("推理过程", "考え方", "Reasoning")
         return NSAttributedString(string: "\(expanded ? "▾" : "▸") \(title)", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
@@ -438,7 +440,31 @@ final class DisplayTween {
     var ease: (CGFloat) -> CGFloat = { t in 1 - pow(1 - t, 3) }
 
     /// True while a tween is in flight (used to hand the panel frame between morph and growth).
-    var isAnimating: Bool { link.map { !$0.isPaused } ?? false }
+    var isAnimating: Bool {
+        #if DEBUG
+        if qaManualTime != nil { return qaManualAnimating }
+        #endif
+        return link.map { !$0.isPaused } ?? false
+    }
+
+    private var currentTime: CFTimeInterval {
+        #if DEBUG
+        if let qaManualTime { return qaManualTime }
+        #endif
+        return CACurrentMediaTime()
+    }
+
+    #if DEBUG
+    // Exercise the actual morph at precise times without depending on display availability
+    // or Task.sleep scheduling on CI. Normal builds continue to use CADisplayLink.
+    var qaManualTime: CFTimeInterval?
+    private var qaManualAnimating = false
+    func qaAdvance(by interval: CFTimeInterval) {
+        guard let time = qaManualTime else { return }
+        qaManualTime = time + interval
+        if qaManualAnimating { step() }
+    }
+    #endif
 
     init(host: NSView, value: CGFloat = 0) {
         self.host = host
@@ -448,6 +474,9 @@ final class DisplayTween {
     /// Jump to a value immediately (Reduce Motion).
     func set(_ v: CGFloat) {
         link?.isPaused = true
+        #if DEBUG
+        qaManualAnimating = false
+        #endif
         value = v
         onChange?(v)
     }
@@ -459,7 +488,10 @@ final class DisplayTween {
         from = value
         to = target
         self.duration = max(0.001, duration)
-        startTime = CACurrentMediaTime()
+        startTime = currentTime
+        #if DEBUG
+        if qaManualTime != nil { qaManualAnimating = true; return }
+        #endif
         if link == nil {
             let p = TweenProxy(self)
             proxy = p
@@ -470,7 +502,7 @@ final class DisplayTween {
     }
 
     fileprivate func step() {
-        let elapsed = CACurrentMediaTime() - startTime
+        let elapsed = currentTime - startTime
         let t = min(1, max(0, elapsed / duration))
         value = from + (to - from) * ease(CGFloat(t))
         onChange?(value)
@@ -478,6 +510,9 @@ final class DisplayTween {
             value = to
             onChange?(value)
             link?.isPaused = true
+            #if DEBUG
+            qaManualAnimating = false
+            #endif
         }
     }
 

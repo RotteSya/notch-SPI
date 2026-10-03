@@ -13,18 +13,18 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(tween.value, 0)
     }
 
-    @MainActor func testPrimaryTargetStaysFixedAcrossLanguagesStepsAndPractice() {
+    @MainActor func testPrimaryTargetStaysFixedWithinSetupAndWithinLiveAnswerAcrossLanguages() {
         let language = L10n.setting
         defer { L10n.setting = language }
         let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 420))
-        var anchor: NSRect?
+        var anchors: [Bool: NSRect] = [:]
         for locale in [AppLanguage.zhHans, .ja, .en] {
             L10n.setting = locale
             for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
                 view.update(step: step, granted: true, denied: false, failed: false)
                 view.layoutSubtreeIfNeeded()
-                if let anchor { XCTAssertEqual(view.primary.frame, anchor) }
-                else { anchor = view.primary.frame }
+                if let anchor = anchors[step.showsLiveContent] { XCTAssertEqual(view.primary.frame, anchor) }
+                else { anchors[step.showsLiveContent] = view.primary.frame }
                 XCTAssertGreaterThanOrEqual(view.primary.frame.width, view.primary.intrinsicContentSize.width)
                 XCTAssertFalse(view.primary.isHidden)
             }
@@ -78,13 +78,20 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(activations, 1)
     }
 
-    @MainActor func testClosingPreservesCompositionAndInterruptedReopenUsesDailyLayout() async throws {
+    @MainActor func testClosingPreservesCompositionAndInterruptedReopenUsesDailyLayout() {
+        let previous = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"]
+        setenv("NSPI_QA_REDUCE_MOTION", "0", 1)
+        defer {
+            if let previous { setenv("NSPI_QA_REDUCE_MOTION", previous, 1) }
+            else { unsetenv("NSPI_QA_REDUCE_MOTION") }
+        }
         let model = TutorModel()
         let panel = NotchPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400))
         let view = NotchView(model: model,
             frameProvider: { NSRect(x: 0, y: 0, width: $0 ? 600 : 200, height: $0 ? 400 : 32) },
             onHover: { model.expanded = $0 }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
             onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        view.qaUseManualMorphClock()
         panel.contentView = view
         panel.orderFront(nil) // A display-linked transition requires a visible host window.
         defer { panel.orderOut(nil) }
@@ -213,7 +220,13 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(opens, 2)
     }
 
-    @MainActor func testRetargetDuringExpansionAndReversalDoesNotJumpWindow() async throws {
+    @MainActor func testRetargetDuringExpansionAndReversalDoesNotJumpWindow() {
+        let previous = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"]
+        setenv("NSPI_QA_REDUCE_MOTION", "0", 1)
+        defer {
+            if let previous { setenv("NSPI_QA_REDUCE_MOTION", previous, 1) }
+            else { unsetenv("NSPI_QA_REDUCE_MOTION") }
+        }
         let model = TutorModel()
         let collapsed = NSRect(x: 200, y: 700, width: 200, height: 32)
         var destination = NSRect(x: 0, y: 400, width: 600, height: 332)
@@ -221,6 +234,7 @@ final class NotchOnboardingTests: XCTestCase {
         let view = NotchView(model: model, frameProvider: { $0 ? destination : collapsed },
             onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
             onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        view.qaUseManualMorphClock()
         panel.contentView = view
         panel.orderFront(nil)
         defer { panel.orderOut(nil) }

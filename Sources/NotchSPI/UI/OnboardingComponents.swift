@@ -10,7 +10,10 @@ import QuartzCore
 /// verify the reduced experience without touching the user's system settings.
 func onboardingReduceMotion() -> Bool {
     #if DEBUG
-    if ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"] == "1" { return true }
+    if let override = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"] {
+        if override == "1" { return true }
+        if override == "0" { return false }
+    }
     #endif
     return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 }

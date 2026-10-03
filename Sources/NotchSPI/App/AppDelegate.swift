@@ -8,6 +8,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        let designArguments = CommandLine.arguments
+        let designIndex = designArguments.firstIndex(of: "--qa-design-review")
+        if Bundle.main.bundleIdentifier == "com.rottesya.notchspi.design-qa"
+            || (ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" && designIndex != nil) {
+            let scenario = designIndex.flatMap { $0 + 1 < designArguments.count ? designArguments[$0 + 1] : nil } ?? "answer"
+            NSApp.mainMenu = Self.makeMainMenu()
+            controller = DesignVisualQA.start(scenario)
+            return
+        }
+        #endif
         // MUST run before NotchController init: PersonaStore's migration writes persona keys
         // during controller construction, which would misclassify a fresh install as existing
         // (skipping onboarding and mis-defaulting the service mode to CLI).
