@@ -93,17 +93,19 @@ final class NotchOnboardingTests: XCTestCase {
             onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
         view.qaUseManualMorphClock()
         panel.contentView = view
-        panel.orderFront(nil) // A display-linked transition requires a visible host window.
+        panel.orderFront(nil)
         defer { panel.orderOut(nil) }
         model.answer = "Retained answer"
         model.onboardingStep = .success
         model.expanded = true
-        try await Task.sleep(for: .milliseconds(400))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.4)
         let guideFrame = view.onboarding.frame
         XCTAssertFalse(view.onboarding.isHidden)
         model.expanded = false
         model.onboardingStep = nil
-        try await Task.sleep(for: .milliseconds(40))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.04)
         XCTAssertFalse(view.onboarding.isHidden)
         XCTAssertEqual(view.onboarding.frame, guideFrame)
         let click = NSEvent.mouseEvent(with: .leftMouseUp, location: .init(x: 100, y: 16),
@@ -111,7 +113,8 @@ final class NotchOnboardingTests: XCTestCase {
             eventNumber: 0, clickCount: 1, pressure: 0)!
         view.mouseUp(with: click)
         XCTAssertTrue(model.expanded)
-        try await Task.sleep(for: .milliseconds(80))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.08)
         XCTAssertTrue(view.onboarding.isHidden)
         XCTAssertEqual(model.answer, "Retained answer")
         panel.orderOut(nil)
@@ -239,17 +242,21 @@ final class NotchOnboardingTests: XCTestCase {
         panel.orderFront(nil)
         defer { panel.orderOut(nil) }
         model.onboardingStep = .welcome; model.expanded = true
-        try await Task.sleep(for: .milliseconds(110))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.11)
         let before = panel.frame
         destination = NSRect(x: 0, y: 232, width: 600, height: 500)
         view.retargetExpandedFrame(destination)
         XCTAssertEqual(panel.frame, before, "Retarget itself must never rewrite the displayed frame")
-        try await Task.sleep(for: .milliseconds(25))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.025)
         XCTAssertLessThan(abs(panel.frame.height - before.height), 130)
         model.expanded = false
-        try await Task.sleep(for: .milliseconds(45))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.045)
         model.expanded = true
-        try await Task.sleep(for: .milliseconds(450))
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.45)
         XCTAssertEqual(panel.frame.height, destination.height, accuracy: 1)
         XCTAssertEqual(panel.frame.maxY, collapsed.maxY, accuracy: 1)
     }
