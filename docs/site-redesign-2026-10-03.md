@@ -1,5 +1,19 @@
 # 官网重构与本地验收 · 2026-10-03
 
+## 正式发布 · 22:54（Asia/Shanghai）
+
+用户确认两处文案修改后明确授权上线。本页下方为开发与本地验收记录，正式状态以本节为准。
+
+- 正式网址：https://notchspi-api.vercel.app/?lang=zh 。官网提交 `c6b19ff39959e0b844ef1816e9eaac69c6d5ac5c` 已推送 main。
+- 正式部署 `dpl_8CPzewPfCAqw49bdzZBYrW7tX1Xi`，候选地址 `notchspi-fbb8zqvhr-rottesyas-projects.vercel.app`；先使用 production 环境构建但不切域名，验证通过后 promote。
+- 实际部署采用线上原 API 源码 `5c6dfbf819eaaf3db05f9868839af954fbfd7b9d` 加入三个官网源码文件；保留当前 `vercel.json` 的 Git 自动部署关闭设置。没有带入 main 中尚未上线的其他服务端修改或依赖更新，没有修改项目环境变量、价格、数据库配置或 Stripe 配置。
+- 回退目标仍为先前生产部署 `dpl_A5L92kn48vnM74ijEtD8jRGZ7qHL`。源码及输入摘要保存在 `output/site-redesign-2026-10-03/release/source-manifest.json`。
+- 隔离候选类型检查、573/573 Node 测试及 Vercel Linux 远端构建通过。初次隔离归档缺少测试脚本和历史验收记录，补齐原始文件后通过，未改测试断言；它们和环境文件均不上传。
+- 正式根页面、SPI、阅读页面 × 中英日，共 9 条页面请求均 HTTP 200；两处确认文案已生效，定价依然为 0 / 300 / 800 / 2200 JPY，免费 30 题。候选和正式 health 与上线前相同（DeepSeek、Postgres、Stripe、webhook configured）。
+- 正式 `/dl` HTTP 200，3,777,064 字节，SHA-256 `4af9b77abd94fd954f453892c8ef04128b3b1f48666b119d9fe5e2d7d4dde8e2`，与 2.15 公证发布文件一致；`/update` 为 2.15。源码、测试及 tsconfig 请求保持 404。
+- Browser 已实际打开正式网址，核对新文案与演示切换，控制台无 error/warn；保留正式页面供用户查看。未提交题目、发起真实付款或改变扣费规则。
+- 原有 2270 条历史文档断链仍在，不声称仓库完整 verify 全绿。原生客户端无本次改动。
+
 ## 交付
 
 沿用 Fastify / TypeScript 服务端 HTML、日文默认及中英日语言协商；首页、`/spi`、`/reading-practice` 共用设计。无前端运行时、外部字体或新增依赖，保留原有 CSP 与静态产物白名单。
