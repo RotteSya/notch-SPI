@@ -39,8 +39,8 @@ test('GET / renders the Japanese site by default with live pricing and legal sec
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') ?? '', /text\/html/);
   const html = await res.text();
-  assert.match(html, /Mac の画面から、一問ずつ/);            // hero (ja default)
-  assert.match(html, /180 問ぶん無料|180問ぶん/);            // trial from config
+  assert.match(html, /問題は、そのまま。/);            // hero (ja default)
+  assert.match(html, /まずは 180 問/);            // trial from config
   assert.match(html, /¥800/);                               // live pack price
   assert.match(html, /特定商取引法に基づく表記/);            // JP commerce disclosure
   assert.match(html, /プライバシーとデータ利用/);            // privacy
@@ -61,20 +61,20 @@ test('the site never links a visitor to where the app is hosted or built', async
 
 test('?lang switches the site language; the JP disclosure stays present', async () => {
   const zh = await (await fetch(`${base}/?lang=zh`)).text();
-  assert.match(zh, /在 Mac 屏幕上，一次查清一道题/);
+  assert.match(zh, /题目在眼前/);
   assert.match(zh, /特定商取引法に基づく表記/);
   const en = await (await fetch(`${base}/?lang=en`)).text();
-  assert.match(en, /One question, right on your Mac/);
+  assert.match(en, /Keep your focus./);
   assert.match(en, /特定商取引法に基づく表記/);
 });
 
 test('Accept-Language negotiation picks zh/en; unknown falls back to ja', async () => {
   const zh = await (await fetch(`${base}/`, { headers: { 'accept-language': 'zh-CN,zh;q=0.9' } })).text();
-  assert.match(zh, /在 Mac 屏幕上，一次查清一道题/);
+  assert.match(zh, /题目在眼前/);
   const en = await (await fetch(`${base}/`, { headers: { 'accept-language': 'en-US,en;q=0.9' } })).text();
-  assert.match(en, /One question, right on your Mac/);
+  assert.match(en, /Keep your focus./);
   const fr = await (await fetch(`${base}/`, { headers: { 'accept-language': 'fr-FR' } })).text();
-  assert.match(fr, /Mac の画面から、一問ずつ/);
+  assert.match(fr, /問題は、そのまま。/);
 });
 
 test('resolveSiteLang: explicit query beats headers; header order respected', () => {
@@ -143,5 +143,34 @@ test('beta reading scope remains explicit and fixed30 pricing renders from the c
     const visibleCopy = page.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, ' ');
     assert.doesNotMatch(visibleCopy, /绝对隐身|完全不可见|100%|必ず正解|always correct|unlimited free/i);
     assert.match(page, /raysyadesu@gmail\.com/);
+  }
+});
+
+test('pack recommendations match the app purchase entry, with precise fractional unit prices', async () => {
+  const { formatUnitPrice } = await import('../src/site.ts');
+  const packs = [{id:'large',questions:1000,amountCents:2200},{id:'small',questions:100,amountCents:300},{id:'daily',questions:300,amountCents:800}];
+  assert.match(formatUnitPrice(packs[2]!, 'JPY', 'en'), /2\.67/);
+  assert.match(formatUnitPrice({id:'usd',questions:30,amountCents:500},'USD','en'), /0\.17/);
+  const page=renderLandingPage({packs,trialQuestions:30,currency:'JPY',lang:'en',aiProvider:'deepseek'});
+  assert.match(page, /class="pack recommended" data-pack-id="daily"/);
+  assert.match(page, /Top up button opens the 300-question pack/);
+  assert.match(page, /href="#purchase"/);
+  assert.match(page, /mailto:raysyadesu@gmail.com\?subject=/);
+  assert.doesNotMatch(page, /buy\.stripe\.com|checkout\.stripe\.com|device_token/);
+  assert.equal((page.match(/ · One-time payment/g)??[]).length,3);
+});
+
+test('demo is accessible without scripts and reduced motion is included in all languages', () => {
+  for(const lang of ['zh','ja','en'] as const){
+    const page=renderLandingPage({packs:[],trialQuestions:30,currency:'JPY',lang,aiProvider:'deepseek'});
+    assert.equal((page.match(/type="radio"/g)??[]).length,3);
+    assert.match(page,/id="demo-answer"[^>]*checked/);
+    assert.match(page,/<fieldset><legend>/);
+    assert.match(page,/prefers-reduced-motion:reduce/);
+    assert.match(page,/href="#main"/);
+    assert.doesNotMatch(page,/<script|onchange=|onclick=/);
+    const ids=[...page.matchAll(/ id="([^"]+)"/g)].map(m=>m[1]);
+    assert.equal(new Set(ids).size,ids.length);
+    for(const [,id] of page.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.includes(id),`missing ${id}`);
   }
 });
