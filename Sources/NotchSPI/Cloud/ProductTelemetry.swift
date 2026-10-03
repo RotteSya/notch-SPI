@@ -54,7 +54,6 @@ struct ProductTelemetryEvent: Codable, Equatable, Identifiable {
 final class ProductTelemetry {
     static let shared = ProductTelemetry()
     static let sharingKey = "telemetry.reliabilitySharingEnabled"
-    static let noticeKey = "telemetry.noticeShownVersion"
 
     private struct Batch: Encodable {
         let schemaVersion = 2

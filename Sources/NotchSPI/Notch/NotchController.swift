@@ -126,7 +126,6 @@ final class NotchController: NSObject {
         if activateServices {
             ClientConfigService.shared.refresh()
             ProductTelemetry.shared.flush()
-            showReliabilityNoticeIfNeeded()
         }
         refreshCLILabel()
         model.statusText = L10n.statusReady
@@ -2468,26 +2467,6 @@ final class NotchController: NSObject {
             return L10n.t("此题型需人工核对", "この形式は手動確認が必要です", "This question type needs a manual check")
         default:
             return L10n.t("建议核对", "要確認", "Check this answer")
-        }
-    }
-
-    private func showReliabilityNoticeIfNeeded() {
-        #if DEBUG
-        if CommandLine.arguments.contains("--qa-onboarding") { return }
-        #endif
-        let defaults = UserDefaults.standard
-        guard Settings.shared.onboardingDone,
-              defaults.string(forKey: ProductTelemetry.noticeKey) != OfficialAPI.appVersion else { return }
-        defaults.set(OfficialAPI.appVersion, forKey: ProductTelemetry.noticeKey)
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = L10n.t("匿名可靠性数据", "匿名の信頼性データ", "Anonymous reliability data")
-            alert.informativeText = L10n.t(
-                "可靠性共享会记录固定类型的完成状态、场景、耗时、操作和数据缺失，用于分析交付与使用情况，不包含截图、题目、答案或提示词。\n\n可在设置 → 通用中关闭。关闭后立即清空待传数据并停止记录行为，仅同步共享偏好；必要的计费记录仍会保留。已有开关设置会沿用。",
-                "信頼性データには、配信・利用状況を分析するための完了状態・用途・時間・操作とデータ欠落が含まれます。画像・問題・回答・プロンプトは含みません。\n\n設定→一般で停止できます。停止すると送信待ちデータを削除して行動の記録を止め、共有設定のみ同期します。必要な課金記録は保持します。現在の共有設定を引き継ぎます。",
-                "Reliability sharing records fixed completion states, profiles, timings, actions, and data gaps to understand delivery and usage. It excludes screenshots, questions, answers, and prompts.\n\nTurn it off in Settings → General to clear pending data and stop recording behavior. Only the sharing preference is then synced; required billing records remain. Your existing setting is preserved.")
-            alert.addButton(withTitle: L10n.t("知道了", "了解", "OK"))
-            alert.runModal()
         }
     }
 

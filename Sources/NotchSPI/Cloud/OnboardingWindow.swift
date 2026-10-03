@@ -415,7 +415,6 @@ final class OnboardingViewController: NSViewController {
 
     fileprivate func finish() {
         Settings.shared.onboardingDone = true
-        UserDefaults.standard.set(OfficialAPI.appVersion, forKey: ProductTelemetry.noticeKey)
         onFinished?()
         view.window?.close()
     }
