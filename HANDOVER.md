@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-10-03：2.14 / build 21 已推送 main 并正式发布，标签对应 `63439f3`。刘海引导、答案与多图布局、四项快捷键及自动模式提示已进入正式安装包。CI 10/10、干净工作树完整 verify、Swift 367项（4跳过、0失败）、Node 571项、调度器17项通过；Apple公证/装订/Gatekeeper通过，官方下载字节与产物一致，原始/update已返回2.14。修复既有依赖审计与动效测试环境问题；生产服务未部署。见[2.14发布记录](docs/release-2.14-2026-10-03.md)。
+
 2026-10-02 待机提示统一：截屏、多图、性格、自动模式四行共用按键胶囊、间距和对齐；动态读取自定义快捷键，补齐自动模式“随画面变化连答，再按停止”，性格模式空态也保留完整指南。新增 ready 离线视觉入口，QA 脚本通过 SwiftPM 查询产物路径以适配新工具链。DEBUG 实际窗口确认四行完整无裁切；Command Line Tools 构建 Release 并通过 Developer ID 签名校验，已退出隔离 QA 和旧进程并启动正常 dist-qa 本机包。Xcode 许可未接受、备用 CLT 缺少 XCTest，Swift 测试未完成；repo-health 仍为既有 2270 条历史断链。证据与日志位于 output/idle-ui-2026-10-02/。未推送或发布。
 
 2026-09-30 多图解锁补验与本机更新完成：实际367项XCTest（363通过、4跳过、0失败），原动效时序测试原样通过。Computer Use获取36份约21秒窗口样本，核对1→4张收集、倒计时重置和自动提交后题图位置保持稳定；样本不是逐显示帧性能录制。随后退出隔离QA及旧运行包，以 `scripts/run-local.sh` 打包、Developer ID验签并启动当前正常Release构建 `dist-qa/NotchSPI.app`。确认唯一运行进程无QA参数、serviceMode为official、无baseURL覆盖；此次多图改动已进入本机运行版本。未替换Applications、未推送或发布。日志 `gallery-tests-resumed.log`、`gallery-run-local.log`，证据见[设计记录](docs/notch-answer-design-2026-09-30.md)。
