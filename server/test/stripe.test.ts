@@ -33,7 +33,7 @@ const checkoutFailures=new Set<string>();
 const currentCheckouts=new Map<string,CheckoutSnapshot>();let canonicalCheckoutReads=0;
 
 before(async () => {
-  app = await buildApp({readStripeCheckout:async id=>{canonicalCheckoutReads++;const snapshot=currentCheckouts.get(id);if(!snapshot)throw new Error('Injected Checkout retrieval outage');return {...snapshot};},createStripeCheckout:async(_key,input)=>{
+  app = await buildApp({readPurchaseProgress:async id=>{const snapshot=currentCheckouts.get(id);if(!snapshot)throw new Error('Injected status outage');return {snapshot,status:snapshot.paymentStatus==='paid'?'complete':'open'};},readStripeCheckout:async id=>{canonicalCheckoutReads++;const snapshot=currentCheckouts.get(id);if(!snapshot)throw new Error('Injected Checkout retrieval outage');return {...snapshot};},createStripeCheckout:async(_key,input)=>{
     assert.ok(input.purchaseSessionId);assert.equal(input.deviceToken,undefined);
     const id=input.purchaseSessionId;checkoutReads.set(id,(checkoutReads.get(id)??0)+1);
     if(checkoutFailures.delete(id))return {error:'injected_checkout_outage'};
@@ -471,4 +471,29 @@ test('healthz reports stripe payments and webhook configured', async () => {
   const h = (await (await fetch(`${base}/healthz`)).json()) as Record<string, string>;
   assert.equal(h.payments, 'stripe');
   assert.equal(h.webhook, 'configured');
+});
+
+
+test('authenticated purchase query recovers a paid Checkout without a webhook and never discloses another account',async()=>{
+  const token=await register(),other=await register(),purchaseId=randomUUID(),headers={authorization:'Bearer '+token};
+  const request={pack_id:'pack300',catalog_version:'pricing-v1',purchase_id:purchaseId,lang:'en'};
+  const created=await app.inject({method:'POST',url:'/v1/purchase-sessions',headers,payload:request});
+  const handoff=new URL(created.json().purchase_url).searchParams.get('session')!,id=handoff.split('.')[0]!;
+  const url='/v1/purchase-sessions/'+purchaseId;
+  assert.equal((await app.inject({url})).statusCode,401);
+  assert.equal((await app.inject({url,headers:{authorization:'Bearer '+other}})).statusCode,404);
+  assert.equal((await app.inject({url,headers})).json().state,'ready');
+  await app.inject({method:'POST',url:'/purchase/checkout',payload:{session:handoff}});
+  assert.equal((await app.inject({url,headers})).statusCode,503,'network outage keeps the original order');
+  const reference=checkouts.get(id)!.id;
+  currentCheckouts.set(reference,checkoutSnapshot({id:reference,mode:'payment',payment_status:'unpaid',amount_total:2400,currency:'cny',payment_intent:'pi_recovery',metadata:{purchase_session_id:id,pack_id:'pack300'}}));
+  const unpaid=await app.inject({url,headers});assert.equal(unpaid.json().state,'unpaid');assert.equal(unpaid.json().checkout_url,checkouts.get(id)!.url);
+  currentCheckouts.get(reference)!.paymentStatus='paid';
+  const paid=await app.inject({url,headers});assert.equal(paid.statusCode,200);assert.equal(paid.json().state,'credited');assert.equal(paid.headers['cache-control'],'no-store');
+  assert.doesNotMatch(paid.payload,/secret|device_token|deviceId|purchaseSessionId/);
+  for(let i=0;i<3;i++)assert.equal((await app.inject({url,headers})).json().state,'credited');
+  assert.equal((await app.inject({url:'/v1/account',headers})).json().balance_questions,300);
+  const event=checkoutEvent(token,'checkout.session.completed',{session_id:reference,payment_intent:'pi_recovery',metadata:{purchase_session_id:id,pack_id:'pack300'}});
+  assert.equal((await app.inject({method:'POST',url:'/webhooks/stripe',headers:{'content-type':'application/json','stripe-signature':sign(event)},payload:event})).statusCode,200);
+  assert.equal((await app.inject({url:'/v1/account',headers})).json().balance_questions,300);
 });

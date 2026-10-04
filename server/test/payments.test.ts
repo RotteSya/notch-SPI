@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jsStringLiteral, isValidTokenShape, StubPaymentProvider } from '../src/payments.ts';
+import { jsStringLiteral, isValidTokenShape, StubPaymentProvider, renderTopUpPage } from '../src/payments.ts';
 
 test('jsStringLiteral neutralizes a </script> breakout', () => {
   const out = jsStringLiteral('a</script><script>alert(1)</script>');
@@ -43,4 +43,13 @@ test('isValidTokenShape accepts dev_ base64url and rejects the rest', () => {
   assert.ok(!isValidTokenShape('nope'));
   assert.ok(!isValidTokenShape('dev_</script>'));
   assert.ok(!isValidTokenShape(''));
+});
+
+test('legacy redirects never claim payment success or absence of a charge',()=>{
+  for(const lang of ['zh','ja','en'] as const){
+    const page=renderTopUpPage({deviceToken:'dev_test_1234567890',packs:[],currency:'JPY',baseURL:'https://test.invalid',lang,mode:'stripe',banner:'paid'});
+    assert.doesNotMatch(page,/支付成功|Payment complete!|お支払いが完了しました/);
+    const canceled=renderTopUpPage({deviceToken:'dev_test_1234567890',packs:[],currency:'JPY',baseURL:'https://test.invalid',lang,mode:'stripe',banner:'canceled'});
+    assert.doesNotMatch(canceled,/未产生任何费用|nothing was charged|料金は発生していません/);
+  }
 });

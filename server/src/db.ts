@@ -273,6 +273,7 @@ export interface Store {
   }): Promise<number | null>;
   createPurchaseSession(input: PurchaseSessionInput): Promise<PurchaseSession | null>;
   getPurchaseSession(sessionId: string, secret: string): Promise<StoredPurchaseSession | null>;
+  getPurchaseSessionForAccount(token: string, purchaseId: string): Promise<StoredPurchaseSession | null>;
   getPurchaseSessionByCheckout(checkoutSessionId: string): Promise<StoredPurchaseSession | null>;
   attachPurchaseCheckout(sessionId: string, checkoutSessionId: string, checkoutURL?: string): Promise<boolean>;
   creditDevice(input: {

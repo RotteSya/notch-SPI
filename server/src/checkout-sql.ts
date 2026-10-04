@@ -44,7 +44,7 @@ export class SQLCheckoutQueue implements CheckoutQueue {
   constructor(run:RunTransaction){this.run=run;}
   receive(event:PaymentEvent,snapshot:CheckoutSnapshot):Promise<void>{
     validateEvent(event);validateCheckoutSnapshot(snapshot);
-    if(event.resourceId!==snapshot.id||snapshot.paymentStatus!=='paid'||!['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type))throw new Error('Invalid paid Checkout receipt');
+    if(event.resourceId!==snapshot.id||snapshot.paymentStatus!=='paid'||!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.recovery.read'].includes(event.type))throw new Error('Invalid paid Checkout receipt');
     return this.run((function*():Transaction<void>{
       yield* lockPayments();yield* receipt(event);const hash=checkoutSnapshotHash(snapshot);
       const previous=(yield* query('SELECT snapshot_hash FROM checkout_deliveries WHERE provider_event_id=?',event.id))[0];

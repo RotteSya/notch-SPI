@@ -272,6 +272,11 @@ export class MemoryStore implements Store {
     const s=this.purchaseSessions.get(sessionId); if(!s||s.consumedAt||s.secretHash!==purchaseSecretHash(secret)||Date.parse(s.expiresAt)<=Date.now()) return null;
     return {...s};
   }
+  async getPurchaseSessionForAccount(token:string,purchaseId:string):Promise<StoredPurchaseSession|null> {
+    const device=this.devices.get(hashToken(token));
+    const s=device?[...this.purchaseSessions.values()].find(s=>s.deviceId===device.id&&s.purchaseId===purchaseId):null;
+    return s?{...s}:null;
+  }
   async getPurchaseSessionByCheckout(checkoutSessionId:string):Promise<StoredPurchaseSession|null> {
     const s=[...this.purchaseSessions.values()].find(v=>v.checkoutSessionId===checkoutSessionId); return s?{...s}:null;
   }

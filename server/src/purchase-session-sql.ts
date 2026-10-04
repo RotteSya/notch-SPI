@@ -43,6 +43,10 @@ export class SQLPurchaseSessions {
       return row?purchaseFromRow(row):null;
     })());
   }
+  forAccount(token:string,purchaseId:string):Promise<StoredPurchaseSession|null>{return this.run((function*():Transaction<StoredPurchaseSession|null>{
+    const row=(yield* query('SELECT p.* FROM purchase_sessions p JOIN devices d ON d.id=p.device_id WHERE d.token_hash=? AND p.purchase_id=?',hashToken(token),purchaseId))[0];
+    return row?purchaseFromRow(row):null;
+  })());}
   byCheckout(id:string):Promise<StoredPurchaseSession|null>{return this.run((function*():Transaction<StoredPurchaseSession|null>{
     const row=(yield* query('SELECT * FROM purchase_sessions WHERE checkout_session_id=?',id))[0];return row?purchaseFromRow(row):null;
   })());}

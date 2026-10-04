@@ -64,7 +64,7 @@ for (const [name, make] of implementations) {
       const response = await app.inject({url: '/v1/account', headers: {authorization: `Bearer ${token}`}});
       assert.equal(response.statusCode, 200);
       assert.equal(response.headers['cache-control'], 'no-store');
-      assert.deepEqual(response.json(), {balance_version: '3', held_questions: 0, policy_version: 'legacy',
+      assert.deepEqual(response.json(), {initial_grant: 30, balance_version: '3', held_questions: 0, policy_version: 'legacy',
         quota_breakdown: {trial: 29, paid: 0, goodwill: 0, legacy_unknown: 0}, balance_questions: 29,
         total_questions: 1, total_input_tokens: 11, total_output_tokens: 7, cli_enabled: true});
     } finally { await app.close(); await store.close(); }

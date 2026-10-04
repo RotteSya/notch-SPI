@@ -34,18 +34,21 @@ struct ScreenQueryRemoteConfig: Codable, Equatable {
 }
 
 struct PaymentPackRemoteConfig: Codable, Equatable {
+    var names: [String: String]? = nil
     let id: String
     let questions: Int
     let amountMinor: Int
-    enum CodingKeys: String, CodingKey { case id, questions; case amountMinor = "amount_minor" }
+    enum CodingKeys: String, CodingKey { case id, questions, names; case amountMinor = "amount_minor" }
 }
 
 struct PaymentsRemoteConfig: Codable, Equatable {
+    var purchaseRecovery: Bool? = nil
     let purchaseSessions: Bool
     let catalogVersion: String
     let currency: String
     let packs: [PaymentPackRemoteConfig]
     enum CodingKeys: String, CodingKey {
+        case purchaseRecovery = "purchase_recovery"
         case purchaseSessions = "purchase_sessions"
         case catalogVersion = "catalog_version"
         case currency, packs

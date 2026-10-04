@@ -160,7 +160,11 @@ export async function retrieveStripeRefund(secretKey:string,id:string):Promise<R
     amountCents:typeof body.amount==='number'?body.amount:NaN,currency:typeof body.currency==='string'?body.currency.toUpperCase():'',status:body.status as RefundStatus};
   validateRefund(snapshot); if(snapshot.id!==id) throw new Error('Stripe refund resource mismatch'); return snapshot;
 }
+export interface CheckoutProgress { snapshot:CheckoutSnapshot; status:'open'|'complete'|'expired'|'unknown' }
 export async function retrieveStripeCheckout(secretKey:string,id:string):Promise<CheckoutSnapshot>{
+  return (await retrieveStripeCheckoutProgress(secretKey,id)).snapshot;
+}
+export async function retrieveStripeCheckoutProgress(secretKey:string,id:string):Promise<CheckoutProgress>{
   if(!/^cs_[A-Za-z0-9_]{1,160}$/.test(id))throw new Error('Invalid Checkout id');
   const response=await fetch(STRIPE_API+'/'+encodeURIComponent(id),{
     headers:{Authorization:'Bearer '+secretKey},signal:AbortSignal.timeout(8_000),redirect:'error',
@@ -171,7 +175,9 @@ export async function retrieveStripeCheckout(secretKey:string,id:string):Promise
   for await(const chunk of response.body){length+=chunk.byteLength;if(length>256*1024)throw new Error('Stripe Checkout response exceeds limit');chunks.push(chunk);}
   let raw:unknown;try{raw=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('Stripe Checkout payload invalid');}
   const snapshot=checkoutSnapshot(raw);
-  if(snapshot.id!==id)throw new Error('Stripe Checkout resource mismatch');return snapshot;
+  if(snapshot.id!==id)throw new Error('Stripe Checkout resource mismatch');
+  const status=(raw as {status?:unknown}).status;
+  return {snapshot,status:status==='open'||status==='complete'||status==='expired'?status:'unknown'};
 }
 export async function reconcileStripeRefund(ledger:PaymentLedger,event:PaymentEvent,read:(id:string)=>Promise<RefundSnapshot>):Promise<boolean> {
   const claim=await ledger.claimRefund(event); if(!claim) return true;

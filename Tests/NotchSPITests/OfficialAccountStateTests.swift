@@ -551,6 +551,52 @@ final class OfficialAccountStateTests: XCTestCase {
         XCTAssertEqual(observed, 190)
     }
 
+    func testPendingPurchaseSurvivesRestartAndIsScopedToCredentialAndService() throws {
+        let f = AccountFixture(); defer { f.close() }; f.seed()
+        let account = try XCTUnwrap(f.state.account)
+        let purchase = PendingPurchase(id: UUID(), packID: "pack1000", catalogVersion: "pricing-v1",
+            packSnapshot: .init(id: "pack1000", questions: 1000, amountMinor: 2200), currency: "JPY")
+        PurchaseRecoveryStore(defaults: f.defaults).save(purchase, for: account)
+        let reopened = PurchaseRecoveryStore(defaults: f.defaults)
+        XCTAssertEqual(reopened.pending(account), purchase)
+        XCTAssertEqual(reopened.pending(account)?.packSnapshot?.amountMinor, 2200, "Original price survives catalog refresh and restart")
+        XCTAssertNil(reopened.pending(.init(token: "another", baseURL: account.baseURL)))
+        XCTAssertNil(reopened.pending(.init(token: account.token, baseURL: "https://other.invalid")))
+        reopened.save(nil, for: account)
+        XCTAssertNil(reopened.pending(account))
+    }
+
+    func testQuotaBreakdownSharesBalanceVersionAndIsInvalidatedByNewUsage() throws {
+        let f = AccountFixture(); defer { f.close() }; f.seed(balance: 130, version: "8")
+        let data = Data(#"{"initial_grant":30,"balance_questions":130,"balance_version":"9","quota_breakdown":{"trial":30,"paid":100,"goodwill":0,"legacy_unknown":0}}"#.utf8)
+        try f.state.acceptRefresh(JSONDecoder().decode(OfficialAccountResponse.self, from: data), ticket: f.state.prepareRefresh())
+        XCTAssertEqual(f.state.value("initialGrant") as? Int, 30)
+        XCTAssertEqual((f.state.value("quotaBreakdown") as? [String: Int])?["paid"], 100)
+        XCTAssertTrue(f.state.applyBalance(129, version: "10"))
+        XCTAssertNil(f.state.value("quotaBreakdown"), "Do not show an old breakdown beside a new balance")
+        try f.state.acceptRefresh(JSONDecoder().decode(OfficialAccountResponse.self, from: data), ticket: f.state.prepareRefresh())
+        XCTAssertNil(f.state.value("quotaBreakdown"), "An older response cannot restore stale breakdowns")
+        f.seed("dev_replaced_balance_owner_123456")
+        XCTAssertNil(f.state.value("initialGrant"))
+    }
+
+    func testPurchaseQueryRejectsAResponseAfterCredentialReplacement() async throws {
+        let f = AccountFixture(); defer { f.close() }
+        let entered = expectation(description: "query"); var reply: CaptureHTTPReply?
+        let purchase = PendingPurchase(id: UUID(), packID: "pack100", catalogVersion: "pricing-v1")
+        let server = try await peer(f) { request, response in
+            XCTAssertEqual(request.path, "/v1/purchase-sessions/" + purchase.id.uuidString.lowercased())
+            reply = response; entered.fulfill()
+        }
+        defer { server.stop() }; f.seed()
+        let task = Task { try await OfficialAPI.purchaseProgress(purchase, environment: f.environment) }
+        await fulfillment(of: [entered], timeout: 5)
+        f.seed("dev_different_query_owner_123456")
+        reply?.respond(type: "application/json", body: Data(#"{"state":"credited","questions":100,"checkout_url":null}"#.utf8))
+        do { _ = try await task.value; XCTFail("Must reject a previous account's payment response") }
+        catch { XCTAssertTrue(error is OfficialAccountFailure) }
+    }
+
     func testPurchaseHandoffCannotOpenAReplacedAccountsURL() async throws {
         let f = AccountFixture(); defer { f.close() }
         let entered = expectation(description: "purchase"); var reply: CaptureHTTPReply?

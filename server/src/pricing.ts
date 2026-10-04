@@ -58,3 +58,15 @@ function parseTrusted(json: string): QuestionPack[] {
 export function findPack(packs: readonly QuestionPack[], id: string): QuestionPack | null {
   return packs.find((p) => p.id === id) ?? null;
 }
+
+// Shared public labels. Counts and money always come from the active catalog, including overrides.
+export const PACK_NAMES = {
+  zh: ['轻量补充','持续练习','集中备考'],
+  ja: ['少しずつ','日々の練習に','じっくり対策'],
+  en: ['A little extra','Keep practicing','Settle into study'],
+} as const;
+export function packNames(packs:readonly QuestionPack[],id:string):Record<'zh'|'ja'|'en',string> {
+  const sorted=[...packs].sort((a,b)=>a.questions-b.questions),index=sorted.findIndex(p=>p.id===id);
+  const slot=sorted.length===1?1:index===0?0:index===sorted.length-1?2:1;
+  return {zh:PACK_NAMES.zh[slot],ja:PACK_NAMES.ja[slot],en:PACK_NAMES.en[slot]};
+}

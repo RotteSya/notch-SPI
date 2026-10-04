@@ -267,13 +267,12 @@ export function renderLandingPage(input: SiteInput): string {
   const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}"><span aria-hidden="true">↓</span> ${d.download}</a>`;
   const packCards = packs.map((p,i)=>{
     const recommended=p.id===appPack?.id, slot=packs.length===1?1:i===0?0:i===packs.length-1?2:1;
-    const mail=`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`NotchSPI — ${d.questions(p.questions)} (${formatMoney(p.amountCents,input.currency)} ${input.currency})`)}`;
     return `<article class="pack${recommended?' recommended':''}" data-pack-id="${e(p.id)}">
       ${recommended?`<div class="badge">${d.recommended}</div>`:''}<h3 class="pack-name">${d.packNames[slot]}</h3>
       <div class="q">${d.questions(p.questions)}</div><div class="price">${e(formatMoney(p.amountCents,input.currency))}</div>
       <div class="unit">${e(input.currency)} · ${d.oneTime}</div><p class="per">${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>
       <p class="pack-caption">${d.packReasons[slot]}<br>${d.sameFeatures}</p>
-      <a class="button secondary" href="${recommended?'#purchase':e(mail)}">${recommended?d.buy:d.otherBuy} <span aria-hidden="true">↗</span></a></article>`;
+      <a class="button secondary" href="${'#purchase'}">${d.buy} <span aria-hidden="true">↗</span></a></article>`;
   }).join('');
   const privacy=s.privacyBody.map(p=>`<p>${e(p.replaceAll('{{AI_PROVIDER}}',providerName))}</p>`).join('');
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');

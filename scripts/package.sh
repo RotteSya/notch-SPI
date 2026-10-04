@@ -129,6 +129,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>NotchSPI Account</string><key>CFBundleURLSchemes</key><array><string>notchspi</string></array></dict></array>
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$DISPLAY_NAME</string>
   <key>CFBundleIconFile</key><string>$ICON_FILE</string>

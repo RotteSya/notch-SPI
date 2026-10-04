@@ -1136,27 +1136,7 @@ final class NotchController: NSObject {
     @objc private func openAccount() { openSettings(page: .account) }
     @objc private func openSettingsGeneral() { openSettings(page: .general) }
 
-    @objc private func topUpTapped() {
-        if let payments = ClientConfigService.shared.current.payments,
-           payments.purchaseSessions,
-           let pack = payments.packs.sorted(by: { $0.questions < $1.questions }).dropFirst().first ?? payments.packs.first {
-            Task { @MainActor in
-                do {
-                    let handoff = try await OfficialAPI.createPurchaseSession(packID: pack.id, catalogVersion: payments.catalogVersion)
-                    NSWorkspace.shared.open(handoff.purchaseURL)
-                } catch let error as OfficialAPIError {
-                    let alert = NSAlert(); alert.messageText = error.message; alert.alertStyle = .warning; alert.addButton(withTitle: L10n.ok); alert.runModal()
-                } catch {
-                    let alert = NSAlert(); alert.messageText = L10n.t("支付暂时不可用，请稍后重试。", "決済は一時的に利用できません。", "Payments are temporarily unavailable."); alert.alertStyle = .warning; alert.addButton(withTitle: L10n.ok); alert.runModal()
-                }
-            }
-            return
-        }
-        guard let url = OfficialAPI.topUpURL(
-            baseURL: OfficialAPI.baseURL, deviceToken: OfficialAPI.deviceToken,
-            lang: OfficialAPI.topUpLang) else { return }
-        NSWorkspace.shared.open(url)
-    }
+    @objc private func topUpTapped() { openSettings(page: .account) }
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
@@ -1426,6 +1406,10 @@ final class NotchController: NSObject {
     func openSettings(page: MainSettingsWindowController.Page) {
         if settingsController == nil {
             let c = MainSettingsWindowController()
+            c.onStartQuestion = { [weak self, weak c] in
+                c?.window?.orderOut(nil)
+                self?.screenshotTapped(mode: "tutor", multiple: false)
+            }
             c.onHotkeysChanged = { [weak self] in self?.registerHotkeys() }
             c.onAnythingChanged = { [weak self] in
                 self?.refreshCLILabel()

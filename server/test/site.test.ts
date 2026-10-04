@@ -153,9 +153,9 @@ test('pack recommendations match the app purchase entry, with precise fractional
   assert.match(formatUnitPrice({id:'usd',questions:30,amountCents:500},'USD','en'), /0\.17/);
   const page=renderLandingPage({packs,trialQuestions:30,currency:'JPY',lang:'en',aiProvider:'deepseek'});
   assert.match(page, /class="pack recommended" data-pack-id="daily"/);
-  assert.match(page, /Top up button opens the 300-question pack/);
+  assert.match(page, /offers all packs and selects 300 questions by default/);
   assert.match(page, /href="#purchase"/);
-  assert.match(page, /mailto:raysyadesu@gmail.com\?subject=/);
+  assert.equal((page.match(/href="#purchase"/g)??[]).length,3);
   assert.doesNotMatch(page, /buy\.stripe\.com|checkout\.stripe\.com|device_token/);
   assert.equal((page.match(/ · One-time payment/g)??[]).length,3);
 });

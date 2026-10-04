@@ -48,6 +48,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     /// Wired by NotchController so hotkey edits re-register and menu labels refresh.
     var onHotkeysChanged: (() -> Void)?
     var onAnythingChanged: (() -> Void)?
+    var onStartQuestion: (() -> Void)?
 
     private let sidebar = SettingsFlippedView()
     private let contentHost = SettingsFlippedView()
@@ -298,7 +299,10 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             vc.onChange = { [weak self] in self?.onHotkeysChanged?() }
             return vc
         case .appearance: return AppearancePageController()
-        case .account: return AccountPageController()
+        case .account:
+            let vc = AccountPageController()
+            vc.onStartQuestion = { [weak self] in self?.onStartQuestion?() }
+            return vc
         case .personas: return PersonasPageController(onChange: { [weak self] in self?.onAnythingChanged?() })
         case .advanced:
             let vc = AdvancedPageController()
@@ -967,6 +971,15 @@ private final class AccentSwatch: NSControl {
 // MARK: - 账户 Account
 
 private final class AccountPageController: NSViewController, SettingsPage {
+    var onStartQuestion: (() -> Void)?
+    private let packsButton = NSPopUpButton()
+    private let startButton = NSButton()
+    private let quotaLabel = captionLabel("", size: 12)
+    private var packIDs: [String] = []
+    private var busy = false
+    private let recovery = PurchaseRecoveryStore()
+    private var polling: Task<Void, Never>?
+    private var activeObserver: NSObjectProtocol?
     private let ring = QuotaRingView()
     private let usageLabel = captionLabel("", size: 12)
     private let tokensLabel = captionLabel("")
@@ -997,19 +1010,23 @@ private final class AccountPageController: NSViewController, SettingsPage {
         root.addSubview(tokensLabel)
         y += 30
 
+        packsButton.font = .systemFont(ofSize: 12)
+        packsButton.frame = NSRect(x: 268, y: y, width: 328, height: 28)
+        root.addSubview(packsButton)
+        y += 36
         topUpButton.title = L10n.topUp
         topUpButton.bezelStyle = .rounded
         topUpButton.keyEquivalent = "\r"
         topUpButton.target = self
         topUpButton.action = #selector(topUpTapped)
-        topUpButton.frame = NSRect(x: 268, y: y, width: 110, height: 30)
+        topUpButton.frame = NSRect(x: 268, y: y, width: 172, height: 30)
         root.addSubview(topUpButton)
 
         refreshButton.title = L10n.refresh
         refreshButton.bezelStyle = .rounded
         refreshButton.target = self
         refreshButton.action = #selector(refreshTapped)
-        refreshButton.frame = NSRect(x: 384, y: y, width: 84, height: 30)
+        refreshButton.frame = NSRect(x: 448, y: y, width: 148, height: 30)
         root.addSubview(refreshButton)
         y += 40
 
@@ -1030,10 +1047,10 @@ private final class AccountPageController: NSViewController, SettingsPage {
         resetButton.isHidden = true
         root.addSubview(resetButton)
 
-        statusLabel.frame = NSRect(x: 270, y: y + 40, width: 320, height: 40)
+        statusLabel.frame = NSRect(x: 270, y: y + 36, width: 326, height: 76)
         root.addSubview(statusLabel)
 
-        deviceLabel.frame = NSRect(x: 36, y: 300, width: 380, height: 18)
+        deviceLabel.frame = NSRect(x: 36, y: 448, width: 380, height: 18)
         root.addSubview(deviceLabel)
 
         // Copy the full device code so a user can send it to support for a manual quota grant.
@@ -1043,16 +1060,23 @@ private final class AccountPageController: NSViewController, SettingsPage {
         copyCodeButton.controlSize = .small
         copyCodeButton.target = self
         copyCodeButton.action = #selector(copyCodeTapped)
-        copyCodeButton.frame = NSRect(x: 424, y: 296, width: 172, height: 24)
+        copyCodeButton.frame = NSRect(x: 424, y: 444, width: 172, height: 24)
         root.addSubview(copyCodeButton)
 
         let note = captionLabel(L10n.t(
-            "每成功答一题消耗 1 题；出错不扣。额度与本机绑定，无需注册账号。",
-            "回答が成功するたびに1問消費。エラー時は消費されません。残高はこのMacに紐づき、アカウント登録は不要です。",
-            "Each successful answer costs one question; errors are free. Credits are tied to this Mac — no account needed."))
-        note.frame = NSRect(x: 36, y: 330, width: 560, height: 36)
+            "首次联网自动获得一次性免费额度，无需注册。免费与付费题数用于同一官方服务；先用免费额度，成功获得可用答案扣 1 题，失败不扣。当前额度不设到期时间；付费题包一次性购买，不自动续费。",
+            "初回接続で無料枠を自動付与。登録不要。同じ公式サービスで無料枠から消費し、利用可能な回答につき1問、失敗は消費なし。現在の残高に期限なし。パックは一回払い・自動更新なし。",
+            "One free grant on first connection; no sign-up. Both balances use the official service. Free questions are used first; one usable answer costs one question, failures cost none. Credits currently have no expiry. Packs are one-time purchases, with no auto-renewal."))
+        note.frame = NSRect(x: 36, y: 380, width: 560, height: 58)
         root.addSubview(note)
 
+        quotaLabel.frame = NSRect(x: 36, y: 346, width: 560, height: 28)
+        root.addSubview(quotaLabel)
+        startButton.title = L10n.t("截图查题", "撮影して質問", "Capture a question")
+        startButton.bezelStyle = .rounded
+        startButton.target = self; startButton.action = #selector(startQuestion)
+        startButton.frame = NSRect(x: 60, y: 286, width: 170, height: 32)
+        root.addSubview(startButton)
         view = root
         reload()
 
@@ -1062,6 +1086,8 @@ private final class AccountPageController: NSViewController, SettingsPage {
     }
 
     deinit {
+        polling?.cancel()
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
@@ -1077,7 +1103,15 @@ private final class AccountPageController: NSViewController, SettingsPage {
 
     func pageDidShow() {
         reload()
-        if OfficialAPI.deviceToken != nil, Self.qaBalance == nil { refreshTapped() }
+        guard Self.qaBalance == nil else { return }
+        if activeObserver == nil {
+            activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshTapped() }
+        }
+        if OfficialAPI.deviceToken == nil { claimTapped() } else { refreshTapped(); startPolling() }
+        Task { @MainActor [weak self] in
+            await ClientConfigService.shared.refresh()?.value
+            self?.reload()
+        }
     }
 
     private func reload() {
@@ -1116,8 +1150,39 @@ private final class AccountPageController: NSViewController, SettingsPage {
         resetButton.isHidden = !rejected
         copyCodeButton.isHidden = !registered
         // A rejected credential can't be spent or topped up until it's reset or re-accepted.
-        topUpButton.isEnabled = registered && !rejected
-        refreshButton.isEnabled = registered
+        let payments = ClientConfigService.shared.current.payments
+        let pending = OfficialAPI.accountState.account.flatMap { recovery.pending($0) }
+        let packs = pending?.packSnapshot.map { [$0] } ?? payments?.packs.sorted { $0.questions < $1.questions } ?? []
+        let currency = pending?.currency ?? payments?.currency
+        let selected = packsButton.indexOfSelectedItem
+        let previousID = packIDs.indices.contains(selected) ? packIDs[selected] : nil
+        packsButton.removeAllItems(); packIDs = packs.map(\.id)
+        for pack in packs {
+            let formatter = NumberFormatter(); formatter.numberStyle = .currency
+            formatter.currencyCode = currency
+            let exponent = formatter.maximumFractionDigits
+            let value = Decimal(pack.amountMinor) / pow(Decimal(10), exponent)
+            let price = formatter.string(from: NSDecimalNumber(decimal: value)) ?? "—"
+            packsButton.addItem(withTitle: (pack.names?[OfficialAPI.topUpLang].map { $0 + " · " } ?? "") + L10n.t("\(pack.questions) 题", "\(pack.questions) 問", "\(pack.questions) questions") + " · " + price + " " + (currency ?? ""))
+        }
+        if let id = pending?.packID ?? previousID, let index = packIDs.firstIndex(of: id) { packsButton.selectItem(at: index) }
+        else if packs.count > 1 { packsButton.selectItem(at: 1) }
+        packsButton.isEnabled = !busy && pending == nil
+        topUpButton.title = pending == nil ? L10n.t("购买所选题包", "選択したパックを購入", "Buy selected pack") : L10n.t("继续原订单", "元の注文を再開", "Resume order")
+        copyCodeButton.title = pending == nil ? L10n.t("复制设备码", "デバイスコードをコピー", "Copy device code") : L10n.t("复制订单号", "注文番号をコピー", "Copy order ID")
+        refreshButton.title = pending == nil ? L10n.refresh : L10n.t("查询到账", "反映を確認", "Check payment")
+        topUpButton.isEnabled = registered && !rejected && !busy && payments?.purchaseSessions == true && !packs.isEmpty
+        refreshButton.isEnabled = registered && !busy
+        startButton.isEnabled = (balance ?? 0) > 0 && !rejected
+        let initial = OfficialAPI.accountState.value("initialGrant") as? Int
+        let breakdown = OfficialAPI.accountState.value("quotaBreakdown") as? [String: Int]
+        quotaLabel.stringValue = ""
+        if let initial, registered && !rejected {
+            quotaLabel.stringValue = L10n.t("首次已获 \(initial) 题", "初回付与 \(initial) 問", "Initial grant: \(initial)")
+            if let free = breakdown?["trial"], let paid = breakdown?["paid"] {
+                quotaLabel.stringValue += L10n.t(" · 免费剩余 \(free) · 付费剩余 \(paid)", " · 無料残高 \(free) · 購入残高 \(paid)", " · Free left: \(free) · Paid left: \(paid)")
+            }
+        }
         // Surface the rejection without clobbering a transient status message already on screen.
         if rejected && statusLabel.stringValue.isEmpty {
             statusLabel.stringValue = L10n.t(
@@ -1127,66 +1192,142 @@ private final class AccountPageController: NSViewController, SettingsPage {
         }
     }
 
+    @objc private func startQuestion() { onStartQuestion?() }
+
     @objc private func topUpTapped() {
-        if let payments = ClientConfigService.shared.current.payments,
-           payments.purchaseSessions,
-           let pack = payments.packs.sorted(by: { $0.questions < $1.questions }).dropFirst().first ?? payments.packs.first {
-            statusLabel.stringValue = L10n.t("正在准备购买页面…", "購入ページを準備中…", "Preparing the purchase page…")
-            Task { @MainActor in
-                do {
-                    let handoff = try await OfficialAPI.createPurchaseSession(packID: pack.id, catalogVersion: payments.catalogVersion)
-                    guard handoff.belongs() else {
-                        statusLabel.stringValue = OfficialAPI.accountChangedMessage
+        guard !busy, let account = OfficialAPI.accountState.account,
+              let payments = ClientConfigService.shared.current.payments, payments.purchaseSessions,
+              packIDs.indices.contains(packsButton.indexOfSelectedItem) else { return }
+        let pending = recovery.pending(account) ?? PendingPurchase(id: UUID(), packID: packIDs[packsButton.indexOfSelectedItem], catalogVersion: payments.catalogVersion,
+            packSnapshot: payments.packs.first { $0.id == packIDs[packsButton.indexOfSelectedItem] }, currency: payments.currency)
+        // Recovery is advertised by the server before this client feature is enabled.
+        // Older services retain their existing browser flow without a permanently locked pending order.
+        if payments.purchaseRecovery == true { recovery.save(pending, for: account) }
+        busy = true; reload()
+        Task { @MainActor in
+            defer { busy = false; reload() }
+            do {
+                if payments.purchaseRecovery == true, let progress = try await OfficialAPI.purchaseProgress(pending) {
+                    guard OfficialAPI.accountState.matches(account) else { return }
+                    if progress.state != .ready {
+                        await applyProgress(progress, pending: pending, account: account, resume: true)
+                        startPolling()
                         return
                     }
-                    NSWorkspace.shared.open(handoff.purchaseURL)
-                    statusLabel.stringValue = L10n.t("已在浏览器打开购买页面。支付完成后点「刷新」。", "ブラウザで購入ページを開きました。完了後「更新」を押してください。", "Purchase page opened in your browser — hit Refresh after payment.")
-                } catch let error as OfficialAPIError {
-                    statusLabel.stringValue = error.message
-                } catch {
-                    statusLabel.stringValue = L10n.t("支付暂时不可用，请稍后重试。", "決済は一時的に利用できません。", "Payments are temporarily unavailable.")
                 }
+                statusLabel.stringValue = L10n.t("正在打开付款页…", "決済画面を開いています…", "Opening payment…")
+                let handoff = try await OfficialAPI.createPurchaseSession(packID: pending.packID, catalogVersion: pending.catalogVersion, purchaseID: pending.id)
+                guard handoff.belongs() else { return }
+                if NSWorkspace.shared.open(handoff.purchaseURL) {
+                    statusLabel.stringValue = L10n.t("已打开付款页。返回后自动查询；关闭页面也可继续原订单。", "決済画面を開きました。戻ると自動確認します。閉じても元の注文を再開できます。", "Payment opened. Return for an automatic check, or resume this order after closing the page.")
+                    if payments.purchaseRecovery != true {
+                        statusLabel.stringValue = L10n.t("已打开付款页。此服务暂不支持订单查询；付款后请刷新余额，未到账请联系客服。", "決済画面を開きました。注文照会には未対応です。決済後に残高を更新し、未反映ならサポートへ。", "Payment opened. This service does not support order lookup; refresh after payment and contact support if credits are missing.")
+                    }
+                    startPolling()
+                } else { statusLabel.stringValue = L10n.t("浏览器未打开，请点继续原订单重试。", "ブラウザを開けません。元の注文を再開してください。", "Browser did not open. Resume this order to retry.") }
+            } catch {
+                if (error as? OfficialAPIError)?.code == "idempotency_conflict", payments.purchaseRecovery == true {
+                    do {
+                        if try await OfficialAPI.purchaseProgress(pending) == nil, OfficialAPI.accountState.matches(account) {
+                            // A catalog rejection created no order. Require a new, visible selection at the current price.
+                            recovery.save(nil, for: account)
+                            await ClientConfigService.shared.refresh()?.value
+                        }
+                    } catch { /* Keep the recovery identity when the lookup is inconclusive. */ }
+                }
+                showPurchaseError(error)
             }
-            return
         }
-        guard let url = OfficialAPI.topUpURL(
-            baseURL: OfficialAPI.baseURL, deviceToken: OfficialAPI.deviceToken,
-            lang: OfficialAPI.topUpLang) else { return }
-        NSWorkspace.shared.open(url)
-        statusLabel.stringValue = L10n.t("已在浏览器打开充值页面，完成后点「刷新」。",
-                                         "ブラウザでチャージページを開きました。完了後「更新」を押してください。",
-                                         "Top-up page opened in your browser — hit Refresh when done.")
+    }
+
+    private func showPurchaseError(_ error: Error) {
+        statusLabel.stringValue = (error as? OfficialAPIError)?.message ?? L10n.t("暂未确认，请查询或继续原订单。不要重复付款。", "未確認です。元の注文を確認・再開してください。重複決済は不要です。", "Not confirmed. Check or resume this order; do not pay again.")
+    }
+
+    private func applyProgress(_ progress: PurchaseProgress, pending: PendingPurchase, account: OfficialAPI.CaptureAccount, resume: Bool) async {
+        guard OfficialAPI.accountState.matches(account) else { return }
+        switch progress.state {
+        case .credited:
+            let result = await OfficialAPI.refreshAccount()
+            guard OfficialAPI.accountState.matches(account) else { return }
+            if case .failure(let error) = result { showPurchaseError(error); return }
+            recovery.save(nil, for: account)
+            statusLabel.stringValue = L10n.t("\(progress.questions) 题已到账，可点击「截图查题」。", "\(progress.questions)問が反映されました。「撮影して質問」から使えます。", "\(progress.questions) questions credited. Capture a question to begin.")
+        case .expired:
+            recovery.save(nil, for: account)
+            statusLabel.stringValue = L10n.t("原订单已过期且未付款，可重新选择题包。", "元の注文は未決済で期限切れです。パックを選び直せます。", "The unpaid order expired. You can select a pack again.")
+        case .unpaid:
+            statusLabel.stringValue = L10n.t("原订单尚未付款。取消或失败后可继续同一付款页。", "元の注文は未決済です。キャンセル・失敗後も同じ決済を再開できます。", "Order is unpaid. Resume the same checkout after cancellation or failure.")
+            if resume, let url = progress.checkoutURL, !NSWorkspace.shared.open(url) { showPurchaseError(OfficialAccountFailure.invalidResponse) }
+        case .review:
+            statusLabel.stringValue = L10n.t("此订单需客服核对，请勿再次付款。订单号：", "サポートの確認が必要です。再決済しないでください。注文：", "This order needs support review. Do not pay again. Order: ") + pending.id.uuidString
+        case .pending:
+            statusLabel.stringValue = L10n.t("支付仍在确认，请稍后查询到账，无需再次付款。", "決済を確認中です。後ほど確認してください。再決済は不要です。", "Payment is processing. Check again shortly; no new payment is needed.")
+        case .ready:
+            statusLabel.stringValue = L10n.t("订单已保留，可继续付款。", "注文を保存しました。決済を続けられます。", "Order saved. You can continue payment.")
+        }
+    }
+
+    private func startPolling() {
+        polling?.cancel()
+        polling = Task { @MainActor [weak self] in
+            for _ in 0..<12 {
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+                guard let self, let account = OfficialAPI.accountState.account, self.recovery.pending(account) != nil else { return }
+                self.refreshTapped()
+            }
+        }
     }
 
     @objc private func refreshTapped() {
+        guard !busy else { return }
+        busy = true; reload()
         statusLabel.stringValue = L10n.t("正在同步…", "同期中…", "Syncing…")
         Task { @MainActor in
+            defer { busy = false; reload() }
             switch await OfficialAPI.refreshAccount() {
-            case .success:
-                self.statusLabel.stringValue = ""
-            case .failure(let error):
-                self.statusLabel.stringValue = error.message
+            case .success: statusLabel.stringValue = ""
+            case .failure(let error): statusLabel.stringValue = error.message; return
             }
-            self.reload()
+            await ClientConfigService.shared.refresh()?.value
+            if let account = OfficialAPI.accountState.account, let pending = recovery.pending(account) {
+                if ClientConfigService.shared.current.payments?.purchaseRecovery == true {
+                    do {
+                        if let progress = try await OfficialAPI.purchaseProgress(pending) {
+                            await applyProgress(progress, pending: pending, account: account, resume: false)
+                        } else { statusLabel.stringValue = L10n.t("购买尚未创建，可继续原订单重试。", "購入は未作成です。元の注文を再開してください。", "Purchase was not created. Resume the original order to retry.") }
+                    } catch { showPurchaseError(error) }
+                } else {
+                    statusLabel.stringValue = L10n.t("此服务暂不支持订单查询。如已付款但未到账，请联系客服，勿重复付款。", "注文照会に未対応です。決済済みで未反映ならサポートへ。再決済は不要です。", "Order lookup is unavailable on this service. Contact support if payment is missing; do not pay again.")
+                }
+            }
         }
     }
 
     @objc private func claimTapped() {
-        claimButton.isEnabled = false
-        statusLabel.stringValue = L10n.t("正在领取…", "受け取り中…", "Claiming…")
+        guard !busy else { return }
+        busy = true; claimButton.isEnabled = false
+        statusLabel.stringValue = L10n.t("正在核对免费额度…", "無料枠を確認中…", "Checking free questions…")
         Task { @MainActor in
+            defer { busy = false; claimButton.isEnabled = true; reload() }
             switch await OfficialAPI.registerIfNeeded() {
             case .success:
-                self.statusLabel.stringValue = L10n.t("已到账 🎉", "受け取りました 🎉", "Arrived 🎉")
-            case .failure(let error):
-                self.statusLabel.stringValue = error.message
-                self.claimButton.isEnabled = true
+                if case .failure(let error) = await OfficialAPI.refreshAccount() { statusLabel.stringValue = error.message; return }
+                await ClientConfigService.shared.refresh()?.value
+                let n = OfficialAPI.balanceQuestions ?? 0
+                statusLabel.stringValue = L10n.t("当前可用 \(n) 题，点击「截图查题」开始。", "現在\(n)問使えます。「撮影して質問」で開始。", "\(n) questions available. Capture a question to start.")
+            case .failure(let error): statusLabel.stringValue = error.message
             }
-            self.reload()
         }
     }
 
     @objc private func copyCodeTapped() {
+        if let account = OfficialAPI.accountState.account, let pending = recovery.pending(account) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(pending.id.uuidString, forType: .string)
+            statusLabel.stringValue = L10n.t("订单号已复制，可用于联系客服核对。", "注文番号をコピーしました。サポートへの確認に使えます。", "Order ID copied for support to check this purchase.")
+            return
+        }
         guard let token = OfficialAPI.deviceToken else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(token, forType: .string)

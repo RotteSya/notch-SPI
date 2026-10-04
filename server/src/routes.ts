@@ -12,11 +12,13 @@ import type { PaymentProvider, PageBanner, PageMode } from './payments.ts';
 import type { StoreKind } from './storage.ts';
 import { ApiError, errorBody } from './http.ts';
 import { requireAccount } from './auth.ts';
-import { findPack } from './pricing.ts';
+import { findPack, packNames } from './pricing.ts';
 import { isValidTokenShape, normalizeLang } from './payments.ts';
 import { verifyStripeSignature, createCheckoutSession, stripeReference, retrieveStripeRefund, reconcileStripeRefund, retrieveStripeCheckout, type StripeEvent } from './stripe.ts';
 import {checkoutSnapshot,checkoutCaseWire,validateCheckoutQuery,validateCheckoutDecision,type CheckoutSnapshot,type CheckoutQuery,type CheckoutDecision} from './checkout-reconciliation.ts';
 import {reconcileCheckout} from './checkout-service.ts';
+import {purchaseProgress} from './purchase-progress.ts';
+import {retrieveStripeCheckoutProgress,type CheckoutProgress} from './stripe.ts';
 import {retrieveStripeFinance} from './stripe-finance.ts';
 import {reconcilePaymentFinance,financeResource,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
 import { renderLandingPage, resolveSiteLang } from './site.ts';
@@ -43,6 +45,7 @@ export interface AppContext {
   readStripeRefund?: (id: string) => Promise<RefundSnapshot>;
   createStripeCheckout?: typeof createCheckoutSession;
   readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>;
+  readPurchaseProgress?: (id:string)=>Promise<CheckoutProgress>;
   readStripeFinance?: (order:FinanceOrder)=>Promise<FinanceSnapshot>;
 }
 
@@ -325,7 +328,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (!account) throw new ApiError(401, '设备令牌无效');
     return reply.header('Cache-Control', 'no-store').send({
       balance_version: account.balanceVersion, held_questions: account.heldQuestions,
-      policy_version: account.policyVersion, quota_breakdown: account.quotaBreakdown,
+      initial_grant: account.initialGrantQuestions, policy_version: account.policyVersion, quota_breakdown: account.quotaBreakdown,
       balance_questions: account.balanceQuestions,
       total_questions: account.totalQuestions,
       total_input_tokens: account.totalInputTokens,
@@ -348,8 +351,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       screen_query: { capabilities: config.screenQueryEnabled ? ['screen_query_v1', 'capture_status'] : ['capture_status'],
         support_revision: SCREEN_QUERY_VERSION, enabled_profiles: config.enabledSupportProfiles.split(',').filter(Boolean), limits: { max_images: 4, max_targets: 1, material_ttl_seconds: 900 },
         trial_policy: { version: config.quotaPolicyVersion, initial_grant: config.trialQuestions } },
-      payments: { purchase_sessions: stripeLive, catalog_version: config.catalogVersion, currency: config.currency,
-        packs: stripeLive ? config.packs.map(pack => ({ id: pack.id, questions: pack.questions, amount_minor: pack.amountCents })) : [] },
+      payments: { purchase_recovery: true, purchase_sessions: stripeLive, catalog_version: config.catalogVersion, currency: config.currency,
+        packs: stripeLive ? config.packs.map(pack => ({ id: pack.id, names: packNames(config.packs,pack.id), questions: pack.questions, amount_minor: pack.amountCents })) : [] },
       telemetry: { enabled: config.telemetryEnabled, max_batch_size: 50, max_queue_age_days: 7 },
     });
   });
@@ -447,6 +450,20 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       amount_minor:session.amountCents,currency:session.currency});
   });
 
+  app.get('/v1/purchase-sessions/:purchaseId',async(req,reply)=>{
+    reply.header('Cache-Control','no-store');
+    if(!stripeLive)throw new ApiError(404,'未启用');
+    const {token}=await requireAccount(req,store);
+    const purchaseId=str((req.params as {purchaseId:string}).purchaseId);
+    if(!/^[0-9a-f-]{16,80}$/i.test(purchaseId))throw new ApiError(400,'purchase_id 无效');
+    const purchase=await store.getPurchaseSessionForAccount(token,purchaseId);
+    if(!purchase)throw new ApiError(404,'未找到购买记录','not_found');
+    if(!await store.billing.rateLimit(captureService.keys.digest('purchase-status',token),30,60_000))
+      throw new ApiError(429,'请稍后再查询','rate_limited');
+    try{return await purchaseProgress(store,purchase,checkoutCatalog,ctx.readPurchaseProgress??(id=>retrieveStripeCheckoutProgress(config.stripeSecretKey,id)));}
+    catch{throw new ApiError(503,'付款状态暂未确认，请查询原订单，不要重复付款','upstream_error');}
+  });
+
   app.get('/purchase', async (req, reply) => {
     const raw=str((req.query as {session?:unknown}|undefined)?.session);
     const dot=raw.indexOf('.');
@@ -454,7 +471,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const session=await store.getPurchaseSession(raw.slice(0,dot),raw.slice(dot+1));
     if(!session) throw new ApiError(410,'购买链接已失效','expired');
     return reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('Content-Security-Policy',PURCHASE_CSP)
-      .header('X-Content-Type-Options','nosniff').type('text/html; charset=utf-8').send(renderPurchase(session,raw));
+      .header('X-Content-Type-Options','nosniff').type('text/html; charset=utf-8').send(renderPurchase(session,raw,packNames(config.packs,session.packId)[normalizeLang(session.lang)]));
   });
 
   app.get('/purchase/complete',async(req,reply)=>{
@@ -471,10 +488,10 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if(dot<1) throw new ApiError(400,'购买链接无效');
     const session=await store.getPurchaseSession(raw.slice(0,dot),raw.slice(dot+1));
     if(!session) throw new ApiError(410,'购买链接已失效','expired');
+    if(session.checkoutSessionId&&session.checkoutURL)return reply.send({url:session.checkoutURL});
     const pack=findPack(config.packs,session.packId);
     if(!pack||pack.questions!==session.questions||pack.amountCents!==session.amountCents||config.currency!==session.currency||config.catalogVersion!==session.catalogVersion)
       throw new ApiError(409,'价格目录已更新，请重新发起购买','idempotency_conflict');
-    if(session.checkoutSessionId&&session.checkoutURL)return reply.send({url:session.checkoutURL});
     const result=await (ctx.createStripeCheckout??createCheckoutSession)(config.stripeSecretKey,{pack,purchaseSessionId:session.sessionId,currency:session.currency,publicBaseURL:config.publicBaseURL,lang:normalizeLang(session.lang)});
     if('error' in result||!result.id) { req.log.error({stripeError:'error' in result?result.error:'missing checkout id'},'checkout session creation failed'); throw new ApiError(502,'支付服务暂时不可用，请稍后再试','upstream_error'); }
     if(!await store.attachPurchaseCheckout(session.sessionId,result.id,result.url)) throw new ApiError(409,'购买请求已处理','capture_already_finalized');

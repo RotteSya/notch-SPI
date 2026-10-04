@@ -287,7 +287,9 @@ enum OfficialAPI {
             try Task.checkCancellation()
             guard environment.state.matches(account) else { throw accountError(OfficialAccountFailure.changed) }
             guard (200..<300).contains(code) else {
-                throw OfficialAPIError(message: localizedErrorBody(data, statusCode: code))
+                let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let reason = (payload?["error"] as? [String: Any])?["code"] as? String
+                throw OfficialAPIError(message: localizedErrorBody(data, statusCode: code), code: reason)
             }
             var result = try JSONDecoder().decode(PurchaseSessionResponse.self, from: data)
             guard ["https", "http"].contains(result.purchaseURL.scheme?.lowercased() ?? ""),

@@ -17,7 +17,7 @@ export class MemoryCheckoutQueue implements CheckoutQueue {
   constructor(access:MemoryCheckoutAccess){this.access=access;}
   async receive(event:PaymentEvent,snapshot:CheckoutSnapshot):Promise<void>{
     validateEvent(event);validateCheckoutSnapshot(snapshot);
-    if(event.resourceId!==snapshot.id||snapshot.paymentStatus!=='paid'||!['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type))throw new Error('Invalid paid Checkout receipt');
+    if(event.resourceId!==snapshot.id||snapshot.paymentStatus!=='paid'||!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.recovery.read'].includes(event.type))throw new Error('Invalid paid Checkout receipt');
     this.access.receipt(event);const hash=checkoutSnapshotHash(snapshot),old=this.deliveries.get(event.id);
     if(old){if(old.hash!==hash)throw new Error('Checkout receipt conflict');return;}
     const now=new Date().toISOString(),existing=this.cases.get(snapshot.id);

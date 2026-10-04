@@ -6,6 +6,8 @@ enum OfficialAccountFailure: Error { case credentialUnavailable, missingCredenti
 
 /// Strictly decoded before any credential, balance, permission or usage mirror changes.
 struct OfficialAccountResponse: Decodable {
+    var initialGrant: Int? = nil
+    var quotaBreakdown: [String: Int]? = nil
     let deviceToken: String?
     let balanceQuestions: Int
     let balanceVersion: String?
@@ -14,12 +16,14 @@ struct OfficialAccountResponse: Decodable {
     let totalInputTokens: Int?
     let totalOutputTokens: Int?
     enum CodingKeys: String, CodingKey {
+        case initialGrant = "initial_grant", quotaBreakdown = "quota_breakdown"
         case deviceToken = "device_token", balanceQuestions = "balance_questions", balanceVersion = "balance_version"
         case cliEnabled = "cli_enabled", totalQuestions = "total_questions"
         case totalInputTokens = "total_input_tokens", totalOutputTokens = "total_output_tokens"
     }
     func validate(registration: Bool) throws {
-        guard balanceQuestions >= 0,
+        guard balanceQuestions >= 0, initialGrant == nil || initialGrant! >= 0,
+              quotaBreakdown == nil || quotaBreakdown!.values.allSatisfy({ $0 >= 0 }),
               [totalQuestions, totalInputTokens, totalOutputTokens].allSatisfy({ $0 == nil || $0! >= 0 }),
               balanceVersion == nil || BalanceVersion.canonical(balanceVersion!) != nil else {
             throw OfficialAccountFailure.invalidResponse
@@ -58,7 +62,7 @@ final class OfficialAccountState: @unchecked Sendable {
     private var refreshSequence: UInt64 = 0
     private var appliedRefreshSequence: UInt64 = 0
     private static let mirrorKeys = ["balanceQuestions", "balanceVersion", "cliEnabled", "credentialRejected",
-                                     "totalQuestions", "totalInputTokens", "totalOutputTokens"]
+                                     "totalQuestions", "totalInputTokens", "totalOutputTokens", "initialGrant", "quotaBreakdown"]
 
     init(defaults: UserDefaults = .standard, secrets: KeychainStore.Access = .live,
          baseURL: @escaping () -> String = { OfficialAPI.baseURL }, onChange: @escaping () -> Void = {}) {
@@ -254,6 +258,9 @@ final class OfficialAccountState: @unchecked Sendable {
     private func applyResponseLocked(_ response: OfficialAccountResponse) {
         defaults.set(false, forKey: "official.credentialRejected")
         defaults.set(response.balanceQuestions, forKey: "official.balanceQuestions")
+        if let grant = response.initialGrant { defaults.set(grant, forKey: "official.initialGrant") }
+        if let breakdown = response.quotaBreakdown { defaults.set(breakdown, forKey: "official.quotaBreakdown") }
+        else { defaults.removeObject(forKey: "official.quotaBreakdown") }
         if let version = response.balanceVersion { defaults.set(version, forKey: "official.balanceVersion") }
         if let cli = response.cliEnabled { defaults.set(cli, forKey: "official.cliEnabled") }
         for (key, value) in [("totalQuestions", response.totalQuestions), ("totalInputTokens", response.totalInputTokens),
@@ -273,6 +280,7 @@ final class OfficialAccountState: @unchecked Sendable {
             let current = identityLocked()
             guard account == nil || account == current, balance >= 0, acceptsBalanceLocked(version),
                   totals == nil || (totals!.isValid && version != nil) else { return false }
+            defaults.removeObject(forKey: "official.quotaBreakdown")
             defaults.set(balance, forKey: "official.balanceQuestions")
             if let version { defaults.set(version, forKey: "official.balanceVersion") }
             if let totals {

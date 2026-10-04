@@ -3,9 +3,17 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: NotchController?
     private var terminationPending = false
+    private var accountRequestedBeforeLaunch = false
     #if DEBUG
     private var qaRegionPicker: QuestionRegionPicker?
     #endif
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if urls.contains(where: { $0.scheme == "notchspi" && $0.host == "account" }) {
+            if let controller { controller.openSettings(page: .account) }
+            else { accountRequestedBeforeLaunch = true }
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
@@ -37,6 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         controller.show()
         self.controller = controller
+        if accountRequestedBeforeLaunch {
+            accountRequestedBeforeLaunch = false
+            controller.openSettings(page: .account)
+        }
 
         // First-launch onboarding expands inside the notch; existing installs
         // are skipped silently inside.

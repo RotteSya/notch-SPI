@@ -626,7 +626,7 @@ Bearer 鉴权、no-store，正文上限 4 KiB；仅接受 source_group=spi_entry
 请求体上限 4 KiB，响应 no-store。同一设备及 `purchase_id` 的已鉴权重试恢复同一订单和原到期时间，
 换发新的随机 256-bit secret，仅保存 hash；原短链接立即失效，不延长十分钟期限。题包/价格/语言
 快照不同、已过期或已消费时返回 409，不能借同一 ID 创建另一笔订单。
-浏览器提交 Stripe 后，webhook 按 Checkout Session 资源做幂等入账；价格目录变化会要求重新创建会话。
+浏览器提交 Stripe 后，webhook 或所属设备主动查询经可信 Stripe GET 核验后按 Checkout Session 资源幂等入账；目录变化仅阻止尚未创建 Checkout 的新付款，已创建订单沿用封存快照。
 `webhook_inbox` 保存事件类型、资源 ID、时间、payload SHA-256、处理状态及重试时间，不保存原始
 事件正文。`payment_orders` 保存服务端验证后的价格快照、设备 ID、Checkout/PaymentIntent/Charge
 引用及付费 lot。订单、首次充值、lot、额度版本、购买会话 `consumed_at` 和事件完成状态在同一事务提交。相同事件 ID
@@ -642,12 +642,30 @@ Checkout 在短链接过期后仍可正常到账。旧版已入账但未记录�
 
 `GET /purchase` 提供中、日、英购买页；金额按币种显示，CSP 绑定固定脚本摘要，no-store、
 no-referrer、nosniff，长期设备凭证不进入页面。`GET /purchase/complete?lang=…` 为统一返回页，
-提示返回 App 刷新余额；不会凭 `paid=1`、`canceled=1` 或 session 查询参数确认到账/未扣款。
+提供 `notchspi://account` 返回账户页，自动/手动查询原订单；不会凭 `paid=1`、`canceled=1` 或 session 查询参数确认到账/未扣款。
 新 Checkout 的成功/取消 URL 不携带会话 ID 或 secret；匿名返回页不查询任何设备或支付状态。
 
 ```json
 {"pack_id":"pack300","catalog_version":"pricing-v1","purchase_id":"<client uuid>","lang":"zh"}
 ```
+
+## GET /v1/purchase-sessions/:purchaseId — 设备购买恢复
+
+Bearer 必须属于原 purchase_id 的 device；不存在/其他设备统一 404，未鉴权 401，no-store。
+返回 `state`、`questions`、`amount_minor`、`currency`、`pack_id` 和可空 `checkout_url`，不返回 token/短 secret。
+
+- `ready`：已创建购买会话但未创建 Checkout；以相同 purchase_id 继续创建，期限不延长。
+- `unpaid`：Stripe GET 确认 open/unpaid，可恢复原 checkout_url。取消浏览器或银行卡失败不创建新单。
+- `pending`：异步确认或事务处理中，保留订单，仅查询，不引导再次付款。
+- `credited`：原订单已通过不可变归属/金额/币种/题包校验，在事务中完成额度入账；客户端仍刷新账户获取当前可用余额（可能已有消费/退款）。
+- `expired`：没有可付款 Checkout 的过期/过时目录会话，或 Stripe GET 确认 expired/unpaid；可以重新选择。
+- `review`：金额/币种/身份冲突或已进入人工核对；不自动改权益，提示支持核对。
+
+读取失败 503、每设备每分钟最多 30 次查询，限额 429；客户端保留重试 ID。
+可信 GET 首次发现的 paid 资源通过稳定 `evt_local_checkout_<snapshot hash>`、类型 `checkout.recovery.read` 加入原付款队列；`observationSource=stripe_api`。其时间是本地发现时间，不伪造 Stripe 签名事件时间；晚到签名通知仍按原 Checkout/PaymentIntent 去重。浏览器返回页始终不查询身份、不发放。
+
+`/v1/client-config` 的 `payments.purchase_recovery=true` 宣告此能力；每个 pack 新增 `names:{zh,ja,en}`，名称与官网共源，旧客户端可忽略。客户端先保存按账户摘要绑定的请求 ID，服务端先上线再发布新客户端。
+`/v1/account` 新增可空 `initial_grant`（历史未知为 null），与 `quota_breakdown`/余额/总量同一个 `balance_version` 快照。客户端不得把初始赠送数量当作当前余额；新 usage 到达应使旧 quota_breakdown 失效直到刷新。
 
 ## POST /webhooks/stripe — 退款状态与额度
 

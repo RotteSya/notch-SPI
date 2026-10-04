@@ -346,6 +346,7 @@ export class SqliteStore implements Store {
 
   createPurchaseSession(input:PurchaseSessionInput):Promise<PurchaseSession|null> { return this.purchases.create(input); }
   getPurchaseSession(sessionId:string,secret:string):Promise<StoredPurchaseSession|null> { return this.purchases.get(sessionId,secret); }
+  getPurchaseSessionForAccount(token:string,purchaseId:string):Promise<StoredPurchaseSession|null> { return this.purchases.forAccount(token,purchaseId); }
   getPurchaseSessionByCheckout(id:string):Promise<StoredPurchaseSession|null> { return this.purchases.byCheckout(id); }
   attachPurchaseCheckout(sessionId:string,id:string,url?:string):Promise<boolean> { return this.purchases.attach(sessionId,id,url); }
   async creditDevice(input:{deviceId:number;questions:number;amountCents:number;currency:string;provider:string;reference:string;note?:string}):Promise<number|null> {
