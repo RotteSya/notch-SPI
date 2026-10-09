@@ -1,5 +1,13 @@
 # NotchSPI 工程交接
 
+2026-10-09 收起边界跟进（已本机运行）：修复将33 pt菜单栏当成32 pt硬件高度导致的2物理像素底边溢出；收起落定去掉材质亮边/噪点/阴影/光效，软件绘制止于硬件内部中轴，右侧真实轮廓不再重画。Swift395项（4跳过、0失败）、2×像素回归、DEBUG实际收起、Release签名验签通过，正常dist-qa包已重启，唯一进程无QA参数。左侧新增扩展区的曲率尚未逐像素校准，系统不提供硬件曲线、当前缺少实拍参照，不声称完全一致。日志 `output/notch-collapsed-edge-2026-10-09/`，详见[记录](docs/hardware-notch-layout-2026-10-09.md)。未发布。
+
+2026-10-09 刘海适配修正版（覆盖同日整体下移方案，已本机运行）：按用户反馈撤销内容板整体偏移，顶部左翼放标识/状态、右翼放模式/人物像/设置，中央避开真实硬件；正常正文保留48 pt起点，引导主体保留原位，无刘海维持原单行标题栏。顶部控件按动画每帧的可用两翼约束，新增“两翼仍有内容、正文不下移”验收。Swift393项（4跳过、0失败）、warnings-as-errors、arm64 Release、离线DEBUG答案/引导切换和diff检查通过；正常dist-qa包已重新签名启动，唯一进程无QA参数。日志 `output/hardware-notch-wings-2026-10-09/`，详见[最终修复记录](docs/hardware-notch-layout-2026-10-09.md)。未发布；物理热插拔/合盖仍待实机确认。
+
+2026-10-09 本机已运行刘海适配最新版：按用户要求执行 `scripts/run-local.sh`，当前工作区Release构建、Developer ID签名及验签通过，已启动 `dist-qa/NotchSPI.app`。确认唯一NotchSPI进程指向此包，无QA/模拟启动参数；使用既有设置和账户。日志 `output/hardware-notch-2026-10-09/run-local.log`。未替换Applications、未发布。
+
+2026-10-09 物理刘海安全布局修复（未发布）：以目标屏幕safeAreaInsets及auxiliaryTop区域分离硬件遮挡与装饰外观，展开内容板/引导整体置于安全区下方，收起和过渡指示器避开遮挡；屏幕/缩放变化重算位置并清除旧动画坐标。Swift392项（4跳过、0失败）、warnings-as-errors、arm64 Release和离线DEBUG答案/欢迎/收起视觉验证通过；完整verify仍为既有2270历史断链。物理屏幕肉眼遮挡、真实热插拔/合盖仍需实机确认，正常包未替换。详见[修复与验证](docs/hardware-notch-layout-2026-10-09.md)。
+
 2026-10-09 人物像长名称显示修复（仅用户指定的显示检查第2项，未发布）：刘海名称按钮限制宽度并为状态/题数保留空间，超长名称单行省略，悬停和辅助功能保留全名；短名称与原有点击入口正常。Debug/Release构建、现有5项答案布局测试及三语15组实际视图几何检查通过，隔离离线窗口确认长名称不再挤掉状态、短名称完整、点击打开人物像页。证据在 `output/persona-title-fix-2026-10-09/`。正常运行包未替换，其余3项显示风险未修改。
 
 2026-10-09 本机运行更新：按用户“在我的电脑上运行最新版本”要求，以 `scripts/run-local.sh` 构建、Developer ID 签名并启动 `dist-qa/NotchSPI.app`。已核对唯一 NotchSPI 进程指向该路径、无QA/模拟参数，沿用已保存的official服务模式，未配置baseURL覆盖；当前截图飞入刘海动效已进入本机运行版本。启动日志见 `output/screenshot-flight-2026-10-09/run-local.log`。未替换 `/Applications`、未发布。

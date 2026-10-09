@@ -90,6 +90,9 @@ final class NotchOnboardingView: NSView {
         languages.setAccessibilityLabel("Language / 语言 / 言語")
         languages.font = .systemFont(ofSize: 11)
         languages.appearance = NSAppearance(named: .darkAqua)
+        eyebrow.maximumNumberOfLines = 1
+        eyebrow.lineBreakMode = .byTruncatingTail
+        eyebrow.cell?.truncatesLastVisibleLine = true
         primary.nextKeyView = secondary; secondary.nextKeyView = back
         back.nextKeyView = closeButton; closeButton.nextKeyView = languages
         languages.nextKeyView = primary
@@ -190,6 +193,23 @@ final class NotchOnboardingView: NSView {
         if changed { NSAccessibility.post(element: heading, notification: .valueChanged) }
     }
 
+    private var topCutout: CGRect?
+    private var availableTopWidth: CGFloat = .greatestFiniteMagnitude
+    private var headerInset: CGFloat = 0
+    private var bodyAdjustment: CGFloat = 0
+
+    func configureTopLayout(cutout: CGRect?, availableWidth: CGFloat,
+                            headerInset: CGFloat, bodyAdjustment: CGFloat) {
+        guard topCutout != cutout || availableTopWidth != availableWidth
+                || self.headerInset != headerInset || self.bodyAdjustment != bodyAdjustment else { return }
+        topCutout = cutout
+        availableTopWidth = availableWidth
+        self.headerInset = headerInset
+        self.bodyAdjustment = bodyAdjustment
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
     override func layout() {
         super.layout()
         guard let step else { return }
@@ -225,6 +245,24 @@ final class NotchOnboardingView: NSView {
             detail.frame.size.height = 36
             note.frame = .init(x: inset, y: 198, width: w - inset * 2, height: 40)
         }
+        // Keep the guide's original body positions; only adjust a body that would
+        // actually touch an unusually tall camera housing.
+        for child in [heading, detail, note, illustration, primary, secondary, back, languages, shortcut] {
+            child.frame.origin.y += bodyAdjustment
+        }
+        eyebrow.frame.origin.y += headerInset
+        closeButton.frame.origin.y += headerInset
+        eyebrow.toolTip = eyebrow.stringValue
+        eyebrow.isHidden = false
+        closeButton.isHidden = false
+        if let cutout = topCutout {
+            let liveWidth = min(w, availableTopWidth)
+            eyebrow.frame.size.width = max(0, min(liveWidth - 20, cutout.minX - 8) - eyebrow.frame.minX)
+            closeButton.frame.origin.x = liveWidth - 115
+            eyebrow.isHidden = eyebrow.frame.width < 24
+            closeButton.isHidden = closeButton.frame.minX < cutout.maxX + 8
+        }
+
     }
 
     private var captureTargetLabel: String {
@@ -248,12 +286,14 @@ final class NotchOnboardingView: NSView {
         let illustrationWasHidden = illustration.isHidden
         illustration.isHidden = true
         defer { illustration.isHidden = illustrationWasHidden }
-        if copyPlate.layer?.animation(forKey: "arrive") == nil,
-           let bitmap = copyPlate.bitmapImageRepForCachingDisplay(in: copyPlate.bounds) {
-            copyPlate.cacheDisplay(in: copyPlate.bounds, to: bitmap)
-            let image = NSImage(size: copyPlate.bounds.size)
+        let copyBounds = copyPlate.subviews.filter { !$0.isHidden }
+            .reduce(CGRect.null) { $0.union($1.frame) }.intersection(copyPlate.bounds)
+        if copyPlate.layer?.animation(forKey: "arrive") == nil, !copyBounds.isEmpty,
+           let bitmap = copyPlate.bitmapImageRepForCachingDisplay(in: copyBounds) {
+            copyPlate.cacheDisplay(in: copyBounds, to: bitmap)
+            let image = NSImage(size: copyBounds.size)
             image.addRepresentation(bitmap)
-            let old = OnboardingCopyImage(frame: copyPlate.frame)
+            let old = OnboardingCopyImage(frame: copyBounds.offsetBy(dx: copyPlate.frame.minX, dy: copyPlate.frame.minY))
             old.image = image; old.imageScaling = .scaleNone; old.wantsLayer = true
             addSubview(old, positioned: .above, relativeTo: copyPlate)
             outgoingCopy = old

@@ -616,6 +616,11 @@ final class NotchSurfaceView: NSView {
     /// its lift — a binary toggle here reads as a shadow popping on under the menu bar.
     var shadowStrength: CGFloat = 0 { didSet { needsDisplay = true } }
 
+    /// The physical right-hand contour should remain the real hardware, not a
+    /// second software approximation of its corners. Used only at the settled pose.
+    var hardwareContourCutoff: CGFloat? { didSet { needsDisplay = true } }
+    var materialOpacity: CGFloat = 1 { didSet { needsDisplay = true } }
+
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil } // never intercept clicks
 
@@ -623,6 +628,19 @@ final class NotchSurfaceView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext, cardRect.width > 1 else { return }
         let rect = cardRect
         let path = NotchShape.cgPath(in: rect, topRadius: topRadius, bottomRadius: bottomRadius)
+
+        if let cutoff = hardwareContourCutoff {
+            ctx.saveGState()
+            // Stop inside the camera housing. Its original right corner and lower
+            // edge are left completely transparent, so no guessed curve covers them.
+            ctx.clip(to: CGRect(x: rect.minX, y: rect.minY,
+                                width: max(0, min(rect.maxX, cutoff) - rect.minX), height: rect.height))
+            ctx.addPath(path)
+            ctx.setFillColor(NSColor.black.cgColor)
+            ctx.fillPath()
+            ctx.restoreGState()
+            return
+        }
 
         // Grounded drop shadow (expanded only). Paint the opaque body twice with a CG shadow so it
         // falls below the card — a tight contact shadow plus a soft ambient one. Offsets are
@@ -645,6 +663,11 @@ final class NotchSurfaceView: NSView {
         ctx.saveGState()
         ctx.addPath(path); ctx.setFillColor(NotchPalette.background.cgColor); ctx.fillPath()
         ctx.restoreGState()
+
+        guard materialOpacity > 0 else { return }
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.setAlpha(materialOpacity)
 
         // Interior overlays, clipped to the slab.
         ctx.saveGState()
@@ -682,7 +705,7 @@ final class NotchSurfaceView: NSView {
         if let tile = NotchDither.tileImage {
             ctx.saveGState()
             ctx.setBlendMode(.plusLighter)
-            ctx.setAlpha(0.025)
+            ctx.setAlpha(0.025 * materialOpacity)
             ctx.draw(tile, in: CGRect(x: 0, y: 0, width: 96, height: 96), byTiling: true)
             ctx.restoreGState()
         }

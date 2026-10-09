@@ -29,6 +29,34 @@ final class NotchView: NSView {
     private let screenshotTray = ScreenshotTray()
     var onCancelScreenshotRound: (() -> Void)?
 
+    var screenLayout: NotchScreenLayout? {
+        didSet { if screenLayout != oldValue { lastPlateSize = .zero; needsLayout = true } }
+    }
+
+    /// A display change is a coordinate-system change, not a content resize. Discard old
+    /// animation anchors so a running spring cannot pull the panel back to a removed screen.
+    func resetScreenFrames(collapsed: CGRect, expanded: CGRect) {
+        ticker.pause()
+        collapsedAnchor = collapsed
+        expandedAnchor = expanded
+        let target: CGFloat = model.expanded ? 1 : 0
+        morphProgressTarget = target
+        morphProgressOrigin = target
+        morphFrameOrigin = model.expanded ? expanded : collapsed
+        wasExpanded = model.expanded
+        morph.set(target)
+        geoMorph.set(target)
+        heightSpring.snap(morphFrameOrigin.height)
+        window?.setFrame(morphFrameOrigin, display: true)
+        lastPlateSize = .zero
+        applyLayout()
+    }
+
+    private var safeContentTop: CGFloat {
+        guard let frame = window?.frame else { return screenLayout?.contentInset ?? 0 }
+        return screenLayout?.contentTop(in: frame) ?? 0
+    }
+
     func screenshotDestination(_ id: UUID) -> NSRect? { screenshotTray.screenFrame(for: id) }
     func refreshScreenshotTray() { refresh(); layoutSubtreeIfNeeded() }
     func screenshotLanded() { if !reduceMotion { luma.pulse() } }
@@ -543,8 +571,14 @@ final class NotchView: NSView {
         surface.topRadius = notchLerp(6, 8, gr)
         surface.bottomRadius = notchLerp(14, 22, gr)
         surface.depth = p
-        surface.shadowStrength = p
+        let hardware = screenLayout?.hasTopWings == true
+        let materialOpacity = hardware ? min(1, g) : 1
+        surface.materialOpacity = materialOpacity
+        surface.shadowStrength = p * materialOpacity
+        surface.hardwareContourCutoff = hardware && g <= 0.000001
+            ? screenLayout.map { ($0.cutout?.midX ?? 0) - (window?.frame.minX ?? 0) } : nil
 
+        luma.alphaValue = materialOpacity
         luma.frame = b
         luma.setSlab(cardRect: card, topRadius: notchLerp(6, 8, gr),
                      bottomRadius: notchLerp(14, 22, gr), depth: p)
@@ -561,20 +595,41 @@ final class NotchView: NSView {
     private func layoutRose(card: CGRect, g: CGFloat) {
         let t = max(0, min(g, 1.1))
         let barH = collapsedAnchor.height > 0 ? collapsedAnchor.height : bounds.height
-        let cy = notchLerp(barH / 2, NotchLayout.headerRowCenterY, t)
+        let cy = notchLerp(barH / 2, (screenLayout?.headerInset ?? 0) + NotchLayout.headerRowCenterY, t)
         let size = notchLerp(20, 16, t)
-        rose.frame = CGRect(x: card.minX + 24 - size / 2, y: cy - size / 2, width: size, height: size)
+        var rect = CGRect(x: card.minX + 24 - size / 2, y: cy - size / 2, width: size, height: size)
+        if let cutout = screenLayout?.cutout, let window {
+            let indicatorRight = window.frame.minX + max(rect.maxX, card.minX + 56)
+            let indicatorLeft = window.frame.minX + rect.minX
+            if indicatorRight > cutout.minX && indicatorLeft < cutout.maxX {
+                rect.origin.y = max(rect.minY, safeContentTop)
+            }
+        }
+        rose.frame = rect
     }
 
     private func layoutContentPlate(card: CGRect, p: CGFloat) {
         guard expandedAnchor.width > 0 else { expandedContent.isHidden = true; return }
         let plateSize = CGSize(width: expandedAnchor.width - NotchMetrics.shadowMarginH * 2,
-                               height: expandedAnchor.height - NotchMetrics.shadowMarginBottom)
+                               height: max(0, expandedAnchor.height - NotchMetrics.shadowMarginBottom))
         if plateSize != lastPlateSize {
             lastPlateSize = plateSize
             layoutPlate(plateSize)
         }
         expandedContent.frame = CGRect(origin: card.origin, size: plateSize)
+        // Body typography stays at its final size. Only the top groups track the two
+        // currently visible wings, so even an interrupted morph cannot sweep text
+        // through the physical camera housing.
+        let liveWidth = max(0, min(card.width, plateSize.width))
+        let cutout = screenLayout?.cutout.map { cutout in
+            CGRect(x: cutout.minX - (window?.frame.minX ?? 0) - card.minX,
+                   y: (window?.frame.maxY ?? 0) - cutout.maxY - card.minY,
+                   width: cutout.width, height: cutout.height)
+        }
+        layoutHeader(width: screenLayout?.hasTopWings == true ? liveWidth : plateSize.width, cutout: cutout)
+        onboarding.configureTopLayout(cutout: screenLayout?.hasTopWings == true ? cutout : nil,
+            availableWidth: liveWidth, headerInset: screenLayout?.headerInset ?? 0,
+            bodyAdjustment: screenLayout?.bodyAdjustment(onboarding: true) ?? 0)
 
         // Staging: the slab leads, the content follows — in by ~half the morph on the way out of
         // the notch, and gone in the first exhale of a collapse.
@@ -596,7 +651,7 @@ final class NotchView: NSView {
         if !expandedContent.isHidden {
             let path = NotchShape.cgPath(in: card, topRadius: surface.topRadius,
                                          bottomRadius: surface.bottomRadius)
-            var shift = CGAffineTransform(translationX: -card.minX, y: -card.minY)
+            var shift = CGAffineTransform(translationX: -expandedContent.frame.minX, y: -expandedContent.frame.minY)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             contentMask.path = path.copy(using: &shift)
@@ -604,14 +659,11 @@ final class NotchView: NSView {
         }
     }
 
-    /// Lay the plate at its FINAL size — called when the target size or the content changes,
-    /// never per morph tick, so the CTFramesetter cache stays warm and nothing re-wraps.
-    private func layoutPlate(_ size: CGSize) {
-        guard !closingOnboarding else { return }
+    private func layoutHeader(width: CGFloat, cutout: CGRect?) {
         let inset = NotchLayout.contentInsetH
-        let cy = NotchLayout.headerRowCenterY
+        let cy = NotchLayout.headerRowCenterY + (screenLayout?.headerInset ?? 0)
 
-        let gearX = size.width - inset - 28
+        let gearX = width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
 
         var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
@@ -635,11 +687,38 @@ final class NotchView: NSView {
         let statusH = statusText.intrinsicContentSize.height
         statusText.frame = CGRect(x: x, y: cy - statusH / 2, width: statusW, height: statusH)
 
+        let daily = onboarding.isHidden
+        [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = !daily }
+        statusText.toolTip = statusText.stringValue
+        guard screenLayout?.hasTopWings == true, let cutout else { return }
+
+        // Two compact lines on the left retain the complete usual status/quota text.
+        // The right pill truncates within its wing and keeps its full tooltip/AX label.
+        let leftWidth = max(0, min(width - inset, cutout.minX - 8) - (inset + 24))
+        modeLabel.frame = CGRect(x: inset + 24, y: 7, width: leftWidth, height: modeH)
+        statusText.frame = CGRect(x: inset + 24, y: 26, width: leftWidth, height: statusH)
+        let rightStart = max(inset, cutout.maxX + 8)
+        let gearFits = gearX >= rightStart
+        let pillWidth = min(cap.width, 200, max(0, gearX - 8 - rightStart))
+        capsule.frame = CGRect(x: gearX - 8 - pillWidth, y: cy - cap.height / 2,
+                               width: pillWidth, height: cap.height)
+        modeLabel.isHidden = !daily || leftWidth < 24
+        statusText.isHidden = !daily || leftWidth < 24
+        gearButton.isHidden = !daily || !gearFits
+        capsule.isHidden = !daily || pillWidth < 24
+    }
+
+    /// Lay the plate at its FINAL size — called when the target size or the content changes,
+    /// never per morph tick, so the CTFramesetter cache stays warm and nothing re-wraps.
+    private func layoutPlate(_ size: CGSize) {
+        guard !closingOnboarding else { return }
+        let inset = NotchLayout.contentInsetH
         // Answer fills below the header; the panel height is sized by the controller, so a long
         // answer scrolls within this fixed region and a short one hugs it.
-        let onboardingHeight = model.onboardingContentHeight ?? 0
+        let bodyAdjustment = screenLayout?.bodyAdjustment(onboarding: model.onboardingStep != nil) ?? 0
+        let onboardingHeight = (model.onboardingContentHeight ?? 0) + bodyAdjustment
         onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
-        let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight : onboardingHeight
+        let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight + bodyAdjustment : onboardingHeight
         let stripHeight = model.materialAreaHeight
         let trayHeight = model.screenshotTrayHeight
         let w = max(0, size.width - inset * 2)

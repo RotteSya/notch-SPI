@@ -175,7 +175,7 @@ final class NotchController: NSObject {
         }
         notchView = view
         panel.contentView = view
-        panel.setFrame(frame(expanded: false), display: true)
+        refreshScreenLayout()
 
         refreshModeLabels()
         if activateServices {
@@ -218,12 +218,18 @@ final class NotchController: NSObject {
         if activateServices { Task { @MainActor in ScreenCapture.prefetchShareableContent() } }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { _ in
+        ) { [weak self] _ in
             Task { @MainActor in
+                self?.refreshScreenLayout()
                 ScreenCapture.invalidateShareableContent()
-                ScreenCapture.prefetchShareableContent()
+                if self?.activatesServices == true { ScreenCapture.prefetchShareableContent() }
             }
         })
+        for name in [NSWindow.didChangeScreenNotification, NSWindow.didChangeBackingPropertiesNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshScreenLayout(followWindow: true) }
+            })
+        }
     }
 
     deinit { onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
@@ -1462,59 +1468,58 @@ final class NotchController: NSObject {
 
     // MARK: - Geometry (NSScreen coords are bottom-left origin)
 
-    /// Prefer the built-in display that actually HAS the physical notch (non-zero safe-area top), so
-    /// the slab is never placed at the top-center of a notchless external monitor. Falls back to the
-    /// main screen, then any screen.
+    private var layoutScreenID: CGDirectDisplayID?
+    private var updatingScreenLayout = false
+
     private var screen: NSScreen? {
-        NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
-            ?? NSScreen.main ?? NSScreen.screens.first
-    }
-
-    private var notchWidth: CGFloat {
-        guard let s = screen else { return 200 }
-        if let l = s.auxiliaryTopLeftArea?.width, let r = s.auxiliaryTopRightArea?.width, l > 0, r > 0 {
-            return max(150, s.frame.width - l - r)
+        let screens = NSScreen.screens
+        if let id = layoutScreenID,
+           let current = screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) {
+            return current
         }
-        return 200
+        if let currentID = panel.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+           let current = screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber) == currentID }) {
+            return current
+        }
+        return screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first
     }
 
-    /// Height of the slab in the collapsed (fused) state. The physical notch cutout's bottom aligns
-    /// with the **menu-bar bottom**, which on a notched display can be a point taller than the
-    /// notch-safe inset (measured here: 33pt chrome vs 32pt `safeAreaInsets.top`). Using the safe
-    /// inset left the slab's lower edge a hair (2px) above the real cutout — a visible "short bottom".
-    /// So take the true top-chrome height; never shorter than the safe inset, and guard the
-    /// menu-bar-auto-hide case (where `frame.maxY - visibleFrame.maxY` collapses toward 0).
-    private var notchHeight: CGFloat {
-        guard let s = screen else { return 28 }
-        let safe = s.safeAreaInsets.top
-        guard safe > 0 else { return max(28, safe) }         // notchless display → 28 floor
-        let menuBar = s.frame.maxY - s.visibleFrame.maxY     // true top chrome (0 if auto-hidden)
-        return max(safe, menuBar)
+    private var screenLayout: NotchScreenLayout? {
+        guard let screen else { return nil }
+        return NotchScreenLayout(frame: screen.frame, visibleFrame: screen.visibleFrame,
+            scale: screen.backingScaleFactor, safeTop: screen.safeAreaInsets.top,
+            auxiliaryLeft: screen.auxiliaryTopLeftArea, auxiliaryRight: screen.auxiliaryTopRightArea)
     }
 
-    /// Points-per-pixel of the target display; every panel edge is snapped to this grid so the
-    /// software slab fuses with the hardware notch instead of straddling a physical pixel.
-    private var backingScale: CGFloat { screen?.backingScaleFactor ?? 2 }
+    private func refreshScreenLayout(followWindow: Bool = false) {
+        guard !updatingScreenLayout else { return }
+        updatingScreenLayout = true
+        defer { updatingScreenLayout = false }
+        if followWindow, let current = panel.screen {
+            layoutScreenID = (current.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        }
+        guard let current = screen else { return }
+        layoutScreenID = (current.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        notchView.screenLayout = screenLayout
+        notchView.resetScreenFrames(collapsed: frame(expanded: false), expanded: frame(expanded: true))
+    }
 
     /// The transparent left extension (collapsed) that puts the Rose in the menu bar beside the cutout.
     private let collapsedSideExtension: CGFloat = 60
 
     private func frame(expanded: Bool) -> NSRect {
         // No display (truly headless) — nothing sensible to place; a harmless default avoids a crash.
-        guard let s = screen?.frame else { return NSRect(x: 0, y: 0, width: expandedWidth, height: 100) }
-        let m = NotchGeometry.Metrics(screenFrame: s, scale: backingScale,
-                                      notchWidth: notchWidth, notchHeight: notchHeight)
+        guard let layout = screenLayout else { return NSRect(x: 0, y: 0, width: expandedWidth, height: 100) }
         if expanded {
             // The visible card is `expandedWidth × expandedCardHeight`; the panel is grown by a
             // transparent margin (sides + bottom, never the top) so the obsidian card can cast a
             // soft drop shadow without it being clipped at the panel edge.
-            return NotchGeometry.expanded(m, cardWidth: expandedWidth, cardHeight: expandedCardHeight(),
-                                          marginH: NotchMetrics.shadowMarginH,
-                                          marginBottom: NotchMetrics.shadowMarginBottom)
+            return layout.expanded(contentHeight: expandedCardHeight()
+                + layout.bodyAdjustment(onboarding: model.onboardingStep != nil))
         }
         // Collapsed: within the menu-bar height; right wall fused with the notch, extended LEFT so
         // the rose shows in the visible menu-bar space beside the (non-display) notch cutout.
-        return NotchGeometry.collapsed(m, sideExtension: collapsedSideExtension)
+        return layout.collapsed(sideExtension: collapsedSideExtension)
     }
 
     // Auto-size the expanded panel to its content (clamped), so a short answer
@@ -1525,7 +1530,7 @@ final class NotchController: NSObject {
     private func expandedCardHeight() -> CGFloat {
         if let step = model.onboardingStep {
             guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
-            let width = expandedWidth - NotchLayout.contentInsetH * 2
+            let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                 presentation: NotchType.presentation(for: model), width: width)
             return min(step.height + model.materialAreaHeight + max(50, answerH) + NotchLayout.answerBottomPad,
@@ -1533,7 +1538,7 @@ final class NotchController: NSObject {
         }
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
-        let width = expandedWidth - NotchLayout.contentInsetH * 2
+        let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
         let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                                              presentation: NotchType.presentation(for: model), width: width)
         let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
