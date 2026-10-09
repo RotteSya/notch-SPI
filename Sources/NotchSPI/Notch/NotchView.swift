@@ -614,10 +614,6 @@ final class NotchView: NSView {
         let gearX = size.width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
 
-        let cap = capsule.intrinsicContentSize
-        let capX = gearX - 8 - cap.width
-        capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: cap.width, height: cap.height)
-
         var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
         // Size the label by asking its cell (NSString measurement misses the cell's own
         // horizontal padding, which clipped "学习辅导" to "学习…" in the header).
@@ -626,6 +622,15 @@ final class NotchView: NSView {
         let modeH = modeLabel.intrinsicContentSize.height
         modeLabel.frame = CGRect(x: x, y: cy - modeH / 2, width: modeW, height: modeH)
         x += modeW + 6
+
+        let cap = capsule.intrinsicContentSize
+        // Persona names are user content. Reserve room for status/quota before fitting the
+        // name, so a long label cannot consume the header or overlap the wordmark.
+        let capWidth = model.mode == "personality" && !model.autoActive
+            ? min(cap.width, 200, max(0, gearX - 8 - x - 8 - 180)) : cap.width
+        let capX = gearX - 8 - capWidth
+        capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: capWidth, height: cap.height)
+
         let statusW = max(0, capX - 8 - x)
         let statusH = statusText.intrinsicContentSize.height
         statusText.frame = CGRect(x: x, y: cy - statusH / 2, width: statusW, height: statusH)
@@ -784,6 +789,7 @@ private final class NotchCapsuleButton: NSControl {
                 .foregroundColor: NotchPalette.secondary,
             ])
             setAccessibilityLabel(title)
+            toolTip = title
             invalidateIntrinsicContentSize()
             // Cycling the depth rolls the label like a station indicator — old value yields
             // upward, the new one rises into place. First fill and Reduce Motion just repaint.
@@ -841,28 +847,30 @@ private final class NotchCapsuleButton: NSControl {
         cap.addClip()
         let t = prevAttr != nil ? max(0, min(1, rollTween?.value ?? 1)) : 1
         let rise: CGFloat = 7
-        let s = attr.size()
-        let newOrigin = CGPoint(x: (r.width - s.width) / 2,
-                                y: (r.height - s.height) / 2 + (1 - t) * rise)
         if let prev = prevAttr, t < 1 {
-            let ps = prev.size()
-            drawFaded(prev, at: CGPoint(x: (r.width - ps.width) / 2,
-                                        y: (r.height - ps.height) / 2 - t * rise), alpha: 1 - t)
-            drawFaded(attr, at: newOrigin, alpha: t)
+            drawTitle(prev, offsetY: -t * rise, alpha: 1 - t)
+            drawTitle(attr, offsetY: (1 - t) * rise, alpha: t)
         } else {
-            attr.draw(at: newOrigin)
+            drawTitle(attr, offsetY: 0, alpha: 1)
         }
         ctx.restoreGState()
     }
 
-    private func drawFaded(_ string: NSAttributedString, at point: CGPoint, alpha: CGFloat) {
+    private func drawTitle(_ string: NSAttributedString, offsetY: CGFloat, alpha: CGFloat) {
         let m = NSMutableAttributedString(attributedString: string)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        m.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: m.length))
         m.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: m.length)) { v, range, _ in
             let c = (v as? NSColor) ?? NotchPalette.secondary
             m.addAttribute(.foregroundColor, value: c.withAlphaComponent(c.alphaComponent * alpha),
                            range: range)
         }
-        m.draw(at: point)
+        let height = ceil(string.size().height)
+        let textRect = NSRect(x: hPad, y: (bounds.height - height) / 2 + offsetY,
+                              width: max(0, bounds.width - hPad * 2), height: height)
+        m.draw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     override func updateTrackingAreas() {
