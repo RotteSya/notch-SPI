@@ -67,7 +67,17 @@ enum OfficialAPI {
     struct AccountEnvironment {
         let state: OfficialAccountState
         let session: URLSession
-        static var live: Self { .init(state: accountState, session: .shared) }
+        var receiveConfiguration: @MainActor (NotchClientConfig, CaptureAccount) -> Void = { _, _ in }
+        static var live: Self {
+            .init(state: accountState, session: .shared, receiveConfiguration: { config, account in
+                ClientConfigService.shared.acceptRegistrationConfig(config, for: account)
+            })
+        }
+    }
+
+    private struct RegistrationConfiguration: Decodable {
+        let clientConfig: NotchClientConfig
+        enum CodingKeys: String, CodingKey { case clientConfig = "client_config" }
     }
 
     /// Explicit network/account dependencies keep each capture bound to its initiating
@@ -429,9 +439,17 @@ enum OfficialAPI {
                     let (code, data) = try await readAccountHTTP(request, session: environment.session)
                     guard code == 200 else { return .failure(OfficialAPIError(message: localizedErrorBody(data, statusCode: code))) }
                     let value = try JSONDecoder().decode(OfficialAccountResponse.self, from: data)
+                    // Config is additive: an old server or malformed optional config must
+                    // not discard an otherwise valid, recoverable device registration.
+                    let config = try? JSONDecoder().decode(RegistrationConfiguration.self, from: data).clientConfig
                     return try await MainActor.run {
                         try Task.checkCancellation()
-                        return .success(try environment.state.acceptRegistration(value, ticket: ticket))
+                        let token = try environment.state.acceptRegistration(value, ticket: ticket)
+                        if let config, config.accepted, let account = environment.state.account,
+                           account.token == token, account.baseURL == ticket.baseURL {
+                            environment.receiveConfiguration(config, account)
+                        }
+                        return .success(token)
                     }
                 }
             } catch { return .failure(accountError(error)) }
@@ -595,7 +613,7 @@ enum OfficialAPI {
                 }
                 guard http.value(forHTTPHeaderField: "Content-Type")?.split(separator: ";").first?
                     .trimmingCharacters(in: .whitespaces).lowercased() == "text/event-stream" else { throw URLError(.badServerResponse) }
-                let outcome = try await OfficialStreamDecoder.consume(bytes, captureID: id, screenQuery: screenQuery != nil,
+                let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id, screenQuery: screenQuery != nil,
                                                                        operation: operation) { event in
                     try await MainActor.run {
                         try Task.checkCancellation()

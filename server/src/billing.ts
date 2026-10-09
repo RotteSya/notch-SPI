@@ -67,15 +67,28 @@ export interface Attempt {
   inputTokens: number | null; outputTokens: number | null; costMicros: string | null;
   currency: string; pricingVersion: string; startedAt: string; finishedAt: string | null;
 }
+/** Account and capture metadata from the same committed settlement. */
+export interface CaptureSettlement {
+  account: AccountSnapshot;
+  capture: CaptureRecord | null;
+}
+export type NewAttempt = Omit<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'startedAt' | 'finishedAt'>;
+export function assertAttemptBinding(input: BeginCapture, attempt: NewAttempt): void {
+  const purpose = input.operation === 'explain' ? 'explain' : input.operation === 'recover' ? 'recover' : 'answer';
+  if (attempt.captureId !== input.captureId || attempt.purpose !== purpose) throw new Error('Attempt/capture binding mismatch');
+}
 export interface BillingStore {
   quota(token: string): Promise<QuotaSnapshot | null>;
   accountSnapshot(token: string): Promise<AccountSnapshot | null>;
   begin(input: BeginCapture): Promise<BeginResult>;
+  beginWithAttempt(input: BeginCapture, attempt: NewAttempt): Promise<BeginResult>;
   finish(input: FinishCapture): Promise<AccountSnapshot | null>;
+  finishWithCapture(input: FinishCapture & {captureId: string}): Promise<CaptureSettlement | null>;
   capture(token: string, captureId: string): Promise<CaptureRecord | null>;
   reap(now?: string): Promise<number>;
   startAttempt(token: string, input: Omit<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'startedAt' | 'finishedAt'>): Promise<boolean>;
   finishAttempt(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>): Promise<void>;
+  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>, actualMicros: number | null): Promise<void>;
   reserveBudget(token: string, attemptId: string, scope: string, currency: string,
     reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number): Promise<boolean>;
   releaseBudget(token: string, attemptId: string): Promise<void>;

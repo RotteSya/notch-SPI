@@ -13,6 +13,7 @@ import CoreText
 // scroll shows a window onto it; while streaming, NotchView keeps it pinned to the bottom. Reduce
 // Motion births instantly. Selection is traded for the animation; a right-click menu copies.
 final class StreamingAnswerView: NSView {
+    var completedCapture: CaptureLatency?
     private var attributed = NSAttributedString()
     private var plain = ""
     private var births: [CFTimeInterval] = []   // one per Character of `plain`
@@ -21,6 +22,7 @@ final class StreamingAnswerView: NSView {
     private var link: CADisplayLink?
     private var proxy: StreamProxy?
     private var frameCache: (key: String, width: CGFloat, frame: CTFrame)?
+    private var heightCache: (width: CGFloat, height: CGFloat)?
 
     /// Fires when the "▸ 推理过程" line is clicked (brief mode's folded scratch work).
     var onToggleReasoning: (() -> Void)?
@@ -83,6 +85,7 @@ final class StreamingAnswerView: NSView {
         self.isPlaceholder = isPlaceholder
         attributed = attr
         frameCache = nil
+        heightCache = nil
         extractRanges()
 
         if isPlaceholder {
@@ -132,6 +135,15 @@ final class StreamingAnswerView: NSView {
 
     // MARK: - Shared framesetter (measure == render)
 
+    /// Layout reuses the exact attributed content already prepared for drawing. The
+    /// viewport may change height many times without changing text, style or width.
+    func measuredHeight(width: CGFloat) -> CGFloat {
+        if let cache = heightCache, cache.width == width { return cache.height }
+        let height = Self.measure(attributed, width: width)
+        heightCache = (width, height)
+        return height
+    }
+
     static func measure(_ attr: NSAttributedString, width: CGFloat) -> CGFloat {
         guard attr.length > 0, width > 1 else { return 0 }
         let setter = CTFramesetterCreateWithAttributedString(attr)
@@ -168,7 +180,13 @@ final class StreamingAnswerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let frame = currentFrame() else { return }
+        if !isPlaceholder, window?.isVisible == true, !isHiddenOrHasHiddenAncestor,
+           !visibleRect.isEmpty { completedCapture?.mark(.renderStarted) }
         let now = CACurrentMediaTime()
+        // A frame has one motion policy. Reading accessibility (and the QA environment)
+        // for every glyph adds main-thread work while the next stream delta is waiting.
+        // Refresh this snapshot on the next draw so live accessibility changes still apply.
+        let reduceMotion = self.reduceMotion
 
         // CT lays out y-up; the view is flipped (y-down). Flip once, then shift the tall layout
         // path so the first line sits at the view's top.
@@ -184,7 +202,7 @@ final class StreamingAnswerView: NSView {
         // The answer card's glass chip — behind the glyphs, born with its first glyph.
         if let chip = cardRange, chip.length > 0 {
             drawCardChip(chip, lines: lines, origins: origins, shift: shift,
-                         ctx: ctx, now: now, utf16Births: utf16Births)
+                         ctx: ctx, now: now, utf16Births: utf16Births, reduceMotion: reduceMotion)
         }
 
         for (li, line) in lines.enumerated() {
@@ -254,7 +272,7 @@ final class StreamingAnswerView: NSView {
     /// birth, so chip and text condense into view together.
     private func drawCardChip(_ chip: NSRange, lines: [CTLine], origins: [CGPoint],
                               shift: CGFloat, ctx: CGContext, now: CFTimeInterval,
-                              utf16Births: [CFTimeInterval]) {
+                              utf16Births: [CFTimeInterval], reduceMotion: Bool) {
         var top = -CGFloat.greatestFiniteMagnitude    // y-up context coords
         var bottom = CGFloat.greatestFiniteMagnitude
         for (li, line) in lines.enumerated() {

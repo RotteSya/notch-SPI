@@ -1,21 +1,27 @@
 import {createHash} from 'node:crypto';
 import {existsSync,readFileSync,statSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import {callUpperCNY,ensureEvaluationSettlementSchema,validateEvaluationPolicy,
   type EvaluationCallBound,type EvaluationPolicy,type EvaluationPurpose} from './evaluation-budget.mts';
 
 export interface SettlementReceipt {
-  kind:'reading_response'|'objective_jsonl';path:string;sha256:string;line?:number;
+  kind:'reading_response'|'objective_jsonl'|'direct_provider_result';path:string;sha256:string;line?:number;
+  /** Zero-based row in an original diagnostic {rows:[...]} file; omit for a single result. */
+  record_index?:number;
 }
 export interface EvaluationSettlementBatch {
   schema_version:1;campaign_id:string;executor:string;created_at:string;
   bounds:Record<string,EvaluationCallBound>;
   entries:Array<{dispatch_id:string;dispatch_sha256:string;receipt:SettlementReceipt}>;
+  supporting_evidence?:Array<{role:'plan'|'runner'|'provider'|'execution_log'|'budget'|'validator'|'pricing';path:string;sha256:string}>;
 }
 export interface EvaluationSettlementReview {
   schema_version:1;campaign_id:string;batch_sha256:string;reviewer:string;reviewed_at:string;
   decision:'approved_conservative_usage_settlement';
+  /** Explicit completion audit of direct calls, whose reserve/observe path leaves outcome unknown. */
+  provider_completion_dispatch_ids?:string[];
 }
 export function settlementDigest(value:Record<string,unknown>):string {
   return sha(JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]]))));
@@ -50,6 +56,7 @@ function readBoundFile(path:string,expected:string,limit=8*1024*1024):Buffer {
 
 function verifyReceipt(row:Record<string,unknown>,receipt:SettlementReceipt,bytes:Buffer):void {
   let value:Record<string,unknown>;
+  if(receipt.kind!=='direct_provider_result'&&receipt.record_index!==undefined)fail('unexpected provider row selector');
   if(receipt.kind==='objective_jsonl') {
     if(!['answer','baseline'].includes(String(row.purpose))||!Number.isSafeInteger(receipt.line)||Number(receipt.line)<1)fail('invalid objective receipt');
     const line=bytes.toString('utf8').split('\n')[Number(receipt.line)-1];
@@ -70,6 +77,29 @@ function verifyReceipt(row:Record<string,unknown>,receipt:SettlementReceipt,byte
     value=usages[0]!;
     const operation=row.purpose==='answer'?'solve':row.purpose==='explain'?'explain':row.purpose==='recover'?'recover':null;
     if(!operation||value.capture_id!==response.capture_id||value.operation!==operation)fail('reading usage belongs to another request');
+  } else if(receipt.kind==='direct_provider_result') {
+    if(receipt.line!==undefined||!['answer','baseline'].includes(String(row.purpose)))fail('invalid provider receipt');
+    const source=object(JSON.parse(bytes.toString('utf8')));
+    let record:Record<string,unknown>;
+    if(receipt.record_index!==undefined) {
+      if(!Number.isSafeInteger(receipt.record_index)||receipt.record_index<0||!Array.isArray(source.rows)
+        ||source.rows.length>10_000)fail('invalid provider row selector');
+      record=object(source.rows[receipt.record_index]);
+      if(source.rows.filter(item=>object(item).id===row.id).length!==1)fail('duplicate or missing provider dispatch');
+      if(record.fixture!==row.fixture_id||record.error!==null)fail('provider diagnostic failed or mismatched');
+    } else {
+      record=source;
+      if(record.error!==false||!Number.isSafeInteger(record.calls)||Number(record.calls)<1)
+        fail('provider wrapper did not complete');
+    }
+    if(record.id!==row.id||(record.fixture!==undefined&&record.fixture!==row.fixture_id)
+      ||(record.model!==undefined&&record.model!==row.model)||(record.purpose!==undefined&&record.purpose!==row.purpose)
+      ||typeof record.raw!=='string'||!record.raw.trim()
+      ||typeof record.total_ms!=='number'||!Number.isFinite(record.total_ms)||record.total_ms<=0
+      ||typeof record.first_delta_ms!=='number'||!Number.isFinite(record.first_delta_ms)
+      ||record.first_delta_ms<0||record.first_delta_ms>record.total_ms)fail('incomplete provider result');
+    const usage=object(record.usage);
+    value={input_tokens:usage.inputTokens,output_tokens:usage.outputTokens};
   } else fail('unsupported receipt type');
   positive(value.input_tokens);positive(value.output_tokens);
   if(value.input_tokens!==row.input_tokens||value.output_tokens!==row.output_tokens)fail('receipt usage differs from ledger');
@@ -89,7 +119,32 @@ export function settleEvaluationBudget(options:{ledger:string;policy:EvaluationP
      at(review.reviewed_at)>now)fail('independent review does not authorize this exact batch');
   object(batch.bounds);
   if(!Array.isArray(batch.entries)||batch.entries.length<1||batch.entries.length>10_000)fail('invalid settlement batch size');
+  // A generic historical review must never silently authorize a newly supported receipt.
+  // Direct results lack an HTTP envelope: the independent reviewer explicitly attests each
+  // completion after checking its original runner/plan. No dispatch history is rewritten.
+  const directIDs=batch.entries.filter(entry=>entry.receipt?.kind==='direct_provider_result').map(entry=>entry.dispatch_id);
+  const approvedDirect=review.provider_completion_dispatch_ids??[];
+  if(!Array.isArray(approvedDirect)||approvedDirect.length!==directIDs.length
+    ||new Set(approvedDirect).size!==approvedDirect.length||approvedDirect.some(id=>!directIDs.includes(id)))
+    fail('independent provider completion audit is required');
   const ids=new Set<string>(),cache=new Map<string,Buffer>();let evidenceBytes=0;
+  const evidenceRoles=['plan','runner','provider','execution_log','budget','validator','pricing'];
+  const support=batch.supporting_evidence??[];
+  if(!Array.isArray(support)||support.length>1000
+    ||directIDs.length>0&&evidenceRoles.some(role=>!support.some(file=>file?.role===role)))
+    fail('direct provider review needs bound execution and validation evidence');
+  for(const file of support) {
+    object(file);text(file.path);hash(file.sha256);
+    if(!evidenceRoles.includes(file.role))fail('invalid supporting evidence role');
+    if(file.role==='validator'&&resolve(file.path)!==fileURLToPath(import.meta.url)
+      ||file.role==='budget'&&resolve(file.path)!==fileURLToPath(new URL('./evaluation-budget.mts',import.meta.url)))
+      fail('review must bind the executing budget validator');
+    const key=resolve(file.path)+'#'+file.sha256;
+    if(!cache.has(key)) {
+      const bytes=readBoundFile(file.path,file.sha256);evidenceBytes+=bytes.length;
+      if(evidenceBytes>64*1024*1024)fail('receipt batch exceeds 64 MiB');cache.set(key,bytes);
+    }
+  }
   for(const entry of batch.entries) {
     text(entry.dispatch_id);hash(entry.dispatch_sha256);object(entry.receipt);text(entry.receipt.path);hash(entry.receipt.sha256);
     if(ids.has(entry.dispatch_id))fail('duplicate dispatch in batch');ids.add(entry.dispatch_id);
@@ -118,7 +173,9 @@ export function settleEvaluationBudget(options:{ledger:string;policy:EvaluationP
       const before=consumption();let released=0,inserted=0,existing=0;
       for(const entry of batch.entries) {
         const row=db.prepare('SELECT * FROM evaluation_dispatches WHERE id=? AND campaign_id=?').get(entry.dispatch_id,batch.campaign_id);
-        if(!row||settlementDigest(row)!==entry.dispatch_sha256||row.outcome!=='response_received')fail('dispatch changed or is not completed');
+        if(!row||settlementDigest(row)!==entry.dispatch_sha256
+          ||(row.outcome!=='response_received'&&!(row.outcome==='unknown'&&entry.receipt.kind==='direct_provider_result'
+            &&approvedDirect.includes(entry.dispatch_id))))fail('dispatch changed or is not completed');
         positive(row.input_tokens);positive(row.output_tokens);
         const bound=batch.bounds[String(row.bound_sha256)];
         if(!bound||sha(JSON.stringify(bound))!==row.bound_sha256)fail('historical price binding mismatch');

@@ -74,6 +74,7 @@ final class TutorModel: ObservableObject {
     @Published var expanded = false
     @Published var status: Status = .ready
     @Published var statusText = ""
+    var answerLatency: CaptureLatency?
     @Published var answer = "" // streamed markdown text
     @Published var cliLabel = ""
     @Published var depthLabel = ""

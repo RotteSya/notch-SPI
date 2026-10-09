@@ -229,7 +229,11 @@ final class NotchView: NSView {
             .sink { [weak self] in
                 guard let self, !self.refreshPending else { return }
                 self.refreshPending = true
-                DispatchQueue.main.async { [weak self] in
+                // Network bursts often carry several tokens for the same display frame.
+                // Compose once per 120 Hz frame while streaming; the first token and
+                // non-streaming interactions retain the next-main-turn refresh.
+                let delay = self.model.status == .streaming ? 1.0 / 120 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                     self?.refreshPending = false
                     self?.refresh()
                 }
@@ -304,6 +308,8 @@ final class NotchView: NSView {
         answerScroll.isHidden = model.hidesAnswer
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
             : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
+        answerStream.completedCapture = !model.hidesAnswer && model.status == .idle
+            && model.answerLatency?.needsCompletedDraw == true ? model.answerLatency : nil
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
         // Once FINAL arrives, keep the answer at the top instead of following its reasoning
         // to the bottom. Respect a reader who deliberately scrolled away from the live tail.
@@ -340,6 +346,15 @@ final class NotchView: NSView {
             }
         }
         updateFollow()
+        // A completed answer must not wait for another token or animation tick to replace
+        // the previous layer contents. Flush its pending draw after the final layout, even
+        // when streaming already displayed exactly the same short answer.
+        if answerStream.completedCapture != nil {
+            answerStream.needsDisplay = true
+            if window?.isVisible == true, !answerStream.isHiddenOrHasHiddenAncestor {
+                answerStream.displayIfNeeded()
+            }
+        }
     }
 
     /// Rose tint by state — white at rest (no "camera-in-use" green dot), accent while working,
@@ -635,8 +650,7 @@ final class NotchView: NSView {
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
         // long answer scrolls; the CTFramesetter measure matches what it draws.
-        let docH = max(h, NotchType.answerHeight(model.hidesAnswer ? "" : model.displayedAnswer,
-                                                 presentation: NotchType.presentation(for: model), width: w))
+        let docH = max(h, answerStream.measuredHeight(width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
         updateScrollFade()
     }

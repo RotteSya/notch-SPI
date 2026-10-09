@@ -1,5 +1,5 @@
-import { combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type BeginCapture, type BeginResult,
-  type BillingStore, type CaptureRecord, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
+import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+  type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
 import { randomUUID } from 'node:crypto';
@@ -79,13 +79,30 @@ export class MemoryBilling implements BillingStore {
     const d=this.devices.get(deviceId); if(!d) return null; validQuestions(input.questions); return (this.credit(d,input.questions,input.amountCents>0?'paid':'goodwill'),d.balanceQuestions);
   }
   async capture(token: string, captureId: string): Promise<CaptureRecord | null> {
-    const d = this.lookup(token), record = d ? this.state(d).captures.get(captureId)?.record : null;
+    const d = this.lookup(token);
+    return d ? this.captureFor(d, captureId) : null;
+  }
+  private captureFor(d: MemoryQuotaDevice, captureId: string): CaptureRecord | null {
+    const record = this.state(d).captures.get(captureId)?.record;
     if (record && Date.now() - Date.parse(record.createdAt) >= 900_000 && record.answerHmac !== null) {
       record.answerHmac = null;
     }
     return record ? { ...record } : null;
   }
   async begin(input: BeginCapture): Promise<BeginResult> {
+    return this.beginCapture(input);
+  }
+  async beginWithAttempt(input: BeginCapture, attempt: NewAttempt): Promise<BeginResult> {
+    assertAttemptBinding(input, attempt);
+    // Validate uniqueness only after capture admission succeeds, but before changing quota.
+    // Both writes occur without await; rejected duplicates retain the ordinary begin result.
+    const result = this.beginCapture(input, () => {
+      if ([...this.states.values()].some(state => state.attempts.has(attempt.attemptId))) throw new Error('Attempt already exists');
+    });
+    if (result.ok && !this.startAttemptNow(input.token, attempt)) throw new Error('Attempt could not start');
+    return result;
+  }
+  private beginCapture(input: BeginCapture, beforeCommit?: () => void): BeginResult {
     const d = this.lookup(input.token); if (!d) return { ok: false, reason: 'unknown_token' };
     const state = this.state(d), previous = state.captures.get(input.captureId);
     if (previous) return duplicateCapture(previous.record,input);
@@ -102,6 +119,7 @@ export class MemoryBilling implements BillingStore {
       }
       const property = input.operation === 'explain' ? 'explanationCaptureId' : 'recoveryCaptureId';
       if (parent[property]) return { ok: false, reason: 'capture_already_finalized' };
+      beforeCommit?.();
       const record = newCapture(input);
       parent[property] = record.captureId;
       state.captures.set(record.captureId,{record,lot:newLot('trial',0),legacy:false});
@@ -111,6 +129,7 @@ export class MemoryBilling implements BillingStore {
     const priority: LotKind[] = ['trial','legacy_unknown','goodwill','paid'];
     const lot = priority.flatMap(kind => state.lots.filter(l => l.kind===kind && !l.frozen && l.remaining>l.held))[0];
     if (!lot) throw new Error('Quota source unavailable');
+    beforeCommit?.();
     const record = newCapture(input);
     state.captures.set(record.captureId,{record,lot,legacy:input.legacy??false});
     lot.held++; d.balanceQuestions--; state.version++; d.updatedAt=record.createdAt;
@@ -152,6 +171,12 @@ export class MemoryBilling implements BillingStore {
     const d=this.lookup(input.token); if(!d) return null;
     this.finishDevice(d,input); return this.accountFor(d);
   }
+  async finishWithCapture(input: FinishCapture & {captureId: string}): Promise<CaptureSettlement | null> {
+    const d = this.lookup(input.token); if (!d) return null;
+    // No await: settlement and both snapshots are copied before another operation can run.
+    this.finishDevice(d, input);
+    return {account: this.accountFor(d), capture: this.captureFor(d, input.captureId)};
+  }
   async reap(now=new Date().toISOString()):Promise<number> {
     let count=0;
     for(const [id,state] of this.states) for(const {record} of state.captures.values()) {
@@ -175,15 +200,27 @@ export class MemoryBilling implements BillingStore {
     return count;
   }
   async startAttempt(token:string,input:Omit<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'startedAt'|'finishedAt'>):Promise<boolean> {
+    return this.startAttemptNow(token, input);
+  }
+  private startAttemptNow(token: string, input: NewAttempt): boolean {
     const d=this.lookup(token); if(!d) return false;
     const state=this.state(d),capture=state.captures.get(input.captureId);
-    if(!capture || capture.record.settlementStatus!=='held' || [...state.attempts.values()].some(a=>a.captureId===input.captureId)) return false;
+    if(!capture || capture.record.settlementStatus!=='held' || state.attempts.has(input.attemptId) || [...state.attempts.values()].some(a=>a.captureId===input.captureId)) return false;
     state.attempts.set(input.attemptId,{...input,status:'running',inputTokens:null,outputTokens:null,costMicros:null,startedAt:new Date().toISOString(),finishedAt:null}); return true;
   }
   async finishAttempt(token:string,id:string,input:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>):Promise<void> {
     const d=this.lookup(token); if(!d) return;
+    this.finishAttemptFor(d, id, input);
+  }
+  private finishAttemptFor(d: MemoryQuotaDevice, id: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>): void {
     const state=this.state(d),old=state.attempts.get(id);
     if(old?.status==='running') state.attempts.set(id,{...old,...input,finishedAt:new Date().toISOString()});
+  }
+  async finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null): Promise<void> {
+    const d=this.lookup(token); if(!d) return;
+    // Both writes finish in the same synchronous turn, matching the SQL transaction.
+    this.finishAttemptFor(d, attemptId, input);
+    this.settleBudgetFor(d, attemptId, actualMicros);
   }
   async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0):Promise<boolean> {
     const d = this.lookup(token); if (!d) return false;
@@ -200,7 +237,11 @@ export class MemoryBilling implements BillingStore {
     const budget=this.budgets.get(hold.key); if (budget) budget.held=Math.max(0,budget.held-hold.reserved); hold.state='released';
   }
   async settleBudget(token:string,attemptId:string,actualMicros:number|null):Promise<void> {
-    const d=this.lookup(token); if (!d) return; const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
+    const d=this.lookup(token); if (!d) return;
+    this.settleBudgetFor(d, attemptId, actualMicros);
+  }
+  private settleBudgetFor(d: MemoryQuotaDevice, attemptId: string, actualMicros: number | null): void {
+    const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     // An underestimated hold must never erase real spend. Accounting the entire overrun
     // also prevents the next reservation from spending the apparently unused difference.
     const budget=this.budgets.get(hold.key); if (!budget) return; const actual=actualMicros===null||!Number.isSafeInteger(actualMicros)||actualMicros<0?hold.reserved:actualMicros;

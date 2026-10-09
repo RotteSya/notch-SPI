@@ -5,6 +5,21 @@ import XCTest
 @testable import NotchSPI
 
 final class AnswerLayoutTests: XCTestCase {
+    @MainActor func testDisplayedTextMeasurementUpdatesForStyleWidthAndContentChanges() {
+        let view = StreamingAnswerView(frame: .zero)
+        let text = Array(repeating: "Long answer wraps across the available width.", count: 5).joined(separator: " ")
+        let small = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 12)])
+        view.setAnswer(small, isPlaceholder: false)
+        let initial = view.measuredHeight(width: 500)
+        XCTAssertEqual(view.measuredHeight(width: 500), initial)
+        XCTAssertGreaterThan(view.measuredHeight(width: 200), initial)
+        let large = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 28)])
+        view.setAnswer(large, isPlaceholder: false)
+        XCTAssertGreaterThan(view.measuredHeight(width: 500), initial, "Changing only typography must invalidate measurement")
+        view.setAnswer(NSAttributedString(string: ""), isPlaceholder: true)
+        XCTAssertEqual(view.measuredHeight(width: 500), 0, "A new capture must not retain the previous answer's height")
+    }
+
     @MainActor func testFirstAnswerCardReservesInsetsOutsideCoreText() {
         let presentation = AnswerPresentation(mode: "tutor", depth: "brief", finished: true, revealed: false)
         for answer in ["FINAL: B. 60 km/h", "FINAL: " + Array(repeating: "60 km/h", count: 30).joined(separator: "；")] {

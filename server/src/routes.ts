@@ -278,6 +278,25 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return reply.code(ok ? 200 : 503).send(body);
   });
 
+  function clientConfiguration(token: string) {
+    const treatment = config.objectiveResultV1Bps > 0
+      && config.objectiveResultExperimentSalt !== ''
+      && objectiveExperimentBucket(token, config.objectiveResultExperimentSalt) < config.objectiveResultV1Bps;
+    return {
+      schema_version: 1,
+      revision: config.clientConfigRevision,
+      objective_result_v1: treatment
+        ? { variant: 'objective_v1', protocol: 'objective_v1', prompt_variant: 'objective_v1' }
+        : { variant: 'control', protocol: null, prompt_variant: 'legacy' },
+      screen_query: { capabilities: config.screenQueryEnabled ? ['screen_query_v1', 'capture_status'] : ['capture_status'],
+        support_revision: SCREEN_QUERY_VERSION, enabled_profiles: config.enabledSupportProfiles.split(',').filter(Boolean), limits: { max_images: 4, max_targets: 1, material_ttl_seconds: 900 },
+        trial_policy: { version: config.quotaPolicyVersion, initial_grant: config.trialQuestions } },
+      payments: { purchase_recovery: true, purchase_sessions: stripeLive, catalog_version: config.catalogVersion, currency: config.currency,
+        packs: stripeLive ? config.packs.map(pack => ({ id: pack.id, names: packNames(config.packs,pack.id), questions: pack.questions, amount_minor: pack.amountCents })) : [] },
+      telemetry: { enabled: config.telemetryEnabled, max_batch_size: 50, max_queue_age_days: 7 },
+    };
+  }
+
   // POST /v1/devices — anonymous registration, grants the free question quota. No auth, so a
   // per-IP cap keeps this from being a free-quota faucet (best-effort; see rateLimit.ts).
   app.post('/v1/devices', async (req, reply) => {
@@ -317,6 +336,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       policy_version: quota.policyVersion, initial_grant: quota.initialGrantQuestions, balance_version: quota.balanceVersion,
       device_token: device.token,
       balance_questions: quota.balanceQuestions,
+      client_config: clientConfiguration(device.token),
     });
   });
 
@@ -339,22 +359,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/v1/client-config', async (req, reply) => {
     const { token } = await requireAccount(req, store);
-    const treatment = config.objectiveResultV1Bps > 0
-      && config.objectiveResultExperimentSalt !== ''
-      && objectiveExperimentBucket(token, config.objectiveResultExperimentSalt) < config.objectiveResultV1Bps;
-    return reply.header('Cache-Control', 'private, max-age=300').send({
-      schema_version: 1,
-      revision: config.clientConfigRevision,
-      objective_result_v1: treatment
-        ? { variant: 'objective_v1', protocol: 'objective_v1', prompt_variant: 'objective_v1' }
-        : { variant: 'control', protocol: null, prompt_variant: 'legacy' },
-      screen_query: { capabilities: config.screenQueryEnabled ? ['screen_query_v1', 'capture_status'] : ['capture_status'],
-        support_revision: SCREEN_QUERY_VERSION, enabled_profiles: config.enabledSupportProfiles.split(',').filter(Boolean), limits: { max_images: 4, max_targets: 1, material_ttl_seconds: 900 },
-        trial_policy: { version: config.quotaPolicyVersion, initial_grant: config.trialQuestions } },
-      payments: { purchase_recovery: true, purchase_sessions: stripeLive, catalog_version: config.catalogVersion, currency: config.currency,
-        packs: stripeLive ? config.packs.map(pack => ({ id: pack.id, names: packNames(config.packs,pack.id), questions: pack.questions, amount_minor: pack.amountCents })) : [] },
-      telemetry: { enabled: config.telemetryEnabled, max_batch_size: 50, max_queue_age_days: 7 },
-    });
+    return reply.header('Cache-Control', 'private, max-age=300').send(clientConfiguration(token));
   });
 
   app.post('/v1/events/batch', async (req, reply) => {

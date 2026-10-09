@@ -154,4 +154,80 @@ struct OfficialStreamDecoder {
         }
         return try decoder.finish()
     }
+
+    /// Keep framing off the UI delivery path. Adjacent deltas that arrive while the
+    /// consumer is busy are joined without waiting for a timer or another network byte.
+    /// The decoder still validates every event, and receipts retain their original order.
+    static func consumeBuffered<S: AsyncSequence & Sendable>(
+        _ bytes: S, captureID: UUID, screenQuery: Bool, operation: String = "solve",
+        onEvent: (Event) async throws -> Void
+    ) async throws -> Outcome where S.Element == UInt8 {
+        let buffer = OfficialStreamEventBuffer()
+        let reader = Task {
+            do {
+                let outcome = try await consume(bytes, captureID: captureID, screenQuery: screenQuery,
+                                                operation: operation) { await buffer.append($0) }
+                await buffer.finish()
+                return outcome
+            } catch {
+                await buffer.finish(error: error)
+                throw error
+            }
+        }
+        defer { reader.cancel() }
+        return try await withTaskCancellationHandler {
+            while let event = try await buffer.next() {
+                try Task.checkCancellation()
+                try await onEvent(event)
+            }
+            try Task.checkCancellation()
+            return try await reader.value
+        } onCancel: {
+            reader.cancel()
+            Task { await buffer.cancel() }
+        }
+    }
+}
+
+/// Only already-validated events enter this queue. A stream has at most one pending
+/// text span, error, receipt and DONE; text is bounded by the decoder's 64 KiB limit.
+private actor OfficialStreamEventBuffer {
+    private var pending: [OfficialStreamDecoder.Event] = []
+    private var waiter: CheckedContinuation<OfficialStreamDecoder.Event?, Error>?
+    private var terminal: Result<Void, Error>?
+
+    func append(_ event: OfficialStreamDecoder.Event) {
+        guard terminal == nil else { return }
+        if let waiter {
+            self.waiter = nil
+            waiter.resume(returning: event)
+        } else if case .delta(let text) = event, case .delta(let previous) = pending.last {
+            pending[pending.count - 1] = .delta(previous + text)
+        } else {
+            pending.append(event)
+        }
+    }
+
+    func finish(error: Error? = nil) {
+        guard terminal == nil else { return }
+        terminal = error.map(Result.failure) ?? .success(())
+        if let waiter {
+            self.waiter = nil
+            if let error { waiter.resume(throwing: error) }
+            else { waiter.resume(returning: nil) }
+        }
+    }
+
+    func cancel() {
+        pending.removeAll()
+        // Cancellation also overrides an already-completed producer's buffered output.
+        terminal = nil
+        finish(error: CancellationError())
+    }
+
+    func next() async throws -> OfficialStreamDecoder.Event? {
+        if !pending.isEmpty { return pending.removeFirst() }
+        if let terminal { try terminal.get(); return nil }
+        return try await withCheckedThrowingContinuation { waiter = $0 }
+    }
 }

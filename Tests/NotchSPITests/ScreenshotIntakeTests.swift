@@ -192,4 +192,32 @@ final class ScreenshotIntakeTests: XCTestCase {
         XCTAssertFalse(NSApp.windows.contains { $0.windowController is QuestionRegionPicker })
     }
 
+    @MainActor func testWarmupStartsBeforeCaptureAndLatencyIncludesIntake() async throws {
+        let controller = makeController()
+        defer { controller.prepareForTermination() }
+        var clock = 100.0
+        var order: [String] = []
+        controller.qaScreenshotClock = { clock }
+        controller.qaScreenshotWarmUp = { order.append("warm") }
+        controller.qaScreenshotCapture = { [self] in
+            order.append("capture")
+            clock += 0.45
+            return .success(try! fixture())
+        }
+        controller.qaScreenshotSubmit = { _, _ in order.append("submit") }
+        controller.qaPressScreenshot(multiple: false)
+        try await settle { order.last == "submit" }
+        XCTAssertEqual(order, ["warm", "capture", "submit"])
+        let trace = try XCTUnwrap(controller.qaSubmittedLatency)
+        XCTAssertEqual(trace.entry, .single)
+        XCTAssertEqual(try XCTUnwrap(trace.offsets[.captureReady]), 450, accuracy: 0.001)
+        clock += 1.6
+        trace.complete(success: true); trace.mark(.renderStarted)
+        XCTAssertEqual(try XCTUnwrap(trace.offsets[.renderStarted]), 2050, accuracy: 0.001,
+            "The 450ms spent before runTapped must remain in the end-to-end total")
+        controller.qaPressScreenshot(multiple: false)
+        try await settle { order.count == 6 }
+        XCTAssertNotEqual(controller.qaSubmittedLatency?.id, trace.id)
+    }
+
 }

@@ -51,6 +51,23 @@ test('authenticated client config uses stable treatment contract', async () => {
   assert.equal(body.objective_result_v1.protocol, 'objective_v1');
 });
 
+test('registration includes the same account-bound configuration without another request', async () => {
+  const registration = await fetch(`${base}/v1/devices`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ platform: 'macos', app_version: '3.0' }),
+  });
+  assert.equal(registration.status, 200);
+  assert.equal(registration.headers.get('cache-control'), 'no-store');
+  const body = await registration.json() as Record<string, any>;
+  const configuration = await fetch(`${base}/v1/client-config`, {
+    headers: { authorization: `Bearer ${body.device_token}` },
+  });
+  assert.equal(body.client_config.revision, 'test-r1');
+  assert.equal(body.balance_questions, 2);
+  assert.equal(JSON.stringify(body.client_config).includes(body.device_token), false);
+  assert.deepEqual(body.client_config, await configuration.json());
+});
+
 test('event batch partially accepts, deduplicates, and feeds token-free admin metrics', async () => {
   const token = await register();
   const captureID = '3e7979c6-20cb-4c12-a23e-ece6eb3aa52d';

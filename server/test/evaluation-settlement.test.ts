@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdtempSync,readFileSync,writeFileSync,rmSync,mkdirSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
 import {execFile} from 'node:child_process';
@@ -11,7 +12,7 @@ import {EvaluationBudget,type EvaluationCallBound,type EvaluationPolicy} from '.
 import {settleEvaluationBudget,settlementDigest,type EvaluationSettlementBatch} from '../../scripts/lib/evaluation-settlement.mts';
 
 const hash=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex');
-function fixture(kind:'reading_response'|'objective_jsonl'='reading_response') {
+function fixture(kind:'reading_response'|'objective_jsonl'|'direct_provider_result'='reading_response',providerArray=false) {
   const dir=mkdtempSync(join(tmpdir(),'nspi-audited-budget-')),ledger=join(dir,'ledger.sqlite3');
   const policy:EvaluationPolicy={schema_version:1,campaign_id:'test-settlement',currency:'CNY',limit_micros:100_000};
   const bound:EvaluationCallBound={schema_version:1,model:'test',base_url:'https://candidate.example',billing_currency:'CNY',
@@ -22,28 +23,39 @@ function fixture(kind:'reading_response'|'objective_jsonl'='reading_response') {
   const purpose=kind==='objective_jsonl'?'baseline':'answer';
   budget.reserve('known','fixture',purpose);budget.observeUsage('known',10,10);
   budget.reserve('unknown','uncertain','answer');budget.observeUsage('unknown',0,0);
-  const db=new DatabaseSync(ledger);db.prepare("UPDATE evaluation_dispatches SET outcome='response_received' WHERE id='known'").run();
+  const db=new DatabaseSync(ledger);if(kind!=='direct_provider_result')db.prepare("UPDATE evaluation_dispatches SET outcome='response_received' WHERE id='known'").run();
   const row=db.prepare("SELECT * FROM evaluation_dispatches WHERE id='known'").get()!;db.close();
   const receipt=join(dir,kind==='objective_jsonl'?'result.jsonl':'response.json');
   const reading={dispatch_id:'known',case_id:'fixture',capture_id:'capture',purpose,upper_cny_micros:39_000,
     http_status:200,failure:null,finished_at:new Date().toISOString(),
     body:'data: '+JSON.stringify({type:'usage',capture_id:'capture',operation:'solve',input_tokens:10,output_tokens:10})+'\n\ndata: [DONE]\n\n'};
-  writeFileSync(receipt,JSON.stringify(kind==='objective_jsonl'?{id:'fixture',model:'test',budget_dispatch_id:'known',
+  const provider={id:'known',fixture:'fixture',calls:1,error:providerArray?null:false,raw:'FINAL: A',
+    first_delta_ms:10,total_ms:20,usage:{inputTokens:10,outputTokens:10}};
+  writeFileSync(receipt,JSON.stringify(kind==='direct_provider_result'?(providerArray?{rows:[provider]}:provider):kind==='objective_jsonl'?{id:'fixture',model:'test',budget_dispatch_id:'known',
     budget_upper_cny_micros:39_000,input_tokens:10,output_tokens:10}:reading)+'\n');
   const batch:EvaluationSettlementBatch={schema_version:1,campaign_id:policy.campaign_id,executor:'test-executor',created_at:new Date().toISOString(),
     bounds:{[String(row.bound_sha256)]:bound},entries:[{dispatch_id:'known',dispatch_sha256:settlementDigest(row),
-      receipt:{kind,path:receipt,sha256:hash(readFileSync(receipt)),...(kind==='objective_jsonl'?{line:1}:{})}}]};
+      receipt:{kind,path:receipt,sha256:hash(readFileSync(receipt)),...(kind==='objective_jsonl'?{line:1}:kind==='direct_provider_result'&&providerArray?{record_index:0}:{})}}]};
+  if(kind==='direct_provider_result') {
+    batch.supporting_evidence=(['plan','runner','provider','execution_log','budget','validator','pricing'] as const).map(role=>{
+      const path=role==='budget'?fileURLToPath(new URL('../../scripts/lib/evaluation-budget.mts',import.meta.url))
+        :role==='validator'?fileURLToPath(new URL('../../scripts/lib/evaluation-settlement.mts',import.meta.url)):join(dir,role+'.evidence');
+      if(role!=='budget'&&role!=='validator')writeFileSync(path,'Synthetic test execution evidence: '+role);
+      return {role,path,sha256:hash(readFileSync(path))};
+    });
+  }
   const batchFile=join(dir,'batch.json'),reviewFile=join(dir,'review.json');
   function options(apply=false) {
     writeFileSync(batchFile,JSON.stringify(batch));const batchSHA=hash(readFileSync(batchFile));
     writeFileSync(reviewFile,JSON.stringify({schema_version:1,campaign_id:policy.campaign_id,batch_sha256:batchSHA,
-      reviewer:'independent-test-reviewer',reviewed_at:batch.created_at,decision:'approved_conservative_usage_settlement'}));
+      reviewer:'independent-test-reviewer',reviewed_at:batch.created_at,decision:'approved_conservative_usage_settlement',
+      ...(kind==='direct_provider_result'?{provider_completion_dispatch_ids:['known']}:{})}));
     return {ledger,policy,batchFile,batchSHA,reviewFile,reviewSHA:hash(readFileSync(reviewFile)),apply};
   }
   return {dir,ledger,policy,bound,budget,batch,receipt,options,close(){budget.close();rmSync(dir,{recursive:true,force:true});}};
 }
 
-for(const kind of ['reading_response','objective_jsonl'] as const)test(`${kind}: dry run is read-only, apply preserves original reservations and is idempotent`,()=>{
+for(const kind of ['reading_response','objective_jsonl','direct_provider_result'] as const)test(`${kind}: dry run is read-only, apply preserves original reservations and is idempotent`,()=>{
   const f=fixture(kind);
   try {
     const before=readFileSync(f.ledger),planned=settleEvaluationBudget(f.options());
@@ -150,4 +162,87 @@ test('paid entrypoint requires the existing campaign and preserves spend across 
     assert.equal((await invoke(f.ledger)).stdout.trim(),'22000');
     assert.equal(f.budget.remainingMicros(),22_000);
   }finally{f.close();}
+});
+
+
+test('direct provider row receipts preserve unknown history and retain incomplete calls at full reservation',()=>{
+  const f=fixture('direct_provider_result',true);try {
+    const before=new DatabaseSync(f.ledger,{readOnly:true});
+    const original=before.prepare("SELECT * FROM evaluation_dispatches WHERE id='known'").get();before.close();
+    assert.equal(original!.outcome,'unknown');
+    assert.equal(settleEvaluationBudget(f.options(true)).after_cny_micros,39_120);
+    const after=new DatabaseSync(f.ledger,{readOnly:true});
+    assert.deepEqual(after.prepare("SELECT * FROM evaluation_dispatches WHERE id='known'").get(),original);
+    assert.equal(after.prepare("SELECT count(*) AS n FROM evaluation_settlements WHERE dispatch_id='unknown'").get()!.n,0);
+    after.close();
+  }finally{f.close();}
+});
+
+test('direct provider completion audit must explicitly authorize the exact dispatch set',()=>{
+  for(const ids of [undefined,[],['unknown'],['known','known']]) {
+    const f=fixture('direct_provider_result');try {
+      const opts=f.options(true),review=JSON.parse(readFileSync(opts.reviewFile,'utf8'));
+      review.provider_completion_dispatch_ids=ids;
+      writeFileSync(opts.reviewFile,JSON.stringify(review));opts.reviewSHA=hash(readFileSync(opts.reviewFile));
+      assert.throws(()=>settleEvaluationBudget(opts),/independent provider completion audit/);
+      assert.equal(f.budget.remainingMicros(),22_000);
+    }finally{f.close();}
+  }
+});
+
+test('direct provider result rejects failed, partial, mismatched, ambiguous and selector-confused evidence',()=>{
+  for(const mode of ['failure','missing-error','missing-content','missing-first','reversed-time','bad-usage','wrong-id',
+    'wrong-fixture','duplicate-id','fractional-index','negative-index','out-of-range','extra-line','wrong-outcome']) {
+    const f=fixture('direct_provider_result',true);try {
+      const source=JSON.parse(readFileSync(f.receipt,'utf8')),r=source.rows[0],receipt=f.batch.entries[0]!.receipt;
+      if(mode==='failure')r.error='transport_failure';
+      if(mode==='missing-error')delete r.error;
+      if(mode==='missing-content')r.raw='';
+      if(mode==='missing-first')r.first_delta_ms=null;
+      if(mode==='reversed-time')r.first_delta_ms=30;
+      if(mode==='bad-usage')r.usage.outputTokens=9;
+      if(mode==='wrong-id')r.id='another';
+      if(mode==='wrong-fixture')r.fixture='another';
+      if(mode==='duplicate-id')source.rows.push(r);
+      if(mode==='fractional-index')receipt.record_index=0.5;
+      if(mode==='negative-index')receipt.record_index=-1;
+      if(mode==='out-of-range')receipt.record_index=1;
+      if(mode==='extra-line')receipt.line=1;
+      if(mode==='wrong-outcome') {
+        const db=new DatabaseSync(f.ledger);db.exec("UPDATE evaluation_dispatches SET outcome='dispatch_failed' WHERE id='known'");
+        f.batch.entries[0]!.dispatch_sha256=settlementDigest(db.prepare("SELECT * FROM evaluation_dispatches WHERE id='known'").get()!);db.close();
+      }
+      writeFileSync(f.receipt,JSON.stringify(source));receipt.sha256=hash(readFileSync(f.receipt));
+      assert.throws(()=>settleEvaluationBudget(f.options(true)),/Evaluation settlement:/,mode);
+      assert.equal(f.budget.remainingMicros(),22_000,mode);
+    }finally{f.close();}
+  }
+});
+
+test('legacy receipts cannot settle unknown calls through a provider completion approval',()=>{
+  const f=fixture();try {
+    const db=new DatabaseSync(f.ledger);db.exec("UPDATE evaluation_dispatches SET outcome='unknown' WHERE id='known'");
+    f.batch.entries[0]!.dispatch_sha256=settlementDigest(db.prepare("SELECT * FROM evaluation_dispatches WHERE id='known'").get()!);db.close();
+    assert.throws(()=>settleEvaluationBudget(f.options(true)),/not completed/);
+    const opts=f.options(true),review=JSON.parse(readFileSync(opts.reviewFile,'utf8'));
+    review.provider_completion_dispatch_ids=['known'];writeFileSync(opts.reviewFile,JSON.stringify(review));opts.reviewSHA=hash(readFileSync(opts.reviewFile));
+    assert.throws(()=>settleEvaluationBudget(opts),/provider completion audit/);
+    assert.equal(f.budget.remainingMicros(),22_000);
+  }finally{f.close();}
+});
+
+
+test('direct provider supporting evidence and the actual executing validator must match the reviewed batch',()=>{
+  for(const mode of ['missing-role','changed-source','fake-validator','missing-all']) {
+    const f=fixture('direct_provider_result');try {
+      const files=f.batch.supporting_evidence!;
+      if(mode==='missing-role')f.batch.supporting_evidence=files.filter(file=>file.role!=='runner');
+      if(mode==='missing-all')delete f.batch.supporting_evidence;
+      if(mode==='fake-validator')files.find(file=>file.role==='validator')!.path=files.find(file=>file.role==='runner')!.path;
+      const opts=f.options(true);
+      if(mode==='changed-source')writeFileSync(files.find(file=>file.role==='provider')!.path,'changed after review');
+      assert.throws(()=>settleEvaluationBudget(opts),/Evaluation settlement:/,mode);
+      assert.equal(f.budget.remainingMicros(),22_000);
+    }finally{f.close();}
+  }
 });

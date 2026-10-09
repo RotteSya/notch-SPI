@@ -13,10 +13,14 @@ final class NotchController: NSObject {
     private let screenshotFlight = ScreenshotFlight()
     private var intakeNotice = ""
     private var intakeGeneration = UUID()
+    private var intakeLatency: CaptureLatency?
+    private let activatesServices: Bool
     private var pendingSingle: (assets: [ContextAsset], mode: String)?
     #if DEBUG
     var qaScreenshotCapture: (() async -> Result<ScreenCapture.Shot, CaptureError>)?
     var qaScreenshotSubmit: (([ContextAsset], String) -> Void)?
+    var qaScreenshotWarmUp: (() -> Void)?
+    var qaSubmittedLatency: CaptureLatency?
     var qaScreenshotClock: (() -> TimeInterval)?
     func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple) }
     func qaCancelScreenshotRound() { cancelRoundByUser() }
@@ -53,6 +57,7 @@ final class NotchController: NSObject {
     private var runGeneration: UInt64 = 0
     private var visible = true
     private var collapseWork: DispatchWorkItem?
+    private var streamedResizeWork: DispatchWorkItem?
     /// Auto-session brain (pure state machine); the controller owns the timer + capture I/O.
     private let autoEngine = AutoSessionEngine()
     private var autoPollTimer: Timer?
@@ -120,6 +125,7 @@ final class NotchController: NSObject {
     }
 
     init(activateServices: Bool = true, onboardingDefaults: UserDefaults = .standard) {
+        activatesServices = activateServices
         onboardingProgress = NotchOnboardingProgress(defaults: onboardingDefaults)
         panel = NotchPanel(contentRect: .zero)
         super.init()
@@ -487,7 +493,7 @@ final class NotchController: NSObject {
     /// can be exercised and screenshotted without pressing keys.
     func qaTriggerCapture(chooseRegion: Bool = false) {
         if chooseRegion { selectQuestionRegion() }
-        else { runTapped(mode: "tutor") }
+        else { screenshotTapped(mode: "tutor", multiple: false) }
     }
 
     /// Visual-QA hook: toggle an auto session through the production start/stop path.
@@ -1159,15 +1165,32 @@ final class NotchController: NSObject {
         return ProcessInfo.processInfo.systemUptime
     }
 
-    private func submitScreenshots(_ assets: [ContextAsset], mode: String) {
+    private func warmCaptureConnection() {
         #if DEBUG
+        if let qaScreenshotWarmUp { qaScreenshotWarmUp(); return }
+        #endif
+        guard activatesServices else { return }
+        ClientConfigService.shared.refresh()
+        switch currentChannel() {
+        case .official: OfficialAPI.warmUp()
+        case .customKey: APIKeyRunner.warmUp(endpoint: Settings.shared.endpoint(for: Settings.shared.activeProvider))
+        case .cli: break
+        }
+    }
+
+    private func submitScreenshots(_ assets: [ContextAsset], mode: String) {
+        let latency = intakeLatency
+        intakeLatency = nil
+        #if DEBUG
+        qaSubmittedLatency = latency
         if let qaScreenshotSubmit { qaScreenshotSubmit(assets, mode); return }
         #endif
-        runTapped(mode: mode, prepared: assets)
+        runTapped(mode: mode, prepared: assets, latency: latency)
     }
 
     private func cancelScreenshotRound() {
         intakeGeneration = UUID()
+        intakeLatency?.complete(success: false); intakeLatency = nil
         intakeTask?.cancel(); intakeTask = nil
         screenshotRound.cancel()
         screenshotTimer?.invalidate(); screenshotTimer = nil
@@ -1239,6 +1262,7 @@ final class NotchController: NSObject {
     }
 
     private func screenshotTapped(mode: String, multiple: Bool) {
+        let triggeredAt = screenshotNow
         guard !terminating else { return }
         synchronizeMaterialScope()
         // Repeated presses during capture must not create a second capture or completion. Flights and an earlier tutor request do not block intake.
@@ -1274,6 +1298,9 @@ final class NotchController: NSObject {
         }
         let startsRound = screenshotRound.items.isEmpty
         if startsRound {
+            intakeLatency = CaptureLatency(entry: multiple ? .multiple : .single, channel: currentChannel(), mode: mode, triggeredAt: triggeredAt,
+                now: { [weak self] in self?.screenshotNow ?? ProcessInfo.processInfo.systemUptime })
+            warmCaptureConnection()
             intakeStore.begin(scope: binding.scopeID, newQuestionGroup: true)
             model.screenshots = []; model.screenshotImages = [:]
             model.flyingScreenshots = []
@@ -1289,6 +1316,7 @@ final class NotchController: NSObject {
             // ScreenCapture excludes the panel independently of keyboard focus. Keep
             // the guide's key window so Tab/Escape still work while the request runs.
         }
+        let latency = intakeLatency
         let generation = intakeGeneration
         let target = Settings.shared.captureTarget
         let captureContext = ScreenCapture.Context.current(target: target)
@@ -1311,6 +1339,7 @@ final class NotchController: NSObject {
             @MainActor func failed(_ message: String?) {
                 guard self.intakeGeneration == generation else { return }
                 self.intakeTask = nil
+                if !multiple { latency?.complete(success: false) }
                 self.model.screenshotCapturing = false
                 if multiple {
                     _ = self.screenshotRound.finishCapture(token: token, item: nil, now: self.screenshotNow)
@@ -1340,6 +1369,7 @@ final class NotchController: NSObject {
                 if case .failure(let error) = result { failed(Self.message(for: error)) }; return
             }
             guard !shot.blank else { failed(Self.message(for: .captureFailed)); return }
+            latency?.mark(.captureReady)
             #if DEBUG
             ScreenCapture.trace("intake.capture.ready")
             #endif
@@ -1353,6 +1383,7 @@ final class NotchController: NSObject {
                 #if DEBUG
                 ScreenCapture.trace("intake.adopt.end")
                 #endif
+                latency?.mark(.materialsReady)
                 // Commit the successful image and its timer BEFORE thumbnail decoding or flight.
                 if multiple {
                     guard self.screenshotRound.finishCapture(token: token, item: asset, now: self.screenshotNow) else { return }
@@ -1503,12 +1534,26 @@ final class NotchController: NSObject {
     }
 
     private func resizeToFit() {
+        streamedResizeWork?.cancel()
+        streamedResizeWork = nil
         guard model.expanded else { return }
         let target = frame(expanded: true)
         if abs(panel.frame.height - target.height) >= 2 {
             // The view's height spring carries the frame — streamed growth glides, never steps.
             notchView.retargetExpandedFrame(target)
         }
+    }
+
+    private func resizeForStreamedAnswer() {
+        guard streamedResizeWork == nil else { return }
+        // Parsing and account checks still run for every delta. Only measuring the
+        // latest visible answer is coalesced; completion resizes immediately.
+        let work = DispatchWorkItem { [weak self] in
+            self?.streamedResizeWork = nil
+            self?.resizeToFit()
+        }
+        streamedResizeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 120, execute: work)
     }
 
     // MARK: - Expand / collapse
@@ -1814,7 +1859,8 @@ final class NotchController: NSObject {
 
     /// `withContext` (tutor mode only): send the remembered ⌘⇧1 shot together with the fresh
     /// capture, so a question whose passage has scrolled away still gets its context.
-    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil) {
+    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil, latency inheritedLatency: CaptureLatency? = nil) {
+        let triggeredAt = ProcessInfo.processInfo.systemUptime
         #if DEBUG
         ScreenCapture.trace("run.enter running=\(running)")
         #endif
@@ -1822,6 +1868,10 @@ final class NotchController: NSObject {
         synchronizeMaterialScope()
         guard !running else { return }
         officialTask?.cancel()
+        let latency = inheritedLatency ?? CaptureLatency(entry: fromAuto ? .automatic : .direct,
+            channel: currentChannel(), mode: mode, triggeredAt: triggeredAt)
+        model.answerLatency = latency
+        if inheritedLatency == nil { warmCaptureConnection() }
         model.captureFeedback = ""
         model.recoveryAvailable = false; model.recoveryAttempted = false
         if !fromAuto, autoEngine.isActive { stopAutoSession(.captureHotkey) }
@@ -1876,7 +1926,7 @@ final class NotchController: NSObject {
                 self.lastMaterialScope = current.scopeID
                 self.endRun()
                 self.officialTask = nil
-                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared)
+                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared, latency: latency)
             }
             return
         }
@@ -1965,6 +2015,7 @@ final class NotchController: NSObject {
         currentCaptureID = snapshot.captureID
         currentAnswerCaptureID = snapshot.captureID
         currentRunSnapshot = snapshot
+        model.answerLatency = latency
         // Freeze this answer's presentation inputs: cycling the depth mid-stream must not
         // restyle an answer that was captured under another contract.
         model.answerDepth = snapshot.depth
@@ -1976,17 +2027,6 @@ final class NotchController: NSObject {
 
         capturePreparation.start { [self] in
             guard self.accepts(snapshot, generation: generation) else { return }
-            let runStartedAt = Date()
-            // The screenshot takes a few hundred ms — use that window to warm the network path
-            // (DNS + TLS + serverless cold start + DB wake for official; vendor TLS for custom
-            // key) so the capture POST rides a hot connection. Fire-and-forget.
-            ClientConfigService.shared.refresh()
-            switch snapshot.channel {
-            case .official: OfficialAPI.warmUp()
-            case .customKey: APIKeyRunner.warmUp(endpoint: snapshot.apiEndpoint)
-            case .cli: break
-            }
-
             // Custom provider needs a Base URL + model before it can answer; a preset always has
             // both, so this only bites the "custom" entry left half-filled. Guide the user there
             // rather than firing a doomed request after spending a capture.
@@ -2051,7 +2091,7 @@ final class NotchController: NSObject {
             #if DEBUG
             let captureStart = Date()
             #endif
-            let captureClock = Date()
+            let captureClock = ProcessInfo.processInfo.systemUptime
             self.recordCaptureTelemetry(name: "capture_started", snapshot: snapshot,
                                         contextCount: contextImagePaths.count)
             let result: Result<ScreenCapture.Shot, CaptureError>
@@ -2066,7 +2106,10 @@ final class NotchController: NSObject {
             #if DEBUG
             print("[NotchSPI] capture took \(Int(Date().timeIntervalSince(captureStart) * 1000))ms")
             #endif
-            let captureMilliseconds = Int(Date().timeIntervalSince(captureClock) * 1_000)
+            latency.mark(.captureReady)
+            let captureMilliseconds = prepared == nil
+                ? Int((ProcessInfo.processInfo.systemUptime - captureClock) * 1_000)
+                : Int(latency.offsets[.captureReady] ?? 0)
 
             guard self.accepts(snapshot, generation: generation) else {
                 if case .success(let stale) = result { try? FileManager.default.removeItem(atPath: stale.path) }
@@ -2082,7 +2125,7 @@ final class NotchController: NSObject {
                         contextCount: contextImagePaths.count,
                         parserPath: "none", errorCode: "blank_capture",
                         captureMS: captureMilliseconds,
-                        totalMS: Int(Date().timeIntervalSince(runStartedAt) * 1_000)
+                        totalMS: latency.elapsedMS
                     )
                     self.finishError(L10n.t(
                         "画面为空，通常是缺少屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」勾选 NotchSPI 并重启应用。",
@@ -2097,7 +2140,7 @@ final class NotchController: NSObject {
                     contextCount: contextImagePaths.count,
                     parserPath: "none", errorCode: "capture_failed",
                     captureMS: captureMilliseconds,
-                    totalMS: Int(Date().timeIntervalSince(runStartedAt) * 1_000)
+                    totalMS: latency.elapsedMS
                 )
                 self.finishError(Self.message(for: error))
                 return
@@ -2161,6 +2204,7 @@ final class NotchController: NSObject {
                     self.finishError(L10n.t("材料已失效或目标已变化，请开始新题组。", "資料または対象が変わりました。新しいグループを開始してください。", "The material expired or the target changed. Start a new question group.")); return
                 }
             } else { materialSnapshot = nil }
+            latency.mark(.materialsReady)
             let imagePaths = materialSnapshot?.imagePaths ?? [shot.path]
 
             let statusVerb = snapshot.mode == "personality" ? L10n.statusAnswering : L10n.statusExplaining
@@ -2169,7 +2213,7 @@ final class NotchController: NSObject {
             // the same story the de-emphasized text + answer card are telling.
             let briefRun = snapshot.mode != "personality" && snapshot.depth == "brief"
             var objectiveFilter = ObjectiveResultStreamFilter()
-            var firstTokenAt: Date?
+            var firstTokenMS: Int?
             var completionRecorded = false
             var receipt: OfficialUsageReceipt?
             // Shared by both channels so CLI mode and direct-API mode render identically.
@@ -2177,22 +2221,28 @@ final class NotchController: NSObject {
                 // A run the watchdog gave up on may still be streaming; its output must not land
                 // in the panel the user is now watching.
                 guard let self, self.accepts(snapshot, generation: generation) else { return }
+                if firstTokenMS == nil { firstTokenMS = latency.elapsedMS; latency.mark(.firstDelta) }
+                let previousAnswer = self.model.answer
                 if let personalityRun { personalityRun.append(delta, to: self.model) }
                 else if snapshot.resultProtocol == "objective_v1" {
-                    self.model.answer = objectiveFilter.append(delta)
+                    let visible = objectiveFilter.append(delta)
+                    if visible != self.model.answer { self.model.answer = visible }
                 } else { self.model.answer += delta }
-                if firstTokenAt == nil { firstTokenAt = Date() }
-                self.model.status = .streaming
-                self.model.statusText = briefRun
+                let statusText = briefRun
                     ? (AnswerComposer.hasMarker(self.model.answer) ? L10n.statusAnswering : L10n.statusReasoning)
                     : statusVerb
-                self.resizeToFit()
+                if self.model.status != .streaming { self.model.status = .streaming }
+                if self.model.statusText != statusText { self.model.statusText = statusText }
+                // Machine JSON is still consumed and validated, but it does not change the
+                // visible answer. Avoid re-composing and measuring that answer for every token.
+                if self.model.answer != previousAnswer { self.resizeForStreamedAnswer() }
             }
             let onDone: (Bool, String) -> Void = { [weak self] ok, stderr in
                 defer { withExtendedLifetime(materialSnapshot) {} }
                 // Same guard as onDelta: a timed-out run must not reset `running` or overwrite the
                 // status of the capture the user started after it.
                 guard let self, self.accepts(snapshot, generation: generation) else { return }
+                latency.mark(.responseCompleted)
                 let composition: ObjectiveResultComposition?
                 if snapshot.resultProtocol == "objective_v1", snapshot.mode == "tutor" {
                     let parsed = objectiveFilter.finish()
@@ -2214,8 +2264,8 @@ final class NotchController: NSObject {
                         parserPath: composition?.parserPath.rawValue ?? (ok ? "legacy" : "none"),
                         errorCode: composition?.noResultReason ?? (ok ? nil : "transport_error"),
                         captureMS: captureMilliseconds,
-                        firstTokenMS: firstTokenAt.map { Int($0.timeIntervalSince(runStartedAt) * 1_000) },
-                        totalMS: Int(Date().timeIntervalSince(runStartedAt) * 1_000)
+                        firstTokenMS: firstTokenMS,
+                        totalMS: latency.elapsedMS
                     )
                 }
                 if !ok, case .cli = snapshot.channel {
@@ -2309,6 +2359,9 @@ final class NotchController: NSObject {
                 if !ok, composition?.noResultReason == nil, composition?.state != .retake {
                     self.reconcileQuestion(snapshot, generation: generation)
                 }
+                latency.complete(success: ok && self.model.status != .error && composition?.state != .retake
+                    && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
+                    && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 self.onboardingCaptureFinished(success: ok && composition?.state != .retake
                     && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
                     && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -2320,6 +2373,7 @@ final class NotchController: NSObject {
                 self.autoRunCompleted(ok: ok && composition?.state != .retake && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil))
             }
 
+            latency.mark(.submitted)
             switch snapshot.channel {
             case .cli:
                 guard let binPath else {
@@ -2346,6 +2400,7 @@ final class NotchController: NSObject {
                     environment: .connected(to: .live, expectedAccount: snapshot.binding.officialAccount),
                     onUsage: { [weak self] value in
                         guard let self, self.accepts(snapshot, generation: generation) else { return }
+                        latency.mark(.receiptApplied)
                         receipt = value
                     },
                     onDelta: onDelta, onDone: onDone
@@ -2571,6 +2626,7 @@ final class NotchController: NSObject {
     }
 
     private func finishError(_ msg: String) {
+        if running { model.answerLatency?.complete(success: false) }
         if running { recordTelemetry(name: "capture_completed", captureID: currentCaptureID, errorCode: "run_failed") }
         // Personality answer storage is reserved for the untouched model protocol stream. Local
         // capture/preflight errors belong in status, never in the choice body or future context.

@@ -178,4 +178,90 @@ final class OfficialStreamDecoderTests: XCTestCase {
         XCTAssertEqual(OfficialAPI.accumulateUsage(-10, 4), 4)
         XCTAssertEqual(OfficialAPI.accumulateUsage(12, 4), 16)
     }
+
+    private actor ReadGate {
+        private var reached = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        func reach() { reached = true; waiting.forEach { $0.resume() }; waiting.removeAll() }
+        func wait() async {
+            if reached { return }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+    }
+
+    /// Signals from the byte producer, so a busy consumer can resume without a timer.
+    private struct SignalingBytes: AsyncSequence, Sendable {
+        typealias Element = UInt8
+        let bytes: [UInt8]
+        let gate: ReadGate
+        var transportFailure = false
+        struct AsyncIterator: AsyncIteratorProtocol {
+            let source: SignalingBytes
+            var index = 0
+            mutating func next() async throws -> UInt8? {
+                try Task.checkCancellation()
+                guard index < source.bytes.count else {
+                    if source.transportFailure { throw URLError(.networkConnectionLost) }
+                    return nil
+                }
+                let value = source.bytes[index]; index += 1
+                if index == source.bytes.count { await source.gate.reach() }
+                return value
+            }
+        }
+        func makeAsyncIterator() -> AsyncIterator { .init(source: self) }
+    }
+
+    func testBufferedBurstJoinsTextWhileConsumerIsBusyAndKeepsReceiptOrder() async throws {
+        let pieces = (0..<200).map { "中文🔎\($0) " }
+        let wire = try pieces.map { try delta($0) }.joined() + frame(usage()) + "data: [DONE]\n\n"
+        let gate = ReadGate(), source = SignalingBytes(bytes: Array(wire.utf8), gate: gate)
+        var events: [OfficialStreamDecoder.Event] = []
+        let outcome = try await OfficialStreamDecoder.consumeBuffered(source, captureID: id, screenQuery: true) { event in
+            events.append(event)
+            if events.count == 1 { await gate.wait() }
+        }
+        XCTAssertTrue(outcome.hasContent)
+        XCTAssertLessThanOrEqual(events.count, 4, "A busy UI must not leave 200 queued actor hops")
+        let text = events.compactMap { if case .delta(let text) = $0 { return text }; return nil }.joined()
+        XCTAssertEqual(text, pieces.joined())
+        XCTAssertEqual(events.last, .done)
+        guard case .usage(let receipt) = events[events.count - 2] else { return XCTFail("Receipt ordering changed") }
+        XCTAssertEqual(receipt.captureID, id)
+    }
+
+    func testBufferedTransportFailureStillDeliversValidReceiptButNeverCompletes() async throws {
+        let wire = try delta() + frame(usage()), gate = ReadGate()
+        let source = SignalingBytes(bytes: Array(wire.utf8), gate: gate, transportFailure: true)
+        var events: [OfficialStreamDecoder.Event] = []
+        do {
+            _ = try await OfficialStreamDecoder.consumeBuffered(source, captureID: id, screenQuery: true) { event in
+                events.append(event)
+                if events.count == 1 { await gate.wait() }
+            }
+            XCTFail("Receipt is not proof of complete delivery")
+        } catch { XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost) }
+        XCTAssertEqual(events.count, 2)
+        guard case .usage = events.last else { return XCTFail("Valid receipt was lost") }
+    }
+
+    func testBufferedCancellationDiscardsPendingReceiptAndDone() async throws {
+        let wire = try delta() + delta(" more") + frame(usage()) + "data: [DONE]\n\n", id = id
+        let task = Task {
+            let gate = ReadGate(), source = SignalingBytes(bytes: Array(wire.utf8), gate: gate)
+            var deliveries = 0
+            do {
+                _ = try await OfficialStreamDecoder.consumeBuffered(source, captureID: id, screenQuery: true) { _ in
+                    deliveries += 1
+                    if deliveries == 1 {
+                        await gate.wait()
+                        withUnsafeCurrentTask { $0?.cancel() }
+                    }
+                }
+                XCTFail("Canceled buffered stream completed")
+            } catch { XCTAssertTrue(error is CancellationError) }
+            XCTAssertEqual(deliveries, 1)
+        }
+        await task.value
+    }
 }

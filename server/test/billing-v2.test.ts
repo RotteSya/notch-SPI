@@ -9,6 +9,7 @@ import { SqliteStore } from '../src/db-sqlite.ts';
 import { MemoryStore } from '../src/db-memory.ts';
 import { FIXED_TRIAL_POLICY, RequestKeys } from '../src/billing.ts';
 import type { Store } from '../src/db.ts';
+import type { RunTransaction, Transaction, Row } from '../src/billing-sql.ts';
 
 const implementations: Array<[string, () => Store | Promise<Store>]> = [
   ['memory', () => new MemoryStore()], ['sqlite', () => new SqliteStore(':memory:')],
@@ -33,6 +34,188 @@ if (process.env.TEST_POSTGRES_URL) {
 }
 
 for (const [name,make] of implementations) {
+  test(`${name}: combined attempt and budget completion is isolated, conservative and idempotent`, async()=>{
+    const store=await make();
+    try {
+      const {token}=await store.registerDevice({platform:'m',appVersion:'t',trialQuestions:30});
+      const other=await store.registerDevice({platform:'m',appVersion:'t',trialQuestions:30});
+      for(const actual of [25,90,null] as const) {
+        const captureId=randomUUID(),attemptId=randomUUID(),scope=randomUUID();
+        await store.billing.beginWithAttempt({token,captureId,requestHmac:scope},{attemptId,captureId,purpose:'answer',provider:'test',model:'m',policyVersion:'p',currency:'CNY',pricingVersion:'p'});
+        assert.equal(await store.billing.reserveBudget(token,attemptId,scope,'CNY',40,100),true);
+        const result={status:'succeeded' as const,inputTokens:10,outputTokens:2,costMicros:actual?.toString()??null};
+        await store.billing.finishAttemptAndBudget(other.token,attemptId,result,0);
+        await store.billing.finishAttemptAndBudget('missing',attemptId,result,0);
+        assert.equal((await store.billing.attempts(token)).find(a=>a.attemptId===attemptId)?.status,'running');
+        const probe=randomUUID();assert.equal(await store.billing.reserveBudget(token,probe,scope,'CNY',61,100),false);
+        await Promise.all(Array.from({length:10},()=>store.billing.finishAttemptAndBudget(token,attemptId,result,actual)));
+        await store.billing.finishAttemptAndBudget(token,attemptId,{...result,status:'failed',costMicros:'0'},0);
+        await store.billing.releaseBudget(token,attemptId);
+        const attempt=(await store.billing.attempts(token)).find(a=>a.attemptId===attemptId)!;
+        assert.equal(attempt.status,'succeeded');assert.equal(attempt.costMicros,result.costMicros);assert.equal(attempt.inputTokens,10);
+        const remaining=100-(actual??40);
+        assert.equal(await store.billing.reserveBudget(token,probe,scope,'CNY',remaining+1,100),false);
+        assert.equal(await store.billing.reserveBudget(token,probe,scope,'CNY',remaining,100),true);
+        await store.billing.releaseBudget(token,probe);
+        await store.billing.finish({token,captureId,charge:false,terminalState:'failed'});
+      }
+      assert.equal((await store.billing.quota(token))?.balanceQuestions,30);
+    }finally{await store.close();}
+  });
+  if(name!=='memory')test(`${name}: an interrupted budget write rolls back attempt metadata and cost revision`,async()=>{
+    const store=await make();
+    const billing=store.billing as typeof store.billing & {run:RunTransaction},run=billing.run;
+    try {
+      const {token}=await store.registerDevice({platform:'m',appVersion:'t',trialQuestions:30});
+      const captureId=randomUUID(),attemptId=randomUUID(),scope=randomUUID();
+      await billing.beginWithAttempt({token,captureId,requestHmac:scope},{attemptId,captureId,purpose:'answer',provider:'test',model:'m',policyVersion:'p',currency:'CNY',pricingVersion:'p'});
+      await billing.reserveBudget(token,attemptId,scope,'CNY',40,100);
+      let injected=false;
+      billing.run=<T>(transaction:Transaction<T>)=>run((function*():Transaction<T>{
+        let rows:Row[]=[];
+        while(true){
+          const step=transaction.next(rows);if(step.done)return step.value;
+          if(step.value.sql.startsWith('UPDATE budget_windows SET held_micros=held_micros-?,spent_micros=')){
+            injected=true;throw new Error('Injected budget write failure');
+          }
+          rows=yield step.value;
+        }
+      })());
+      const result={status:'succeeded' as const,inputTokens:10,outputTokens:2,costMicros:'90'};
+      await assert.rejects(()=>billing.finishAttemptAndBudget(token,attemptId,result,90),/Injected budget write failure/);
+      billing.run=run;assert.equal(injected,true);
+      const attempt=(await billing.attempts(token))[0]!;assert.equal(attempt.status,'running');assert.equal(attempt.costMicros,null);
+      const probe=randomUUID();assert.equal(await billing.reserveBudget(token,probe,scope,'CNY',61,100),false);
+      assert.equal(await billing.reserveBudget(token,probe,scope,'CNY',60,100),true);await billing.releaseBudget(token,probe);
+      await billing.finishAttemptAndBudget(token,attemptId,result,90);
+      assert.equal((await billing.attempts(token))[0]?.costMicros,'90');
+      assert.equal(await billing.reserveBudget(token,randomUUID(),scope,'CNY',11,100),false);
+      const last=randomUUID();assert.equal(await billing.reserveBudget(token,last,scope,'CNY',10,100),true);
+    }finally{billing.run=run;await store.close();}
+  });
+  test(`${name}: capture and model attempt are admitted together exactly once`, async () => {
+    const store = await make();
+    try {
+      const {token} = await store.registerDevice({platform:'macos',appVersion:'test',trialQuestions:30});
+      const captureId=randomUUID(),input={token,captureId,requestHmac:'atomic',exclusive:true};
+      const attempt={attemptId:randomUUID(),captureId,purpose:'answer' as const,provider:'test',model:'test',policyVersion:'test',currency:'CNY',pricingVersion:'test'};
+      const results=await Promise.all(Array.from({length:10},()=>store.billing.beginWithAttempt(input,attempt)));
+      assert.equal(results.filter(r=>r.ok).length,1);
+      assert.equal(results.filter(r=>!r.ok&&r.reason==='capture_in_progress').length,9);
+      const attempts=await store.billing.attempts(token);assert.equal(attempts.length,1);
+      assert.equal(attempts[0]?.attemptId,attempt.attemptId);assert.equal(attempts[0]?.status,'running');
+      assert.equal((await store.billing.quota(token))?.balanceQuestions,29);
+      assert.equal((await store.billing.quota(token))?.heldQuestions,1);
+      const invalidId=randomUUID(),before=await store.billing.quota(token);
+      await assert.rejects(async()=>store.billing.beginWithAttempt({...input,captureId:invalidId},{...attempt,attemptId:randomUUID()}),/binding mismatch/);
+      await assert.rejects(async()=>store.billing.beginWithAttempt({...input,captureId:invalidId},{...attempt,captureId:invalidId,purpose:'recover',attemptId:randomUUID()}),/binding mismatch/);
+      assert.equal(await store.billing.capture(token,invalidId),null);assert.deepEqual(await store.billing.quota(token),before);
+    } finally {await store.close();}
+  });
+  test(`${name}: attempt insertion conflict rolls back solve and auxiliary admission`, async () => {
+    const store=await make();
+    try {
+      const {token}=await store.registerDevice({platform:'macos',appVersion:'test',trialQuestions:30});
+      const parent=randomUUID(),attempt={attemptId:randomUUID(),captureId:parent,purpose:'answer' as const,provider:'test',model:'test',policyVersion:'test',currency:'CNY',pricingVersion:'test'};
+      assert.equal((await store.billing.beginWithAttempt({token,captureId:parent,requestHmac:'parent',inputHmac:'image'},attempt)).ok,true);
+      await store.billing.finish({token,captureId:parent,charge:true,terminalState:'usable',answerHmac:'answer'});
+      const quota=await store.billing.quota(token),parentBefore=await store.billing.capture(token,parent);
+      for(const operation of ['solve','explain','recover'] as const){
+        const id=randomUUID(),input={token,captureId:id,requestHmac:id,inputHmac:'image',operation,...(operation==='solve'?{}:{parentCaptureId:parent})};
+        await assert.rejects(async()=>store.billing.beginWithAttempt(input,{...attempt,captureId:id,purpose:operation==='solve'?'answer':operation}));
+        assert.equal(await store.billing.capture(token,id),null);
+        assert.deepEqual(await store.billing.quota(token),quota);
+        assert.deepEqual(await store.billing.capture(token,parent),parentBefore);
+      }
+      assert.equal((await store.billing.attempts(token)).length,1);
+    } finally {await store.close();}
+  });
+  test(`${name}: cross-account attempt ID conflict cannot leave a second quota hold`, async () => {
+    const store=await make();
+    try {
+      const accounts=await Promise.all([0,1].map(()=>store.registerDevice({platform:'macos',appVersion:'test',trialQuestions:30})));
+      const attemptId=randomUUID(),inputs=accounts.map(a=>({token:a.token,captureId:randomUUID(),requestHmac:randomUUID()}));
+      const results=await Promise.allSettled(inputs.map(input=>store.billing.beginWithAttempt(input,{attemptId,captureId:input.captureId,purpose:'answer',provider:'test',model:'test',policyVersion:'test',currency:'CNY',pricingVersion:'test'})));
+      assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.ok).length,1);
+      assert.equal(results.filter(r=>r.status==='rejected').length,1);
+      for(let i=0;i<inputs.length;i++){
+        const won=results[i]!.status==='fulfilled',input=inputs[i]!;
+        assert.equal((await store.billing.quota(input.token))?.heldQuestions,won?1:0);
+        assert.equal((await store.billing.quota(input.token))?.balanceQuestions,won?29:30);
+        assert.equal((await store.billing.attempts(input.token)).length,won?1:0);
+        assert.equal((await store.billing.capture(input.token,input.captureId))!==null,won);
+      }
+    } finally {await store.close();}
+  });
+  test(`${name}: settlement returns a matching immutable capture/account snapshot and charges once`, async () => {
+    const store = await make();
+    try {
+      const {token} = await store.registerDevice({platform: 'macos', appVersion: 'test', trialQuestions: 30});
+      const captureId = randomUUID();
+      await store.billing.begin({token, captureId, requestHmac: 'snapshot'});
+      const input = {token, captureId, charge: true, terminalState: 'usable' as const,
+        answerHmac: 'answer', inputTokens: 11, outputTokens: 7, resultState: 'ready', questionKind: 'short_fill'};
+      const results = await Promise.all(Array.from({length: 10}, () => store.billing.finishWithCapture(input)));
+      for (const result of results) {
+        assert.ok(result?.capture);
+        assert.equal(result.capture.captureId, captureId);
+        assert.equal(result.capture.settlementStatus, 'settled');
+        assert.equal(result.capture.usableResult, true);
+        assert.equal(result.capture.answerHmac, 'answer');
+        assert.equal(result.account.balanceQuestions, 29);
+        assert.equal(result.account.heldQuestions, 0);
+        assert.equal(result.account.totalQuestions, 1);
+        assert.equal(result.account.totalInputTokens, 11);
+        assert.equal(result.account.totalOutputTokens, 7);
+      }
+      assert.deepEqual(results[0]?.capture, await store.billing.capture(token, captureId));
+      assert.deepEqual(results[0]?.account, await store.billing.accountSnapshot(token));
+      results[0]!.capture!.answerHmac = 'mutated';
+      results[0]!.account.quotaBreakdown.trial = 999;
+      assert.equal((await store.billing.capture(token, captureId))?.answerHmac, 'answer');
+      assert.equal((await store.billing.accountSnapshot(token))?.quotaBreakdown.trial, 29);
+    } finally { await store.close(); }
+  });
+  test(`${name}: settlement snapshot preserves account isolation, failure refunds and expired leases`, async () => {
+    const store = await make();
+    try {
+      const a = await store.registerDevice({platform: 'macos', appVersion: 'test', trialQuestions: 30});
+      const b = await store.registerDevice({platform: 'macos', appVersion: 'test', trialQuestions: 30});
+      const captureId = randomUUID(), input = {token: a.token, captureId, charge: false, terminalState: 'failed' as const};
+      await store.billing.begin({token: a.token, captureId, requestHmac: 'failure'});
+      assert.equal(await store.billing.finishWithCapture({...input, token: 'missing'}), null);
+      const foreign = await store.billing.finishWithCapture({...input, token: b.token});
+      assert.equal(foreign?.capture, null); assert.equal(foreign?.account.balanceQuestions, 30);
+      assert.equal((await store.billing.capture(a.token, captureId))?.settlementStatus, 'held');
+      const failed = await store.billing.finishWithCapture(input);
+      assert.equal(failed?.capture?.settlementStatus, 'released');
+      assert.equal(failed?.account.balanceQuestions, 30);
+      const duplicate = await store.billing.finishWithCapture({...input, charge: true, terminalState: 'usable'});
+      assert.deepEqual(duplicate, failed);
+      const expiredId = randomUUID();
+      await store.billing.begin({token: a.token, captureId: expiredId, requestHmac: 'expired', leaseMs: -1});
+      const expired = await store.billing.finishWithCapture({...input, captureId: expiredId, charge: true, terminalState: 'usable'});
+      assert.equal(expired?.capture?.terminalState, 'failed');
+      assert.equal(expired?.capture?.usableResult, false);
+      assert.equal(expired?.account.balanceQuestions, 30);
+      assert.equal(expired?.account.totalQuestions, 0);
+    } finally { await store.close(); }
+  });
+  test(`${name}: settlement snapshot expires answer metadata just like capture lookup`, async () => {
+    const store = await make(), realNow = Date.now;
+    try {
+      const {token} = await store.registerDevice({platform: 'macos', appVersion: 'test', trialQuestions: 30});
+      const captureId = randomUUID(), input = {token, captureId, charge: true, terminalState: 'usable' as const, answerHmac: 'answer'};
+      await store.billing.begin({token, captureId, requestHmac: 'expiry'});
+      const settled = await store.billing.finishWithCapture(input);
+      assert.equal(settled?.capture?.answerHmac, 'answer');
+      const later = realNow() + 900_001; Date.now = () => later;
+      const expired = await store.billing.finishWithCapture(input);
+      assert.equal(expired?.capture?.answerHmac, null);
+      assert.equal((await store.billing.capture(token, captureId))?.answerHmac, null);
+      assert.equal(expired?.account.totalQuestions, 1);
+    } finally { Date.now = realNow; await store.close(); }
+  });
   test(`${name}: CNY cap is shared across devices and resets only at Shanghai midnight`, async () => {
     const store = await make();
     try {

@@ -83,8 +83,12 @@ for (const [name, make] of implementations) {
       };
       const response = await app.inject({method: 'POST', url: '/v1/devices', payload: {platform: 'macos', app_version: '2.12'}});
       assert.equal(response.statusCode, 200);
-      assert.deepEqual(response.json(), {policy_version: 'fixed30-test', initial_grant: 30,
+      const {client_config, ...account} = response.json();
+      assert.deepEqual(account, {policy_version: 'fixed30-test', initial_grant: 30,
         balance_version: '2', device_token: heldToken, balance_questions: 29});
+      const fetched = await app.inject({method:'GET',url:'/v1/client-config',headers:{authorization:`Bearer ${heldToken}`}});
+      assert.equal(fetched.statusCode,200);
+      assert.deepEqual(client_config,fetched.json());
     } finally { await app.close(); await store.close(); }
   });
 

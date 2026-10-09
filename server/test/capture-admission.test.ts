@@ -113,8 +113,30 @@ async function fixture(make:()=>Store|Promise<Store>,concurrency=1) {
 }
 
 for(const [kind,make] of implementations) {
+  for(const operation of ['solve','explain','recover'] as const)for(const afterCommit of [false,true]) {
+    test(`${kind}: ${operation} attempt/budget completion ${afterCommit?'lost acknowledgement':'failure'} sends no final receipt`,async()=>{
+      const f=await fixture(make);
+      try {
+        const target=await f.target(operation),billing=f.store.billing,before=f.calls();
+        billing.finishAttemptAndBudget=failOnce(billing.finishAttemptAndBudget.bind(billing),afterCommit);
+        const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
+        assert.equal(f.calls(),before+1);assert.equal(response?.status,200);
+        assert.match(response!.payload,/正在核对/);assert.doesNotMatch(response!.payload,/data: \[DONE\]/);
+        assert.doesNotMatch(response!.payload,/"type":"usage"/);
+        const capture=await billing.capture(f.token,target.id);assert.equal(capture?.settlementStatus,'released');
+        assert.equal((await billing.quota(f.token))?.heldQuestions,0);
+        assert.equal((await billing.quota(f.token))?.balanceQuestions,operation==='explain'?29:30);
+        const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id)!;
+        assert.equal(attempt.status,afterCommit?'succeeded':operation==='solve'?'unknown':'running');
+        assert.equal(attempt.costMicros,afterCommit||operation==='solve'?'0':null);
+        // Solve has an independent best-effort cost retry. An uncertain auxiliary cost
+        // keeps the full bound until reconciliation instead of fabricating a zero.
+        await f.budgetAvailable(afterCommit||operation==='solve');
+      }finally{await f.close();}
+    });
+  }
   for(const operation of ['solve','explain','recover'] as const) {
-    for(const stage of ['before_budget','budget','begin','attempt'] as const) {
+    for(const stage of ['before_budget','budget','begin_attempt'] as const) {
       test(`${kind}: ${operation} HTTP disconnect at ${stage} never starts a vendor and releases admission`,{timeout:10_000},async()=>{
         const f=await fixture(make);let resume:()=>void=()=>{};
         try {
@@ -122,24 +144,23 @@ for(const [kind,make] of implementations) {
           const gate=stage==='before_budget'
             ? operation==='solve'?pause(billing.reap.bind(billing)):pause(billing.attempts.bind(billing))
             : stage==='budget'?pause(billing.reserveBudget.bind(billing))
-            : stage==='begin'?pause(billing.begin.bind(billing)):pause(billing.startAttempt.bind(billing));
+            : pause(billing.beginWithAttempt.bind(billing));
           // Each pause follows a successful real operation, including committed writes.
           if(stage==='before_budget') {
             if(operation==='solve')billing.reap=gate.call as typeof billing.reap;
             else billing.attempts=gate.call as typeof billing.attempts;
           } else if(stage==='budget')billing.reserveBudget=gate.call as typeof billing.reserveBudget;
-          else if(stage==='begin')billing.begin=gate.call as typeof billing.begin;
-          else billing.startAttempt=gate.call as typeof billing.startAttempt;
+          else billing.beginWithAttempt=gate.call as typeof billing.beginWithAttempt;
           resume=gate.resume;
           const req=f.request(target.url,target.payload);await gate.entered;await req.cancel();resume();await req.finished;
           assert.equal(await req.response,null);assert.equal(f.calls(),before);
-          const capture=await billing.capture(f.token,target.id),held=stage==='begin'||stage==='attempt';
+          const capture=await billing.capture(f.token,target.id),held=stage==='begin_attempt';
           assert.equal(capture?.settlementStatus??null,held?'released':null);
           const quota=(await billing.quota(f.token))!;
           assert.equal(quota.heldQuestions,0);
           assert.equal(quota.balanceQuestions,operation==='solve'?30:operation==='recover'&&held?30:29);
           const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id);
-          if(stage==='attempt') {
+          if(stage==='begin_attempt') {
             assert.equal(attempt?.status,'failed');assert.equal(attempt.costMicros,'0');assert.equal(attempt.inputTokens,0);
           } else assert.equal(attempt,undefined);
           await f.budgetAvailable();
@@ -148,22 +169,21 @@ for(const [kind,make] of implementations) {
         } finally {resume();await f.close();}
       });
     }
-    for(const method of ['reserveBudget','begin','startAttempt'] as const)for(const afterCommit of [false,true]) {
+    for(const method of ['reserveBudget','beginWithAttempt'] as const)for(const afterCommit of [false,true]) {
       test(`${kind}: ${operation} ${method} ${afterCommit?'lost commit acknowledgement':'rollback'} leaves no admission leak`,{timeout:10_000},async()=>{
         const f=await fixture(make);
         try {
           const target=await f.target(operation),before=f.calls(),billing=f.store.billing;
           if(method==='reserveBudget')billing.reserveBudget=failOnce(billing.reserveBudget.bind(billing),afterCommit);
-          else if(method==='begin')billing.begin=failOnce(billing.begin.bind(billing),afterCommit);
-          else billing.startAttempt=failOnce(billing.startAttempt.bind(billing),afterCommit);
+          else billing.beginWithAttempt=failOnce(billing.beginWithAttempt.bind(billing),afterCommit);
           const req=f.request(target.url,target.payload);await req.response;await req.finished;
           assert.equal(f.calls(),before);
-          const captured=method==='startAttempt'||method==='begin'&&afterCommit;
+          const captured=method==='beginWithAttempt'&&afterCommit;
           assert.equal((await billing.capture(f.token,target.id))?.settlementStatus??null,captured?'released':null);
           const quota=(await billing.quota(f.token))!;assert.equal(quota.heldQuestions,0);
           assert.equal(quota.balanceQuestions,operation==='solve'?30:operation==='recover'&&captured?30:29);
           const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id);
-          if(method==='startAttempt'&&afterCommit)assert.deepEqual([attempt?.status,attempt?.costMicros,attempt?.inputTokens],['failed','0',0]);
+          if(method==='beginWithAttempt'&&afterCommit)assert.deepEqual([attempt?.status,attempt?.costMicros,attempt?.inputTokens],['failed','0',0]);
           else assert.equal(attempt,undefined);
           await f.budgetAvailable();
           const next=f.request('/v1/captures',body());assert.equal((await next.response)?.status,200);await next.finished;
@@ -175,14 +195,14 @@ for(const [kind,make] of implementations) {
   test(`${kind}: uncertain duplicate admission cannot release another worker's capture`,{timeout:10_000},async()=>{
     const f=await fixture(make);let resume:()=>void=()=>{};
     try {
-      const billing=f.store.billing,original=billing.begin.bind(billing),target=await f.target('solve');
+      const billing=f.store.billing,original=billing.beginWithAttempt.bind(billing),target=await f.target('solve');
       const gate=pause(async (...args:Parameters<typeof original>)=>{
         await original(...args);throw new Error('Duplicate acknowledgement lost');
-      },false);resume=gate.resume;billing.begin=gate.call;
+      },false);resume=gate.resume;billing.beginWithAttempt=gate.call;
       const req=f.request(target.url,target.payload);await gate.entered;
       const otherId=randomUUID();
-      assert.equal((await original({token:f.token,captureId:target.id,requestHmac:'another worker',requestId:otherId})).ok,true);
-      billing.begin=original;
+      assert.equal((await billing.begin({token:f.token,captureId:target.id,requestHmac:'another worker',requestId:otherId})).ok,true);
+      billing.beginWithAttempt=original;
       // The paused operation observes a duplicate and loses its database acknowledgement.
       await req.cancel();resume();await req.finished;
       assert.equal((await billing.capture(f.token,target.id))?.requestId,otherId);
@@ -192,6 +212,27 @@ for(const [kind,make] of implementations) {
     } finally {resume();await f.close();}
   });
   for(const operation of ['solve','explain','recover'] as const) {
+    for (const afterCommit of [false, true]) {
+      test(`${kind}: ${operation} combined settlement ${afterCommit?'lost commit acknowledgement':'failure'} never sends a false receipt`, {timeout:10_000}, async()=>{
+        const f=await fixture(make);
+        try {
+          const target=await f.target(operation),billing=f.store.billing;
+          billing.finishWithCapture=failOnce(billing.finishWithCapture.bind(billing),afterCommit);
+          const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
+          assert.equal(response?.status,200);
+          assert.ok(!response.payload.includes('"type":"usage"'));
+          assert.ok(!response.payload.includes('data: [DONE]'));
+          const capture=await billing.capture(f.token,target.id);
+          assert.equal(capture?.settlementStatus,operation==='solve'&&afterCommit?'settled':'released');
+          assert.equal(capture?.usableResult,afterCommit);
+          const quota=(await billing.quota(f.token))!;
+          assert.equal(quota.heldQuestions,0);
+          assert.equal(quota.balanceQuestions,afterCommit||operation==='explain'?29:30);
+          await billing.finishWithCapture({token:f.token,captureId:target.id,charge:false,terminalState:'failed'});
+          assert.deepEqual(await billing.quota(f.token),quota);
+        } finally {await f.close();}
+      });
+    }
     test(`${kind}: ${operation} synchronous provider failure is settled without an unhandled deadline rejection`,{timeout:10_000},async()=>{
       const f=await fixture(make);
       try {
@@ -219,4 +260,17 @@ for(const [kind,make] of implementations) {
       } finally {late.resolve();await f.close();}
     });
   }
+  test(`${kind}: solve sends its committed receipt without a second capture lookup`, {timeout:10_000}, async()=>{
+    const f=await fixture(make);
+    try {
+      const target=await f.target('solve'),billing=f.store.billing,lookup=billing.capture.bind(billing);
+      let reads=0;
+      billing.capture=async(...args)=>{reads++;assert.equal(reads,1,'only the pre-admission idempotency lookup is needed');return lookup(...args);};
+      const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
+      assert.equal(response?.status,200);assert.ok(response.payload.endsWith('data: [DONE]\n\n'));
+      assert.ok(response.payload.includes('"type":"usage"'));
+      assert.equal(reads,1);
+      assert.equal((await lookup(f.token,target.id))?.settlementStatus,'settled');
+    } finally {await f.close();}
+  });
 }

@@ -43,6 +43,48 @@ private final class AccountFixture {
 
 @MainActor
 final class OfficialAccountStateTests: XCTestCase {
+    func testRegistrationInstallsConfigurationAfterCredentialCommitWithoutConfigRequest() async throws {
+        let f = AccountFixture(); defer { f.close() }
+        let token = "dev_registration_config_123456"
+        let config = NotchClientConfig(schemaVersion: 1, revision: "inline-registration",
+            objectiveResultV1: .init(variant: "objective_v1", protocol: "objective_v1", promptVariant: "objective_v1"),
+            telemetry: .init(enabled: false, maxBatchSize: 50, maxQueueAgeDays: 7))
+        var response = try XCTUnwrap(JSONSerialization.jsonObject(with: body(token: token)) as? [String: Any])
+        response["client_config"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config))
+        let data = try JSONSerialization.data(withJSONObject: response)
+        var requests: [String] = [], installed = 0
+        let server = try await peer(f) { request, reply in requests.append(request.path); reply.respond(type: "application/json", body: data) }
+        defer { server.stop() }
+        let service = ClientConfigService(defaults: f.defaults, account: { f.state.account }, session: f.session)
+        let environment = OfficialAPI.AccountEnvironment(state: f.state, session: f.session, receiveConfiguration: { value, account in
+            XCTAssertEqual(f.secrets.read("official.deviceToken"), .value(token))
+            XCTAssertEqual(account, f.state.account)
+            service.acceptRegistrationConfig(value, for: account)
+            installed += 1
+        })
+        _ = try await OfficialAPI.registerIfNeeded(environment: environment).get()
+        XCTAssertEqual(requests, ["/v1/devices"])
+        XCTAssertEqual(installed, 1)
+        XCTAssertEqual(service.current, config)
+    }
+
+    func testMalformedOptionalRegistrationConfigDoesNotLoseTheDeviceCredential() async throws {
+        for malformed: Any in ["invalid", ["schema_version": 99], NSNull()] {
+            let f = AccountFixture(); defer { f.close() }
+            let token = "dev_registration_optional_123456"
+            var response = try XCTUnwrap(JSONSerialization.jsonObject(with: body(token: token)) as? [String: Any])
+            response["client_config"] = malformed
+            let data = try JSONSerialization.data(withJSONObject: response)
+            let server = try await peer(f) { _, reply in reply.respond(type: "application/json", body: data) }
+            defer { server.stop() }
+            let environment = OfficialAPI.AccountEnvironment(state: f.state, session: f.session,
+                receiveConfiguration: { _, _ in XCTFail("Malformed optional config must be ignored") })
+            let registered = try await OfficialAPI.registerIfNeeded(environment: environment).get()
+            XCTAssertEqual(registered, token)
+            XCTAssertEqual(f.secrets.read("official.deviceToken"), .value(token))
+        }
+    }
+
     func testUsageAfterRefreshDoesNotCountTheSameSettlementTwice() throws {
         let f = AccountFixture(); defer { f.close() }
         f.seed()

@@ -108,6 +108,7 @@ export const config = {
   requestHmacKeyVersion: envStr('REQUEST_HMAC_KEY_VERSION', 'v1'),
   cronSecret: envStr('CRON_SECRET', ''),
   screenQueryEnabled: envStr('SCREEN_QUERY_ENABLED', '0') === '1',
+  screenQueryBriefCalculation: envStr('SCREEN_QUERY_BRIEF_CALCULATION', '0') === '1',
   explanationEnabled: envStr('EXPLANATION_ENABLED', '0') === '1',
   // Includes all provider-generated thinking and visible text. Candidates must re-admit cost
   // before increasing it; no request from the client can raise this server-owned limit.

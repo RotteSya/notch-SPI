@@ -36,17 +36,24 @@ enum ScreenCapture {
         var sourceFrame: NSRect? = nil
     }
 
+    struct WindowIdentity: Equatable {
+        let id: CGWindowID
+        let processID: pid_t
+        let frame: CGRect
+    }
+
     struct Context {
         let displayID: CGDirectDisplayID
         let primaryHeight: CGFloat
         let foreground: String
-        let windowID: CGWindowID?
+        let window: WindowIdentity?
+        var windowID: CGWindowID? { window?.id }
         @MainActor static func current(target: CaptureTarget = .fullScreen) -> Context {
-            let windowID: CGWindowID?
+            let window: WindowIdentity?
             if case .app(let bundleID) = target {
                 let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).map(\.processIdentifier))
                 let windows = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [NSDictionary] ?? []
-                let candidates: [(id: CGWindowID, area: CGFloat, visible: Bool)] = windows.compactMap { w in
+                let candidates: [(window: WindowIdentity, area: CGFloat, visible: Bool)] = windows.compactMap { w in
                     guard let pid = w[kCGWindowOwnerPID] as? pid_t, pids.contains(pid),
                           pid != ProcessInfo.processInfo.processIdentifier,
                           w[kCGWindowLayer] as? Int == 0,
@@ -54,12 +61,16 @@ enum ScreenCapture {
                           let bounds = w[kCGWindowBounds] as? NSDictionary,
                           let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
                           rect.width >= 80, rect.height >= 60 else { return nil }
-                    return (id, rect.width * rect.height, w[kCGWindowIsOnscreen] as? Bool ?? false)
+                    return (.init(id: id, processID: pid, frame: rect), rect.width * rect.height, w[kCGWindowIsOnscreen] as? Bool ?? false)
                 }
-                windowID = candidates.first(where: { $0.visible })?.id ?? candidates.max(by: { $0.area < $1.area })?.id
-            } else { windowID = nil }
+                window = candidates.first(where: { $0.visible })?.window ?? candidates.max(by: { $0.area < $1.area })?.window
+            } else { window = nil }
             return Context(displayID: CGMainDisplayID(), primaryHeight: CGDisplayBounds(CGMainDisplayID()).height,
-                    foreground: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown", windowID: windowID)
+                    foreground: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown", window: window)
+        }
+        /// Selection is always frozen from a fresh WindowServer listing, never cache order.
+        func canReuseWindow(id: CGWindowID, processID: pid_t, frame: CGRect) -> Bool {
+            window == WindowIdentity(id: id, processID: processID, frame: frame)
         }
         func appKitFrame(_ quartz: CGRect) -> CGRect {
             Self.appKitFrame(quartz, primaryHeight: primaryHeight)
@@ -122,8 +133,8 @@ enum ScreenCapture {
     /// call — the slowest client-side step — and the full-screen path only needs two stable
     /// facts from it: the display list and our own panel window. Staleness (display unplugged,
     /// resolution changed) shows up as a failed attempt, never a wrong image, and the capture
-    /// then retries with a fresh enumeration. App-window targets never use the cache: window
-    /// stacking changes constantly, and a stale pick could capture the wrong window.
+    /// then retries with a fresh enumeration. App targets can reuse only the exact window
+    /// selected by a fresh WindowServer listing, with unchanged owner and geometry.
     @MainActor private static var cachedContent: SCShareableContent?
     @MainActor private static var refreshing = false
     @MainActor private static var contentGeneration: UInt64 = 0
@@ -209,6 +220,25 @@ enum ScreenCapture {
             return await captureFullScreen(maxLongEdge: maxLongEdge, excludingWindowID: excludingWindowID, context: context)
         }
 
+        // The prefetch contains window handles too. Reuse a handle only after verifying
+        // the hotkey's fresh selection; never infer the front window from cached ordering.
+        let cachedWindow = await MainActor.run {
+            cachedContent?.windows.first { window in
+                guard let app = window.owningApplication, app.bundleIdentifier == bundleID,
+                      isCapturable(window) else { return false }
+                return context.canReuseWindow(id: window.windowID, processID: app.processID, frame: window.frame)
+            }
+        }
+        defer { Task { @MainActor in prefetchShareableContent() } }
+        if let cachedWindow {
+            #if DEBUG
+            trace("app.cache.validated")
+            #endif
+            let result = await captureAppWindow(cachedWindow, maxLongEdge: maxLongEdge, context: context)
+            if case .success = result { return result }
+            if Task.isCancelled { return .failure(.captureFailed) }
+        }
+
         // Visible targets avoid the substantially slower all-Spaces/minimized enumeration.
         // Enumerate off-screen windows only when the requested app has no visible content.
         var content: SCShareableContent
@@ -244,6 +274,10 @@ enum ScreenCapture {
         guard let id = context.windowID, let window = owned.first(where: { $0.windowID == id })
         else { return .failure(.noCapturableWindow(name: name)) }
 
+        return await captureAppWindow(window, maxLongEdge: maxLongEdge, context: context)
+    }
+
+    private static func captureAppWindow(_ window: SCWindow, maxLongEdge: CGFloat, context: Context) async -> Result<Shot, CaptureError> {
         // Window-server composited: unaffected by occlusion, Space, or which display it's on.
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()
@@ -403,7 +437,13 @@ enum ScreenCapture {
             trace("image.begin")
             #endif
             let cg = try await imageCapture.run {
-                try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                if #available(macOS 26.0, *) {
+                    let screenshot = screenshotConfiguration(from: config, style: filter.style)
+                    let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: screenshot)
+                    guard let image = output.sdrImage else { throw CaptureError.captureFailed }
+                    return image
+                }
+                return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
             }
             try Task.checkCancellation()
             #if DEBUG
@@ -427,6 +467,25 @@ enum ScreenCapture {
             #endif
             return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
         }
+    }
+
+    /// The dedicated screenshot API uses one shadow/clipping policy; select the policy
+    /// for this filter without changing its target or the existing image envelope.
+    @available(macOS 26.0, *)
+    static func screenshotConfiguration(from stream: SCStreamConfiguration,
+                                        style: SCShareableContentStyle) -> SCScreenshotConfiguration {
+        let screenshot = SCScreenshotConfiguration()
+        screenshot.width = stream.width
+        screenshot.height = stream.height
+        screenshot.showsCursor = stream.showsCursor
+        screenshot.includeChildWindows = stream.includeChildWindows
+        screenshot.ignoreShadows = style == .window ? stream.ignoreShadowsSingleWindow : stream.ignoreShadowsDisplay
+        screenshot.ignoreClipping = style == .window ? stream.ignoreGlobalClipSingleWindow : stream.ignoreGlobalClipDisplay
+        screenshot.dynamicRange = .sdr
+        screenshot.displayIntent = .local
+        // Encoding and file ownership remain in encode(), after cancellation validation.
+        screenshot.fileURL = nil
+        return screenshot
     }
 
     /// The system utility does not require SCShareableContent. Never invoke it for a

@@ -9,6 +9,37 @@ private final class ConfigAccountBox {
 
 @MainActor
 final class ClientConfigServiceTests: XCTestCase {
+    func testRegistrationConfigSupersedesPendingFetchAndRejectsWrongAccount() async throws {
+        let suite = "notchspi.test.config." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite)), owner = ConfigAccountBox()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel(); defaults.removePersistentDomain(forName: suite) }
+        let received = expectation(description: "background config request")
+        var pending: CaptureHTTPReply?
+        let server = try CaptureHTTPServer { _, reply in pending = reply; received.fulfill() }
+        defer { server.stop() }
+        let account = OfficialAPI.CaptureAccount(token: "registered-account", baseURL: try await server.start(), generation: 1)
+        owner.value = account
+        let service = ClientConfigService(defaults: defaults, account: { owner.value }, session: session)
+        let task = try XCTUnwrap(service.refresh())
+        await fulfillment(of: [received], timeout: 3)
+        let config = try JSONDecoder().decode(NotchClientConfig.self, from: body("registration"))
+        service.acceptRegistrationConfig(config, for: account)
+        try XCTUnwrap(pending).respond(type: "application/json", body: body("old-fetch"))
+        await task.value
+        XCTAssertEqual(service.current.revision, "registration")
+        let wrong = try JSONDecoder().decode(NotchClientConfig.self, from: body("wrong-account"))
+        for other in [OfficialAPI.CaptureAccount(token: "other", baseURL: account.baseURL, generation: 1),
+                      .init(token: account.token, baseURL: "https://other.invalid", generation: 1),
+                      .init(token: account.token, baseURL: account.baseURL, generation: 2)] {
+            service.acceptRegistrationConfig(wrong, for: other)
+            XCTAssertEqual(service.current.revision, "registration")
+        }
+        owner.value = nil
+        XCTAssertEqual(service.current.revision, "base")
+        XCTAssertNil(defaults.data(forKey: "clientConfig.v2.cache"))
+    }
+
     private func body(_ revision: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "schema_version": 1, "revision": revision,

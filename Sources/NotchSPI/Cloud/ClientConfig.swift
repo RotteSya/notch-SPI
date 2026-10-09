@@ -154,6 +154,18 @@ final class ClientConfigService {
         }
     }
 
+    /// Registration can return the same account-bound config as /v1/client-config,
+    /// so the first capture does not need another network round trip to negotiate it.
+    func acceptRegistrationConfig(_ config: NotchClientConfig, for account: OfficialAPI.CaptureAccount) {
+        synchronizeOwner()
+        guard config.accepted, owner == account, self.account() == account else { return }
+        // An earlier background refresh must not replace this newer registration result.
+        refreshTask?.cancel(); refreshTask = nil; requestID = nil
+        let saved = Cache(binding: binding(account), fetchedAt: now(), config: config)
+        cache = saved
+        if let data = try? JSONEncoder().encode(saved) { defaults.set(data, forKey: cacheKey) }
+    }
+
     @discardableResult
     func refresh() -> Task<Void, Never>? {
         synchronizeOwner()
