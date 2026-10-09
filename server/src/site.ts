@@ -1,5 +1,6 @@
 import type { QuestionPack } from './pricing.ts';
 import { designCopy, siteCSS } from './site-design.ts';
+import { demoScript } from './site-demo.ts';
 import { idleScreenshot } from './site-assets.ts';
 import { formatMoney, escapeHtml, type PageLang } from './payments.ts';
 
@@ -292,13 +293,13 @@ export function renderLandingPage(input: SiteInput): string {
 <p class="trial-line">${d.free(input.trialQuestions)}</p><p class="requirements">${d.requirements}</p>
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
-<div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
+<div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===0?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
 <div class="desktop" id="demo-screen"><div class="menu-bar" aria-hidden="true"><span>NotchSPI &nbsp; · &nbsp; ${d.demoLabel}</span><span>⌘ &nbsp; ◉ &nbsp; 9:41</span></div>
 <div class="notch"><div class="notch-head">${rose}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
 <div class="pending"><span class="capture-thumb" aria-hidden="true"></span>${d.collected}</div><div class="notch-body"><div class="answer-label">${d.answerLabel}</div><div class="answer-value">${d.answer}</div><div class="answer-work">${e(d.explanation)}</div></div></div>
 <div class="question-window"><div class="window-chrome" aria-hidden="true"><i></i><i></i><i></i><span>practice / 01</span></div><div class="question-content"><p class="question-tag">${d.problemTag}</p><h3>${d.question}</h3><div class="options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div></div>
 <div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
-</fieldset><p class="demo-note">${d.demoNote}</p></div></section>
+</fieldset><div class="demo-playback"><button type="button" class="demo-toggle" hidden aria-controls="demo-screen" data-play="${({zh:'播放演示',ja:'デモを再生',en:'Play demo'})[input.lang]}" data-pause="${({zh:'暂停轮播',ja:'一時停止',en:'Pause demo'})[input.lang]}"></button></div><p class="demo-note">${d.demoNote}</p></div></section>
 <div class="rail">${d.rail.map(t=>`<span>${t}</span>`).join('')}</div>
 <section id="how" class="section how" aria-labelledby="how-title"><div><p class="eyebrow">${d.howEyebrow}</p><h2 id="how-title">${lines(d.howTitle)}</h2></div><ol class="how-list">${d.steps.map(([t,p],i)=>`<li><span class="step-number">0${i+1}</span><div><h3>${t}</h3><p>${p}</p></div></li>`).join('')}</ol></section>
 <section id="features" class="features" aria-labelledby="features-title"><div class="feature-intro"><p class="eyebrow">${d.featureEyebrow}</p><h2 id="features-title">${lines(d.featureTitle)}</h2></div><div class="feature-grid">
@@ -311,5 +312,5 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <section class="closing">${rose}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free(input.trialQuestions)}<br>${d.requirements}</p></section>
 <aside class="scope-links"><p>${d.scope}</p><nav class="entrylinks" aria-label="${d.scope}"><a href="/spi?lang=${input.lang}"${input.entry==='spi'?' aria-current="page"':''}>${d.spi}</a><a href="/reading-practice?lang=${input.lang}"${input.entry==='reading_practice'?' aria-current="page"':''}>${d.reading}</a></nav></aside>
 <section class="legal" id="legal" aria-label="${d.legal}"><details id="tokushoho"><summary>${s.legalTitle}</summary><table>${tokushohoTable()}</table></details><details id="privacy"><summary>${s.privacyTitle}</summary>${privacy}</details><details id="refund"><summary>${s.refundTitle}</summary>${refund}</details></section></div></main>
-<footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${rose}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer></body></html>`;
+<footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${rose}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer><script>${demoScript}</script></body></html>`;
 }

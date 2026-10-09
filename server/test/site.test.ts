@@ -111,7 +111,7 @@ test('both entry pages preserve their route across languages and use the shared 
     for (const target of ['ja', 'zh', 'en']) assert.ok(html.includes(`href="${path}?lang=${target}"`));
     assert.match(html, /href="\/dl"/);
     assert.match(html, /¥800/);
-    assert.doesNotMatch(html, /<script|github\.com|utm_source|device_token/i);
+    assert.doesNotMatch(html, /github\.com|utm_source|device_token/i);
     assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
     assert.match(response.headers.get('content-security-policy') ?? '', /default-src 'none'.*frame-ancestors 'none'/);
   }
@@ -164,11 +164,11 @@ test('demo is accessible without scripts and reduced motion is included in all l
   for(const lang of ['zh','ja','en'] as const){
     const page=renderLandingPage({packs:[],trialQuestions:30,currency:'JPY',lang,aiProvider:'deepseek'});
     assert.equal((page.match(/type="radio"/g)??[]).length,3);
-    assert.match(page,/id="demo-answer"[^>]*checked/);
+    assert.match(page,/id="demo-question"[^>]*checked/);
     assert.match(page,/<fieldset><legend>/);
     assert.match(page,/prefers-reduced-motion:reduce/);
     assert.match(page,/href="#main"/);
-    assert.doesNotMatch(page,/<script|onchange=|onclick=/);
+    assert.doesNotMatch(page,/onchange=|onclick=/);
     const ids=[...page.matchAll(/ id="([^"]+)"/g)].map(m=>m[1]);
     assert.equal(new Set(ids).size,ids.length);
     for(const [,id] of page.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.includes(id),`missing ${id}`);

@@ -21,6 +21,7 @@ import {purchaseProgress} from './purchase-progress.ts';
 import {retrieveStripeCheckoutProgress,type CheckoutProgress} from './stripe.ts';
 import {retrieveStripeFinance} from './stripe-finance.ts';
 import {reconcilePaymentFinance,financeResource,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
+import { siteCSP } from './site-demo.ts';
 import { renderLandingPage, resolveSiteLang } from './site.ts';
 import { renderAdminPage } from './admin.ts';
 import {renderPurchase,renderPurchaseComplete,PURCHASE_CSP} from './purchase-page.ts';
@@ -188,7 +189,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       .header('Vary', 'Accept-Language')
       .header('Referrer-Policy','no-referrer')
       .header('X-Content-Type-Options','nosniff')
-      .header('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+      .header('Content-Security-Policy',siteCSP)
       .type('text/html; charset=utf-8')
       .send(html);
   });
