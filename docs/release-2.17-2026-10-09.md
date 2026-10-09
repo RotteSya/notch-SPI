@@ -19,7 +19,7 @@
 - [CI 37919721456](https://github.com/RotteSya/notch-SPI/actions/runs/37919721456) 10/10通过，覆盖旧macOS工具链、Node22/24、PostgreSQL16/17、AL2023原生资源及Vercel Linux函数包。
 - 74个客户端构建输入在打包后摘要一致；DMG签名、装订、Gatekeeper及只读挂载后App签名、Gatekeeper、版本2.17/24和二进制一致性通过。
 - GitHub正式latest为v2.17，资产摘要一致；正式 `/update` 返回2.17/v2.17，正式 `/dl` 完整下载的大小和SHA-256与公证产物一致。
-- 本机夸克CLI上传成功（非秒传）：`夸克网盘/来自：ClaudeCode/NotchSPI-2.17.dmg`，返回大小4,115,394字节、成功数量1；FID `02aa8f14fed84b67950d24dec52705c4`。上传源文件与公证产物摘要一致；未对网盘文件重新下载校验，也未创建分享链接。
+- 本机夸克CLI上传成功（非秒传）：`夸克网盘/NotchSPI Releases/NotchSPI-2.17.dmg`，返回大小4,115,394字节、成功数量1；FID `02aa8f14fed84b67950d24dec52705c4`。首次上传使用CLI默认目录，随后按用户指定移至NotchSPI Releases，CLI回执确认最终路径，FID保持不变；后续版本使用此目录。移动回执为 `quark-move.jsonl`。上传源文件与公证产物摘要一致；未对网盘文件重新下载校验，也未创建分享链接。
 
 证据位于 `output/release-2.17-2026-10-09/`，包含构建输入、公证日志、验证脚本、CI结果、下载摘要和夸克上传回执。
 
