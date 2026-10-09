@@ -15,11 +15,12 @@ final class ScreenshotGeometryTests: XCTestCase {
     }
     func testFlightPreservesPortraitAndUltrawideImageRatiosAndExactLanding() {
         for image in [CGSize(width: 400, height: 1200), CGSize(width: 2400, height: 800)] {
-            let start = ScreenshotFlightGeometry.cardFrame(image: image, in: CGRect(x: -900, y: 100, width: image.width, height: image.height))
+            let start = ScreenshotFlightGeometry.sourceFrame(image: image, in: CGRect(x: -900, y: 100, width: image.width, height: image.height))
             let end = ScreenshotFlightGeometry.cardFrame(image: image, in: CGRect(x: 450, y: 900, width: 104, height: 68))
             for t in [CGFloat(0), 0.1, 0.5, 0.9, 1] {
                 let frame = ScreenshotFlightGeometry.frame(source: start, destination: end, progress: t, reduced: false)
-                XCTAssertEqual((frame.width-8)/(frame.height-8), image.width/image.height, accuracy: 0.00001)
+                let border = ScreenshotFlightGeometry.photoInset(progress: t) * 2
+                XCTAssertEqual((frame.width-border)/(frame.height-border), image.width/image.height, accuracy: 0.00001)
             }
             XCTAssertEqual(ScreenshotFlightGeometry.frame(source: start, destination: end, progress: 0, reduced: false), start)
             let landing = ScreenshotFlightGeometry.frame(source: start, destination: end, progress: 1, reduced: false)
@@ -27,5 +28,18 @@ final class ScreenshotGeometryTests: XCTestCase {
             XCTAssertEqual(landing.height, end.height, accuracy: 0.00001)
             XCTAssertEqual(ScreenshotFlightGeometry.frame(source: start, destination: end, progress: 0.4, reduced: true), end)
         }
+    }
+
+    func testLiftHasSlowEndsFastMiddleAndNoPauseOrOvershoot() {
+        let samples = (0...100).map { ScreenshotFlightGeometry.travelProgress(CGFloat($0) / 100) }
+        XCTAssertTrue(zip(samples, samples.dropFirst()).allSatisfy { $0 < $1 })
+        XCTAssertLessThan(samples[10] - samples[0], samples[50] - samples[40])
+        XCTAssertLessThan(samples[100] - samples[90], samples[60] - samples[50])
+        let source = CGRect(x: -500, y: -300, width: 800, height: 500)
+        let end = CGRect(x: 450, y: 900, width: 128, height: 83)
+        let middle = ScreenshotFlightGeometry.frame(source: source, destination: end, progress: 0.5, reduced: false)
+        XCTAssertEqual(middle.maxY, (source.maxY + end.maxY) / 2 + 30, accuracy: 0.00001)
+        XCTAssertEqual(ScreenshotFlightGeometry.frame(source: source, destination: end, progress: -1, reduced: false), source)
+        XCTAssertEqual(ScreenshotFlightGeometry.frame(source: source, destination: end, progress: 2, reduced: false), end)
     }
 }

@@ -44,9 +44,13 @@ enum ScreenshotVisualQA {
                 controller?.qaRefreshScreenshotLayout()
             }
         }
-        let delays = single || personality || args.contains("--qa-screenshot-waiting") ? [1.0] : [1.0, 9.0, 11.0]
+        let offset = args.firstIndex(of: "--qa-screenshot-delay").flatMap {
+            $0 + 1 < args.count ? Double(args[$0 + 1]) : nil
+        } ?? 0
+        var delays = single || personality || args.contains("--qa-screenshot-waiting") ? [1.0] : [1.0, 9.0, 11.0]
+        if !single, !personality, args.contains("--qa-screenshot-four") { delays.append(13.0) }
         for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak controller] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + max(0, offset)) { [weak controller] in
                 controller?.qaPressScreenshot(mode: personality ? "personality" : "tutor", multiple: !single && !personality)
             }
         }

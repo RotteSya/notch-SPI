@@ -59,6 +59,9 @@ final class ScreenshotTray: NSView {
                 let image = NSImageView(frame: NSRect(x: 4, y: 4, width: 96, height: 60))
                 image.imageScaling = .scaleProportionallyUpOrDown
                 image.autoresizingMask = [.width, .height]
+                image.wantsLayer = true
+                image.layer?.cornerRadius = CaptureStyle.cardRadius - 4
+                image.layer?.masksToBounds = true
                 card.addSubview(image)
                 thumbnails[id] = image
                 let ordinal = NSTextField(labelWithString: "\(index + 1)")
@@ -79,10 +82,18 @@ final class ScreenshotTray: NSView {
             let wasHidden = card.alphaValue < 1
             card.alphaValue = flying.contains(asset.id) ? 0 : 1
             if wasHidden, card.alphaValue == 1, !onboardingReduceMotion() {
-                let settle = CASpringAnimation(keyPath: "transform.scale")
-                settle.fromValue = 0.97; settle.toValue = 1
-                settle.mass = 1; settle.stiffness = 260; settle.damping = 26
-                settle.duration = 0.35
+                // A short photo-like sway, starting at the flight's exact horizontal pose.
+                let settle = CAKeyframeAnimation(keyPath: "transform")
+                let center = CGPoint(x: card.bounds.midX, y: card.bounds.midY)
+                settle.values = [0.0, -1.2, 0.45, 0.0].map { angle in
+                    var transform = CATransform3DMakeTranslation(center.x, center.y, 0)
+                    transform = CATransform3DRotate(transform, angle * .pi / 180, 0, 0, 1)
+                    transform = CATransform3DTranslate(transform, -center.x, -center.y, 0)
+                    return NSValue(caTransform3D: transform)
+                }
+                settle.keyTimes = [0, 0.3, 0.65, 1]
+                settle.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+                settle.duration = 0.22
                 card.layer?.add(settle, forKey: "landing")
             }
         }

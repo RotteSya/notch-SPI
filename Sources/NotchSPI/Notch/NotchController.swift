@@ -1412,7 +1412,12 @@ final class NotchController: NSObject {
         // Reserve the slot before yielding. Decode never delays intake or owns the countdown.
         model.flyingScreenshots.insert(asset.id)
         Task { @MainActor [weak self] in
-            let pixels = await Task.detached(priority: .userInitiated) { ScreenshotThumbnail.loadPixels(asset.file.url) }.value
+            // The first flight frames still cover the source window. Decode a larger preview
+            // off the main thread; intake/submission continues independently of this visual.
+            let maxPixels = source == nil || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 480 : 2000
+            let pixels = await Task.detached(priority: .userInitiated) {
+                ScreenshotThumbnail.loadPixels(asset.file.url, maxPixelSize: maxPixels)
+            }.value
             guard let self, self.intakeGeneration == generation,
                   self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
             guard let pixels else { self.model.flyingScreenshots.remove(asset.id); return }
@@ -1426,8 +1431,10 @@ final class NotchController: NSObject {
             self.screenshotFlight.fly(id: asset.id, image: image, from: source,
                 destination: { [weak self] in self?.notchView.screenshotDestination(asset.id) },
                 landed: { [weak self] in
-                    self?.model.flyingScreenshots.remove(asset.id)
-                    self?.notchView.screenshotLanded()
+                    guard let self, self.intakeGeneration == generation,
+                          self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
+                    self.model.flyingScreenshots.remove(asset.id)
+                    self.notchView.screenshotLanded()
                 })
         }
     }
