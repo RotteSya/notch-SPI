@@ -437,12 +437,14 @@ enum ScreenCapture {
             trace("image.begin")
             #endif
             let cg = try await imageCapture.run {
+                #if compiler(>=6.2)
                 if #available(macOS 26.0, *) {
                     let screenshot = screenshotConfiguration(from: config, style: filter.style)
                     let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: screenshot)
                     guard let image = output.sdrImage else { throw CaptureError.captureFailed }
                     return image
                 }
+                #endif
                 return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
             }
             try Task.checkCancellation()
@@ -469,6 +471,8 @@ enum ScreenCapture {
         }
     }
 
+    // Xcode 26 SDK symbols are unavailable to older supported build toolchains.
+    #if compiler(>=6.2)
     /// The dedicated screenshot API uses one shadow/clipping policy; select the policy
     /// for this filter without changing its target or the existing image envelope.
     @available(macOS 26.0, *)
@@ -487,6 +491,8 @@ enum ScreenCapture {
         screenshot.fileURL = nil
         return screenshot
     }
+
+    #endif
 
     /// The system utility does not require SCShareableContent. Never invoke it for a
     /// full-screen request until the controller has hidden the panel and let it settle.

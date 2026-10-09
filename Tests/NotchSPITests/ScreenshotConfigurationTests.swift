@@ -4,6 +4,7 @@ import ScreenCaptureKit
 
 final class ScreenshotConfigurationTests: XCTestCase {
     func testScreenshotKeepsDimensionsCursorAndSubwindowPolicyWithoutWritingEarly() throws {
+        #if compiler(>=6.2)
         guard #available(macOS 26.0, *) else { throw XCTSkip("Dedicated screenshot API requires macOS 26") }
         let stream = SCStreamConfiguration()
         stream.width = 1568; stream.height = 1066
@@ -17,9 +18,13 @@ final class ScreenshotConfigurationTests: XCTestCase {
             XCTAssertEqual(screenshot.displayIntent, .local)
             XCTAssertNil(screenshot.fileURL, "Cancelled or late captures must never create a system-owned file")
         }
+        #else
+        throw XCTSkip("Dedicated screenshot API requires the Xcode 26 SDK")
+        #endif
     }
 
     func testWindowAndDisplayShadowAndClippingPoliciesRemainIndependent() throws {
+        #if compiler(>=6.2)
         guard #available(macOS 26.0, *) else { throw XCTSkip("Dedicated screenshot API requires macOS 26") }
         let stream = SCStreamConfiguration()
         for window in [false, true] {
@@ -34,5 +39,8 @@ final class ScreenshotConfigurationTests: XCTestCase {
             XCTAssertEqual(display.ignoreShadows, !window)
             XCTAssertEqual(display.ignoreClipping, window)
         }
+        #else
+        throw XCTSkip("Dedicated screenshot API requires the Xcode 26 SDK")
+        #endif
     }
 }
