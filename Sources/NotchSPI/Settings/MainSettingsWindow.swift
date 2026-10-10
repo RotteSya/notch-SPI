@@ -11,13 +11,12 @@ import ServiceManagement
 //   账户 Account    — quota ring, top-up, lifetime usage, device id
 //   人物像 Personas — the persona library (embedded PersonaManagerViewController)
 //   高级 Advanced   — service channel, custom API keys, updates
-//   题库 Question Banks — import, search, and local answers
 
 // MARK: - Window controller
 
 final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     enum Page: Int, CaseIterable {
-        case general, hotkeys, appearance, account, personas, advanced, questionBanks
+        case general, hotkeys, appearance, account, personas, advanced
 
         var symbolName: String {
             switch self {
@@ -26,7 +25,6 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             case .appearance: return "paintpalette"
             case .account: return "creditcard"
             case .personas: return "person.text.rectangle"
-            case .questionBanks: return "text.book.closed"
             case .advanced: return "wrench.and.screwdriver"
             }
         }
@@ -38,7 +36,6 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             case .appearance: return L10n.t("外观", "外観", "Appearance")
             case .account: return L10n.t("账户与额度", "アカウントと残高", "Account")
             case .personas: return L10n.t("人物像", "人物像", "Personas")
-            case .questionBanks: return L10n.t("题库", "問題集", "Question Banks")
             case .advanced: return L10n.t("高级", "詳細", "Advanced")
             }
         }
@@ -307,7 +304,6 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             vc.onStartQuestion = { [weak self] in self?.onStartQuestion?() }
             return vc
         case .personas: return PersonasPageController(onChange: { [weak self] in self?.onAnythingChanged?() })
-        case .questionBanks: return QuestionBankPageController()
         case .advanced:
             let vc = AdvancedPageController()
             vc.onChange = { [weak self] in self?.onAnythingChanged?() }

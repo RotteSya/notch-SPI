@@ -39,10 +39,4 @@ One image keeps waiting. Opening a preview pauses submission; closing it starts 
 “Ask now” submits the current 2–4 images in order. Each successful screenshot flies into the notch, with a
 reduced-motion alternative. See the [capture notes](docs/direct-target-capture.md).
 
-## Question banks
-
-Settings → Question Banks imports a `.nspibank.json`, `.json`, or the fixed CSV template. Search and answers stay on this Mac. An ordinary single screenshot in tutor / brief mode checks the local bank first. A previously checked image can show its bank answer when that bank allows automatic use. Any other capture continues through the selected model service. A local answer does not create an official request; a successful official answer still uses one question of quota.
-
-The three sample questions under `Tests/Fixtures/QuestionBank/` are format examples. Import steps, the file rules, and the current checks are in [docs/local-question-bank.md](docs/local-question-bank.md).
-
 Engineering handover: [HANDOVER.md](HANDOVER.md).

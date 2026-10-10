@@ -7,10 +7,7 @@ final class CaptureLatency {
     enum Entry: String { case single, multiple, direct, automatic }
     enum Stage: String {
         case triggered, captureReady, materialsReady, submitted, firstDelta, receiptApplied, responseCompleted, completed, renderStarted, failed
-        case bankLookupStarted, bankLookupCompleted, ocrStarted, ocrCompleted
     }
-    /// `model` for the service path. `local_bank` when the shown answer came from the local bank.
-    var route = "model"
     let id = UUID()
     let entry: Entry
     let channel: String
@@ -55,7 +52,7 @@ final class CaptureLatency {
         guard ProcessInfo.processInfo.environment["NSPI_LATENCY_TRACE"] == "1",
               ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" else { return }
         let record: [String: Any] = ["id": id.uuidString, "entry": entry.rawValue,
-            "stage": stage.rawValue, "elapsed_ms": milliseconds, "channel": channel, "mode": mode, "route": route]
+            "stage": stage.rawValue, "elapsed_ms": milliseconds, "channel": channel, "mode": mode, "route": "model"]
         if let json = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) {
             FileHandle.standardError.write(Data("[CaptureLatency] ".utf8) + json + Data("\n".utf8))
         }

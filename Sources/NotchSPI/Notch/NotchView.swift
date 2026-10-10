@@ -21,8 +21,6 @@ import QuartzCore
 final class NotchView: NSView {
     let onboarding = NotchOnboardingView(frame: .zero)
     var onExplanation: (() -> Void)?
-    var onViewLocalSource: (() -> Void)?
-    var onResolveWithModel: (() -> Void)?
     var onAddMaterial: (() -> Void)?
     var onNewGroup: (() -> Void)?
     var onSelectRegion: (() -> Void)?
@@ -251,12 +249,6 @@ final class NotchView: NSView {
         materialStrip.onUndo = { [weak self] in self?.onUndoMaterial?() }
         screenshotTray.onCancel = { [weak self] in self?.onCancelScreenshotRound?() }
         materialStrip.onExplain = { [weak self] in self?.onExplanation?() }
-        materialStrip.onLocalAction = { [weak self] action in
-            switch action {
-            case .source: self?.onViewLocalSource?()
-            case .resolveWithModel: self?.onResolveWithModel?()
-            }
-        }
         materialStrip.onAdd = { [weak self] in self?.onAddMaterial?() }
         materialStrip.onClear = { [weak self] in self?.onNewGroup?() }
         materialStrip.onSelect = { [weak self] in self?.onSelectRegion?() }
@@ -266,7 +258,7 @@ final class NotchView: NSView {
             guard let self else { return false }
             return !self.model.hidesAnswer && self.model.captureFeedback.isEmpty && self.model.mode != "personality" && self.model.resultState != .retake
                 && self.model.status != .running && self.model.status != .streaming
-                && (self.model.localAnswer != nil || AnswerComposer.clipboardAnswer(self.model.answer) != nil)
+                && AnswerComposer.clipboardAnswer(self.model.answer) != nil
         }
         answerStream.onCopyAnswer = { [weak self] in self?.onCopyAnswer() }
         answerScroll.onUserScroll = { [weak self] in self?.noteUserScroll() }
@@ -341,7 +333,7 @@ final class NotchView: NSView {
             capturing: model.screenshotCapturing, notice: model.screenshotNotice, undoAvailable: model.screenshotUndoAvailable)
         // Hidden views still own their assets; clearing the last material must release them.
         materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality",
-                             localActions: model.localAnswer == nil ? [] : [.source, .resolveWithModel], undoAvailable: model.materialUndoAvailable)
+                             undoAvailable: model.materialUndoAvailable)
         statusText.stringValue = model.captureHeading
         statusText.toolTip = model.captureHeading
         toolTip = model.captureHeading + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
@@ -359,7 +351,7 @@ final class NotchView: NSView {
 
         answerScroll.isHidden = model.hidesAnswer
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
-            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model), localAnswer: model.localAnswer)
+            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
         answerStream.completedCapture = !model.hidesAnswer && model.status == .idle
             && model.answerLatency?.needsCompletedDraw == true ? model.answerLatency : nil
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)

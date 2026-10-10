@@ -28,12 +28,7 @@ final class TutorModel: ObservableObject {
     @Published var explanationLoading = false
     @Published var recoveryAvailable = false
     @Published var recoveryAttempted = false
-    @Published var localAnswer: LocalAnswer?
-    var localCopyText = ""
     var renderedAnswer: String {
-        if let localAnswer {
-            return LocalAnswerText.rendered(answer: localAnswer, revealed: reasoningRevealed)
-        }
         guard !explanation.isEmpty, let final = AnswerComposer.parse(answer, streaming: false).final else { return answer }
         return explanation + "\nFINAL: " + final
     }
@@ -64,7 +59,7 @@ final class TutorModel: ObservableObject {
     var materialStripHeight: CGFloat {
         guard showMaterialStrip else { return 0 }
         let base: CGFloat = materials.isEmpty ? CaptureStyle.actionHeight : 74
-        return base + (localAnswer == nil ? 0 : 30) + (materialUndoAvailable ? 30 : 0)
+        return base + (materialUndoAvailable ? 30 : 0)
     }
     var screenshotTrayHeight: CGFloat {
         guard showScreenshotTray else { return 0 }

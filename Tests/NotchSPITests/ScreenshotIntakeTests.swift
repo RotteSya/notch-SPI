@@ -23,7 +23,6 @@ final class ScreenshotIntakeTests: XCTestCase {
 
     @MainActor private func makeController() -> NotchController {
         let controller = NotchController(activateServices: false)
-        controller.qaQuestionBanks = UXBankStub()
         controller.qaScreenshotCapture = { [self] in .success(try! fixture()) }
         return controller
     }

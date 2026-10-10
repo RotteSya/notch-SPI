@@ -1,4 +1,6 @@
-# 本地题库
+# 本地题库（历史归档，功能已移除）
+
+> 2026-10-10：按用户要求移除本地题库入口、导入/检索、OCR 匹配和本地答案流程。以下为移除前的设计记录，不是当前使用说明。已有 Application Support 中的题库数据原样保留，当前应用不再访问；截图查题统一走已选择的模型服务。
 
 用户导入自己的题库后，可以在本机搜索并查看答案。普通单图、讲解、简要模式优先查本地。身份已经由用户核对、题库允许自动使用、并且启用题库之间没有不同答案时，直接显示答案。其余情况沿用所选模型服务，并使用已经取得的那一张图。
 
@@ -41,8 +43,8 @@ id,type,language,stem,option_a,option_b,option_c,option_d,option_e,option_f,answ
 
 三道合成题示例：
 
-- [sample-bank.nspibank.json](../Tests/Fixtures/QuestionBank/sample-bank.nspibank.json)
-- [sample-bank.csv](../Tests/Fixtures/QuestionBank/sample-bank.csv)
+- `sample-bank.nspibank.json`（已随功能移除，历史版本可从 Git 恢复）
+- `sample-bank.csv`（已随功能移除，历史版本可从 Git 恢复）
 
 设置里的模板与这份 CSV 是同一组示例，用于格式验收。
 

@@ -50,8 +50,6 @@ final class NotchController: NSObject {
     func qaSynchronizeCaptureScope() { synchronizeMaterialScope() }
     func qaTickScreenshotRound() { tickScreenshotRound() }
     func qaSetRequestRunning(_ value: Bool) { running = value }
-    var qaQuestionBanks: QuestionBankServing?
-    var qaDepthOverride: String?
     var qaPreserveSettings = false
     var qaModelInvocations = 0
     var qaCaptureModelPrep: ((String) -> Void)?
@@ -95,8 +93,6 @@ final class NotchController: NSObject {
     private var autoLockedBundleID: String?
     private var autoPaused = false // edge-transition tracking for the DEBUG log only
     private var settingsController: MainSettingsWindowController?
-    private let localQuestions = LocalCaptureSession()
-    private var localPresentedAssets: [ContextAsset] = []
     private let onboardingProgress: NotchOnboardingProgress
     private var onboardingAttempt = false
     private var onboardingPermissionReturnStep: NotchOnboardingStep = .practice
@@ -162,7 +158,6 @@ final class NotchController: NSObject {
         if activateServices {
             ClientConfigService.shared.refresh()
             ProductTelemetry.shared.flush()
-            Task { await QuestionBankRuntime.shared.prepare() }
         }
         refreshCLILabel()
         model.statusText = L10n.statusReady
@@ -209,9 +204,6 @@ final class NotchController: NSObject {
             self?.questions.removeReference(id)
             self?.refreshMaterials()
         }
-        view.onViewLocalSource = { [weak self] in self?.showLocalSource() }
-        view.onResolveWithModel = { [weak self] in self?.resolveLocalWithModel() }
-        wireLocalQuestions()
         view.onboarding.onChangeTarget = { [weak self] in self?.openSettings(page: .general) }
         view.onboarding.onPrimary = { [weak self] in self?.advanceOnboarding() }
         view.onboarding.onBack = { [weak self] in self?.backOnboarding() }
@@ -776,7 +768,6 @@ final class NotchController: NSObject {
         let next = Settings.depthCycle[(idx + 1) % Settings.depthCycle.count]
         Settings.shared.depth = next
         model.depthLabel = L10n.depthLabel(next)
-        localQuestions.cancel()
     }
 
     // MARK: - Gear menu (quick actions only — everything else lives in 设置)
@@ -904,9 +895,6 @@ final class NotchController: NSObject {
         let settings = NSMenuItem(title: L10n.openSettings, action: #selector(openSettingsGeneral), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        let banks = NSMenuItem(title: L10n.t("题库", "問題集", "Question Banks"), action: #selector(openQuestionBanks), keyEquivalent: "")
-        banks.target = self
-        menu.addItem(banks)
         let guide = NSMenuItem(title: Settings.shared.onboardingDone
             ? L10n.t("重新体验新手引导", "ガイドをもう一度", "Replay welcome guide")
             : L10n.t("继续新手引导", "ガイドを続ける", "Continue welcome guide"),
@@ -925,11 +913,6 @@ final class NotchController: NSObject {
     private func showExplanation() {
         synchronizeMaterialScope()
         guard !running else { return }
-        if model.localAnswer != nil {
-            model.reasoningRevealed.toggle()
-            resizeToFit()
-            return
-        }
         if !model.explanation.isEmpty || !AnswerComposer.parse(model.answer, streaming: false).working.isEmpty {
             model.reasoningRevealed.toggle(); resizeToFit(); return
         }
@@ -1112,10 +1095,6 @@ final class NotchController: NSObject {
     }
 
     private func invalidateQuestionContext(clearAnswer: Bool) {
-        localQuestions.cancel()
-        localPresentedAssets = []
-        model.localAnswer = nil
-        model.localCopyText = ""
         cancelScreenshotRound()
         capturePreparation.cancel()
         officialTask?.cancel()
@@ -1223,7 +1202,6 @@ final class NotchController: NSObject {
 
     @objc private func openAccount() { openSettings(page: .account) }
     @objc private func openSettingsGeneral() { openSettings(page: .general) }
-    @objc private func openQuestionBanks() { openSettings(page: .questionBanks) }
 
     @objc private func topUpTapped() { openSettings(page: .account) }
 
@@ -1254,107 +1232,6 @@ final class NotchController: NSObject {
         #else
         return false
         #endif
-    }
-
-    private func activeDepth() -> String {
-        #if DEBUG
-        if let qaDepthOverride { return qaDepthOverride }
-        #endif
-        return Settings.shared.depth
-    }
-
-    private func questionBanks() -> QuestionBankServing {
-        #if DEBUG
-        if let qaQuestionBanks { return qaQuestionBanks }
-        #endif
-        return QuestionBankRuntime.shared
-    }
-
-    private func localRoundEligible(mode: String, multiple: Bool) -> Bool {
-        !multiple && LocalCaptureEligibility.allows(
-            mode: mode, depth: activeDepth(), fromAuto: false, withContext: false, chooseRegion: false,
-            imageCount: 1, onboarding: model.onboardingStep != nil, banksEnabled: questionBanks().hasEnabledBank)
-    }
-
-    private func wireLocalQuestions() {
-        localQuestions.banks = { [weak self] in self?.questionBanks() ?? QuestionBankRuntime.shared }
-        localQuestions.selectionID = { [weak self] in self?.makeRequestBinding(mode: Settings.shared.mode).selectionID ?? "" }
-        localQuestions.depth = { [weak self] in self?.activeDepth() ?? Settings.shared.depth }
-        localQuestions.onWarm = { [weak self] in self?.warmCaptureConnection() }
-        localQuestions.onPresent = { [weak self] answer, assets, latency in
-            self?.presentLocalAnswer(answer, assets: assets, latency: latency)
-        }
-        localQuestions.onModel = { [weak self] mode, assets, latency in
-            self?.runTapped(mode: mode, prepared: assets, latency: latency, skipLocal: true)
-        }
-        localQuestions.onIdle = { [weak self] message in
-            guard let self, !self.running else { return }
-            self.model.status = .idle
-            self.model.statusText = message
-            self.resizeToFit()
-        }
-        localQuestions.captureOne = { [weak self] in
-            guard let self else { return nil }
-            return await self.captureOneForLocalLookup()
-        }
-    }
-
-    private func presentLocalAnswer(_ answer: LocalAnswer, assets: [ContextAsset], latency: CaptureLatency) {
-        model.localAnswer = answer
-        model.localCopyText = answer.copyText
-        model.answer = answer.currentAnswerText
-        model.explanation = ""
-        model.explanationAvailable = true
-        model.explanationAttempted = false
-        model.explanationLoading = false
-        model.reasoningRevealed = false
-        model.recoveryAvailable = false
-        model.recoveryAttempted = false
-        model.resultState = nil
-        model.resultReason = nil
-        model.parserPath = .none
-        model.status = .idle
-        model.statusText = LocalAnswerText.sourceLine(answer)
-        model.answerLatency = latency
-        localPresentedAssets = assets
-        if !visible { visible = true; panel.orderFrontRegardless() }
-        setExpanded(true)
-        pinned = false
-        resizeToFit()
-        if Appearance.autoCopyAnswer { _ = copyCurrentAnswer(requireAutoCopy: true) }
-    }
-
-    private func showLocalSource() {
-        guard let answer = model.localAnswer else { return }
-        Task { @MainActor in
-            guard let detail = await self.questionBanks().detail(instanceID: answer.bankInstanceID, itemID: answer.itemID) else { return }
-            QuestionSourcePanel.show(detail)
-        }
-    }
-
-    private func resolveLocalWithModel() {
-        let assets = localPresentedAssets
-        guard !assets.isEmpty, !running, !localQuestions.isActive else { return }
-        model.localAnswer = nil
-        model.localCopyText = ""
-        let latency = CaptureLatency(entry: .direct, channel: currentChannel(), mode: "tutor", triggeredAt: ProcessInfo.processInfo.systemUptime)
-        warmCaptureConnection()
-        runTapped(mode: "tutor", prepared: assets, latency: latency, skipLocal: true)
-    }
-
-    private func captureOneForLocalLookup() async -> ContextAsset? {
-        let target = Settings.shared.captureTarget
-        let result: Result<ScreenCapture.Shot, CaptureError>
-        #if DEBUG
-        if let capture = qaScreenshotCapture { result = await capture() }
-        else { result = target == .fullScreen ? await captureFullScreenExcludingPanel() : await ScreenCapture.capture(target: target) }
-        #else
-        result = target == .fullScreen ? await captureFullScreenExcludingPanel() : await ScreenCapture.capture(target: target)
-        #endif
-        guard case .success(let shot) = result, !shot.blank else { return nil }
-        let binding = makeRequestBinding(mode: "tutor")
-        questions.begin(scope: binding.scopeID, newQuestionGroup: true)
-        return try? await questions.adopt(path: shot.path, targetFingerprint: shot.targetFingerprint, asReference: false)
     }
 
     private func warmCaptureConnection() {
@@ -1509,7 +1386,6 @@ final class NotchController: NSObject {
             }
         }
         if !multiple {
-            localQuestions.cancel()
             cancelScreenshotRound()
         }
         if !preserveUserSettings, Settings.shared.mode != mode {
@@ -1532,7 +1408,7 @@ final class NotchController: NSObject {
             removedScreenshot = nil; model.screenshotUndoAvailable = false
             intakeLatency = CaptureLatency(entry: multiple ? .multiple : .single, channel: currentChannel(), mode: mode, triggeredAt: triggeredAt,
                 now: { [weak self] in self?.screenshotNow ?? ProcessInfo.processInfo.systemUptime })
-            if !localRoundEligible(mode: mode, multiple: multiple) { warmCaptureConnection() }
+            warmCaptureConnection()
             intakeStore.begin(scope: binding.scopeID, newQuestionGroup: true)
             model.screenshots = []; model.screenshotImages = [:]
             model.flyingScreenshots = []
@@ -1758,7 +1634,7 @@ final class NotchController: NSObject {
             guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                presentation: NotchType.presentation(for: model), width: width, localAnswer: model.localAnswer)
+                presentation: NotchType.presentation(for: model), width: width)
             return min(step.height + model.materialAreaHeight + max(50, answerH) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
@@ -1766,7 +1642,7 @@ final class NotchController: NSObject {
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
         let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
         let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                                             presentation: NotchType.presentation(for: model), width: width, localAnswer: model.localAnswer)
+                                             presentation: NotchType.presentation(for: model), width: width)
         let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
@@ -2100,7 +1976,7 @@ final class NotchController: NSObject {
 
     /// `withContext` (tutor mode only): send the remembered ⌘⇧1 shot together with the fresh
     /// capture, so a question whose passage has scrolled away still gets its context.
-    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil, latency inheritedLatency: CaptureLatency? = nil, skipLocal: Bool = false) {
+    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil, latency inheritedLatency: CaptureLatency? = nil) {
         let triggeredAt = ProcessInfo.processInfo.systemUptime
         #if DEBUG
         ScreenCapture.trace("run.enter running=\(running)")
@@ -2112,21 +1988,10 @@ final class NotchController: NSObject {
         let latency = inheritedLatency ?? CaptureLatency(entry: fromAuto ? .automatic : .direct,
             channel: currentChannel(), mode: mode, triggeredAt: triggeredAt)
         model.answerLatency = latency
-        let imageCount = prepared?.count ?? 1
-        if !skipLocal, LocalCaptureEligibility.allows(
-            mode: mode, depth: activeDepth(), fromAuto: fromAuto, withContext: withContext,
-            chooseRegion: chooseRegion, imageCount: imageCount, onboarding: model.onboardingStep != nil,
-            banksEnabled: questionBanks().hasEnabledBank
-        ) {
-            localQuestions.start(mode: mode, assets: prepared ?? [], latency: latency)
-            return
-        }
         #if DEBUG
         if qaCaptureModelPrep != nil {
             qaModelInvocations += 1
             qaCaptureModelPrep?(String(describing: currentChannel()))
-            model.localAnswer = nil
-            model.localCopyText = ""
             model.status = .idle
             return
         }
@@ -2186,7 +2051,7 @@ final class NotchController: NSObject {
                 self.lastMaterialScope = current.scopeID
                 self.endRun()
                 self.officialTask = nil
-                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared, latency: latency, skipLocal: skipLocal)
+                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared, latency: latency)
             }
             return
         }
@@ -2267,9 +2132,6 @@ final class NotchController: NSObject {
         let generation = runGeneration
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
-        model.localAnswer = nil
-        model.localCopyText = ""
-        localPresentedAssets = []
         model.answer = ""
         model.explanation = ""; model.explanationAttempted = false; model.explanationLoading = false; model.explanationAvailable = false
         model.resultState = nil
@@ -2733,12 +2595,6 @@ final class NotchController: NSObject {
 
     @discardableResult
     private func copyCurrentAnswer(requireAutoCopy: Bool) -> Bool {
-        if model.localAnswer != nil, !model.localCopyText.isEmpty {
-            guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.status != .running, model.status != .streaming else { return false }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(model.localCopyText, forType: .string)
-            return true
-        }
         guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.mode != "personality",
               model.resultState != .retake, model.status != .running, model.status != .streaming,
               (!requireAutoCopy || model.resultState == .ready),

@@ -258,21 +258,7 @@ enum NotchType {
             failed: model.status == .error || !model.captureFeedback.isEmpty)
     }
 
-    static func answerString(_ answer: String, presentation p: AnswerPresentation, localAnswer: LocalAnswer? = nil) -> NSAttributedString {
-        if let localAnswer, !p.failed {
-            let out = NSMutableAttributedString(attributedString: card(localAnswer.currentAnswerText, afterContent: false, literal: true))
-            out.append(NSAttributedString(string: "\n"))
-            out.append(toggleLine(expanded: p.revealed))
-            if p.revealed {
-                let para = NSMutableParagraphStyle()
-                para.lineSpacing = 3
-                out.append(NSAttributedString(string: "\n" + LocalAnswerText.explanation(localAnswer), attributes: [
-                    .font: NSFont.systemFont(ofSize: answerFontSize),
-                    .foregroundColor: NotchPalette.secondary, .paragraphStyle: para,
-                ]))
-            }
-            return out
-        }
+    static func answerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
         if answer.isEmpty {
             // Mid-run there is nothing to say yet: the light field and the status line carry
             // "thinking" — a hotkey hint here would contradict the capture the user just fired.
@@ -331,11 +317,11 @@ enum NotchType {
         return out
     }
 
-    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat, localAnswer: LocalAnswer? = nil) -> CGFloat {
+    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat) -> CGFloat {
         guard width > 1 else { return 0 }
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
-        let attr = answerString(answer, presentation: presentation, localAnswer: localAnswer)
+        let attr = answerString(answer, presentation: presentation)
         return StreamingAnswerView.measure(attr, width: width)
     }
 
@@ -366,7 +352,7 @@ enum NotchType {
     /// The authoritative answer card: a small accent caption + the answer itself, one size up
     /// and semibold. The whole range carries `.nspiAnswerCard` so the streaming view can draw
     /// the glass chip behind it; indents keep the text off the chip's rounded edges.
-    private static func card(_ final: String, afterContent: Bool, literal: Bool = false) -> NSAttributedString {
+    private static func card(_ final: String, afterContent: Bool) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 3
         para.firstLineHeadIndent = cardPadH
@@ -386,14 +372,6 @@ enum NotchType {
         // Inner newlines become line separators so a multi-line answer stays ONE paragraph
         // (paragraphSpacingBefore must not repeat inside the chip).
         let text = final.replacingOccurrences(of: "\n", with: "\u{2028}")
-        if literal {
-            out.append(NSAttributedString(string: text, attributes: [
-                .font: NSFont.systemFont(ofSize: answerFontSize + 10, weight: .medium),
-                .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
-                .nspiAnswerCard: "answer",
-            ]))
-            return out
-        }
         out.append(inlineMarkdown(
             text,
             baseFont: .systemFont(ofSize: answerFontSize + 10, weight: .medium),

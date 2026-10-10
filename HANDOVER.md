@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-10-10 按用户要求移除本地题库：删除设置页与快捷菜单入口、导入/检索/SQLite/OCR/候选核对实现，以及答案来源和本地重新求解分支；单图直接预热并进入原有模型通道，多图预览/删除/撤销、解释和复制保留。删除题库专用测试与示例，原功能文档标为历史归档。已有 Application Support 题库数据原样保留，当前应用不再读取或写入。完整 Swift 405 项（4 跳过、0 失败，warnings-as-errors）、arm64 Release、代码空白检查通过；离线 DEBUG 实际核对六项设置页、页面切换与答案展示。repo-health 仍为既有 2270 条历史断链，完整 verify 不记为通过；未调用真实模型。已执行 scripts/run-local.sh，Developer ID 签名和验签通过，唯一运行进程为正常 dist-qa/NotchSPI.app，无 QA/模拟参数。日志与界面证据在 `output/remove-question-bank-2026-10-10/`。用户随后授权将本次移除改动提交并推送 main；Git 自动部署关闭，本次仅同步源码，不发版或切生产。
+
 2026-10-10 用户授权将当前全部产品改动（含此前本地题库）提交并推送 main。保留体验第 1、3、5 项，撤销第 4 项；包含引导练习清理与最终无回弹、底部追上的收起动画。推送前完整 Swift 439 项（4 跳过、0 失败，warnings-as-errors）、Node 625 项、类型检查、隔离 smoke、代码空白检查通过；arm64 Release 已构建并在本机签名运行。repo-health 仍为既有 2270 条历史资料断链，完整 verify 不记为通过。Git 自动部署关闭，本次只推送源码，不发版或切生产。检查日志在项目上一级 output/collapse-bottom-sync-2026-10-10/pre-push-*.log。
 
 2026-10-10 收起底部观感同步：用户确认无回弹后仍觉得底部较慢，原窗口等比例插值在高面板留下更长的底部剩余距离。仅收起时按横纵路程（含阴影留白）调整高度进度，使底部逐渐追上；侧边曲线、单一时钟、原时长、同一终帧、最终尺寸及展开弹性保留。27 项相关检查通过，80 个实际窗口采样点覆盖普通/引导与短/长窗口；新增末段实际绘制主体底部剩余距离与两侧比较，宽高全程只减。原生样例检查 70/85/100% 截图，对比上一轮底部更接近终点；非正常速度录像/主观满意度验收。arm64 Release、Developer ID 签名及验签通过，scripts/run-local.sh 已启动正常本机包，无模拟参数。证据见项目上一级 output/collapse-bottom-sync-2026-10-10/。第 1、3、5 项与引导清理保留，第 4 项仍撤销，未发布。
@@ -189,8 +191,6 @@
 
 单次问答：热键 → 捕获 JPEG → `Prompts.build` → 通道路由（官方 / 自定义 Key / 本机 CLI）→ provider SSE → 合成 → 刘海 UI。官方通道由 `CaptureService` 绑定请求 ID，`BillingStore.begin/finish` 原子持有、结算或释放；旧 Store 方法保留为兼容适配。
 
-本地题库在普通单图、讲解、简要模式、且已有启用题库时插入于模型准备之前。命中由 `LocalCaptureSession` 展示，来源记为 `local_bank`。确认在写入别名的同一事务里核对照片当时看到的身份和修订；已保存的选项映射随后续候选返回。用户在多个答案中选定来源时，展示这一次并标明不一致，不记为自动可信。查题入口起 350 毫秒覆盖语言读取、别名、OCR 和候选查询。未命中才预热并进入原来的 `runTapped`，使用已经取得的那张图。自动模式、人格、多图、hint/guided/full 以及引导中的查题保持原路径。库文件在 Application Support 的 `com.rottesya.notchspi/QuestionBank/questions.sqlite`。规则见 [本地题库](docs/local-question-bank.md)。
-
 Objective V1 打开时：`ClientConfigService` 冻结远端分组 → 三通道使用同一 `CapturePrompt` → `ObjectiveResultStreamFilter` 隐藏机器行 → `ObjectiveResultParser` 统一映射 `ready/review/retake`。官方服务以冻结请求的 `result_protocol` 选择 control 或 Objective treatment Provider，并只在 route 层解析完整输出、决定结算或释放；Provider 不拥有协议与计费语义。匿名事件经 `ProductTelemetry` 的 7 天/100 条本地队列上传到 `product_events`；事件永不包含截图、题目、答案、Prompt 或模型原文。`ObservationJournal` 将队列、同意版本与覆盖游标原子持久化；`/v1/device-observation` 同步偏好与核验摘要。关闭时立即删队列并停止行为上传，仅同步最小偏好。服务端通过唯一序列回执验证 complete，缺口不得默认完整；事件、回执、覆盖按 90 天清理。
 
 存储选择（`server/src/storage.ts` 动态 `import()`）：Postgres（`POSTGRES_URL` / `DATABASE_URL`）→ 开发 Serverless 上的 memory → 本地 SQLite。正式模式要求持久存储，缺少必要模型预算、价格或恢复配置会拒绝启动。注册采用 fixed30 政策，历史余额保留；首次访问旧余额时建 `legacy_unknown` lot。
@@ -262,11 +262,10 @@ SPI 与阅读练习页面分别为 `/spi`、`/reading-practice`，三语共用�
 | Objective 协议 / fixture / 闸门 | [`server/src/objective-result.ts`](server/src/objective-result.ts) + [`Tests/Fixtures/objective-v1/manifest.json`](Tests/Fixtures/objective-v1/manifest.json) + [`Tests/Fixtures/objective-v1/RUNBOOK.md`](Tests/Fixtures/objective-v1/RUNBOOK.md) |
 | 发布产物流程 | [`scripts/package.sh`](scripts/package.sh) |
 | 回归闭环 | [`scripts/verify.sh`](scripts/verify.sh) |
-| 本地题库格式、导入与查题 | [`docs/local-question-bank.md`](docs/local-question-bank.md) + `Sources/NotchSPI/QuestionBank/` |
 
 ## 5. 不可破坏的不变量
 
-- `INV-BILL-001`：官方服务的成功问答扣 1 题；真实失败不扣。本地题库命中不创建官方请求，不改变余额、累计问答或 Token。
+- `INV-BILL-001`：官方服务的成功问答扣 1 题；真实失败不扣。
 - `INV-BILL-002`：并发预扣不得产生负余额。
 - `INV-AUTH-001`：瞬时 401 不得自动销毁付费额度唯一凭证（设备令牌）。
 - `INV-STREAM-001`：SSE 正常序列为 `delta`×N → `usage`×1 → `DONE`。
@@ -290,7 +289,6 @@ SPI 与阅读练习页面分别为 `/spi`、`/reading-practice`，三语共用�
 | Store 接口 / schema | memory + sqlite；有 `TEST_POSTGRES_URL` 时再加 postgres（库名必须含 `test`，会 TRUNCATE） |
 | Prompt / protocol | golden fixtures + personality composition tests |
 | UI / 热键 | Swift tests + DEBUG visual QA |
-| 本地题库 | Swift `QuestionBankTests` + 设置页与核对面板 |
 | 版本 / 打包 | `VERSION.env` + repo-health + plist / codesign / notary |
 | 环境变量 | `config.ts` 与 `.env.example` 对齐（repo-health） |
 

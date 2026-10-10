@@ -29,7 +29,6 @@ final class UXOptimizationTests: XCTestCase {
         let controller = NotchController(activateServices: false)
         defer { controller.prepareForTermination() }
         controller.qaPreserveSettings = true
-        controller.qaQuestionBanks = UXBankStub()
         controller.qaScreenshotCapture = { .success(.init(path: try! self.image().path, blank: false, targetFingerprint: "fixture")) }
         var clock: Double = 0, batches: [[UUID]] = []
         controller.qaScreenshotClock = { clock }
@@ -56,18 +55,15 @@ final class UXOptimizationTests: XCTestCase {
         XCTAssertEqual(batches.count, 1)
     }
 
-    @MainActor func testAutomaticFallbackUsesFrozenImageOnce() async throws {
+    @MainActor func testPreparedScreenshotEntersModelWithoutRecapturing() async throws {
         let controller = NotchController(activateServices: false)
         defer { controller.prepareForTermination() }
-        controller.qaPreserveSettings = true; controller.qaDepthOverride = "brief"
-        let banks = UXBankStub(); banks.hasEnabledBank = true
-        controller.qaQuestionBanks = banks
+        controller.qaPreserveSettings = true
         let original = try asset()
         controller.qaCaptureModelPrep = { _ in }
         controller.qaScreenshotCapture = { XCTFail("Must not capture again"); return .failure(.captureFailed) }
         controller.qaStartPrepared([original])
         try await settle { controller.qaModelInvocations == 1 }
-        XCTAssertEqual(banks.lookups, 1)
         XCTAssertEqual(controller.qaModelInvocations, 1)
     }
 
@@ -131,26 +127,4 @@ final class UXOptimizationTests: XCTestCase {
     @MainActor private func descendants(_ view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants($0) }
     }
-}
-
-@MainActor
-final class UXBankStub: QuestionBankServing {
-    var hasEnabledBank = false
-    var storageError: String?
-    var next: LocalLookupOutcome = .miss
-    var lookups = 0
-    func prepare() async {}
-    func lookup(image: Data, scope: AliasScope, trace: @escaping @Sendable (String) -> Void) async -> LocalLookupOutcome { lookups += 1; return next }
-    func confirm(candidate: LocalCandidate, scope: AliasScope, labelMap: [String: String]) async -> Result<LocalAnswer, QuestionBankError> { .failure(.notFound) }
-    func requalify(_ answer: LocalAnswer, automatic: Bool) async -> LocalAnswer? { answer }
-    func stage(_ url: URL) async -> ImportPreview { fatalError("Unused in this fixture") }
-    func applying(language: BankLanguage, title: String, to preview: ImportPreview) async -> ImportPreview { preview }
-    func commit(_ preview: ImportPreview, decision: ImportDecision) async -> ImportCommitResult { .init(status: "empty", instanceID: nil, accepted: 0, failed: 0, report: "") }
-    func banks() async -> [QuestionBankSummary] { [] }
-    func search(query: String, offset: Int, instanceID: UUID?) async -> QuestionSearchPage { .init(hits: [], offset: 0, total: 0) }
-    func detail(instanceID: UUID, itemID: String) async -> QuestionDetail? { nil }
-    func setEnabled(_ id: UUID, _ enabled: Bool) async {}
-    func setAutomatic(_ id: UUID, _ allowed: Bool) async {}
-    func remove(_ id: UUID) async {}
-    func block(instanceID: UUID, itemID: String, blocked: Bool) async {}
 }

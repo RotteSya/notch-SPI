@@ -2,12 +2,9 @@ import AppKit
 
 @MainActor
 final class QuestionMaterialStrip: NSView {
-    enum LocalAction: Equatable { case source, resolveWithModel }
     var onExplain: (() -> Void)?
-    var onLocalAction: ((LocalAction) -> Void)?
     private var explanationAvailable = false
     private var personality = false
-    private var localActions: [LocalAction] = []
     var onAdd: (() -> Void)?
     var onClear: (() -> Void)?
     var onSelect: (() -> Void)?
@@ -18,16 +15,14 @@ final class QuestionMaterialStrip: NSView {
     private var removeButtons: [NotchActionButton] = []
     private var assets: [ContextAsset] = []
     private var buttons: [NotchActionButton] = []
-    private var localButtons: [NotchActionButton] = []
     override var isFlipped: Bool { true }
 
-    func update(_ next: [ContextAsset], explanationAvailable: Bool, personality: Bool = false, localActions: [LocalAction] = [], undoAvailable: Bool = false) {
-        guard next != assets || buttons.isEmpty || self.undoAvailable != undoAvailable || self.explanationAvailable != explanationAvailable || self.personality != personality || self.localActions != localActions else { return }
+    func update(_ next: [ContextAsset], explanationAvailable: Bool, personality: Bool = false, undoAvailable: Bool = false) {
+        guard next != assets || buttons.isEmpty || self.undoAvailable != undoAvailable || self.explanationAvailable != explanationAvailable || self.personality != personality else { return }
         if next != assets { preview?.close(); preview = nil }
         self.undoAvailable = undoAvailable
         self.explanationAvailable = explanationAvailable
         self.personality = personality
-        self.localActions = localActions
         assets = next
         subviews.forEach { $0.removeFromSuperview() }
         buttons = []
@@ -58,14 +53,6 @@ final class QuestionMaterialStrip: NSView {
             let button = NotchActionButton(title: title, action: action)
             buttons.append(button); addSubview(button)
         }
-        localButtons = []
-        for action in localActions {
-            let title = action == .source
-                ? L10n.t("查看原题/来源", "原題と出典", "Question and source")
-                : L10n.t("使用模型重新求解", "モデルで解き直す", "Solve again with the model")
-            let button = NotchActionButton(title: title) { [weak self] in self?.onLocalAction?(action) }
-            localButtons.append(button); addSubview(button)
-        }
         needsLayout = true
     }
     func showPreview(_ id: UUID) {
@@ -90,13 +77,6 @@ final class QuestionMaterialStrip: NSView {
             if index < removeButtons.count {
                 removeButtons[index].frame = NSRect(x: button.frame.maxX - 20, y: button.frame.minY, width: 20, height: 20)
             }
-        }
-        x = 0
-        let y = bounds.height - 28
-        for button in localButtons {
-            let width = max(74, button.intrinsicContentSize.width + 4)
-            button.frame = NSRect(x: x, y: max(0, y), width: width, height: 26)
-            x += width + 6
         }
     }
 }

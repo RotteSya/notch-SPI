@@ -1,4 +1,0 @@
-id,type,language,stem,option_a,option_b,option_c,option_d,option_e,option_f,answer,unit,explanation,source
-q001,single_choice,zh,6 × 3 等于多少？,12,18,24,,,,B,,6 × 3 = 18。,自编示例
-q002,multiple_choice,zh,请选择所有偶数。,2,3,4,5,,,A;C,,2 和 4 都能被 2 整除。,自编示例
-q003,short_fill,zh,长方形长 5 cm、宽 3 cm，面积是多少？请以 cm² 为单位作答。,,,,,,,15,cm²,面积 = 长 × 宽 = 5 × 3 = 15 cm²。,自编示例
