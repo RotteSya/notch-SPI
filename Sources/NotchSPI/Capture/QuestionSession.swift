@@ -41,6 +41,8 @@ final class QuestionSessionStore {
     private(set) var currentQuestion: ContextAsset?
     private(set) var lastActivity = Date()
     private var scope = ""
+    private var removedReference: (asset: ContextAsset, index: Int, session: UUID, until: Date)?
+    var canUndoRemoval: Bool { removedReference.map { $0.session == sessionID && now() < $0.until } ?? false }
     private let now: () -> Date
     private let directory: URL
     static let lifetime: TimeInterval = 15 * 60
@@ -77,6 +79,7 @@ final class QuestionSessionStore {
         return true
     }
     func clear() {
+        removedReference = nil
         references = []
         currentQuestion = nil
         sessionID = UUID()
@@ -85,13 +88,24 @@ final class QuestionSessionStore {
     }
     @discardableResult
     func expireIfNeeded() -> Bool {
+        if let removedReference, now() >= removedReference.until { self.removedReference = nil }
         guard now().timeIntervalSince(lastActivity) >= Self.lifetime else { return false }
         clear()
         return true
     }
     func removeReference(_ id: UUID) {
-        references.removeAll { $0.id == id }
+        guard let index = references.firstIndex(where: { $0.id == id }) else { return }
+        removedReference = (references.remove(at: index), index, sessionID, now().addingTimeInterval(8))
         lastActivity = now()
+    }
+    @discardableResult
+    func undoRemoval() -> Bool {
+        guard canUndoRemoval, let removedReference, references.count < 3,
+              FileManager.default.fileExists(atPath: removedReference.asset.file.url.path) else {
+            self.removedReference = nil; return false
+        }
+        references.insert(removedReference.asset, at: min(removedReference.index, references.count))
+        self.removedReference = nil; lastActivity = now(); return true
     }
     func saveCurrentAsReference() throws {
         guard !expireIfNeeded(), let question = currentQuestion else { throw SessionError.expired }

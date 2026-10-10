@@ -7,6 +7,7 @@ final class NotchController: NSObject {
     private let questions = QuestionSessionStore()
     private let intakeStore = QuestionSessionStore()
     private var screenshotRound = ScreenshotRound<ContextAsset>()
+    private var removedScreenshot: (asset: ContextAsset, index: Int, round: UUID, until: TimeInterval)?
     private var intakeTask: Task<Void, Never>?
     private var intakeBinding: CaptureRequestBinding?
     private var screenshotTimer: Timer?
@@ -22,14 +23,41 @@ final class NotchController: NSObject {
     var qaScreenshotWarmUp: (() -> Void)?
     var qaSubmittedLatency: CaptureLatency?
     var qaScreenshotClock: (() -> TimeInterval)?
+    func qaOpenScreenshotPreview(_ id: UUID) { notchView.qaPreviewScreenshot(id) }
+    func qaPreviewScreenshots(_ value: Bool) { screenshotRound.setPreviewing(value, now: screenshotNow); updateScreenshotRound() }
+    func qaRemoveScreenshot(_ id: UUID) { removeScreenshot(id) }
+    func qaUndoScreenshot() { undoScreenshotRemoval() }
+    func qaSubmitScreenshotRound() { submitScreenshotRoundNow() }
     func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple) }
     func qaCancelScreenshotRound() { cancelRoundByUser() }
     func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
     func qaRefreshScreenshotLayout() { resizeToFit() }
     func qaPinDesignPreview() { pinned = true }
+    private var qaHoldingMotion = false
+    @objc func qaResetMotionReview() {
+        qaHoldingMotion = true
+        model.expanded = true
+        notchView.resetScreenFrames(collapsed: frame(expanded: false), expanded: frame(expanded: true))
+        notchView.qaUseManualMorphClock()
+        notchView.refreshScreenshotTray()
+    }
+    @objc func qaCloseMotionReview() {
+        model.expanded = false
+        notchView.refreshScreenshotTray()
+    }
+    @objc func qaStepMotionReview() { notchView.qaAdvanceMorph(by: NotchPalette.morphDuration / 20) }
+
     func qaSynchronizeCaptureScope() { synchronizeMaterialScope() }
     func qaTickScreenshotRound() { tickScreenshotRound() }
     func qaSetRequestRunning(_ value: Bool) { running = value }
+    var qaQuestionBanks: QuestionBankServing?
+    var qaDepthOverride: String?
+    var qaPreserveSettings = false
+    var qaModelInvocations = 0
+    var qaCaptureModelPrep: ((String) -> Void)?
+    func qaStartPrepared(_ assets: [ContextAsset], mode: String = "tutor") {
+        runTapped(mode: mode, prepared: assets, latency: CaptureLatency(entry: .single, channel: currentChannel(), mode: mode, triggeredAt: ProcessInfo.processInfo.systemUptime))
+    }
     #endif
 
     private var currentRunSnapshot: RunSnapshot?
@@ -67,6 +95,8 @@ final class NotchController: NSObject {
     private var autoLockedBundleID: String?
     private var autoPaused = false // edge-transition tracking for the DEBUG log only
     private var settingsController: MainSettingsWindowController?
+    private let localQuestions = LocalCaptureSession()
+    private var localPresentedAssets: [ContextAsset] = []
     private let onboardingProgress: NotchOnboardingProgress
     private var onboardingAttempt = false
     private var onboardingPermissionReturnStep: NotchOnboardingStep = .practice
@@ -132,6 +162,7 @@ final class NotchController: NSObject {
         if activateServices {
             ClientConfigService.shared.refresh()
             ProductTelemetry.shared.flush()
+            Task { await QuestionBankRuntime.shared.prepare() }
         }
         refreshCLILabel()
         model.statusText = L10n.statusReady
@@ -153,6 +184,19 @@ final class NotchController: NSObject {
             onStopAuto: { [weak self] in self?.stopAutoSession(.stopButton) }
         )
         view.autoresizingMask = [.width, .height]
+        view.onSubmitScreenshotRound = { [weak self] in self?.submitScreenshotRoundNow() }
+        view.onRemoveScreenshot = { [weak self] id in self?.removeScreenshot(id) }
+        view.onUndoScreenshot = { [weak self] in self?.undoScreenshotRemoval() }
+        view.onScreenshotPreviewChanged = { [weak self] value in
+            guard let self else { return }
+            self.screenshotRound.setPreviewing(value, now: self.screenshotNow)
+            self.updateScreenshotRound()
+        }
+        view.onUndoMaterial = { [weak self] in
+            guard let self else { return }
+            if !self.questions.undoRemoval() { self.model.statusText = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.") }
+            self.refreshMaterials()
+        }
         view.onCancelScreenshotRound = { [weak self] in self?.cancelRoundByUser() }
         view.onExplanation = { [weak self] in self?.showExplanation() }
         view.onAddMaterial = { [weak self] in self?.saveMaterial() }
@@ -165,6 +209,10 @@ final class NotchController: NSObject {
             self?.questions.removeReference(id)
             self?.refreshMaterials()
         }
+        view.onViewLocalSource = { [weak self] in self?.showLocalSource() }
+        view.onResolveWithModel = { [weak self] in self?.resolveLocalWithModel() }
+        wireLocalQuestions()
+        view.onboarding.onChangeTarget = { [weak self] in self?.openSettings(page: .general) }
         view.onboarding.onPrimary = { [weak self] in self?.advanceOnboarding() }
         view.onboarding.onBack = { [weak self] in self?.backOnboarding() }
         view.onboarding.onDismiss = { [weak self] in self?.dismissOnboarding() }
@@ -189,6 +237,16 @@ final class NotchController: NSObject {
                     self.invalidateQuestionContext(clearAnswer: false)
                 }
                 self.synchronizeMaterialScope()
+                if self.model.materialUndoAvailable != self.questions.canUndoRemoval {
+                    if self.model.materialUndoAvailable { self.model.statusText = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.") }
+                    self.refreshMaterials()
+                }
+                if let removed = self.removedScreenshot, self.screenshotNow >= removed.until {
+                    self.removedScreenshot = nil
+                    self.intakeNotice = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.")
+                    self.model.statusText = self.intakeNotice
+                    self.updateScreenshotRound()
+                }
                 if self.autoReviewPending, case .stop(let reason) = self.autoEngine.tickPaused() { self.stopAutoSession(reason) }
             }
         }
@@ -419,9 +477,13 @@ final class NotchController: NSObject {
     private func finishNotchOnboarding(collapse: Bool) {
         guard model.onboardingStep == .success else { return }
         onboardingProgress.complete()
-        // Collapse the existing composition before removing the guide. The view keeps its
-        // presentation for this morph; the next expansion uses the ordinary answer layout.
+        // Preserve the closing morph, then discard the practice session so reopening
+        // the notch starts from the normal idle state rather than the tutorial answer.
         if collapse { setExpanded(false) }
+        pinned = false
+        collapseWork?.cancel(); collapseWork = nil
+        invalidateQuestionContext(clearAnswer: true)
+        model.answerLatency = nil
         endOnboardingPresentation()
         if !collapse { resizeToFit(); scheduleCollapseAfterAnswer() }
     }
@@ -714,6 +776,7 @@ final class NotchController: NSObject {
         let next = Settings.depthCycle[(idx + 1) % Settings.depthCycle.count]
         Settings.shared.depth = next
         model.depthLabel = L10n.depthLabel(next)
+        localQuestions.cancel()
     }
 
     // MARK: - Gear menu (quick actions only — everything else lives in 设置)
@@ -841,6 +904,9 @@ final class NotchController: NSObject {
         let settings = NSMenuItem(title: L10n.openSettings, action: #selector(openSettingsGeneral), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        let banks = NSMenuItem(title: L10n.t("题库", "問題集", "Question Banks"), action: #selector(openQuestionBanks), keyEquivalent: "")
+        banks.target = self
+        menu.addItem(banks)
         let guide = NSMenuItem(title: Settings.shared.onboardingDone
             ? L10n.t("重新体验新手引导", "ガイドをもう一度", "Replay welcome guide")
             : L10n.t("继续新手引导", "ガイドを続ける", "Continue welcome guide"),
@@ -859,6 +925,11 @@ final class NotchController: NSObject {
     private func showExplanation() {
         synchronizeMaterialScope()
         guard !running else { return }
+        if model.localAnswer != nil {
+            model.reasoningRevealed.toggle()
+            resizeToFit()
+            return
+        }
         if !model.explanation.isEmpty || !AnswerComposer.parse(model.answer, streaming: false).working.isEmpty {
             model.reasoningRevealed.toggle(); resizeToFit(); return
         }
@@ -1032,6 +1103,7 @@ final class NotchController: NSObject {
 
     private func refreshMaterials() {
         model.materials = questions.references
+        model.materialUndoAvailable = questions.canUndoRemoval
         resizeToFit()
     }
 
@@ -1040,6 +1112,10 @@ final class NotchController: NSObject {
     }
 
     private func invalidateQuestionContext(clearAnswer: Bool) {
+        localQuestions.cancel()
+        localPresentedAssets = []
+        model.localAnswer = nil
+        model.localCopyText = ""
         cancelScreenshotRound()
         capturePreparation.cancel()
         officialTask?.cancel()
@@ -1147,6 +1223,7 @@ final class NotchController: NSObject {
 
     @objc private func openAccount() { openSettings(page: .account) }
     @objc private func openSettingsGeneral() { openSettings(page: .general) }
+    @objc private func openQuestionBanks() { openSettings(page: .questionBanks) }
 
     @objc private func topUpTapped() { openSettings(page: .account) }
 
@@ -1169,6 +1246,115 @@ final class NotchController: NSObject {
         if let qaScreenshotClock { return qaScreenshotClock() }
         #endif
         return ProcessInfo.processInfo.systemUptime
+    }
+
+    private var preserveUserSettings: Bool {
+        #if DEBUG
+        return qaPreserveSettings
+        #else
+        return false
+        #endif
+    }
+
+    private func activeDepth() -> String {
+        #if DEBUG
+        if let qaDepthOverride { return qaDepthOverride }
+        #endif
+        return Settings.shared.depth
+    }
+
+    private func questionBanks() -> QuestionBankServing {
+        #if DEBUG
+        if let qaQuestionBanks { return qaQuestionBanks }
+        #endif
+        return QuestionBankRuntime.shared
+    }
+
+    private func localRoundEligible(mode: String, multiple: Bool) -> Bool {
+        !multiple && LocalCaptureEligibility.allows(
+            mode: mode, depth: activeDepth(), fromAuto: false, withContext: false, chooseRegion: false,
+            imageCount: 1, onboarding: model.onboardingStep != nil, banksEnabled: questionBanks().hasEnabledBank)
+    }
+
+    private func wireLocalQuestions() {
+        localQuestions.banks = { [weak self] in self?.questionBanks() ?? QuestionBankRuntime.shared }
+        localQuestions.selectionID = { [weak self] in self?.makeRequestBinding(mode: Settings.shared.mode).selectionID ?? "" }
+        localQuestions.depth = { [weak self] in self?.activeDepth() ?? Settings.shared.depth }
+        localQuestions.onWarm = { [weak self] in self?.warmCaptureConnection() }
+        localQuestions.onPresent = { [weak self] answer, assets, latency in
+            self?.presentLocalAnswer(answer, assets: assets, latency: latency)
+        }
+        localQuestions.onModel = { [weak self] mode, assets, latency in
+            self?.runTapped(mode: mode, prepared: assets, latency: latency, skipLocal: true)
+        }
+        localQuestions.onIdle = { [weak self] message in
+            guard let self, !self.running else { return }
+            self.model.status = .idle
+            self.model.statusText = message
+            self.resizeToFit()
+        }
+        localQuestions.captureOne = { [weak self] in
+            guard let self else { return nil }
+            return await self.captureOneForLocalLookup()
+        }
+    }
+
+    private func presentLocalAnswer(_ answer: LocalAnswer, assets: [ContextAsset], latency: CaptureLatency) {
+        model.localAnswer = answer
+        model.localCopyText = answer.copyText
+        model.answer = answer.currentAnswerText
+        model.explanation = ""
+        model.explanationAvailable = true
+        model.explanationAttempted = false
+        model.explanationLoading = false
+        model.reasoningRevealed = false
+        model.recoveryAvailable = false
+        model.recoveryAttempted = false
+        model.resultState = nil
+        model.resultReason = nil
+        model.parserPath = .none
+        model.status = .idle
+        model.statusText = LocalAnswerText.sourceLine(answer)
+        model.answerLatency = latency
+        localPresentedAssets = assets
+        if !visible { visible = true; panel.orderFrontRegardless() }
+        setExpanded(true)
+        pinned = false
+        resizeToFit()
+        if Appearance.autoCopyAnswer { _ = copyCurrentAnswer(requireAutoCopy: true) }
+    }
+
+    private func showLocalSource() {
+        guard let answer = model.localAnswer else { return }
+        Task { @MainActor in
+            guard let detail = await self.questionBanks().detail(instanceID: answer.bankInstanceID, itemID: answer.itemID) else { return }
+            QuestionSourcePanel.show(detail)
+        }
+    }
+
+    private func resolveLocalWithModel() {
+        let assets = localPresentedAssets
+        guard !assets.isEmpty, !running, !localQuestions.isActive else { return }
+        model.localAnswer = nil
+        model.localCopyText = ""
+        let latency = CaptureLatency(entry: .direct, channel: currentChannel(), mode: "tutor", triggeredAt: ProcessInfo.processInfo.systemUptime)
+        warmCaptureConnection()
+        runTapped(mode: "tutor", prepared: assets, latency: latency, skipLocal: true)
+    }
+
+    private func captureOneForLocalLookup() async -> ContextAsset? {
+        let target = Settings.shared.captureTarget
+        let result: Result<ScreenCapture.Shot, CaptureError>
+        #if DEBUG
+        if let capture = qaScreenshotCapture { result = await capture() }
+        else { result = target == .fullScreen ? await captureFullScreenExcludingPanel() : await ScreenCapture.capture(target: target) }
+        #else
+        result = target == .fullScreen ? await captureFullScreenExcludingPanel() : await ScreenCapture.capture(target: target)
+        #endif
+        guard case .success(let shot) = result, !shot.blank else { return nil }
+        let binding = makeRequestBinding(mode: "tutor")
+        questions.begin(scope: binding.scopeID, newQuestionGroup: true)
+        return try? await questions.adopt(path: shot.path, targetFingerprint: shot.targetFingerprint, asReference: false)
     }
 
     private func warmCaptureConnection() {
@@ -1199,6 +1385,7 @@ final class NotchController: NSObject {
         intakeLatency?.complete(success: false); intakeLatency = nil
         intakeTask?.cancel(); intakeTask = nil
         screenshotRound.cancel()
+        removedScreenshot = nil; model.screenshotUndoAvailable = false
         screenshotTimer?.invalidate(); screenshotTimer = nil
         intakeStore.clear(); intakeBinding = nil; pendingSingle = nil
         intakeNotice = ""
@@ -1219,13 +1406,18 @@ final class NotchController: NSObject {
         let remaining = screenshotRound.remaining(now: screenshotNow)
         if model.screenshotRemaining != remaining { model.screenshotRemaining = remaining }
         model.screenshotCapturing = screenshotRound.captureToken != nil
-        model.screenshotRoundActive = screenshotRound.isActive || intakeTask != nil
+        model.screenshotRoundActive = screenshotRound.isActive || intakeTask != nil || removedScreenshot != nil
+        model.screenshotUndoAvailable = removedScreenshot != nil
         let count = screenshotRound.items.count
         let key = Settings.displayString(Settings.shared.contextCombo)
-        if screenshotRound.captureToken != nil {
+        if screenshotRound.previewing {
+            model.screenshotStatus = L10n.t("正在检查截图 · 自动提交已暂停", "画像を確認中 · 送信を一時停止", "Checking images · sending paused")
+        } else if count == 0 {
+            model.screenshotStatus = L10n.t("本轮最多 4 张 · 按 \(key) 继续或撤销删除", "最大4枚 · \(key) で追加、または削除を元に戻す", "Up to four images · press \(key) to add or undo removal")
+        } else if screenshotRound.captureToken != nil {
             model.screenshotStatus = L10n.t("正在捕获 · 已添加 \(count) 张 · 自动提交已暂停", "範囲をキャプチャ中 · \(count)枚 · 送信を一時停止", "Capturing · \(count) images · sending paused")
         } else if count == 1 {
-            model.screenshotStatus = L10n.t("已添加 1 张，按 \(key) 继续截图", "1枚追加済み · \(key) で次の画像", "1 image added · press \(key) for the next")
+            model.screenshotStatus = L10n.t("已添加 1/4 张，按 \(key) 继续截图", "1枚追加済み · \(key) で次の画像", "1 image added · press \(key) for the next")
         } else if let remaining, count >= 2 {
             let seconds = Int(ceil(remaining))
             model.screenshotStatus = remaining <= 0 && running
@@ -1245,6 +1437,35 @@ final class NotchController: NSObject {
         resizeToFit()
     }
 
+    private func removeScreenshot(_ id: UUID) {
+        guard let index = screenshotRound.items.firstIndex(where: { $0.id == id }),
+              let asset = screenshotRound.remove(at: index, now: screenshotNow) else { return }
+        removedScreenshot = (asset, index, screenshotRound.id, screenshotNow + 8)
+        model.screenshots = screenshotRound.items
+        updateScreenshotRound()
+    }
+
+    private func undoScreenshotRemoval() {
+        guard let removed = removedScreenshot, removed.round == screenshotRound.id,
+              screenshotNow < removed.until, FileManager.default.fileExists(atPath: removed.asset.file.url.path),
+              screenshotRound.restore(removed.asset, at: removed.index, now: screenshotNow) else {
+            removedScreenshot = nil
+            intakeNotice = L10n.t("撤销时间已过或本轮已满，请重新截图。", "期限切れ、または画像が上限に達しました。", "Undo expired or this round is full. Capture again.")
+            updateScreenshotRound(); return
+        }
+        removedScreenshot = nil; model.screenshots = screenshotRound.items
+        updateScreenshotRound()
+    }
+
+    private func submitScreenshotRoundNow() {
+        guard !running, intakeTask == nil, intakeBinding == makeRequestBinding(mode: Settings.shared.mode),
+              let assets = screenshotRound.takeNow() else { return }
+        removedScreenshot = nil; model.screenshotUndoAvailable = false
+        screenshotTimer?.invalidate(); screenshotTimer = nil; intakeBinding = nil
+        model.screenshotRemaining = nil; model.screenshotRoundActive = false
+        submitScreenshots(assets, mode: "tutor")
+    }
+
     private func tickScreenshotRound() {
         guard !terminating else { return }
         if let binding = intakeBinding, binding != makeRequestBinding(mode: Settings.shared.mode) {
@@ -1261,6 +1482,7 @@ final class NotchController: NSObject {
         if !running, let assets = screenshotRound.takeDue(now: screenshotNow) {
             screenshotTimer?.invalidate(); screenshotTimer = nil
             intakeBinding = nil
+            removedScreenshot = nil; model.screenshotUndoAvailable = false
             model.screenshotRemaining = nil; model.screenshotRoundActive = false
             model.screenshotStatus = L10n.t("正在提交 \(assets.count) 张截图", "\(assets.count)枚を送信中", "Submitting \(assets.count) screenshots")
             submitScreenshots(assets, mode: "tutor")
@@ -1286,8 +1508,11 @@ final class NotchController: NSObject {
                 return
             }
         }
-        if !multiple { cancelScreenshotRound() }
-        if Settings.shared.mode != mode {
+        if !multiple {
+            localQuestions.cancel()
+            cancelScreenshotRound()
+        }
+        if !preserveUserSettings, Settings.shared.mode != mode {
             newQuestionGroup(); Settings.shared.mode = mode; refreshModeLabels()
         }
         if mode == "personality", Settings.shared.personaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1304,9 +1529,10 @@ final class NotchController: NSObject {
         }
         let startsRound = screenshotRound.items.isEmpty
         if startsRound {
+            removedScreenshot = nil; model.screenshotUndoAvailable = false
             intakeLatency = CaptureLatency(entry: multiple ? .multiple : .single, channel: currentChannel(), mode: mode, triggeredAt: triggeredAt,
                 now: { [weak self] in self?.screenshotNow ?? ProcessInfo.processInfo.systemUptime })
-            warmCaptureConnection()
+            if !localRoundEligible(mode: mode, multiple: multiple) { warmCaptureConnection() }
             intakeStore.begin(scope: binding.scopeID, newQuestionGroup: true)
             model.screenshots = []; model.screenshotImages = [:]
             model.flyingScreenshots = []
@@ -1532,7 +1758,7 @@ final class NotchController: NSObject {
             guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                presentation: NotchType.presentation(for: model), width: width)
+                presentation: NotchType.presentation(for: model), width: width, localAnswer: model.localAnswer)
             return min(step.height + model.materialAreaHeight + max(50, answerH) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
@@ -1540,7 +1766,7 @@ final class NotchController: NSObject {
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
         let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
         let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                                             presentation: NotchType.presentation(for: model), width: width)
+                                             presentation: NotchType.presentation(for: model), width: width, localAnswer: model.localAnswer)
         let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
@@ -1578,6 +1804,9 @@ final class NotchController: NSObject {
     }
 
     private func hover(_ inside: Bool) {
+        #if DEBUG
+        if qaHoldingMotion { return }
+        #endif
         hovering = inside
         if inside {
             collapseWork?.cancel()
@@ -1871,7 +2100,7 @@ final class NotchController: NSObject {
 
     /// `withContext` (tutor mode only): send the remembered ⌘⇧1 shot together with the fresh
     /// capture, so a question whose passage has scrolled away still gets its context.
-    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil, latency inheritedLatency: CaptureLatency? = nil) {
+    private func runTapped(mode: String, withContext: Bool = false, chooseRegion: Bool = false, fromAuto: Bool = false, prepared: [ContextAsset]? = nil, latency inheritedLatency: CaptureLatency? = nil, skipLocal: Bool = false) {
         let triggeredAt = ProcessInfo.processInfo.systemUptime
         #if DEBUG
         ScreenCapture.trace("run.enter running=\(running)")
@@ -1883,6 +2112,25 @@ final class NotchController: NSObject {
         let latency = inheritedLatency ?? CaptureLatency(entry: fromAuto ? .automatic : .direct,
             channel: currentChannel(), mode: mode, triggeredAt: triggeredAt)
         model.answerLatency = latency
+        let imageCount = prepared?.count ?? 1
+        if !skipLocal, LocalCaptureEligibility.allows(
+            mode: mode, depth: activeDepth(), fromAuto: fromAuto, withContext: withContext,
+            chooseRegion: chooseRegion, imageCount: imageCount, onboarding: model.onboardingStep != nil,
+            banksEnabled: questionBanks().hasEnabledBank
+        ) {
+            localQuestions.start(mode: mode, assets: prepared ?? [], latency: latency)
+            return
+        }
+        #if DEBUG
+        if qaCaptureModelPrep != nil {
+            qaModelInvocations += 1
+            qaCaptureModelPrep?(String(describing: currentChannel()))
+            model.localAnswer = nil
+            model.localCopyText = ""
+            model.status = .idle
+            return
+        }
+        #endif
         if inheritedLatency == nil { warmCaptureConnection() }
         model.captureFeedback = ""
         model.recoveryAvailable = false; model.recoveryAttempted = false
@@ -1897,7 +2145,7 @@ final class NotchController: NSObject {
         }
         // The hotkey selects the mode for this capture, so the user never switches modes by hand:
         // ⌘⇧1/⌘⇧2 → tutor, ⌘⇧9 → personality. Set it first so every downstream read agrees.
-        if Settings.shared.mode != mode {
+        if !preserveUserSettings, Settings.shared.mode != mode {
             newQuestionGroup()
             Settings.shared.mode = mode
             refreshModeLabels()
@@ -1938,7 +2186,7 @@ final class NotchController: NSObject {
                 self.lastMaterialScope = current.scopeID
                 self.endRun()
                 self.officialTask = nil
-                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared, latency: latency)
+                self.runTapped(mode: mode, withContext: withContext, chooseRegion: chooseRegion, fromAuto: fromAuto, prepared: prepared, latency: latency, skipLocal: skipLocal)
             }
             return
         }
@@ -2019,6 +2267,9 @@ final class NotchController: NSObject {
         let generation = runGeneration
         pinned = true
         if !visible { visible = true; panel.orderFrontRegardless() }
+        model.localAnswer = nil
+        model.localCopyText = ""
+        localPresentedAssets = []
         model.answer = ""
         model.explanation = ""; model.explanationAttempted = false; model.explanationLoading = false; model.explanationAvailable = false
         model.resultState = nil
@@ -2482,6 +2733,12 @@ final class NotchController: NSObject {
 
     @discardableResult
     private func copyCurrentAnswer(requireAutoCopy: Bool) -> Bool {
+        if model.localAnswer != nil, !model.localCopyText.isEmpty {
+            guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.status != .running, model.status != .streaming else { return false }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(model.localCopyText, forType: .string)
+            return true
+        }
         guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.mode != "personality",
               model.resultState != .retake, model.status != .running, model.status != .streaming,
               (!requireAutoCopy || model.resultState == .ready),

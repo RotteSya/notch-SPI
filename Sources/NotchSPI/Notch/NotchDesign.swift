@@ -49,18 +49,40 @@ enum NotchMotion {
     /// (the tween snaps to the exact value when it ends, so the snap is imperceptible). On a
     /// ~380pt width delta that is a ~17pt breath past the target and a settle back — a soft body
     /// landing, never a wobble. Radii re-amplify it (see `applyLayout`) to keep corners lively.
-    /// Only for expanding — collapsing is a quiet exhale where a bounce would read as flippant.
+    /// Expansion may overshoot; closing approaches the hardware boundary without reversing.
     static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-6.0 * t) * cos(5.2 * t) }
 
-    /// A quiet start and stop gives guide content time to leave before the container contracts.
-    static func guideClose(_ t: CGFloat) -> CGFloat {
-        let cube = t * t * t
-        let polynomial = t * (t * 6 - 15) + 10
-        return cube * polynomial
+    /// Out-cubic remains the opacity curve and the guide's opening curve.
+    static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
+
+    /// A damped approach without oscillation: retract promptly and ease into rest.
+    /// The quadratic envelope reaches the exact pose with zero velocity at the
+    /// deadline. Progress only increases, so a hidden edge cannot emerge again.
+    static func close(_ t: CGFloat) -> CGFloat {
+        let time = min(1, max(0, t))
+        let remaining = 1 - time
+        return 1 - remaining * remaining * (1 + 1.5 * time) * exp(-1.5 * time)
     }
 
-    /// The original quiet out-cubic (collapse direction, and the opacity channel).
-    static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
+    /// Equal percentages leave a tall panel's bottom visibly farther from rest.
+    /// Catch that longer edge up gradually, retaining one clock and exact end pose.
+    static func closingFrame(from start: CGRect, to end: CGRect, progress: CGFloat,
+                             startingExpansion: CGFloat) -> CGRect {
+        let p = min(1, max(0, progress))
+        var result = notchLerpRect(start, end, p)
+        let vertical = start.height - end.height
+        guard vertical > 0 else { return result }
+        let lateral = (abs(start.minX - end.minX) + abs(start.maxX - end.maxX)) / 2
+        // Compare painted edges: their transparent shadow margins shrink as well.
+        let marginDifference = (NotchMetrics.shadowMarginBottom - NotchMetrics.shadowMarginH)
+            * max(0, startingExpansion)
+        let ratio = min(1, max(0.35, (lateral + marginDifference) / vertical))
+        let heightProgress = p + (1 - ratio) * p * (1 - p)
+        result.size.height = notchLerp(start.height, end.height, heightProgress)
+        result.origin.y = notchLerp(start.maxY, end.maxY, p) - result.height
+        return result
+    }
+
 }
 
 /// Layout metrics shared between the controller (panel frame) and the view (content inset), so
@@ -236,7 +258,21 @@ enum NotchType {
             failed: model.status == .error || !model.captureFeedback.isEmpty)
     }
 
-    static func answerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
+    static func answerString(_ answer: String, presentation p: AnswerPresentation, localAnswer: LocalAnswer? = nil) -> NSAttributedString {
+        if let localAnswer, !p.failed {
+            let out = NSMutableAttributedString(attributedString: card(localAnswer.currentAnswerText, afterContent: false, literal: true))
+            out.append(NSAttributedString(string: "\n"))
+            out.append(toggleLine(expanded: p.revealed))
+            if p.revealed {
+                let para = NSMutableParagraphStyle()
+                para.lineSpacing = 3
+                out.append(NSAttributedString(string: "\n" + LocalAnswerText.explanation(localAnswer), attributes: [
+                    .font: NSFont.systemFont(ofSize: answerFontSize),
+                    .foregroundColor: NotchPalette.secondary, .paragraphStyle: para,
+                ]))
+            }
+            return out
+        }
         if answer.isEmpty {
             // Mid-run there is nothing to say yet: the light field and the status line carry
             // "thinking" — a hotkey hint here would contradict the capture the user just fired.
@@ -295,11 +331,11 @@ enum NotchType {
         return out
     }
 
-    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat) -> CGFloat {
+    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat, localAnswer: LocalAnswer? = nil) -> CGFloat {
         guard width > 1 else { return 0 }
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
-        let attr = answerString(answer, presentation: presentation)
+        let attr = answerString(answer, presentation: presentation, localAnswer: localAnswer)
         return StreamingAnswerView.measure(attr, width: width)
     }
 
@@ -330,7 +366,7 @@ enum NotchType {
     /// The authoritative answer card: a small accent caption + the answer itself, one size up
     /// and semibold. The whole range carries `.nspiAnswerCard` so the streaming view can draw
     /// the glass chip behind it; indents keep the text off the chip's rounded edges.
-    private static func card(_ final: String, afterContent: Bool) -> NSAttributedString {
+    private static func card(_ final: String, afterContent: Bool, literal: Bool = false) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 3
         para.firstLineHeadIndent = cardPadH
@@ -350,6 +386,14 @@ enum NotchType {
         // Inner newlines become line separators so a multi-line answer stays ONE paragraph
         // (paragraphSpacingBefore must not repeat inside the chip).
         let text = final.replacingOccurrences(of: "\n", with: "\u{2028}")
+        if literal {
+            out.append(NSAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: answerFontSize + 10, weight: .medium),
+                .foregroundColor: NotchPalette.primary, .paragraphStyle: para,
+                .nspiAnswerCard: "answer",
+            ]))
+            return out
+        }
         out.append(inlineMarkdown(
             text,
             baseFont: .systemFont(ofSize: answerFontSize + 10, weight: .medium),

@@ -2,10 +2,18 @@ import AppKit
 import QuartzCore
 
 /// Stable reserved slots connect the flight to the card. Timer ticks only update the labels
-/// and progress; images are decoded once, and preview is deliberately independent of the timer.
+/// and progress; images are decoded once, and preview pauses submission without changing the reserved image slots.
 @MainActor
 final class ScreenshotTray: NSView {
     var onCancel: (() -> Void)?
+    var onSubmit: (() -> Void)?
+    var onRemove: ((UUID) -> Void)?
+    var onUndo: (() -> Void)?
+    var onPreviewChanged: ((Bool) -> Void)?
+    private lazy var submit = NotchActionButton(title: L10n.t("现在查题", "今すぐ質問", "Ask now")) { [weak self] in self?.onSubmit?() }
+    private lazy var undo = NotchActionButton(title: L10n.t("撤销删除", "削除を元に戻す", "Undo removal")) { [weak self] in self?.onUndo?() }
+    private var removeButtons: [UUID: NotchActionButton] = [:]
+    private var ordinals: [UUID: NSTextField] = [:]
     private let status = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let progress = NSView()
@@ -16,7 +24,7 @@ final class ScreenshotTray: NSView {
     private var cards: [UUID: NotchActionButton] = [:]
     private var thumbnails: [UUID: NSImageView] = [:]
     private var fraction: CGFloat = 0
-    private var preview: NSWindowController?
+    private var preview: QuestionImagePreview?
     private var collecting = false
     override var isFlipped: Bool { true }
 
@@ -28,7 +36,7 @@ final class ScreenshotTray: NSView {
         detail.font = CaptureStyle.caption
         detail.textColor = NotchPalette.secondary
         detail.maximumNumberOfLines = 2
-        addSubview(status); addSubview(detail); addSubview(cancel); addSubview(nextSlot)
+        addSubview(status); addSubview(detail); addSubview(cancel); addSubview(nextSlot); addSubview(submit); addSubview(undo)
         progress.wantsLayer = true
         progress.layer?.backgroundColor = NotchPalette.accent.cgColor
         progress.layer?.cornerRadius = 1
@@ -38,12 +46,12 @@ final class ScreenshotTray: NSView {
 
     func update(assets: [ContextAsset], images: [UUID: NSImage], flying: Set<UUID>,
                 message: String, remaining: TimeInterval?, cancellable: Bool,
-                capturing: Bool = false, notice: String = "") {
+                capturing: Bool = false, notice: String = "", undoAvailable: Bool = false) {
         let next = assets.map(\.id)
         if ids != next || capturing || (collecting && !cancellable) { preview?.close(); preview = nil }
         collecting = cancellable
         self.assets = assets
-        for id in ids where !next.contains(id) { cards.removeValue(forKey: id)?.removeFromSuperview(); thumbnails.removeValue(forKey: id) }
+        for id in ids where !next.contains(id) { cards.removeValue(forKey: id)?.removeFromSuperview(); thumbnails.removeValue(forKey: id); ordinals.removeValue(forKey: id); removeButtons.removeValue(forKey: id)?.removeFromSuperview() }
         ids = next
         for (index, asset) in assets.enumerated() {
             if cards[asset.id] == nil {
@@ -72,12 +80,23 @@ final class ScreenshotTray: NSView {
                 ordinal.alignment = .center
                 ordinal.frame = NSRect(x: 5, y: 5, width: 19, height: 15)
                 card.addSubview(ordinal)
+                ordinals[id] = ordinal
+                let remove = NotchActionButton(title: "×") { [weak self] in self?.onRemove?(id) }
+                remove.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
+                removeButtons[id] = remove; addSubview(remove)
                 card.setAccessibilityLabel(L10n.t("预览截图 \(index + 1)", "画像 \(index + 1) をプレビュー", "Preview screenshot \(index + 1)"))
                 card.toolTip = card.accessibilityLabel()
                 cards[id] = card
                 addSubview(card)
+                if let remove = removeButtons[id] { addSubview(remove, positioned: .above, relativeTo: card) }
             }
             let card = cards[asset.id]!
+            ordinals[asset.id]?.stringValue = "\(index + 1)"
+            card.setAccessibilityLabel(L10n.t("预览截图 \(index + 1)", "画像 \(index + 1) をプレビュー", "Preview screenshot \(index + 1)"))
+            card.toolTip = card.accessibilityLabel()
+            removeButtons[asset.id]?.isHidden = !cancellable
+            removeButtons[asset.id]?.isEnabled = !capturing
+            removeButtons[asset.id]?.setAccessibilityLabel(L10n.t("删除截图 \(index + 1)", "画像 \(index + 1) を削除", "Remove screenshot \(index + 1)"))
             thumbnails[asset.id]?.image = images[asset.id]
             let wasHidden = card.alphaValue < 1
             card.alphaValue = flying.contains(asset.id) ? 0 : 1
@@ -110,6 +129,9 @@ final class ScreenshotTray: NSView {
         detail.toolTip = hint
         detail.textColor = notice.isEmpty ? NotchPalette.secondary : .systemOrange
         cancel.isHidden = !cancellable
+        submit.isHidden = !cancellable; submit.isEnabled = assets.count >= 2 && !capturing
+        submit.toolTip = L10n.t("收集 2–4 张后按顺序提交", "2〜4枚を順番に送信", "Submit two to four images in order")
+        undo.isHidden = !undoAvailable; undo.isEnabled = !capturing
         fraction = CGFloat(max(0, min(1, (remaining ?? 0) / 4)))
         progress.alphaValue = capturing ? 0.35 : 1
         progress.isHidden = !cancellable || remaining == nil
@@ -117,35 +139,16 @@ final class ScreenshotTray: NSView {
         needsLayout = true
     }
 
-    private func showPreview(_ id: UUID) {
-        guard let index = ids.firstIndex(of: id), let asset = assets.first(where: { $0.id == id }),
-              let image = ScreenshotThumbnail.load(asset.file.url, maxPixelSize: 1400) else { return }
+    func showPreview(_ id: UUID) {
+        guard let index = ids.firstIndex(of: id), let asset = assets.first(where: { $0.id == id }) else { return }
         preview?.close()
-        let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1000, height: 700)
-        let scale = min(1, (screen.width - 120) / max(1, image.size.width), (screen.height - 180) / max(1, image.size.height))
-        let size = NSSize(width: max(400, image.size.width * scale), height: max(240, image.size.height * scale))
-        let window = ScreenshotPreviewWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = L10n.t("截图 \(index + 1) / \(ids.count) · 预览", "画像 \(index + 1) / \(ids.count)", "Screenshot \(index + 1) / \(ids.count) · Preview")
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        window.sharingType = ScreenShareGuard.windowSharingType
-        let view = NSImageView(frame: NSRect(origin: .zero, size: size))
-        view.image = image; view.imageScaling = .scaleProportionallyUpOrDown
-        view.autoresizingMask = [.width, .height]
-        let root = NSView(frame: NSRect(origin: .zero, size: size))
-        view.frame = NSRect(x: 0, y: 34, width: size.width, height: size.height - 34)
-        root.addSubview(view)
-        let hint = NSTextField(labelWithString: collecting
-            ? L10n.t("预览不暂停倒计时 · Esc 关闭", "プレビュー中も送信タイマーは継続 · Esc で閉じる", "Preview keeps the timer running · Esc to close")
-            : L10n.t("Esc 关闭预览", "Esc で閉じる", "Esc to close preview"))
-        hint.font = CaptureStyle.caption; hint.textColor = .secondaryLabelColor
-        hint.frame = NSRect(x: 16, y: 10, width: size.width - 32, height: 16)
-        hint.autoresizingMask = [.width]
-        root.addSubview(hint)
-        window.contentView = root
-        window.center()
-        preview = NSWindowController(window: window)
-        window.makeKeyAndOrderFront(nil)
+        let controller = QuestionImagePreview(asset: asset,
+            title: L10n.t("截图 \(index + 1) / \(ids.count) · 预览", "画像 \(index + 1) / \(ids.count)", "Screenshot \(index + 1) / \(ids.count) · Preview"), collecting: collecting)
+        if collecting { onPreviewChanged?(true) }
+        controller.onClose = { [weak self] in self?.onPreviewChanged?(false) }
+        if collecting { controller.onRemove = { [weak self] in self?.onRemove?(id) } }
+        preview = controller
+        controller.present()
     }
 
     func screenFrame(for id: UUID) -> NSRect? {
@@ -169,19 +172,19 @@ final class ScreenshotTray: NSView {
             if let card = cards[id], let asset = assets.first(where: { $0.id == id }) {
                 card.frame = ScreenshotFlightGeometry.cardFrame(image: NSSize(width: asset.width, height: asset.height), in: slot(index))
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 4, dy: 4)
+                let rect = slot(index)
+                removeButtons[id]?.frame = NSRect(x: rect.maxX - 24, y: rect.minY + 2, width: 22, height: 22)
             }
         }
         nextSlot.frame = slot(min(ids.count, 3))
-        status.frame = NSRect(x: 0, y: 3, width: max(0, bounds.width - (cancel.isHidden ? 0 : 104)), height: 18)
+        status.frame = NSRect(x: 0, y: 3, width: max(0, bounds.width - (cancel.isHidden ? 0 : 204)), height: 18)
         cancel.frame = NSRect(x: max(0, bounds.width - 90), y: 0, width: 90, height: 24)
-        detail.frame = NSRect(x: 0, y: 120, width: bounds.width, height: 30)
+        submit.frame = NSRect(x: max(0, bounds.width - 190), y: 0, width: 90, height: 24)
+        undo.frame = NSRect(x: max(0, bounds.width - 100), y: 120, width: 100, height: 26)
+        detail.frame = NSRect(x: 0, y: 120, width: max(0, bounds.width - (undo.isHidden ? 0 : 108)), height: 30)
         progress.frame = NSRect(x: 0, y: 113, width: bounds.width * fraction, height: 2)
     }
 
-}
-
-private final class ScreenshotPreviewWindow: NSWindow {
-    override func cancelOperation(_ sender: Any?) { close() }
 }
 
 /// A passive continuation cue; the configured capture shortcut remains in the status.

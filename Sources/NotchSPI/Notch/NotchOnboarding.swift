@@ -19,7 +19,7 @@ enum NotchOnboardingStep: String {
     var height: CGFloat {
         switch self {
         case .welcome: return 220
-        case .permission: return 248
+        case .permission: return 276
         case .practice: return 220
         case .capture: return 220
         case .working: return 148
@@ -54,6 +54,8 @@ final class NotchOnboardingView: NSView {
     var onBack: (() -> Void)?
     var onDismiss: (() -> Void)?
     var onSecondary: (() -> Void)?
+    var onChangeTarget: (() -> Void)?
+    private let targetButton = GlowButton(title: "", style: .ghost)
     private let copyPlate = OnboardingCopyPlate()
     private var practiceFailed = false
     private var outgoingCopy: NSImageView?
@@ -79,8 +81,9 @@ final class NotchOnboardingView: NSView {
         wantsLayer = true
         addSubview(copyPlate)
         [heading, detail, note, illustration].forEach(copyPlate.addSubview)
-        [eyebrow, primary, secondary, back, closeButton, languages, shortcut].forEach(addSubview)
+        [eyebrow, primary, secondary, back, closeButton, languages, shortcut, targetButton].forEach(addSubview)
         [primary, secondary, back, closeButton].forEach { $0.ignoresRepeatedClicks = true }
+        targetButton.onClick = { [weak self] in self?.onChangeTarget?() }
         primary.onClick = { [weak self] in self?.onPrimary?() }
         secondary.onClick = { [weak self] in self?.onSecondary?() }
         back.onClick = { [weak self] in self?.onBack?() }
@@ -108,7 +111,7 @@ final class NotchOnboardingView: NSView {
     // AppKit's default key-view traversal can skip custom NSControls when Full Keyboard
     // Access is off. This local loop keeps the guide operable without changing system settings.
     func moveKeyboardFocus(backwards: Bool) {
-        let controls: [NSControl] = [primary, secondary, back, closeButton, languages]
+        let controls: [NSControl] = [primary, secondary, targetButton, back, closeButton, languages]
         let available = controls.filter { !$0.isHiddenOrHasHiddenAncestor && $0.isEnabled && $0.acceptsFirstResponder }
         guard let window, !available.isEmpty else { return }
         let current = available.firstIndex { window.firstResponder === $0 }
@@ -140,7 +143,9 @@ final class NotchOnboardingView: NSView {
         illustration.isHidden = step != .welcome
         illustration.phase = step
         note.isHidden = step.showsLiveContent || step == .welcome || step == .practice || step == .capture
-        detail.isHidden = step == .welcome
+        detail.isHidden = false
+        targetButton.isHidden = step != .permission
+        targetButton.title = t("更改截图目标", "撮影対象を変更", "Change capture target")
         shortcut.isHidden = true
         primary.isEnabled = step != .working || failed
         secondary.isHidden = step != .permission || granted
@@ -155,13 +160,13 @@ final class NotchOnboardingView: NSView {
         switch step {
         case .welcome:
             heading.stringValue = t("每道题，抬眸尽收眼底。", "問題を撮ると、答えはノッチに。", "Capture a question. Answer up here.")
-            detail.stringValue = ""
+            detail.stringValue = t("把屏幕上的题截图，答案会显示在顶部。", "画面の問題を撮ると、答えが上部に表示されます。", "Capture a question on screen; read the answer up here.")
             primary.title = t("准备开始查题！", "質問を始めましょう！", "Get ready to ask!")
             note.stringValue = t("一次捕获 → 一份答案 → 继续你的学习", "キャプチャ → 答え → 学習を続ける", "Capture → Answer → Keep learning")
         case .permission:
             heading.stringValue = granted ? t("屏幕已连接。", "画面に接続しました。", "Your screen is connected.") : t("先允许读取屏幕上的题。", "画面の問題を読み取る許可を。", "Allow access to your question.")
             let target = captureTargetLabel
-            detail.stringValue = t("当前捕获目标：\(target)", "キャプチャ対象：\(target)", "Capture target: \(target)")
+            detail.stringValue = t("当前捕获目标：\(target)", "キャプチャ対象：\(target)", "Capture target: \(target)") + "\n" + CaptureProcessing.channelNote
             primary.title = granted ? t("继续", "続ける", "Continue") : denied ? t("打开系统设置", "システム設定を開く", "Open System Settings") : t("允许屏幕访问", "画面へのアクセスを許可", "Allow screen access")
             secondary.title = t("暂时跳过", "今はスキップ", "Skip for now")
             note.stringValue = denied && !granted ? t("尚未授权。开启权限后返回；若系统要求，请重启应用。", "未許可です。設定後に戻ってください。必要ならアプリを再起動。", "Not granted yet. Return after enabling access; relaunch if macOS asks.") : t("下一步会在浏览器中打开练习题。", "次にブラウザで練習問題を開きます。", "Next, a practice question opens in your browser.")
@@ -173,7 +178,8 @@ final class NotchOnboardingView: NSView {
         case .capture:
             heading.stringValue = t("练习题已打开。", "練習問題を開きました。", "Practice is open.")
             detail.stringValue = t("按快捷键，或点击右侧按钮。答案会在下方出现。", "ショートカット、または右のボタンを押してください。答えは下に表示されます。", "Use the shortcut or click the button. Your answer appears below.")
-            primary.title = t("按下⌘⇧1 或 点击查题", "⌘⇧1 またはクリックで質問", "Press ⌘⇧1 or click to ask")
+            let key = Settings.displayString(Settings.shared.captureCombo)
+            primary.title = t("按下 \(key) 或点击查题", "\(key) またはクリックで質問", "Press \(key) or click to ask")
         case .working:
             heading.stringValue = failed ? t("再试一次。", "もう一度お試しください。", "Let’s try again.") : t("正在读懂这道题。", "問題を読み取っています。", "Reading your question.")
             detail.stringValue = failed ? t("查看下方原因，调整后重新捕获。", "下の内容を確認し、もう一度キャプチャ。", "Check the message below, then capture again.") : t("截图、回答，都留在这里。", "画像も答えも、ここに残ります。", "Your capture and answer stay here.")
@@ -182,7 +188,7 @@ final class NotchOnboardingView: NSView {
             secondary.isHidden = !failed
         case .success:
             heading.stringValue = t("第一份答案，已就位。", "最初の答えが届きました。", "Your first answer is ready.")
-            detail.stringValue = t("下次用 \(Settings.displayString(Settings.shared.captureCombo)) 查题。点击刘海可再看答案。", "次の質問は \(Settings.displayString(Settings.shared.captureCombo))。ノッチをクリックすると答えを再表示。", "Use \(Settings.displayString(Settings.shared.captureCombo)) for the next question. Click the notch to revisit this answer.")
+            detail.stringValue = t("完成后清除练习内容，下次用 \(Settings.displayString(Settings.shared.captureCombo)) 查题。", "完了すると練習内容を消去。次の質問は \(Settings.displayString(Settings.shared.captureCombo))。", "Finishing clears the practice. Use \(Settings.displayString(Settings.shared.captureCombo)) for your next question.")
             primary.title = t("完成引导", "ガイドを完了", "Finish setup")
             closeButton.title = t("收起", "閉じる", "Collapse")
         }
@@ -229,6 +235,9 @@ final class NotchOnboardingView: NSView {
         illustration.frame = .init(x: inset, y: step == .welcome ? 164 : 218,
                                    width: w - inset * 2, height: 28)
         note.frame = .init(x: inset, y: step.height - 40, width: w - inset * 2, height: 36)
+        targetButton.frame = .init(x: inset, y: 138, width: 200, height: 28)
+        if step == .welcome { detail.frame = .init(x: inset, y: 142, width: w - inset * 2, height: 20); detail.font = .systemFont(ofSize: 12) }
+        if step == .permission { detail.frame = .init(x: inset, y: 172, width: w - inset * 2, height: 60) }
         if step.showsLiveContent {
             let inset = NotchLayout.contentInsetH
             let actionWidth: CGFloat = 148
@@ -242,12 +251,12 @@ final class NotchOnboardingView: NSView {
             detail.font = .systemFont(ofSize: 13)
         }
         if step == .permission {
-            detail.frame.size.height = 36
-            note.frame = .init(x: inset, y: 198, width: w - inset * 2, height: 40)
+            detail.frame.size.height = 60
+            note.frame = .init(x: inset, y: 236, width: w - inset * 2, height: 36)
         }
         // Keep the guide's original body positions; only adjust a body that would
         // actually touch an unusually tall camera housing.
-        for child in [heading, detail, note, illustration, primary, secondary, back, languages, shortcut] {
+        for child in [heading, detail, note, illustration, primary, secondary, back, languages, shortcut, targetButton] {
             child.frame.origin.y += bodyAdjustment
         }
         eyebrow.frame.origin.y += headerInset
@@ -270,7 +279,9 @@ final class NotchOnboardingView: NSView {
             return L10n.t("整个屏幕", "画面全体", "Entire screen")
         }
         let name = Settings.shared.captureTargetName ?? ""
-        return name.isEmpty ? id : name
+        let label = name.isEmpty ? id : name
+        return NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty
+            ? label + L10n.t("（未运行，请先打开）", "（未起動）", " (not running; open it first)") : label
     }
 
     private func transitionCopy(backwards: Bool) {

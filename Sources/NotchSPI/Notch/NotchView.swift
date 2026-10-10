@@ -21,6 +21,8 @@ import QuartzCore
 final class NotchView: NSView {
     let onboarding = NotchOnboardingView(frame: .zero)
     var onExplanation: (() -> Void)?
+    var onViewLocalSource: (() -> Void)?
+    var onResolveWithModel: (() -> Void)?
     var onAddMaterial: (() -> Void)?
     var onNewGroup: (() -> Void)?
     var onSelectRegion: (() -> Void)?
@@ -28,6 +30,11 @@ final class NotchView: NSView {
     private let materialStrip = QuestionMaterialStrip()
     private let screenshotTray = ScreenshotTray()
     var onCancelScreenshotRound: (() -> Void)?
+    var onSubmitScreenshotRound: (() -> Void)?
+    var onRemoveScreenshot: ((UUID) -> Void)?
+    var onUndoScreenshot: (() -> Void)?
+    var onScreenshotPreviewChanged: ((Bool) -> Void)?
+    var onUndoMaterial: (() -> Void)?
 
     var screenLayout: NotchScreenLayout? {
         didSet { if screenLayout != oldValue { lastPlateSize = .zero; needsLayout = true } }
@@ -58,6 +65,9 @@ final class NotchView: NSView {
     }
 
     func screenshotDestination(_ id: UUID) -> NSRect? { screenshotTray.screenFrame(for: id) }
+    #if DEBUG
+    func qaPreviewScreenshot(_ id: UUID) { screenshotTray.showPreview(id) }
+    #endif
     func refreshScreenshotTray() { refresh(); layoutSubtreeIfNeeded() }
     func screenshotLanded() { if !reduceMotion { luma.pulse() } }
 
@@ -136,6 +146,8 @@ final class NotchView: NSView {
     private var reduceMotion: Bool { onboardingReduceMotion() }
 
     #if DEBUG
+    var qaPaintedCardFrame: CGRect { convert(surface.cardRect, to: nil) }
+
     func qaUseManualMorphClock() {
         morph.qaManualTime = 0
         geoMorph.qaManualTime = 0
@@ -232,8 +244,19 @@ final class NotchView: NSView {
         answerScroll.borderType = .noBorder
         answerScroll.horizontalScrollElasticity = .none
         answerScroll.documentView = answerStream
+        screenshotTray.onSubmit = { [weak self] in self?.onSubmitScreenshotRound?() }
+        screenshotTray.onRemove = { [weak self] id in self?.onRemoveScreenshot?(id) }
+        screenshotTray.onUndo = { [weak self] in self?.onUndoScreenshot?() }
+        screenshotTray.onPreviewChanged = { [weak self] value in self?.onScreenshotPreviewChanged?(value) }
+        materialStrip.onUndo = { [weak self] in self?.onUndoMaterial?() }
         screenshotTray.onCancel = { [weak self] in self?.onCancelScreenshotRound?() }
         materialStrip.onExplain = { [weak self] in self?.onExplanation?() }
+        materialStrip.onLocalAction = { [weak self] action in
+            switch action {
+            case .source: self?.onViewLocalSource?()
+            case .resolveWithModel: self?.onResolveWithModel?()
+            }
+        }
         materialStrip.onAdd = { [weak self] in self?.onAddMaterial?() }
         materialStrip.onClear = { [weak self] in self?.onNewGroup?() }
         materialStrip.onSelect = { [weak self] in self?.onSelectRegion?() }
@@ -243,7 +266,7 @@ final class NotchView: NSView {
             guard let self else { return false }
             return !self.model.hidesAnswer && self.model.captureFeedback.isEmpty && self.model.mode != "personality" && self.model.resultState != .retake
                 && self.model.status != .running && self.model.status != .streaming
-                && AnswerComposer.clipboardAnswer(self.model.answer) != nil
+                && (self.model.localAnswer != nil || AnswerComposer.clipboardAnswer(self.model.answer) != nil)
         }
         answerStream.onCopyAnswer = { [weak self] in self?.onCopyAnswer() }
         answerScroll.onUserScroll = { [weak self] in self?.noteUserScroll() }
@@ -315,9 +338,10 @@ final class NotchView: NSView {
         screenshotTray.update(assets: model.screenshots, images: model.screenshotImages,
             flying: model.flyingScreenshots, message: model.screenshotStatus,
             remaining: model.screenshotRemaining, cancellable: model.screenshotRoundActive,
-            capturing: model.screenshotCapturing, notice: model.screenshotNotice)
+            capturing: model.screenshotCapturing, notice: model.screenshotNotice, undoAvailable: model.screenshotUndoAvailable)
         // Hidden views still own their assets; clearing the last material must release them.
-        materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality")
+        materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality",
+                             localActions: model.localAnswer == nil ? [] : [.source, .resolveWithModel], undoAvailable: model.materialUndoAvailable)
         statusText.stringValue = model.captureHeading
         statusText.toolTip = model.captureHeading
         toolTip = model.captureHeading + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
@@ -335,7 +359,7 @@ final class NotchView: NSView {
 
         answerScroll.isHidden = model.hidesAnswer
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
-            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
+            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model), localAnswer: model.localAnswer)
         answerStream.completedCapture = !model.hidesAnswer && model.status == .idle
             && model.answerLatency?.needsCompletedDraw == true ? model.answerLatency : nil
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
@@ -425,8 +449,8 @@ final class NotchView: NSView {
             let guiding = model.onboardingStep != nil || closingOnboarding
             morph.ease = guiding ? { $0 } : NotchMotion.outCubic
             morph.animate(to: target, duration: guiding ? onboardingMotionDuration(on ? 0.38 : 0.26) : NotchPalette.morphDuration)
-            if guiding && !on { geoMorph.ease = NotchMotion.guideClose }
-            else { geoMorph.ease = on && !guiding ? NotchMotion.springSettle : NotchMotion.outCubic }
+            if !on { geoMorph.ease = NotchMotion.close }
+            else { geoMorph.ease = !guiding ? NotchMotion.springSettle : NotchMotion.outCubic }
             geoMorph.animate(to: target, duration: guiding ? onboardingMotionDuration(on ? 0.38 : 0.26) : NotchPalette.morphDuration)
         }
     }
@@ -436,7 +460,11 @@ final class NotchView: NSView {
         let target = morphProgressTarget == 1 ? expandedAnchor : collapsedAnchor
         let distance = morphProgressTarget - morphProgressOrigin
         let progress = abs(distance) < 0.0001 ? 1 : (g - morphProgressOrigin) / distance
-        window.setFrame(notchLerpRect(morphFrameOrigin, target, max(0, progress)), display: true)
+        let frame = morphProgressTarget == 0
+            ? NotchMotion.closingFrame(from: morphFrameOrigin, to: target, progress: progress,
+                                       startingExpansion: morphProgressOrigin)
+            : notchLerpRect(morphFrameOrigin, target, max(0, progress))
+        window.setFrame(frame, display: true)
     }
 
     /// The expanded target grew or shrank (answer streaming in, font/size change). While the

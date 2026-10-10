@@ -28,7 +28,12 @@ final class TutorModel: ObservableObject {
     @Published var explanationLoading = false
     @Published var recoveryAvailable = false
     @Published var recoveryAttempted = false
+    @Published var localAnswer: LocalAnswer?
+    var localCopyText = ""
     var renderedAnswer: String {
+        if let localAnswer {
+            return LocalAnswerText.rendered(answer: localAnswer, revealed: reasoningRevealed)
+        }
         guard !explanation.isEmpty, let final = AnswerComposer.parse(answer, streaming: false).final else { return answer }
         return explanation + "\nFINAL: " + final
     }
@@ -38,6 +43,8 @@ final class TutorModel: ObservableObject {
     @Published var screenshotStatus = ""
     @Published var screenshotRemaining: TimeInterval?
     @Published var screenshotRoundActive = false
+    @Published var screenshotUndoAvailable = false
+    @Published var materialUndoAvailable = false
     var showScreenshotTray: Bool { screenshotRoundActive || !screenshots.isEmpty }
     @Published var screenshotCapturing = false
     @Published var screenshotNotice = ""
@@ -54,7 +61,11 @@ final class TutorModel: ObservableObject {
         }
         return renderedAnswer
     }
-    var materialStripHeight: CGFloat { showMaterialStrip ? (materials.isEmpty ? CaptureStyle.actionHeight : 74) : 0 }
+    var materialStripHeight: CGFloat {
+        guard showMaterialStrip else { return 0 }
+        let base: CGFloat = materials.isEmpty ? CaptureStyle.actionHeight : 74
+        return base + (localAnswer == nil ? 0 : 30) + (materialUndoAvailable ? 30 : 0)
+    }
     var screenshotTrayHeight: CGFloat {
         guard showScreenshotTray else { return 0 }
         return CaptureStyle.trayHeight
@@ -70,7 +81,7 @@ final class TutorModel: ObservableObject {
         return statusText
     }
     @Published var materials: [ContextAsset] = []
-    var showMaterialStrip: Bool { onboardingStep == nil && !screenshotRoundActive && (!materials.isEmpty || resultState == .retake || status == .error || (mode == "tutor" && explanationAvailable)) }
+    var showMaterialStrip: Bool { onboardingStep == nil && !screenshotRoundActive && (materialUndoAvailable || !materials.isEmpty || resultState == .retake || status == .error || (mode == "tutor" && explanationAvailable)) }
     @Published var expanded = false
     @Published var status: Status = .ready
     @Published var statusText = ""

@@ -93,4 +93,37 @@ final class ScreenshotRoundTests: XCTestCase {
         round.finishCapture(token: token, item: nil, now: 10)
         XCTAssertEqual(round.takeDue(now: 10), [1, 2])
     }
+    func testPreviewPausesTenSecondsAndClosingResetsFourSeconds() throws {
+        var round = ScreenshotRound<Int>()
+        try add(1, at: 0, to: &round); try add(2, at: 0, to: &round)
+        round.setPreviewing(true, now: 3.9)
+        XCTAssertNil(round.takeDue(now: 14))
+        round.setPreviewing(false, now: 14)
+        XCTAssertNil(round.takeDue(now: 17.999))
+        XCTAssertEqual(round.takeDue(now: 18), [1, 2])
+    }
+
+    func testDeletionWaitsAtOneAndUndoRestoresExactOrder() throws {
+        var round = ScreenshotRound<Int>()
+        try add(1, at: 0, to: &round); try add(2, at: 0, to: &round)
+        XCTAssertEqual(round.remove(at: 1, now: 3), 2)
+        XCTAssertNil(round.takeDue(now: 100))
+        XCTAssertNil(round.takeNow())
+        XCTAssertTrue(round.restore(2, at: 1, now: 101))
+        try add(3, at: 101, to: &round)
+        XCTAssertEqual(round.remove(at: 1, now: 102), 2)
+        XCTAssertTrue(round.restore(2, at: 1, now: 103))
+        XCTAssertEqual(round.takeNow(), [1, 2, 3])
+        XCTAssertNil(round.takeNow())
+    }
+
+    func testCaptureDuringPreviewCannotRestartSubmission() throws {
+        var round = ScreenshotRound<Int>()
+        try add(1, at: 0, to: &round); try add(2, at: 0, to: &round)
+        round.setPreviewing(true, now: 1)
+        try add(3, at: 2, to: &round)
+        XCTAssertNil(round.takeDue(now: 100))
+        round.setPreviewing(false, now: 100)
+        XCTAssertEqual(round.takeDue(now: 104), [1, 2, 3])
+    }
 }

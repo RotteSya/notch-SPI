@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 scenario="${1:-answer}"
 shift "$(( $# > 0 ? 1 : 0 ))"
 case "$scenario" in
-  ready|answer|success|welcome|working|failure|long|multiline|multiple|mixed|collecting|collecting-1|collecting-2|collecting-3|collecting-4|multi-flow|reasoning) ;;
+  motion-review|intake-review|permission|ready|answer|success|welcome|working|failure|long|multiline|multiple|mixed|collecting|collecting-1|collecting-2|collecting-3|collecting-4|multi-flow|reasoning) ;;
   *) echo "Unknown design fixture: $scenario" >&2; exit 2 ;;
 esac
 swift build

@@ -15,6 +15,10 @@ enum DesignVisualQA {
         controller.qaOpenPracticePage = { _ in false }
         controller.qaPinDesignPreview()
         controller.show()
+        if scenario == "intake-review" {
+            ScreenshotVisualQA.start(controller, localService: false, inspection: true)
+            return controller
+        }
         let model = controller.model
         model.answerDepth = "brief"
         model.depthLabel = L10n.depthLabel("brief")
@@ -58,6 +62,7 @@ enum DesignVisualQA {
             model.answer = ""; model.status = .ready; model.statusText = L10n.statusReady
         case "success": controller.qaPresentOnboarding(.success)
         case "welcome": controller.qaPresentOnboarding(.welcome)
+        case "permission": controller.qaOnboardingPermission = { false }; controller.qaPresentOnboarding(.permission)
         case "working":
             model.answer = ""; model.status = .running
             controller.qaPresentOnboarding(.working)
@@ -82,6 +87,23 @@ enum DesignVisualQA {
         }
         controller.setExpanded(true)
         controller.qaRefreshScreenshotLayout()
+        if scenario == "motion-review" {
+            let menu = NSMenu(title: "动画验收")
+            for (title, action, key) in [
+                ("复位展开", #selector(NotchController.qaResetMotionReview), "r"),
+                ("开始收起", #selector(NotchController.qaCloseMotionReview), "b"),
+                ("前进一帧（16毫秒）", #selector(NotchController.qaStepMotionReview), "n")
+            ] {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+                item.keyEquivalentModifierMask = [.command, .option]
+                item.target = controller
+                menu.addItem(item)
+            }
+            let item = NSMenuItem(title: "动画验收", action: nil, keyEquivalent: "")
+            item.submenu = menu
+            NSApp.mainMenu?.addItem(item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { controller.qaResetMotionReview() }
+        }
         if scenario == "multi-flow" {
             ScreenshotVisualQA.start(controller, localService: false)
             DispatchQueue.main.asyncAfter(deadline: .now() + 13) { [weak controller] in

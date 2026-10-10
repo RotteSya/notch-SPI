@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "bank_id": "example-basic-math",
+  "title": "本地题库格式演示",
+  "author": "格式示例",
+  "version": "1.0.0",
+  "language": "zh",
+  "description": "三道合成题，仅用于导入格式与本地流程验证。",
+  "source": "本计划中的自编格式示例",
+  "questions": [
+    {
+      "id": "q001",
+      "type": "single_choice",
+      "stem": "6 × 3 等于多少？",
+      "options": [
+        { "id": "o_a", "label": "A", "text": "12" },
+        { "id": "o_b", "label": "B", "text": "18" },
+        { "id": "o_c", "label": "C", "text": "24" }
+      ],
+      "answer": { "option_ids": ["o_b"] },
+      "explanation": "6 × 3 = 18。",
+      "source": "自编示例"
+    },
+    {
+      "id": "q002",
+      "type": "multiple_choice",
+      "stem": "请选择所有偶数。",
+      "options": [
+        { "id": "o_a", "label": "A", "text": "2" },
+        { "id": "o_b", "label": "B", "text": "3" },
+        { "id": "o_c", "label": "C", "text": "4" },
+        { "id": "o_d", "label": "D", "text": "5" }
+      ],
+      "answer": { "option_ids": ["o_a", "o_c"] },
+      "explanation": "2 和 4 都能被 2 整除。",
+      "source": "自编示例"
+    },
+    {
+      "id": "q003",
+      "type": "short_fill",
+      "stem": "长方形长 5 cm、宽 3 cm，面积是多少？请以 cm² 为单位作答。",
+      "answer": { "text": "15", "unit": "cm²" },
+      "explanation": "面积 = 长 × 宽 = 5 × 3 = 15 cm²。",
+      "source": "自编示例"
+    }
+  ]
+}

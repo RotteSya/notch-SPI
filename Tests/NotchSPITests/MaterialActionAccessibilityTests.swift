@@ -40,7 +40,7 @@ final class MaterialActionAccessibilityTests: XCTestCase {
                                    sha256: "test", width: 1, height: 1, byteCount: 68,
                                    targetFingerprint: "test", capturedAt: Date())], explanationAvailable: false)
         // Accessibility clients can retain a removed control after it leaves the view tree.
-        let retainedButton = try XCTUnwrap(strip.subviews.first as? NSButton)
+        let retainedButton = try XCTUnwrap(strip.subviews.compactMap { $0 as? NSButton }.first { $0.accessibilityLabel()?.contains("Remove") == true || $0.accessibilityLabel()?.contains("删除") == true || $0.accessibilityLabel()?.contains("削除") == true })
         XCTAssertTrue(retainedButton.accessibilityPerformPress())
         for _ in 0..<20 where FileManager.default.fileExists(atPath: file.path) {
             try await Task.sleep(nanoseconds: 25_000_000)

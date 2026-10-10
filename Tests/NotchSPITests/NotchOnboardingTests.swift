@@ -312,6 +312,38 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertTrue(d.bool(forKey: "onboardingDone"))
     }
 
+    @MainActor func testCompletionAndSuccessDismissalClearPracticeAndReopenIdle() throws {
+        for dismiss in [false, true] {
+            let d = defaults()
+            let controller = NotchController(activateServices: false, onboardingDefaults: d)
+            defer { controller.prepareForTermination() }
+            controller.qaPresentOnboarding(.success)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try Data("practice".utf8).write(to: url)
+            let asset = ContextAsset(id: UUID(), sessionID: UUID(), file: QuestionAssetFile(url: url),
+                sha256: "practice", width: 160, height: 100, byteCount: 8,
+                targetFingerprint: "practice", capturedAt: Date())
+            let model = controller.model
+            model.screenshots = [asset]; model.screenshotImages[asset.id] = NSImage(size: NSSize(width: 160, height: 100))
+            model.answer = "FINAL: B. 60 km/h"
+            model.status = .ready
+            model.explanation = "Practice explanation"; model.explanationAvailable = true
+            model.recoveryAvailable = true
+            model.captureFeedback = "practice"; model.materials = [asset]
+            if dismiss { controller.qaDismissOnboarding() } else { controller.qaAdvanceOnboarding() }
+            XCTAssertTrue(d.bool(forKey: "onboardingDone"))
+            XCTAssertNil(model.onboardingStep); XCTAssertFalse(model.expanded)
+            XCTAssertEqual(model.status, .idle); XCTAssertEqual(model.statusText, L10n.statusReady)
+            XCTAssertTrue(model.answer.isEmpty); XCTAssertTrue(model.explanation.isEmpty)
+            XCTAssertTrue(model.screenshots.isEmpty); XCTAssertTrue(model.screenshotImages.isEmpty)
+            XCTAssertTrue(model.materials.isEmpty); XCTAssertTrue(model.captureFeedback.isEmpty)
+            XCTAssertFalse(model.explanationAvailable); XCTAssertFalse(model.recoveryAvailable)
+            XCTAssertNil(model.resultReason); XCTAssertEqual(model.materialAreaHeight, 0)
+            controller.setExpanded(true)
+            XCTAssertTrue(model.displayedAnswer.isEmpty); XCTAssertFalse(model.showScreenshotTray)
+        }
+    }
+
     @MainActor func testInterruptedIntakeReturnsToInstructionsAndRejectsLateSuccess() async throws {
         let d = defaults()
         let controller = NotchController(activateServices: false, onboardingDefaults: d)

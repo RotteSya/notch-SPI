@@ -26,7 +26,7 @@ enum CaptureAction: CaseIterable {
         }
     }
     static var countdownRule: String {
-        L10n.t("第 2 张起，最后一次成功截图 4 秒后自动提交。捕获期间暂停；捕获失败后恢复剩余时间。刘海内可取消整轮。", "2枚目から、最後の画像追加の4秒後に送信。キャプチャ中は一時停止し、キャプチャ失敗時は残り時間から再開。ノッチで全体を取消できます。", "From the second image, send 4 seconds after the latest addition. Capture pauses the timer; capture failure resumes it. Cancel the entire round in the notch.")
+        L10n.t("第 2 张起，最后一次成功截图 4 秒后自动提交。捕获或预览期间暂停；关闭预览后重新倒计时。可删除单张、撤销删除或点击「现在查题」，也可取消整轮。", "2枚目から、最後の画像追加の4秒後に送信。キャプチャ中は一時停止し、プレビュー中も一時停止し、閉じると4秒から再開。画像の削除・取消や手動送信もできます。", "From the second image, send 4 seconds after the latest addition. Capture pauses the timer; capture failure resumes it. Preview also pauses sending and closes with a fresh timer. Remove, undo, ask now, or cancel in the notch.")
     }
 }
 
@@ -39,4 +39,15 @@ enum CaptureStyle {
     static let actionHeight: CGFloat = 40
     static let caption = NSFont.systemFont(ofSize: 11)
     static let status = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+}
+
+@MainActor
+enum CaptureProcessing {
+    static var channelNote: String {
+        switch Settings.shared.serviceMode {
+        case ServiceMode.customKey: return L10n.t("题图将发送至所选 API 服务，费用由你的 API 账户承担。", "選択したAPIに画像を送信し、ご自身のアカウントに課金されます。", "Images go to your selected API; its billing applies.")
+        case ServiceMode.cli: return L10n.t("题图将交给所选本机 CLI，按该服务的规则处理和计费。", "選択したCLIで処理し、そのサービスの料金が適用されます。", "Images go to your selected local CLI; its processing and billing apply.")
+        default: return L10n.t("题图将发送至官方 AI 服务；成功获得可用答案扣 1 题。", "公式AIに画像を送信します。有効な回答で1問分を消費。", "Images go to the official AI service; a usable answer costs one question.")
+        }
+    }
 }

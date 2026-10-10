@@ -1,5 +1,33 @@
 # NotchSPI 工程交接
 
+2026-10-10 用户授权将当前全部产品改动（含此前本地题库）提交并推送 main。保留体验第 1、3、5 项，撤销第 4 项；包含引导练习清理与最终无回弹、底部追上的收起动画。推送前完整 Swift 439 项（4 跳过、0 失败，warnings-as-errors）、Node 625 项、类型检查、隔离 smoke、代码空白检查通过；arm64 Release 已构建并在本机签名运行。repo-health 仍为既有 2270 条历史资料断链，完整 verify 不记为通过。Git 自动部署关闭，本次只推送源码，不发版或切生产。检查日志在项目上一级 output/collapse-bottom-sync-2026-10-10/pre-push-*.log。
+
+2026-10-10 收起底部观感同步：用户确认无回弹后仍觉得底部较慢，原窗口等比例插值在高面板留下更长的底部剩余距离。仅收起时按横纵路程（含阴影留白）调整高度进度，使底部逐渐追上；侧边曲线、单一时钟、原时长、同一终帧、最终尺寸及展开弹性保留。27 项相关检查通过，80 个实际窗口采样点覆盖普通/引导与短/长窗口；新增末段实际绘制主体底部剩余距离与两侧比较，宽高全程只减。原生样例检查 70/85/100% 截图，对比上一轮底部更接近终点；非正常速度录像/主观满意度验收。arm64 Release、Developer ID 签名及验签通过，scripts/run-local.sh 已启动正常本机包，无模拟参数。证据见项目上一级 output/collapse-bottom-sync-2026-10-10/。第 1、3、5 项与引导清理保留，第 4 项仍撤销，未发布。
+
+2026-10-10 物理刘海边缘再次冒出修正：用户指出接近收起后小幅反弹仍会显得边缘重新露出，去掉收起曲线全部反向运动，改为连续衰减收缩、末端速度归零；保留普通 0.32 秒/引导 0.26 秒、三边共享进度与终帧、展开弹性和最终尺寸。27 项相关检查通过，新增 80 个实际窗口采样点宽高只减及 1001 点曲线不倒退检查。隔离原生逐帧核对 70/85/100% 与结束后状态，无重新鼓大；不宣称完整录像或帧率测量。arm64 Release、Developer ID 签名及验签通过，scripts/run-local.sh 已启动正常本机包（无模拟参数）。证据见项目上一级 output/collapse-no-reemerge-2026-10-10/。第 1、3、5 项与引导清理保留，第 4 项仍撤销；未发布。
+
+2026-10-10 收起回弹复查：用户指出上一版不自然，本轮隔离原生逐帧确认 60%→75% 阶段明显重新鼓大；改为连续衰减波形，回弹小于总行程 1%，保留普通/引导时长、共享三边进度和终帧、展开动画及硬件边界。新增 DEBUG motion-review 手动逐帧菜单。27 项硬件/引导回归及 diff 检查通过；已检查旧版 60/75/100% 与新版 50/70/90/100% 实际截图。该证据是固定时刻的原生渲染，不是完整录像或正常速度主观验收。arm64 Release、Developer ID 签名和验签通过，scripts/run-local.sh 已启动正常本机包。证据见项目上一级 output/collapse-review-2026-10-10/。第 1、3、5 项及引导清理保留，第 4 项仍撤销；未发布。
+
+2026-10-10 按用户要求收起增加小幅弹性：快速收至 96% 行程、回弹到 94%、最后柔和贴合，三边共享完整曲线与终帧，不增加尾部时间。回弹在最终尺寸之外进行，避免缩进摄像头边界；保留展开弹性、原时长与最终尺寸。27 项硬件/引导回归（窗口 80 点同步与曲线 101 点边界检查）及 diff 检查通过。arm64 Release、Developer ID 签名及验签通过，已 scripts/run-local.sh 启动正常本机包，无模拟参数；未发布。实际观感待用户体验。证据在项目上一级 output/collapse-elastic-2026-10-10/。
+
+2026-10-10 收起观感第二轮：用户反馈 smoothstep 太死板，改为 80% out-quadratic + 20% smoothstep，恢复迅速起步、柔和减速的收起节奏；三边仍共享进度与终帧，保留时长、最终尺寸和展开弹性，不新增弹跳。27 项硬件/引导回归（含原生窗口 80 点同步检查）及 diff 检查通过。arm64 Release、Developer ID 签名与验签通过，已 scripts/run-local.sh 更新并启动正常本机包，无模拟参数；未发布。主观观感待用户正常速度体验。证据在项目上一级 output/collapse-feel-2026-10-10/。
+
+2026-10-10 按用户要求调整收起观感：普通与引导收起的几何曲线统一为均衡 smoothstep，避免 out-cubic 前快后慢拖尾使较短的侧向运动看似先结束；左右与底部继续共享同一几何进度、时长和终帧，顶部锚点不动。保留展开弹性、内容淡出和最终刘海尺寸。新增真实 AppKit 窗口 80 个采样点覆盖两种收起与两种高度，验证三边进度及终帧；全套 Swift 439 项（4 跳过、0 失败，warnings-as-errors）及 diff 检查通过。arm64 Release、Developer ID 签名及验签通过，已运行 scripts/run-local.sh 启动正常本机包，无模拟参数；未发布。观感仍以用户正常速度体验为准，未以几何测试冒充用户评价。证据在项目上一级 output/collapse-sync-2026-10-10/。
+
+2026-10-10 修复完成引导后的练习残留：成功页完成或收起后清除练习题组、题图、答案、解析及恢复入口，保留完成标记和账号设置；重新展开为默认就绪与快捷键提示。中日英成功页文案同步说明清除练习。相关 33 项检查及最终引导 20 项检查通过（warnings-as-errors）；原生隔离样例实际完成并重新展开确认默认内容。arm64 Release、Developer ID 签名与验签通过，已执行 scripts/run-local.sh 启动正常 dist-qa/NotchSPI.app，无模拟参数；未发布。证据在项目上一级 output/onboarding-idle-fix-2026-10-10/。第 1、3、5 项仍保留，第 4 项仍撤销。
+
+2026-10-10 按用户要求取消体验计划第 4 项：移除本地失败转模型的确认弹窗与记忆策略、题库策略下拉框，恢复原有自动兜底及显式重新求解直接复用原图。第 1、3、5 项保留；授权页处理方说明独立保留，不再依赖被撤销的策略。Swift 437 项（4 跳过、0 失败，warnings-as-errors）、代码空白检查通过。已执行 scripts/run-local.sh，arm64 Release、Developer ID 签名及验签通过，重新启动正常 dist-qa/NotchSPI.app，沿用原账号与设置；未发布。撤销前文件备份、检查日志与说明在项目上一级 output/ux-cancel-item4-2026-10-10/。此前第 4 项实施记录为历史状态。
+
+2026-10-10 按用户“在我的电脑上运行最新版”要求，执行 scripts/run-local.sh 构建当前 arm64 Release、Developer ID 签名及验签，启动 dist-qa/NotchSPI.app。已核对唯一 NotchSPI 进程指向该正常本机包，无 QA/模拟/强制引导启动参数；沿用原有设置和账号。包含本次第 1、3、4、5 项体验优化，未远端发布。运行日志位于项目上一级 output/ux-implementation-2026-10-10/run-local.log。
+
+2026-10-10 按用户指定实施体验计划第 1、3、4、5 项，未发布：多图预览暂停、关闭重给四秒、单张删除/八秒撤销与现在查题；引导说明当前捕获范围/处理通道、提供更改目标并使用实际快捷键；本地未命中/超时/未就绪/不可用/无库/不支持分别说明，按询问/允许模型/只用本地策略拦截模型准备，显式重新求解先确认费用并复用原图；材料预览与删除独立、过期恢复提示。保留四图布局、截图飞行动效及正常自动提交。全套 Swift 441 项（4 跳过、0 失败，warnings-as-errors）、Node 625 项、类型检查和隔离服务 smoke 通过；完整 verify 仍被既有 2270 条资料断链阻断。隔离原生样例确认预览超过十秒、键盘删到一张等待、鼠标撤销原顺序及权限说明布局；无真实付费模型、未修改系统权限、未替换正常包。真实滚动题用户试用、权限拒绝返回与生产扣题仍待验证。验收记录在项目上一级 output/ux-implementation-2026-10-10/验收记录.md；保留此前未提交题库改动，版本未变。
+
+2026-10-09 本地题库两项展示修复已本机运行：本地答案以结构化纯文本绘制，保留换行及 FINAL/NSPI_、Markdown 原文，显示与复制一致；核对页支持调整大小和完整题面滚动，映射显示全文，底部按钮固定。Swift 429 项（4 跳过、0 失败）、arm64 Release、Developer ID 签名及验签通过；实际 AppKit 验证长题干与六个长选项滚动至末尾无重叠。按用户要求执行 scripts/run-local.sh，唯一正常进程指向 dist-qa/NotchSPI.app，无模拟启动参数。版本保持 2.17/build24，未远端发布。完整 verify 仍为既有 2270 条断链，其余 MVP 待验项保留。证据在项目上一级 output/local-bank-display-fix-2026-10-09/。
+
+2026-10-09 本地题库第二轮问题由 Codex 修复：冲突来源支持显式重新选择并在事务内校验版本、停用库不再返回候选；最终资格复核纳入同一查找期限且迟到结果不能展示；CSV 预览语言可反复修改而保留文件显式语言。新增 4 项回归，全库 Swift 427 项（4 跳过、0 失败），题库 32 项；arm64 Release 构建及 diff 检查通过。独立第二轮探针确认三个反例已消除，完整验证日志位于项目上一级 `output/local-question-bank-fixes-2026-10-09/`。此前文档中的真实 runner、账号/材料过期等端到端待验证项仍未宣称通过。未发布、未替换正常运行包。
+
+2026-10-09 本地题库：设置中的「题库」可导入用户自己的 JSON/CSV，离线搜索并查看答案。普通单图、讲解、简要模式先查本地；已核对且允许自动使用、并且启用库之间没有不同答案时，直接显示「本地题库 · 用户提供」。确认绑定用户当时看到的题目版本和选项映射；多个答案时，用户选定的来源可以展示一次并标明不一致。未命中沿用原模型路径，同一张图进入所选模型一次。本地命中不创建官方请求，不改变余额、累计问答或 Token。官方成功问答仍扣 1 题。JSON 与 CSV 都最多 10,000 题。QuestionBankTests 28 项、0 失败。全库 Swift 423 项（4 项跳过、0 失败）、arm64 Release、`git diff --check`、类型检查和 Node 625 项通过。`./scripts/verify.sh` 仍会停在已提交 `.release-evidence` 的 2270 条断链，完整 verify 不记为通过。10,000 题导入 2.245 秒，中文搜索 21 次 p50/p95 为 1.6/1.7 毫秒（Apple M1 Pro，16 GB，macOS 27.0；只代表这组测试输入）。版本保持 2.17 / build 24，未发布。格式、操作与验收见 [本地题库](docs/local-question-bank.md)。
+
 2026-10-09 18:49：客户端2.17 / build24已正式发布并通过夸克CLI上传。物理刘海两翼布局、收起底边修正、长名称及截图动效进入正式包；发布时修复旧SDK编译和sharp审计阻塞。干净工作树完整verify、Swift395（4跳过）、Node625、调度器17、CI10/10、Apple公证、Gatekeeper及官方下载摘要全部通过；夸克文件已按用户指定目录移至「NotchSPI Releases/NotchSPI-2.17.dmg」，后续版本沿用此目录。左侧曲率实拍校准、物理跨屏仍待确认。仅客户端发布，生产服务基线仍为下述轮播部署；详情见[2.17发布记录](docs/release-2.17-2026-10-09.md)。
 
 2026-10-09 官网自动轮播已上线：经用户“上线改动”授权，在现网独立源码基线上叠加轮播相关文件，生产切换至 `dpl_4ybnroX8acj2pAwCd8Gh8VEF7xRR`。候选588项测试、类型检查及候选/正式各16项HTTP验证通过，正式Browser确认自动切换、控制台无错误；三语首页与候选逐字节一致。价格/支付配置保持原样。后续生产基线、摘要与回退见[发布记录](docs/site-carousel-2026-10-09.md)。
@@ -161,6 +189,8 @@
 
 单次问答：热键 → 捕获 JPEG → `Prompts.build` → 通道路由（官方 / 自定义 Key / 本机 CLI）→ provider SSE → 合成 → 刘海 UI。官方通道由 `CaptureService` 绑定请求 ID，`BillingStore.begin/finish` 原子持有、结算或释放；旧 Store 方法保留为兼容适配。
 
+本地题库在普通单图、讲解、简要模式、且已有启用题库时插入于模型准备之前。命中由 `LocalCaptureSession` 展示，来源记为 `local_bank`。确认在写入别名的同一事务里核对照片当时看到的身份和修订；已保存的选项映射随后续候选返回。用户在多个答案中选定来源时，展示这一次并标明不一致，不记为自动可信。查题入口起 350 毫秒覆盖语言读取、别名、OCR 和候选查询。未命中才预热并进入原来的 `runTapped`，使用已经取得的那张图。自动模式、人格、多图、hint/guided/full 以及引导中的查题保持原路径。库文件在 Application Support 的 `com.rottesya.notchspi/QuestionBank/questions.sqlite`。规则见 [本地题库](docs/local-question-bank.md)。
+
 Objective V1 打开时：`ClientConfigService` 冻结远端分组 → 三通道使用同一 `CapturePrompt` → `ObjectiveResultStreamFilter` 隐藏机器行 → `ObjectiveResultParser` 统一映射 `ready/review/retake`。官方服务以冻结请求的 `result_protocol` 选择 control 或 Objective treatment Provider，并只在 route 层解析完整输出、决定结算或释放；Provider 不拥有协议与计费语义。匿名事件经 `ProductTelemetry` 的 7 天/100 条本地队列上传到 `product_events`；事件永不包含截图、题目、答案、Prompt 或模型原文。`ObservationJournal` 将队列、同意版本与覆盖游标原子持久化；`/v1/device-observation` 同步偏好与核验摘要。关闭时立即删队列并停止行为上传，仅同步最小偏好。服务端通过唯一序列回执验证 complete，缺口不得默认完整；事件、回执、覆盖按 90 天清理。
 
 存储选择（`server/src/storage.ts` 动态 `import()`）：Postgres（`POSTGRES_URL` / `DATABASE_URL`）→ 开发 Serverless 上的 memory → 本地 SQLite。正式模式要求持久存储，缺少必要模型预算、价格或恢复配置会拒绝启动。注册采用 fixed30 政策，历史余额保留；首次访问旧余额时建 `legacy_unknown` lot。
@@ -232,10 +262,11 @@ SPI 与阅读练习页面分别为 `/spi`、`/reading-practice`，三语共用�
 | Objective 协议 / fixture / 闸门 | [`server/src/objective-result.ts`](server/src/objective-result.ts) + [`Tests/Fixtures/objective-v1/manifest.json`](Tests/Fixtures/objective-v1/manifest.json) + [`Tests/Fixtures/objective-v1/RUNBOOK.md`](Tests/Fixtures/objective-v1/RUNBOOK.md) |
 | 发布产物流程 | [`scripts/package.sh`](scripts/package.sh) |
 | 回归闭环 | [`scripts/verify.sh`](scripts/verify.sh) |
+| 本地题库格式、导入与查题 | [`docs/local-question-bank.md`](docs/local-question-bank.md) + `Sources/NotchSPI/QuestionBank/` |
 
 ## 5. 不可破坏的不变量
 
-- `INV-BILL-001`：成功问答扣 1 题；真实失败不扣。
+- `INV-BILL-001`：官方服务的成功问答扣 1 题；真实失败不扣。本地题库命中不创建官方请求，不改变余额、累计问答或 Token。
 - `INV-BILL-002`：并发预扣不得产生负余额。
 - `INV-AUTH-001`：瞬时 401 不得自动销毁付费额度唯一凭证（设备令牌）。
 - `INV-STREAM-001`：SSE 正常序列为 `delta`×N → `usage`×1 → `DONE`。
@@ -259,6 +290,7 @@ SPI 与阅读练习页面分别为 `/spi`、`/reading-practice`，三语共用�
 | Store 接口 / schema | memory + sqlite；有 `TEST_POSTGRES_URL` 时再加 postgres（库名必须含 `test`，会 TRUNCATE） |
 | Prompt / protocol | golden fixtures + personality composition tests |
 | UI / 热键 | Swift tests + DEBUG visual QA |
+| 本地题库 | Swift `QuestionBankTests` + 设置页与核对面板 |
 | 版本 / 打包 | `VERSION.env` + repo-health + plist / codesign / notary |
 | 环境变量 | `config.ts` 与 `.env.example` 对齐（repo-health） |
 

@@ -5,7 +5,7 @@ import AppKit
 /// still run. A loopback-only switch exercises the real submission against dev.sh's mock.
 @MainActor
 enum ScreenshotVisualQA {
-    static func start(_ controller: NotchController, localService: Bool) {
+    static func start(_ controller: NotchController, localService: Bool, inspection: Bool = false) {
         guard ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" else { return }
         let args = CommandLine.arguments
         let single = args.contains("--qa-screenshot-single")
@@ -48,10 +48,17 @@ enum ScreenshotVisualQA {
             $0 + 1 < args.count ? Double(args[$0 + 1]) : nil
         } ?? 0
         var delays = single || personality || args.contains("--qa-screenshot-waiting") ? [1.0] : [1.0, 9.0, 11.0]
+        if inspection { delays = [1, 1.3] }
         if !single, !personality, args.contains("--qa-screenshot-four") { delays.append(13.0) }
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay + max(0, offset)) { [weak controller] in
                 controller?.qaPressScreenshot(mode: personality ? "personality" : "tutor", multiple: !single && !personality)
+            }
+        }
+        if inspection {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak controller] in
+                guard let controller, let id = controller.model.screenshots.first?.id else { return }
+                controller.qaOpenScreenshotPreview(id)
             }
         }
     }

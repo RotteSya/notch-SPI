@@ -148,6 +148,87 @@ final class HardwareNotchLayoutTests: XCTestCase {
         }
     }
 
+    @MainActor func testClosingBottomCatchesUpWithoutReversalAndSharesFinalFrame() throws {
+        let previous = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"]
+        setenv("NSPI_QA_REDUCE_MOTION", "0", 1)
+        defer {
+            if let previous { setenv("NSPI_QA_REDUCE_MOTION", previous, 1) }
+            else { unsetenv("NSPI_QA_REDUCE_MOTION") }
+        }
+        for step: NotchOnboardingStep? in [nil, .success] {
+            for height: CGFloat in [200, 600] {
+                let layout = screen()
+                let model = TutorModel()
+                model.onboardingStep = step; model.expanded = true
+                let expanded = layout.expanded(contentHeight: height)
+                let collapsed = layout.collapsed(sideExtension: 60)
+                let panel = NotchPanel(contentRect: expanded)
+                defer { panel.close() }
+                let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
+                    onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+                    onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+                panel.contentView = view
+                view.screenLayout = layout
+                view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+                view.qaUseManualMorphClock()
+                model.expanded = false; view.refreshScreenshotTray()
+                let duration = step == nil ? NotchPalette.morphDuration : onboardingMotionDuration(0.26)
+                var previousFrame = panel.frame
+                for sample in 1...20 {
+                    view.qaAdvanceMorph(by: duration / 20)
+                    let t = CGFloat(sample) / 20
+                    let progress = NotchMotion.close(t)
+                    let frame = panel.frame
+                    for (start, end, current) in [(expanded.minX, collapsed.minX, frame.minX),
+                                                  (expanded.maxX, collapsed.maxX, frame.maxX)] {
+                        // AppKit rounds the displayed NSWindow frame to whole points.
+                        XCTAssertEqual(current, notchLerp(start, end, progress), accuracy: 1.01)
+                    }
+                    let expected = NotchMotion.closingFrame(from: expanded, to: collapsed,
+                        progress: progress, startingExpansion: 1)
+                    XCTAssertEqual(frame.minY, expected.minY, accuracy: 1.01)
+                    XCTAssertGreaterThanOrEqual(frame.minY, notchLerp(expanded.minY, collapsed.minY, progress) - 1.01)
+                    if sample >= 16 {
+                        // Check the actual painted body, not only the window's shadow bounds.
+                        let card = panel.convertToScreen(view.qaPaintedCardFrame)
+                        let bottomRemaining = max(0, collapsed.minY - card.minY)
+                        let sidesRemaining = (abs(card.minX - collapsed.minX) + abs(card.maxX - collapsed.maxX)) / 2
+                        XCTAssertLessThanOrEqual(bottomRemaining, sidesRemaining + 1.5)
+                    }
+                    XCTAssertEqual(frame.maxY, expanded.maxY, accuracy: 0.5)
+                    XCTAssertLessThanOrEqual(frame.width, previousFrame.width, "A concealed edge must not emerge again")
+                    XCTAssertLessThanOrEqual(frame.height, previousFrame.height, "The bottom must never bounce outward")
+                    previousFrame = frame
+                    // Subpixel spring motion may round to the resting frame before the
+                    // deadline; it must never cross inward through the hardware boundary.
+                    XCTAssertGreaterThanOrEqual(frame.width, collapsed.width)
+                    XCTAssertGreaterThanOrEqual(frame.height, collapsed.height)
+                }
+                XCTAssertEqual(panel.frame, collapsed)
+            }
+        }
+        XCTAssertEqual(NotchMotion.close(0), 0)
+        XCTAssertEqual(NotchMotion.close(1), 1)
+        // Motion may soften near rest, but must never reverse after approaching the
+        // physical notch. Verify continuity as well as monotonic progress.
+        for time: CGFloat in [0.5, 0.62, 0.7, 0.76] {
+            let h: CGFloat = 0.0001
+            let left = (NotchMotion.close(time) - NotchMotion.close(time - h)) / h
+            let right = (NotchMotion.close(time + h) - NotchMotion.close(time)) / h
+            XCTAssertEqual(left, right, accuracy: 0.01)
+        }
+        XCTAssertEqual((NotchMotion.close(1) - NotchMotion.close(0.9999)) / 0.0001, 0, accuracy: 0.001)
+        var previousProgress: CGFloat = 0
+        for sample in 0...1000 {
+            let progress = NotchMotion.close(CGFloat(sample) / 1000)
+            XCTAssertGreaterThanOrEqual(progress, previousProgress, "No late outward bounce")
+            previousProgress = progress
+            XCTAssertGreaterThanOrEqual(progress, 0)
+            XCTAssertLessThanOrEqual(progress, 1, "Never contract inside the hardware cutout")
+            if sample < 1000 { XCTAssertLessThan(progress, 1, "Do not land early and leave a tail") }
+        }
+    }
+
     @MainActor func testActualViewsAvoidHardwareDuringMorphAndDisplayChanges() throws {
         let model = TutorModel()
         var layout = screen()

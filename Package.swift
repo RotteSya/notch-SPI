@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "NotchSPI",
-            path: "Sources/NotchSPI"
+            path: "Sources/NotchSPI",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
         ),
         .testTarget(
             name: "NotchSPITests",
