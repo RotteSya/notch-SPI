@@ -10,6 +10,12 @@ import Foundation
 ///
 /// Pure string logic — no AppKit, fully unit-tested.
 enum AnswerComposer {
+    static func missingResultMessage(transportOK: Bool, error: String) -> String {
+        let detail = error.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !transportOK, !detail.isEmpty { return String(detail.suffix(600)) }
+        return L10n.t("没有得到可用答案，请重新截图。", "利用可能な回答がありません。再度キャプチャしてください。",
+                      "No usable answer was returned. Capture the question again.")
+    }
 
     /// A FINAL marker at the start of a line. Tolerates the decorations a markdown-trained model
     /// sneaks in despite instructions: heading hashes, bold/italic fences on either side of the

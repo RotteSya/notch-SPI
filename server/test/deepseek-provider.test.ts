@@ -112,9 +112,10 @@ test('thinking stays isolated to its slot, preserves token caps and never stream
     maxTokens:4096,objectiveMaxTokens:4096};
   const providers=[makeProvider(selected,()=>{}).provider,makeObjectiveProvider(selected,()=>{}).provider];
   for(const [i,provider] of providers.entries()) {
-    let text='';
+    let text='',progress=0;
     const usage=await provider.stream({system:'system',task:'task',images:[],maxTokens:i===0?8192:768},
-      delta=>{text+=delta;},new AbortController().signal);
+      delta=>{text+=delta;},new AbortController().signal,()=>{progress++;});
+    assert.equal(progress,1);
     assert.equal(text,'C');assert.deepEqual(usage,{inputTokens:150,outputTokens:350});
   }
   assert.deepEqual(bodies[0]!.thinking,{type:'disabled'});assert.equal(bodies[0]!.temperature,0);

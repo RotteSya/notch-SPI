@@ -1,5 +1,5 @@
 {
-  "approved_at": "2026-09-13",
+  "approved_at": "2026-10-11",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
@@ -15,7 +15,7 @@
   },
   "environment": {
     "MODEL_COST_CURRENCY": "CNY",
-    "MODEL_DAILY_BUDGET_MICROS": "20000000",
+    "MODEL_DAILY_BUDGET_MICROS": "120000000",
     "MODEL_BUDGET_UTC_OFFSET_MINUTES": "480",
     "ATTEMPT_BUDGET_UPPER_MICROS": "3000000",
     "MODEL_PRICING_VERSION": "2026-09-13-deepseek-flash-cny-peak",

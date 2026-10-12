@@ -1,5 +1,9 @@
 # NotchSPI 工程交接
 
+2026-10-12 查题超时修复已正式上线 dpl_2jgC7Pc3ednm2FR7BgYxei9y7CGF：推理流算启动进度，避免 20 秒误杀，保留 90 秒总时限及 low 思考。永久日预算 120 CNY 跨日验证通过。主代码 626 / 生产基线 589 测试通过，正式多选/排序 3.6–4.1 秒正确，模糊题不扣题；本机真实截图函数题显示正确 B。详见恢复记录。
+
+2026-10-11 查题配置最终决定：按用户明确要求，正式查题深度思考恢复low，永久每日预算20→120 CNY（上海时区），当天预算行已是120；生产配置和deploy/production-model-budget.json已同步。新部署dpl_HBrKjCmAfDXnAexdLVGjnz4ALCwx复用原生产源码。此前关闭思考的2.687秒测试不代表low性能。客户端错误提示修复仍保留。见[恢复记录](docs/answer-recovery-2026-10-11.md)。
+
 2026-10-10 按用户要求移除本地题库：删除设置页与快捷菜单入口、导入/检索/SQLite/OCR/候选核对实现，以及答案来源和本地重新求解分支；单图直接预热并进入原有模型通道，多图预览/删除/撤销、解释和复制保留。删除题库专用测试与示例，原功能文档标为历史归档。已有 Application Support 题库数据原样保留，当前应用不再读取或写入。完整 Swift 405 项（4 跳过、0 失败，warnings-as-errors）、arm64 Release、代码空白检查通过；离线 DEBUG 实际核对六项设置页、页面切换与答案展示。repo-health 仍为既有 2270 条历史断链，完整 verify 不记为通过；未调用真实模型。已执行 scripts/run-local.sh，Developer ID 签名和验签通过，唯一运行进程为正常 dist-qa/NotchSPI.app，无 QA/模拟参数。日志与界面证据在 `output/remove-question-bank-2026-10-10/`。用户随后授权将本次移除改动提交并推送 main；Git 自动部署关闭，本次仅同步源码，不发版或切生产。
 
 2026-10-10 用户授权将当前全部产品改动（含此前本地题库）提交并推送 main。保留体验第 1、3、5 项，撤销第 4 项；包含引导练习清理与最终无回弹、底部追上的收起动画。推送前完整 Swift 439 项（4 跳过、0 失败，warnings-as-errors）、Node 625 项、类型检查、隔离 smoke、代码空白检查通过；arm64 Release 已构建并在本机签名运行。repo-health 仍为既有 2270 条历史资料断链，完整 verify 不记为通过。Git 自动部署关闭，本次只推送源码，不发版或切生产。检查日志在项目上一级 output/collapse-bottom-sync-2026-10-10/pre-push-*.log。

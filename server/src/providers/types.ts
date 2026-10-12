@@ -30,6 +30,7 @@ export interface Provider {
     req: CaptureRequest,
     onDelta: (text: string) => void,
     signal: AbortSignal,
+    onProgress?: () => void,
   ): Promise<Usage>;
 }
 

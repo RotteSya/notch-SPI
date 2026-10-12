@@ -38,6 +38,7 @@ export class OpenAIProvider implements Provider {
     req: CaptureRequest,
     onDelta: (text: string) => void,
     signal: AbortSignal,
+    onProgress?: () => void,
   ): Promise<Usage> {
     const body = {
       model: this.model,
@@ -81,6 +82,9 @@ export class OpenAIProvider implements Provider {
       // the capture route treats it as a failure and never charges (mirrors the Anthropic
       // provider); otherwise it would look like an empty but successful answer.
       if (ev.error) throw new Error(ev.error.message ?? 'OpenAI 流式错误');
+      const reasoning = ev.choices?.[0]?.delta?.reasoning_content;
+      // Reasoning is activity, not answer text. Never forward its contents to clients.
+      if (typeof reasoning === 'string' && reasoning.length > 0) onProgress?.();
       const text = ev.choices?.[0]?.delta?.content;
       if (typeof text === 'string' && text.length > 0) onDelta(text);
       if (ev.usage) {
@@ -93,7 +97,7 @@ export class OpenAIProvider implements Provider {
 }
 
 interface OpenAIChunk {
-  choices?: Array<{ delta?: { content?: string } }>;
+  choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string };
 }

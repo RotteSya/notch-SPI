@@ -5,6 +5,11 @@ import XCTest
 /// structurally impossible: the LAST marker always wins, and the marker keyword itself is
 /// never shown as text.
 final class AnswerComposerTests: XCTestCase {
+    func testMissingResultPreservesServiceFailure() {
+        XCTAssertEqual(AnswerComposer.missingResultMessage(transportOK: false, error: " budget exhausted \n"), "budget exhausted")
+        XCTAssertNotEqual(AnswerComposer.missingResultMessage(transportOK: true, error: "stale error"), "stale error")
+        XCTAssertFalse(AnswerComposer.missingResultMessage(transportOK: false, error: " \n").isEmpty)
+    }
 
     // MARK: Basic parsing
 

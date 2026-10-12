@@ -2426,9 +2426,7 @@ final class NotchController: NSObject {
                        composition?.parserPath == ObjectiveParserPath.none {
                         self.model.answer = ""
                         self.model.status = .error
-                        self.model.statusText = L10n.t(
-                            "没有得到可用答案，请重新截图。", "利用可能な回答がありません。再度キャプチャしてください。",
-                            "No usable answer was returned. Capture the question again.")
+                        self.model.statusText = AnswerComposer.missingResultMessage(transportOK: ok, error: stderr)
                     } else if self.model.answer.isEmpty {
                         let errorDetail = String(stderr.suffix(600))
                         let errorBody = self.model.onboardingStep == nil

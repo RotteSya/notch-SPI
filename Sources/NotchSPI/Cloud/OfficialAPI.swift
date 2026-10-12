@@ -184,6 +184,10 @@ enum OfficialAPI {
     /// own message. Known classes carry a way out with zero jargon.
     static func localizedMessage(code: String?, fallback: String) -> String {
         switch code {
+        case "budget_exceeded":
+            return L10n.t("服务端今日预算已用完，本次未扣题。你的剩余题数不受影响，请联系支持恢复服务。",
+                          "本日のサービス予算に達しました。今回は質問数を消費していません。サポートにお問い合わせください。",
+                          "The service's daily budget is exhausted. This attempt was not charged. Contact support to restore service.")
         case "payload_too_large":
             return captureTooLargeMessage
         case "insufficient_quota":

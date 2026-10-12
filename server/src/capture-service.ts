@@ -347,7 +347,11 @@ export class CaptureService {
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
             if(Buffer.byteLength(raw+chunk)<=64*1024) raw+=chunk; else {overflow=true;abort.abort();}
             if(!overflow) send({type:'delta',text:chunk});
-          },abort.signal);
+          },abort.signal,()=>{
+            // A thinking model can be healthy before it emits its first visible answer.
+            // Keep the absolute 90-second deadline; only retire the startup deadline.
+            if(accepting&&!abort.signal.aborted) clearTimeout(firstTimer);
+          });
         };
         usage=await Promise.race([generate(),deadline]);
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}

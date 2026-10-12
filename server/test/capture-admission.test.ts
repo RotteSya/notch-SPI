@@ -274,3 +274,26 @@ for(const [kind,make] of implementations) {
     } finally {await f.close();}
   });
 }
+
+
+test('thinking progress survives the 20-second startup deadline without leaking reasoning', {timeout:30_000}, async()=>{
+  const f=await fixture(()=>new MemoryStore());
+  try {
+    f.provider.stream=async(_request,delta,signal,onProgress)=>{
+      onProgress?.();
+      await new Promise<void>((resolve,reject)=>{
+        const timer=setTimeout(resolve,20_250);
+        signal.addEventListener('abort',()=>{clearTimeout(timer);reject(new Error('aborted'));},{once:true});
+      });
+      delta(ready);return {inputTokens:10,outputTokens:2};
+    };
+    const target=await f.target('solve'),req=f.request(target.url,target.payload);
+    const response=await req.response;await req.finished;
+    assert.equal(response?.status,200);
+    assert.match(response!.payload,/FINAL: B/);
+    assert.match(response!.payload,/data: \[DONE\]/);
+    assert.equal((await f.store.billing.capture(f.token,target.id))?.settlementStatus,'settled');
+    assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);
+    assert.equal((await f.store.billing.quota(f.token))?.balanceQuestions,29);
+  } finally {await f.close();}
+});
