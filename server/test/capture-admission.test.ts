@@ -328,3 +328,45 @@ for (const operation of ['solve', 'explain', 'recover'] as const) {
     } finally { await f.close(); }
   });
 }
+
+for(const [kind,make] of implementations) {
+  for(const visible of ['',ready]) test(`${kind}: token truncation never bills even with a valid-looking answer`,async()=>{
+    const f=await fixture(make);
+    try {
+      const target=await f.target('solve');
+      let calls=0;
+      f.provider.stream=async(_req,delta)=>{calls++;delta(visible);return {inputTokens:1314,outputTokens:4096,finishReason:'length'};};
+      const request=f.request(target.url,target.payload);const result=await request.response;await request.finished;
+      assert.match(result!.payload,/model_output_limit/);
+      assert.match(result!.payload,/"questions_charged":0/);
+      assert.match(result!.payload,/"usable_result":false/);
+      assert.equal((await f.store.billing.capture(f.token,target.id))?.settlementStatus,'released');
+      assert.equal((await f.store.billing.quota(f.token))?.balanceQuestions,30);
+      assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);
+      assert.equal((await f.store.billing.attempts(f.token))[0]?.status,'failed');
+      assert.equal(calls,1); // No invisible retry/spending loop.
+    } finally {await f.close();}
+  });
+  test(`${kind}: a complete answer above the former 4096 cap settles exactly once`,async()=>{
+    const f=await fixture(make);
+    try {
+      const target=await f.target('solve');
+      f.provider.stream=async(_req,delta)=>{delta(ready);return {inputTokens:1314,outputTokens:9000,finishReason:'stop'};};
+      const request=f.request(target.url,target.payload);const result=await request.response;await request.finished;
+      assert.match(result!.payload,/"questions_charged":1/);
+      assert.equal((await f.store.billing.quota(f.token))?.balanceQuestions,29);
+      assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);
+    } finally {await f.close();}
+  });
+  for(const operation of ['explain','recover'] as const) test(`${kind}: ${operation} never accepts a truncated valid-looking payload`,async()=>{
+    const f=await fixture(make);
+    try {
+      const target=await f.target(operation);
+      f.provider.stream=async(_req,delta)=>{delta(operation==='explain'?JSON.stringify({consistent:true,explanation:'Partial'}):ready);return {inputTokens:10,outputTokens:8192,finishReason:'length'};};
+      const request=f.request(target.url,target.payload);const result=await request.response;await request.finished;
+      assert.match(result!.payload,/model_output_limit/);assert.doesNotMatch(result!.payload,/"type":"delta"/);
+      assert.match(result!.payload,/"questions_charged":0/);
+      assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);
+    } finally {await f.close();}
+  });
+}

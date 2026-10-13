@@ -200,3 +200,32 @@ test('per-request effort overrides DeepSeek defaults without leaking across call
   await openai.stream({system: 's', task: 't', images: [], reasoningEffort: 'max'}, () => {}, new AbortController().signal);
   assert.equal(bodies.at(-1)!.reasoning_effort, undefined);
 });
+
+test('captures length termination after reasoning-only output without leaking it', async t => {
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response([
+    'data: {"choices":[{"delta":{"reasoning_content":"private work"},"finish_reason":null}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"length"}]}',
+    'data: {"choices":[],"usage":{"prompt_tokens":1314,"completion_tokens":4096}}',
+    'data: [DONE]','',
+  ].join('\n'));
+  t.after(()=>{globalThis.fetch=originalFetch;});
+  const provider=new OpenAIProvider('test','https://example.test','test',32768,{name:'deepseek'});
+  let visible='',progress=0;
+  const usage=await provider.stream({system:'s',task:'t',images:[]},v=>{visible+=v;},new AbortController().signal,()=>{progress++;});
+  assert.equal(visible,'');assert.equal(progress,1);
+  assert.deepEqual(usage,{inputTokens:1314,outputTokens:4096,finishReason:'length'});
+});
+
+test('larger answer allowance keeps low thinking and stops naturally without padding', async t => {
+  const originalFetch=globalThis.fetch;let body:Record<string,unknown>={};
+  globalThis.fetch=async(_url,init)=>{body=JSON.parse(String(init?.body));return new Response([
+    'data: {"choices":[{"delta":{"content":"FINAL: B"},"finish_reason":"stop"}]}',
+    'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":6000}}','data: [DONE]','',
+  ].join('\n'));};
+  t.after(()=>{globalThis.fetch=originalFetch;});
+  const provider=new OpenAIProvider('test','https://example.test','test',32768,{name:'deepseek'});
+  const usage=await provider.stream({system:'s',task:'t',images:[],reasoningEffort:'low'},()=>{},new AbortController().signal);
+  assert.equal(body.max_tokens,32768);assert.equal(body.reasoning_effort,'low');
+  assert.deepEqual(body.thinking,{type:'enabled'});assert.equal(usage.finishReason,'stop');
+});

@@ -24,6 +24,8 @@ export interface Usage {
   /** null means the vendor completed without a usage record; never reinterpret it as zero. */
   inputTokens: number | null;
   outputTokens: number | null;
+  /** Vendor termination signal; absent for older adapters, never inferred from token counts. */
+  finishReason?: string;
 }
 
 export interface Provider {

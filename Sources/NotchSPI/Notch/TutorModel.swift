@@ -26,11 +26,17 @@ final class TutorModel: ObservableObject {
     @Published var explanationAvailable = false
     @Published var explanationAttempted = false
     @Published var explanationLoading = false
+    @Published var explanationFailed = false
     @Published var recoveryAvailable = false
     @Published var recoveryAttempted = false
     var renderedAnswer: String {
         guard !explanation.isEmpty, let final = AnswerComposer.parse(answer, streaming: false).final else { return answer }
         return explanation + "\nFINAL: " + final
+    }
+    var canExpandAnswer: Bool {
+        mode == "tutor" && onboardingStep == nil && status == .idle && !hidesAnswer
+            && !screenshotCapturing && captureFeedback.isEmpty && resultState != .retake
+            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && answer != L10n.noOutput
     }
     @Published var screenshots: [ContextAsset] = []
     var screenshotImages: [UUID: NSImage] = [:]

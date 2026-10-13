@@ -88,6 +88,8 @@ export class OpenAIProvider implements Provider {
       // the capture route treats it as a failure and never charges (mirrors the Anthropic
       // provider); otherwise it would look like an empty but successful answer.
       if (ev.error) throw new Error(ev.error.message ?? 'OpenAI 流式错误');
+      const finishReason = ev.choices?.[0]?.finish_reason;
+      if (typeof finishReason === 'string') usage.finishReason = finishReason;
       const reasoning = ev.choices?.[0]?.delta?.reasoning_content;
       // Reasoning is activity, not answer text. Never forward its contents to clients.
       if (typeof reasoning === 'string' && reasoning.length > 0) onProgress?.();
@@ -103,7 +105,7 @@ export class OpenAIProvider implements Provider {
 }
 
 interface OpenAIChunk {
-  choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>;
+  choices?: Array<{ finish_reason?: string | null; delta?: { content?: string; reasoning_content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string };
 }

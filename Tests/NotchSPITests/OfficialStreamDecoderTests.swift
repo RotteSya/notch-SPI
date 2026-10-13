@@ -28,6 +28,17 @@ final class OfficialStreamDecoderTests: XCTestCase {
         try consume(Data(text.utf8), screen: screen, operation: operation)
     }
 
+    func testOutputLimitKeepsReleasedReceiptAndCannotBecomeSuccess() throws {
+        let error = try frame(["type": "error", "error": ["code": "model_output_limit", "message": "limit"]])
+        let receipt = try frame(usage(["terminal_state": "failed", "settlement_status": "released",
+                                      "questions_charged": 0, "usable_result": false, "can_retry": true,
+                                      "can_recover": false, "balance_questions": 30]))
+        let (_, outcome) = try consume(delta() + error + receipt + "data: [DONE]\n\n")
+        XCTAssertNotNil(outcome.serviceError)
+        XCTAssertNotEqual(OfficialAPI.localizedMessage(code: "model_output_limit", fallback: "limit"), "limit")
+        XCTAssertNotEqual(OfficialAPI.localizedMessage(code: "upstream_timeout", fallback: "timeout"), "timeout")
+    }
+
     func testByteFramingPreservesUnicodeBOMCommentsAndMultilineDataAcrossCRLF() throws {
         let beginning = "\u{FEFF}: keepalive\r\nid: unused\r\n\r\ndata: {\"type\":\"delta\",\r\ndata: \"text\":\"日本語 中文 🔎\\nFINAL: B\"}\r\n\r\n"
         let (events, outcome) = try consume(beginning + frame(usage()) + "data: [DONE]\n\n")

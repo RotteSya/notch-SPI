@@ -10,6 +10,7 @@ export type ErrorCode =
   | 'invalid_token'      // 401 — unknown/expired device token
   | 'bad_request'        // 400 — malformed input
   | 'rate_limited'       // 429 — too many requests (registration / capture concurrency)
+  | 'model_output_limit' | 'upstream_timeout'
   | 'upstream_error'     // 502 — the model vendor call failed
   | 'not_found'          // 404
   | 'idempotency_conflict' | 'capture_in_progress' | 'capture_already_finalized' | 'device_busy' | 'service_maintenance'

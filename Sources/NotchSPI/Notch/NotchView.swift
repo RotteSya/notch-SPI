@@ -21,6 +21,7 @@ import QuartzCore
 final class NotchView: NSView {
     let onboarding = NotchOnboardingView(frame: .zero)
     var onExplanation: (() -> Void)?
+    var onExpandAnswer: (() -> Void)?
     var onAddMaterial: (() -> Void)?
     var onNewGroup: (() -> Void)?
     var onSelectRegion: (() -> Void)?
@@ -104,6 +105,10 @@ final class NotchView: NSView {
     private lazy var gearButton = NotchControlButton(
         systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
+    private lazy var expandAnswerButton = NotchControlButton(
+        systemName: "arrow.up.left.and.arrow.down.right", tint: NotchPalette.secondary,
+        label: L10n.t("展开查看完整答案", "回答の詳細を開く", "Open full answer"),
+        action: { [weak self] in self?.onExpandAnswer?() })
     private let answerScroll = FollowScrollView()
     private let answerStream = StreamingAnswerView()
     /// Top-edge dissolve for scrolled answers: once the text scrolls under the header it fades
@@ -201,7 +206,7 @@ final class NotchView: NSView {
         ])
 
         configureAnswerArea()
-        [modeLabel, statusText, capsule, gearButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
+        [modeLabel, statusText, capsule, gearButton, expandAnswerButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
         expandedContent.wantsLayer = true
         expandedContent.layer?.mask = contentMask
         addSubview(expandedContent)
@@ -685,6 +690,11 @@ final class NotchView: NSView {
 
         let gearX = width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
+        let expandFits = screenLayout?.hasTopWings != true || gearX - 32 >= (cutout?.maxX ?? 0) + 8
+        let showExpand = model.canExpandAnswer && expandFits && onboarding.isHidden
+        expandAnswerButton.isHidden = !showExpand
+        expandAnswerButton.frame = CGRect(x: gearX - 32, y: cy - 12, width: 28, height: 24)
+        let controlsX = showExpand ? gearX - 32 : gearX
 
         var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
         // Size the label by asking its cell (NSString measurement misses the cell's own
@@ -699,8 +709,8 @@ final class NotchView: NSView {
         // Persona names are user content. Reserve room for status/quota before fitting the
         // name, so a long label cannot consume the header or overlap the wordmark.
         let capWidth = model.mode == "personality" && !model.autoActive
-            ? min(cap.width, 200, max(0, gearX - 8 - x - 8 - 180)) : cap.width
-        let capX = gearX - 8 - capWidth
+            ? min(cap.width, 200, max(0, controlsX - 8 - x - 8 - 180)) : cap.width
+        let capX = controlsX - 8 - capWidth
         capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: capWidth, height: cap.height)
 
         let statusW = max(0, capX - 8 - x)
@@ -719,8 +729,8 @@ final class NotchView: NSView {
         statusText.frame = CGRect(x: inset + 24, y: 26, width: leftWidth, height: statusH)
         let rightStart = max(inset, cutout.maxX + 8)
         let gearFits = gearX >= rightStart
-        let pillWidth = min(cap.width, 200, max(0, gearX - 8 - rightStart))
-        capsule.frame = CGRect(x: gearX - 8 - pillWidth, y: cy - cap.height / 2,
+        let pillWidth = min(cap.width, 200, max(0, controlsX - 8 - rightStart))
+        capsule.frame = CGRect(x: controlsX - 8 - pillWidth, y: cy - cap.height / 2,
                                width: pillWidth, height: cap.height)
         modeLabel.isHidden = !daily || leftWidth < 24
         statusText.isHidden = !daily || leftWidth < 24

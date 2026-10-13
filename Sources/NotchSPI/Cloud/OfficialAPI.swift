@@ -200,6 +200,14 @@ enum OfficialAPI {
                 "服务暂时未接受本机凭证。凭证已保留，请在账户页重试或联系支持。",
                 "認証情報は保持されています。アカウント画面から再試行するか、サポートにお問い合わせください。",
                 "The service did not accept this device credential. It has been preserved. Retry in Account or contact support.")
+        case "model_output_limit":
+            return L10n.t("本题生成长度达到上限，未获得完整答案，本次未扣题。可缩小到一个小问后重试。",
+                          "生成の長さが上限に達し、回答を完成できませんでした。今回は消費されていません。小問ごとにお試しください。",
+                          "The output limit was reached before a complete answer. This attempt was not charged. Try one subquestion at a time.")
+        case "upstream_timeout":
+            return L10n.t("本题生成超时，未获得完整答案，本次未扣题。请稍后重试。",
+                          "回答の生成がタイムアウトしました。今回は消費されていません。しばらくして再試行してください。",
+                          "Answer generation timed out. This attempt was not charged. Try again shortly.")
         case "upstream_error":
             return L10n.t(
                 "答案生成服务暂时出了点问题。请核对本次额度后重试。",

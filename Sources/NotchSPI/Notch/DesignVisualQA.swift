@@ -39,7 +39,7 @@ enum DesignVisualQA {
         model.status = .idle
         model.answer = "FINAL: B. 60 km/h"
         let collectionCount = scenario.hasPrefix("collecting-") ? Int(scenario.suffix(1)) : nil
-        let count = collectionCount ?? (["history", "multiple", "collecting", "mixed"].contains(scenario) ? 4 : 1)
+        let count = collectionCount ?? (["expanded-answer", "history", "multiple", "collecting", "mixed"].contains(scenario) ? 4 : 1)
         for index in 0..<count {
             let size = scenario == "mixed" && index == 1 ? NSSize(width: 400, height: 700)
                 : scenario == "mixed" && index == 2 ? NSSize(width: 1100, height: 300) : NSSize(width: 640, height: 400)
@@ -69,6 +69,15 @@ enum DesignVisualQA {
             }
         }
         model.screenshotStatus = L10n.t("已提交 \(model.screenshots.count) 张截图", "画像 \(model.screenshots.count) 枚を送信済み", "\(model.screenshots.count) screenshot(s) submitted")
+        if scenario == "expanded-answer" {
+            controller.qaSeedExpandedAnswer(.init(captureID: UUID(), sessionID: UUID(), generation: 0,
+                assets: model.screenshots, expiresAt: Date().addingTimeInterval(900)))
+            model.explanation = Array(repeating: "平均速度 = 总路程 ÷ 总时间。\n\n已知路程 120 km，时间 2 h，所以 120 ÷ 2 = 60 km/h。注意检查题目给出的单位，并与选项核对。", count: 14).joined(separator: "\n\n") + "\n\n解释结束。"
+            controller.setExpanded(true)
+            controller.qaRefreshScreenshotLayout()
+            controller.openExpandedAnswer()
+            return controller
+        }
         if scenario == "history" || scenario == "history-empty" {
             if scenario == "history" {
                 for index in 0..<4 {

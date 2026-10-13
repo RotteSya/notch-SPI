@@ -278,6 +278,7 @@ export class CaptureService {
           },abort.signal);
         };
         usage=await Promise.race([generate(),deadline]);
+        if(usage?.finishReason!==undefined && usage.finishReason!=='stop') throw new Error('incomplete model output');
         if(operation==='explain') {
           const explanation=JSON.parse(raw) as Record<string,unknown>;
           if(Object.keys(explanation).sort().join(',')!=='consistent,explanation'||typeof explanation.consistent!=='boolean'||
@@ -311,7 +312,9 @@ export class CaptureService {
           const quota=settlement?.account,committed=settlement?.capture;
           if(!quota||!committed||committed.settlementStatus==='held'||(success&&!committed.usableResult)) throw new Error('Settlement pending');
           if(success)send({type:'delta',text:responseText});
-          if(!success)send({type:'error',error:{code:'upstream_error',message:'未获得补充结果；原答案保持不变'}});
+          if(!success)send({type:'error',error:usage?.finishReason==='length'
+            ?{code:'model_output_limit',message:'补充生成达到长度上限，原答案保持不变，本次不另扣题。'}
+            :{code:'upstream_error',message:'未获得补充结果；原答案保持不变'}});
           const ancestor = operation === 'recover' ? await store.billing.capture(token, parentId) : null;
           send({...terminalUsage(committed,quota,usage),
             ...(ancestor ? this.explanationFields(committed, ancestor) : {explanation_available:false})});
@@ -329,7 +332,7 @@ export class CaptureService {
     input:CaptureRequest,provider:AppContext['provider'],model:string,screen:boolean,abort:AbortController,admission:Admission):Promise<void> {
     const {store,config}=this.ctx;
     const {attemptId}=admission;
-    let raw='',overflow=false,deliveredChars=0,accepting=true,usage:Usage|null=null,upstreamFailed=false;
+    let raw='',overflow=false,deliveredChars=0,accepting=true,usage:Usage|null=null,upstreamFailed=false,timedOut=false;
     let firstTimer:ReturnType<typeof setTimeout>|undefined,totalTimer:ReturnType<typeof setTimeout>|undefined;
     let send:(event:StreamEvent)=>void=()=>{};
     const fullModel=provider.name+':'+model;
@@ -343,7 +346,7 @@ export class CaptureService {
       send=event=>{if(!reply.raw.destroyed&&!reply.raw.writableEnded){try{rawSend(event);}catch{/* peer closed */}}};
       if(abort.signal.aborted)return;
       const deadline=new Promise<never>((_,reject)=>{
-        const stop=()=>{abort.abort();reject(new Error('deadline'));};
+        const stop=()=>{timedOut=true;abort.abort();reject(new Error('deadline'));};
         firstTimer=setTimeout(stop,20_000);totalTimer=setTimeout(stop,90_000);
         abort.signal.addEventListener('abort',()=>reject(new Error('canceled')),{once:true});
       });
@@ -363,14 +366,17 @@ export class CaptureService {
         };
         usage=await Promise.race([generate(),deadline]);
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}
-      const objective=composeObjectiveResult(overflow?'':raw,true);
-      const result=screen?composeScreenQuery(overflow?'':raw):null;
+      const truncated=usage?.finishReason==='length';
+      const rejectedFinish=usage?.finishReason!==undefined && usage.finishReason!=='stop';
+      const invalidCompletion=overflow||rejectedFinish;
+      const objective=composeObjectiveResult(invalidCompletion?'':raw,true);
+      const result=screen?composeScreenQuery(invalidCompletion?'':raw):null;
       const objectiveMode=capture.resultProtocol==='objective_v1';
-      const charge=screen?result!.charge:objectiveMode?objectiveResultIsBillable(objective):
-        !overflow&&(!upstreamFailed?deliveredChars>0:abort.signal.aborted&&deliveredChars>=200);
+      const charge=!invalidCompletion && (screen?result!.charge:objectiveMode?objectiveResultIsBillable(objective):
+        (!upstreamFailed?deliveredChars>0:abort.signal.aborted&&deliveredChars>=200));
       const terminalState=screen?result!.terminalState:objectiveMode&&objective.state==='retake'?'retake':charge?'usable':'failed';
       const finalAnswer=objective.finalAnswer;
-      await store.billing.finishAttemptAndBudget(token,attemptId,{status:upstreamFailed?'failed':'succeeded',inputTokens:usage?.inputTokens??null,
+      await store.billing.finishAttemptAndBudget(token,attemptId,{status:upstreamFailed||invalidCompletion?'failed':'succeeded',inputTokens:usage?.inputTokens??null,
         outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},cost()??null);
       const settlement=await store.billing.finishWithCapture({token,captureId:capture.captureId,charge,terminalState,
         inputTokens:usage?.inputTokens,outputTokens:usage?.outputTokens,model:fullModel,
@@ -379,7 +385,14 @@ export class CaptureService {
         terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion});
       const quota=settlement?.account,committed=settlement?.capture;
       if(!quota||!committed||committed.settlementStatus==='held') throw new Error('Settlement pending');
-      if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
+      if(terminalState==='failed') req.log.warn({captureId:capture.captureId,provider:provider.name,model,
+        failure:truncated?'model_output_limit':timedOut?'upstream_timeout':'upstream_error',
+        finishReason:usage?.finishReason??null,inputTokens:usage?.inputTokens??null,
+        outputTokens:usage?.outputTokens??null,visibleCharacters:deliveredChars,
+        settlementStatus:committed.settlementStatus},'answer generation failed');
+      if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣题。请缩小到一个小问后重试。'}});
+      else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣题。请稍后重试。'}});
+      else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
       else if(terminalState==='failed') send({type:'error',error:{code:'upstream_error',message:'未获得可用结果，请稍后重试'}});
       send({...terminalUsage(committed,quota,usage),...this.explanationFields(committed, committed)});
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.write(SSE_DONE);

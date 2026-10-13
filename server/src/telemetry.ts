@@ -12,7 +12,7 @@ const KINDS = new Set(['single_choice', 'multiple_choice', 'ordering', 'short_fi
 const STATES = new Set(['ready', 'review', 'retake']);
 const PATHS = new Set(['v1', 'legacy_fallback', 'legacy', 'none']);
 const ACTIONS = new Set(['copy', 'reveal_reasoning', 'retry', 'show_explanation', 'add_context', 'remove_context', 'start_new_session', 'select_region', 'confirm_review', 'recover_answer', 'export_feedback']);
-const ERROR_CODES = new Set(['protocol_invalid','invalid_scope','multiple_targets','unsupported_scope','no_usable_result','feature_disabled','budget_exceeded','upstream_error','internal','transport_error','blank_capture','capture_failed','watchdog_timeout','user_toggled','capture_hotkey','stop_button','question_cap','quota_exhausted','run_failed','idle_timeout','hash_failures']);
+const ERROR_CODES = new Set(['protocol_invalid','invalid_scope','multiple_targets','unsupported_scope','no_usable_result','feature_disabled','budget_exceeded','upstream_error','model_output_limit','upstream_timeout','internal','transport_error','blank_capture','capture_failed','watchdog_timeout','user_toggled','capture_hotkey','stop_button','question_cap','quota_exhausted','run_failed','idle_timeout','hash_failures']);
 const VARIANTS = new Set(['control','objective_v1']);
 const EVENT_KEYS = new Set([
   'event_id', 'capture_id', 'occurred_at', 'event_name', 'trigger', 'channel', 'mode', 'depth',

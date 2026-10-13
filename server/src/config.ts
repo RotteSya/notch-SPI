@@ -215,8 +215,8 @@ export const config = {
 export type Config = typeof config;
 
 export function validateTrialPolicy(c: Config): void {
-  if (!Number.isSafeInteger(c.explanationMaxTokens) || c.explanationMaxTokens < 1 || c.explanationMaxTokens > 4096) {
-    throw new Error('EXPLANATION_MAX_TOKENS must be an integer from 1 to 4096');
+  if (!Number.isSafeInteger(c.explanationMaxTokens) || c.explanationMaxTokens < 1 || c.explanationMaxTokens > 32768) {
+    throw new Error('EXPLANATION_MAX_TOKENS must be an integer from 1 to 32768');
   }
   if (!Number.isInteger(c.modelBudgetUtcOffsetMinutes) || c.modelBudgetUtcOffsetMinutes < -720 || c.modelBudgetUtcOffsetMinutes > 840) {
     throw new Error('MODEL_BUDGET_UTC_OFFSET_MINUTES must be an integer from -720 to 840');

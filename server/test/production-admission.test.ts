@@ -28,6 +28,6 @@ test('production admission requires real priced slots, fixed30, a finite shared 
 
 test('explanation output ceilings are explicit bounded integers and retain the default',()=>{
   assert.equal(config.explanationMaxTokens,768);
-  for(const cap of [1,768,2048,4096])assert.doesNotThrow(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}));
-  for(const cap of [0,-1,0.5,4097,NaN,Infinity])assert.throws(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}),/EXPLANATION_MAX_TOKENS/);
+  for(const cap of [1,768,2048,4096,8192,32768])assert.doesNotThrow(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}));
+  for(const cap of [0,-1,0.5,32769,NaN,Infinity])assert.throws(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}),/EXPLANATION_MAX_TOKENS/);
 });

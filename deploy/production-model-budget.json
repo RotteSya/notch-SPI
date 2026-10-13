@@ -1,14 +1,14 @@
 {
-  "approved_at": "2026-10-11",
+  "approved_at": "2026-10-14",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
     "currency": "CNY",
-    "basis": "Conservative peak cache-miss valuation for all accepted input tokens and all completion tokens, including hidden reasoning. Not a vendor invoice or prepaid daily charge. A 3 CNY reservation covers even 1,048,576 input tokens plus 4,096 output tokens at 2/8 CNY per million; actual usage settles independently. No automatic model or budget increase.",
+    "basis": "Conservative peak cache-miss valuation for all accepted input and completion tokens, including hidden reasoning. Not a vendor invoice. The existing 3 CNY reservation covers 1,048,576 input tokens plus 32,768 output tokens at 2/8 CNY per million (2.359296 CNY). Daily budget and model remain unchanged; no automatic budget increase.",
     "context_input_upper_tokens": 1048576,
-    "output_upper_tokens": 4096,
-    "calculated_upper_micros": 2129920,
+    "output_upper_tokens": 32768,
+    "calculated_upper_micros": 2359296,
     "sources": [
       "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
     ]
@@ -22,15 +22,15 @@
     "MODEL_PRICING_JSON": "[{\"model\":\"deepseek:deepseek-flash\",\"input_micros_per_million_tokens\":2000000,\"output_micros_per_million_tokens\":8000000}]",
     "OFFICIAL_PROVIDER": "deepseek",
     "OFFICIAL_MODEL": "deepseek-flash",
-    "OFFICIAL_MAX_TOKENS": "4096",
+    "OFFICIAL_MAX_TOKENS": "32768",
     "OFFICIAL_DEEPSEEK_REASONING_EFFORT": "low",
     "OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
     "OBJECTIVE_RESULT_V1_PROVIDER": "deepseek",
     "OBJECTIVE_RESULT_V1_MODEL": "deepseek-flash",
-    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "4096",
+    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "32768",
     "OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT": "low",
     "OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
-    "EXPLANATION_MAX_TOKENS": "2048",
+    "EXPLANATION_MAX_TOKENS": "8192",
     "CLIENT_CONFIG_REVISION": "production-2-12-flash-low-2048-20260913"
   }
 }
