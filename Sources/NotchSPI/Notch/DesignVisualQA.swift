@@ -15,13 +15,17 @@ enum DesignVisualQA {
         controller.qaOpenPracticePage = { _ in false }
         controller.qaPinDesignPreview()
         controller.show()
+        if scenario == "settings" {
+            controller.openSettings(page: .general)
+            return controller
+        }
         if scenario == "intake-review" {
             ScreenshotVisualQA.start(controller, localService: false, inspection: true)
             return controller
         }
         let model = controller.model
         model.answerDepth = "brief"
-        model.depthLabel = L10n.depthLabel("brief")
+        model.depthLabel = L10n.reasoningEffortLabel("low")
         model.statusText = L10n.statusDone + " · " + L10n.questionsLeft(864)
         model.status = .idle
         model.answer = "FINAL: B. 60 km/h"

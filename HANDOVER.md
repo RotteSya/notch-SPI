@@ -1,5 +1,11 @@
 # NotchSPI 工程交接
 
+2026-10-13 用户已查看本机最新版并授权本次思考程度改动提交、推送 main。scripts/run-local.sh 已完成 arm64 Release、Developer ID 签名及验签，正常 dist-qa/NotchSPI.app 运行并打开通用设置，实际 low/high/max 三段选择可见、默认 low。Git 自动部署关闭，本次仅同步源码；服务端新契约仍须部署后才能在正式通道应用用户选择。
+
+2026-10-13 思考程度 UI 返工：设置页改为原生 low / high / max 三段单选，一次点击切换；移除重复“思考”前缀及整段说明，行间距从 86 恢复 44，与相邻控件对齐。设置页再次显示时同步当前选择。DEBUG 隔离窗口实测三档切换，相关 Swift 4 项（warnings-as-errors）及 diff 检查通过；未发布、未更新正常运行包。
+
+2026-10-13 思考程度设置本地完成，未发布：按用户最终选择，以 DeepSeek 原生 low/high/max 取代设置页、快捷菜单和刘海胶囊的讲解深度，默认 low，不显示耗时提示。新键独立持久化，旧 depth 保留但新查题固定 brief；每次请求冻结选择，解释/恢复沿用。官方 API 新增 allowlist reasoning_effort 并纳入幂等摘要，DeepSeek 按请求覆盖，旧请求/其他厂商不变；自定义 DeepSeek Key 同步开启思考。Token、预算及超时上限保留。Swift 408 项（4 跳过、0 失败）、Node 630 项、类型检查、隔离 smoke、arm64 Release 通过；隔离原生设置窗口确认三档和 max→low 切换。repo-health 检出 2312 条资料断链，完整 verify 不记为通过。未调用真实模型、未更新正常运行包。发布须先服务端后客户端，旧服务端可能忽略新字段。契约见 docs/official-api.md。验证日志为 /tmp/notch-reasoning-{swift,node,release,smoke,health}.log。
+
 2026-10-12 查题超时修复已正式上线 dpl_2jgC7Pc3ednm2FR7BgYxei9y7CGF：推理流算启动进度，避免 20 秒误杀，保留 90 秒总时限及 low 思考。永久日预算 120 CNY 跨日验证通过。主代码 626 / 生产基线 589 测试通过，正式多选/排序 3.6–4.1 秒正确，模糊题不扣题；本机真实截图函数题显示正确 B。详见恢复记录。
 
 2026-10-11 查题配置最终决定：按用户明确要求，正式查题深度思考恢复low，永久每日预算20→120 CNY（上海时区），当天预算行已是120；生产配置和deploy/production-model-budget.json已同步。新部署dpl_HBrKjCmAfDXnAexdLVGjnz4ALCwx复用原生产源码。此前关闭思考的2.687秒测试不代表low性能。客户端错误提示修复仍保留。见[恢复记录](docs/answer-recovery-2026-10-11.md)。

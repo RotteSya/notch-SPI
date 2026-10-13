@@ -14,6 +14,8 @@ export interface CaptureRequest {
   task: string;
   images: CaptureImage[];
   maxTokens?: number;
+  /** Allowlisted per-request DeepSeek effort; omission retains the server default. */
+  reasoningEffort?: 'low' | 'high' | 'max';
   /** Assigned by the server route; never read from client-supplied provider options. */
   purpose?: 'answer' | 'explain' | 'recover';
 }

@@ -40,12 +40,18 @@ export class OpenAIProvider implements Provider {
     signal: AbortSignal,
     onProgress?: () => void,
   ): Promise<Usage> {
+    const extraBody = { ...(req.purpose === 'explain' ? this.explanationExtraBody : this.extraBody) };
+    if (this.name === 'deepseek' && req.reasoningEffort !== undefined) {
+      extraBody.thinking = { type: 'enabled' };
+      extraBody.reasoning_effort = req.reasoningEffort;
+      delete extraBody.temperature;
+    }
     const body = {
       model: this.model,
       max_tokens: Math.min(req.maxTokens ?? this.maxTokens, this.maxTokens),
       stream: true,
       stream_options: { include_usage: true },
-      ...(req.purpose === 'explain' ? this.explanationExtraBody : this.extraBody),
+      ...extraBody,
       messages: [
         { role: 'system', content: req.system },
         {

@@ -22,6 +22,17 @@ final class Settings {
         set { d.set(newValue, forKey: "depth") }
     }
 
+    /// Independent of the legacy answer-format preference; old installs start at low.
+    var reasoningEffort: String {
+        get {
+            let value = d.string(forKey: "reasoningEffort") ?? "low"
+            return Self.reasoningEffortCycle.contains(value) ? value : "low"
+        }
+        set { d.set(Self.reasoningEffortCycle.contains(newValue) ? newValue : "low", forKey: "reasoningEffort") }
+    }
+
+    static let reasoningEffortCycle = ["low", "high", "max"]
+
     // MARK: - Mode (tutor ↔ personality test)
 
     /// "tutor" (default) or "personality".

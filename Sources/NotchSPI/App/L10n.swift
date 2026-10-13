@@ -114,6 +114,10 @@ enum L10n {
         }
     }
 
+    static func reasoningEffortLabel(_ effort: String) -> String {
+        t("思考", "思考", "Thinking") + " · " + effort
+    }
+
     // MARK: - Service modes
 
     static var serviceOfficial: String { t("官方服务", "公式サービス", "Official Service") }

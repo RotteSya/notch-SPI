@@ -5,7 +5,7 @@ import ServiceManagement
 // scattered mini-windows plus an overstuffed gear menu. Native styling (system light/dark),
 // fixed-frame layout in flipped containers, live-commit controls — the codebase's house style.
 //
-//   通用 General    — language, default depth, capture target, launch at login
+//   通用 General    — language, reasoning effort, capture target, launch at login
 //   快捷键 Hotkeys  — the three recordable combos (embedded HotkeySettingsViewController)
 //   外观 Appearance — accent theme, answer text size, auto-collapse delay
 //   账户 Account    — quota ring, top-up, lifetime usage, device id
@@ -463,7 +463,7 @@ private func rowLabel(_ text: String) -> NSTextField {
 
 private final class GeneralPageController: NSViewController, SettingsPage {
     private let languagePopup = NSPopUpButton()
-    private let depthPopup = NSPopUpButton()
+    private let reasoningEffortControl = NSSegmentedControl()
     private let targetPopup = NSPopUpButton()
     private let autoCapPopup = NSPopUpButton()
     private let loginCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
@@ -494,23 +494,22 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         languagePopup.action = #selector(languagePicked)
         y += 44
 
-        // 讲解深度
-        addRow(root, y: y, label: L10n.t("讲解深度", "解説の詳しさ", "Explanation depth"),
-               control: depthPopup, controlWidth: 200)
-        for id in Settings.depthCycle {
-            depthPopup.addItem(withTitle: L10n.depthLabel(id))
-            depthPopup.lastItem?.representedObject = id
+        // Three visible choices; changing effort is a single click.
+        let effortTitle = L10n.t("思考程度", "思考の強さ", "Reasoning effort")
+        reasoningEffortControl.segmentCount = Settings.reasoningEffortCycle.count
+        reasoningEffortControl.trackingMode = .selectOne
+        reasoningEffortControl.segmentStyle = .rounded
+        reasoningEffortControl.font = .systemFont(ofSize: 13)
+        reasoningEffortControl.setAccessibilityLabel(effortTitle)
+        for (index, effort) in Settings.reasoningEffortCycle.enumerated() {
+            reasoningEffortControl.setLabel(effort, forSegment: index)
+            reasoningEffortControl.setWidth(64, forSegment: index)
         }
-        depthPopup.selectItem(at: Settings.depthCycle.firstIndex(of: Settings.shared.depth) ?? 2)
-        depthPopup.target = self
-        depthPopup.action = #selector(depthPicked)
-        let depthHint = captionLabel(L10n.t(
-            "简略只给答案；提示不剧透；引导带你一步步走；完整包含全部推导。也可以在刘海上点击胶囊快速切换。",
-            "「簡潔」は答えのみ、「ヒント」はネタバレなし、「ガイド」は一歩ずつ、「詳細」は全過程つき。ノッチのカプセルからも切替可能。",
-            "Brief gives just the answer; Hints avoid spoilers; Guided walks you through; Full shows every step. You can also cycle via the capsule on the notch."))
-        depthHint.frame = NSRect(x: 36 + 160, y: y + 30, width: contentWidth - 160, height: 42)
-        root.addSubview(depthHint)
-        y += 86
+        reasoningEffortControl.selectedSegment = Settings.reasoningEffortCycle.firstIndex(of: Settings.shared.reasoningEffort) ?? 0
+        reasoningEffortControl.target = self
+        reasoningEffortControl.action = #selector(reasoningEffortPicked)
+        addRow(root, y: y, label: effortTitle, control: reasoningEffortControl, controlWidth: 200)
+        y += 44
 
         // 截图目标
         addRow(root, y: y, label: L10n.t("截图目标", "キャプチャ対象", "Capture target"),
@@ -578,6 +577,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     }
 
     func pageDidShow() {
+        reasoningEffortControl.selectedSegment = Settings.reasoningEffortCycle.firstIndex(of: Settings.shared.reasoningEffort) ?? 0
         reloadTargets()
         reloadLoginState()
         telemetryCheckbox.state = ProductTelemetry.shared.sharingEnabled ? .on : .off
@@ -626,9 +626,10 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         L10n.setting = lang
     }
 
-    @objc private func depthPicked() {
-        guard let id = depthPopup.selectedItem?.representedObject as? String else { return }
-        Settings.shared.depth = id
+    @objc private func reasoningEffortPicked() {
+        let index = reasoningEffortControl.selectedSegment
+        guard Settings.reasoningEffortCycle.indices.contains(index) else { return }
+        Settings.shared.reasoningEffort = Settings.reasoningEffortCycle[index]
         NotificationCenter.default.post(name: Appearance.themeDidChange, object: nil)
     }
 

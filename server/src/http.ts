@@ -13,7 +13,7 @@ export type ErrorCode =
   | 'upstream_error'     // 502 — the model vendor call failed
   | 'not_found'          // 404
   | 'idempotency_conflict' | 'capture_in_progress' | 'capture_already_finalized' | 'device_busy' | 'service_maintenance'
-  | 'invalid_scope' | 'invalid_image' | 'unsupported_scope' | 'multiple_targets' | 'no_usable_result'
+  | 'invalid_reasoning_effort' | 'invalid_scope' | 'invalid_image' | 'unsupported_scope' | 'multiple_targets' | 'no_usable_result'
   | 'feature_disabled' | 'budget_exceeded' | 'expired' | 'binding_mismatch'
   | 'report_details_expired' | 'report_changed'
   | 'payload_too_large'  // 413 — rejected before capture admission

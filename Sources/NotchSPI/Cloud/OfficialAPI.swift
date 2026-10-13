@@ -369,7 +369,8 @@ enum OfficialAPI {
     static func makeCaptureRequest(
         baseURL: String, deviceToken: String,
         prompt: CapturePrompt, imagesBase64: [String],
-        resultProtocol: String? = nil, captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil
+        resultProtocol: String? = nil, captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil,
+        reasoningEffort: String? = nil
     ) -> URLRequest {
         var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
         req.httpMethod = "POST"
@@ -384,6 +385,7 @@ enum OfficialAPI {
             "image_media_type": "image/jpeg",
             "stream": true,
         ]
+        if let reasoningEffort { payload["reasoning_effort"] = reasoningEffort }
         if imagesBase64.count > 1 { payload["images_base64"] = imagesBase64 }
         if let resultProtocol { payload["result_protocol"] = resultProtocol }
         if let captureID { payload["capture_id"] = captureID.uuidString.lowercased() }
@@ -541,6 +543,7 @@ enum OfficialAPI {
     static func run(
         imagePaths: [String], prompt: CapturePrompt, resultProtocol: String? = nil,
         captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil, auxiliary: AuxiliaryCaptureRequest? = nil,
+        reasoningEffort: String? = nil,
         environment: CaptureEnvironment = .live,
         onUsage: ((OfficialUsageReceipt) -> Void)? = nil,
         onDelta: @escaping (String) -> Void,
@@ -572,7 +575,7 @@ enum OfficialAPI {
             }
             var request = makeCaptureRequest(baseURL: base, deviceToken: token, prompt: prompt,
                                              imagesBase64: imagesBase64, resultProtocol: resultProtocol,
-                                             captureID: id, screenQuery: screenQuery)
+                                             captureID: id, screenQuery: screenQuery, reasoningEffort: reasoningEffort)
             if let auxiliary, let data = request.httpBody,
                var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let route = auxiliary.operation == "explain" ? "explanation" : "recovery"

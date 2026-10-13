@@ -173,3 +173,30 @@ test('explanation settings inherit predictably and invalid explicit values fail 
   const invalid=await inspect('none','','low','typo');assert.equal(invalid.officialError,null);assert.match(invalid.objectiveError,/EXPLANATION_REASONING_EFFORT/);
   const inherited=await inspect('none','typo','','');assert.match(inherited.officialError,/EXPLANATION_REASONING_EFFORT/);assert.match(inherited.objectiveError,/EXPLANATION_REASONING_EFFORT/);
 });
+
+test('per-request effort overrides DeepSeek defaults without leaking across calls or vendors', async (t) => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response('data: {"choices":[{"delta":{"content":"B"}}],"usage":{"prompt_tokens":1,"completion_tokens":2}}\n\ndata: [DONE]\n');
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const provider = makeProvider({...config, provider: 'deepseek', providerConfigurationError: null,
+    deepseekKey: 'test', deepseekReasoningEffort: 'low', deepseekExplanationReasoningEffort: 'none', maxTokens: 4096}, () => {}).provider;
+  for (const purpose of ['answer', 'explain', 'recover'] as const) {
+    for (const reasoningEffort of ['low', 'high', 'max'] as const) {
+      await provider.stream({system: 's', task: 't', images: [], purpose, reasoningEffort, maxTokens: 99999}, () => {}, new AbortController().signal);
+      const body = bodies.at(-1)!;
+      assert.equal(body.reasoning_effort, reasoningEffort);
+      assert.deepEqual(body.thinking, {type: 'enabled'});
+      assert.equal(body.temperature, undefined);
+      assert.equal(body.max_tokens, 4096);
+    }
+  }
+  await provider.stream({system: 's', task: 't', images: [], purpose: 'explain'}, () => {}, new AbortController().signal);
+  assert.deepEqual(bodies.at(-1)!.thinking, {type: 'disabled'});
+  const openai = makeProvider({...config, provider: 'openai', providerConfigurationError: null, openaiKey: 'test'}, () => {}).provider;
+  await openai.stream({system: 's', task: 't', images: [], reasoningEffort: 'max'}, () => {}, new AbortController().signal);
+  assert.equal(bodies.at(-1)!.reasoning_effort, undefined);
+});

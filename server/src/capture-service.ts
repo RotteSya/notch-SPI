@@ -11,6 +11,11 @@ import { estimateModelCostMicros } from './telemetry.ts';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const text=(v:unknown)=>typeof v==='string'?v:'';
+function requestReasoningEffort(value: unknown): CaptureRequest['reasoningEffort'] {
+  if (value === undefined) return undefined;
+  if (value === 'low' || value === 'high' || value === 'max') return value;
+  throw new ApiError(400, 'reasoning_effort 必须是 low、high 或 max', 'invalid_reasoning_effort');
+}
 interface Admission { attemptId: string; providerStarted: boolean }
 export function settlementSnapshot(capture:CaptureRecord,quota:AccountSnapshot) {
   return { capture_id:capture.captureId,operation:capture.operation,terminal_state:capture.terminalState,
@@ -127,6 +132,7 @@ export class CaptureService {
     const {token}=await requireAccount(req,store);
     if(abort.signal.aborted)return;
     const body=(req.body??{}) as Record<string,unknown>;
+    const reasoningEffort=requestReasoningEffort(body.reasoning_effort);
     const protocol=body.result_protocol===undefined?null:text(body.result_protocol);
     if(protocol!==null&&protocol!=='objective_v1') throw new ApiError(400,'result_protocol 无效');
     const suppliedId=body.capture_id!==undefined;
@@ -173,7 +179,7 @@ export class CaptureService {
     const previous=await store.billing.capture(token,captureId);
     const keyVersion=previous?.keyVersion??this.keys.current;
     const inputHmac=this.keys.digest('capture-input',JSON.stringify({digests,scope,profileId,profileVersion,promptVersion,language:body.ui_language??null}),keyVersion);
-    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null}),keyVersion);
+    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
     // Duplicates are answered from metadata even when the remaining balance is zero.
     if(previous) {
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
@@ -184,7 +190,7 @@ export class CaptureService {
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
         configRevision:config.clientConfigRevision,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},
-      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,{system,task,images},captureProvider,model,screen,abort,admission));
+      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,{system,task,images,reasoningEffort},captureProvider,model,screen,abort,admission));
   }
   async auxiliary(req:FastifyRequest,reply:FastifyReply,operation:'explain'|'recover'):Promise<void> {
     return this.connected(req,reply,abort=>this.auxiliaryConnected(req,reply,operation,abort));
@@ -215,6 +221,7 @@ export class CaptureService {
     if(!config.screenQueryEnabled || !config.enabledSupportProfiles.split(',').includes(parent.profileId??'') ||
        (operation==='explain'&&!config.explanationEnabled)) throw new ApiError(503,'此功能暂未开放','feature_disabled');
     const body=(req.body??{}) as Record<string,unknown>;
+    const reasoningEffort=requestReasoningEffort(body.reasoning_effort);
     const answerCaptureId = body.answer_capture_id === undefined ? parentId : text(body.answer_capture_id).toLowerCase();
     if (!UUID.test(answerCaptureId) || (operation !== 'explain' && body.answer_capture_id !== undefined)) {
       throw new ApiError(422,'答案关联无效','binding_mismatch');
@@ -241,6 +248,7 @@ export class CaptureService {
     const originalAttempt=(await store.billing.attempts(token)).find(a=>a.captureId===parentId);
     if(!originalAttempt || originalAttempt.provider!==selected.name||originalAttempt.model!==model) throw new ApiError(503,'原模型策略已暂停','feature_disabled');
     const requestHmac=this.keys.digest('auxiliary',JSON.stringify({operation,inputHmac,answer:operation==='explain'?answer:null,
+      ...(reasoningEffort ? {reasoningEffort} : {}),
       ...(answerCaptureId !== parentId ? {answer_capture_id: answerCaptureId} : {})}),parent.keyVersion);
     await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion:parent.keyVersion,operation,
       parentCaptureId:parentId,answerCaptureId:operation==='explain'?answerCaptureId:undefined,
@@ -264,7 +272,7 @@ export class CaptureService {
         });
         const generate=async()=>{
           admission.providerStarted=true;
-          return selected.stream({...prompt,images,purpose:operation,maxTokens:operation==='explain'?config.explanationMaxTokens:undefined},chunk=>{
+          return selected.stream({...prompt,images,reasoningEffort,purpose:operation,maxTokens:operation==='explain'?config.explanationMaxTokens:undefined},chunk=>{
             if(completed||abort.signal.aborted)return;
             if(Buffer.byteLength(raw+chunk)>64*1024){abort.abort();return;}raw+=chunk;
           },abort.signal);

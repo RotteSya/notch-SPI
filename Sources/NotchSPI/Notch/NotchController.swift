@@ -119,6 +119,7 @@ final class NotchController: NSObject {
         var questionSessionID: UUID?
         let mode: String
         let depth: String
+        let reasoningEffort: String
         let personaID: String
         let personaName: String
         let personaText: String
@@ -161,7 +162,7 @@ final class NotchController: NSObject {
         }
         refreshCLILabel()
         model.statusText = L10n.statusReady
-        model.depthLabel = L10n.depthLabel(Settings.shared.depth)
+        model.depthLabel = L10n.reasoningEffortLabel(Settings.shared.reasoningEffort)
 
         let view = NotchView(
             model: model,
@@ -305,7 +306,7 @@ final class NotchController: NSObject {
     private func refreshAfterLanguageChange() {
         refreshCLILabel()
         refreshModeLabels()
-        model.depthLabel = L10n.depthLabel(Settings.shared.depth)
+        model.depthLabel = L10n.reasoningEffortLabel(Settings.shared.reasoningEffort)
         if !running {
             if model.resultState == .review { model.statusText = objectiveReviewMessage(model.resultReason) }
             else if model.resultState == .retake { model.statusText = objectiveRetakeMessage(model.resultReason) }
@@ -315,7 +316,7 @@ final class NotchController: NSObject {
     }
 
     private func refreshAppearance() {
-        model.depthLabel = L10n.depthLabel(Settings.shared.depth) // depth may change from settings too
+        model.depthLabel = L10n.reasoningEffortLabel(Settings.shared.reasoningEffort) // depth may change from settings too
         panel.contentView?.needsDisplay = true
         panel.contentView?.subviews.forEach { $0.needsDisplay = true }
         // Poke the model so NotchView re-reads fonts/colors for the answer text.
@@ -763,11 +764,11 @@ final class NotchController: NSObject {
     }
 
     private func cycleDepth() {
-        let cur = Settings.shared.depth
-        let idx = Settings.depthCycle.firstIndex(of: cur) ?? 1
-        let next = Settings.depthCycle[(idx + 1) % Settings.depthCycle.count]
-        Settings.shared.depth = next
-        model.depthLabel = L10n.depthLabel(next)
+        let cur = Settings.shared.reasoningEffort
+        let idx = Settings.reasoningEffortCycle.firstIndex(of: cur) ?? 0
+        let next = Settings.reasoningEffortCycle[(idx + 1) % Settings.reasoningEffortCycle.count]
+        Settings.shared.reasoningEffort = next
+        model.depthLabel = L10n.reasoningEffortLabel(next)
     }
 
     // MARK: - Gear menu (quick actions only — everything else lives in 设置)
@@ -832,15 +833,15 @@ final class NotchController: NSObject {
 
         // Depth only applies to tutor mode; hide it in personality mode.
         if Settings.shared.mode != "personality" {
-            let depthHeader = NSMenuItem(title: L10n.t("讲解深度", "解説の詳しさ", "Explanation Depth"),
+            let depthHeader = NSMenuItem(title: L10n.t("思考程度", "思考の強さ", "Reasoning Effort"),
                                          action: nil, keyEquivalent: "")
             depthHeader.isEnabled = false
             menu.addItem(depthHeader)
-            for id in Settings.depthCycle {
-                let item = NSMenuItem(title: L10n.depthLabel(id), action: #selector(pickDepth(_:)), keyEquivalent: "")
+            for id in Settings.reasoningEffortCycle {
+                let item = NSMenuItem(title: L10n.reasoningEffortLabel(id), action: #selector(pickDepth(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = id
-                item.state = (Settings.shared.depth == id) ? .on : .off
+                item.state = (Settings.shared.reasoningEffort == id) ? .on : .off
                 menu.addItem(item)
             }
             menu.addItem(.separator())
@@ -951,11 +952,13 @@ final class NotchController: NSObject {
                             captureID: UUID(), screenQuery: run.screenQuery,
                             auxiliary: .init(parentID: capture.captureID, operation: "explain", finalAnswer: answer,
                                              answerCaptureID: currentAnswerCaptureID),
+                            reasoningEffort: run.reasoningEffort,
                             environment: .connected(to: .live, expectedAccount: run.binding.officialAccount), onDelta: onDelta, onDone: onDone)
         case .customKey(let key):
             model.statusText = L10n.t("解释将使用所选 API 服务及其计费。", "選択した API の料金が適用されます。", "Explanation uses your selected API service and its billing.")
             APIKeyRunner.run(proto: run.provider.proto, endpoint: run.apiEndpoint, apiKey: key, model: run.apiModel,
                              disableThinking: run.provider.disablesThinking, temperature: run.provider.temperature,
+                             reasoningEffort: run.provider.id == "deepseek" ? run.reasoningEffort : nil,
                              imagePaths: capture.imagePaths, prompt: prompt, onDelta: onDelta, onDone: onDone)
         case .cli:
             model.statusText = L10n.t("解释将调用所选 CLI 服务。", "選択した CLI を呼び出します。", "Explanation calls your selected CLI service.")
@@ -992,6 +995,7 @@ final class NotchController: NSObject {
         officialTask = OfficialAPI.run(imagePaths: capture.imagePaths, prompt: .init(system: "", task: ""),
             resultProtocol: "objective_v1", captureID: recoveryID, screenQuery: run.screenQuery,
             auxiliary: .init(parentID: capture.captureID, operation: "recover", finalAnswer: nil),
+            reasoningEffort: run.reasoningEffort,
             environment: .connected(to: .live, expectedAccount: run.binding.officialAccount),
             onUsage: { [weak self] value in
                 guard let self, self.accepts(run, generation: generation) else { return }
@@ -1183,8 +1187,8 @@ final class NotchController: NSObject {
 
     @objc private func pickDepth(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        Settings.shared.depth = id
-        model.depthLabel = L10n.depthLabel(id)
+        Settings.shared.reasoningEffort = id
+        model.depthLabel = L10n.reasoningEffortLabel(id)
     }
 
     @objc private func pickPersona(_ sender: NSMenuItem) {
@@ -1560,7 +1564,7 @@ final class NotchController: NSObject {
             c.onAnythingChanged = { [weak self] in
                 self?.refreshCLILabel()
                 self?.refreshModeLabels()
-                self?.model.depthLabel = L10n.depthLabel(Settings.shared.depth)
+                self?.model.depthLabel = L10n.reasoningEffortLabel(Settings.shared.reasoningEffort)
                 self?.invalidatePersonalitySessionIfScopeChanged()
             }
             settingsController = c
@@ -1715,7 +1719,7 @@ final class NotchController: NSObject {
         let provider = settings.activeProvider
         let binding = makeRequestBinding(mode: mode)
         let remote = ClientConfigService.shared.current
-        let resultProtocol = mode == "tutor" && settings.depth != "hint"
+        let resultProtocol = mode == "tutor"
             && remote.objectiveResultV1.protocol == "objective_v1" ? "objective_v1" : nil
         let profile = UserDefaults.standard.string(forKey: "screenQuery.profileID") ?? "general"
         let screenQuery: ScreenQueryRequest? = resultProtocol == "objective_v1"
@@ -1732,7 +1736,8 @@ final class NotchController: NSObject {
             telemetryEnabled: ProductTelemetry.shared.sharingEnabled && remote.telemetry.enabled,
             telemetryConsentEpoch: ProductTelemetry.shared.consentEpoch,
             mode: mode,
-            depth: settings.depth,
+            depth: "brief",
+            reasoningEffort: settings.reasoningEffort,
             personaID: PersonaStore.shared.activeID ?? "unsaved-persona",
             personaName: settings.personaName,
             personaText: settings.personaText,
@@ -2513,6 +2518,7 @@ final class NotchController: NSObject {
                     apiKey: apiKey, model: snapshot.apiModel,
                     disableThinking: snapshot.provider.disablesThinking,
                     temperature: snapshot.provider.temperature,
+                    reasoningEffort: snapshot.provider.id == "deepseek" ? snapshot.reasoningEffort : nil,
                     imagePaths: imagePaths, prompt: prompt,
                     onDelta: onDelta, onDone: onDone
                 )
@@ -2520,6 +2526,7 @@ final class NotchController: NSObject {
                 self.officialTask = OfficialAPI.run(
                     imagePaths: imagePaths, prompt: prompt,
                     resultProtocol: snapshot.resultProtocol, captureID: snapshot.captureID, screenQuery: snapshot.screenQuery,
+                    reasoningEffort: snapshot.reasoningEffort,
                     environment: .connected(to: .live, expectedAccount: snapshot.binding.officialAccount),
                     onUsage: { [weak self] value in
                         guard let self, self.accepts(snapshot, generation: generation) else { return }

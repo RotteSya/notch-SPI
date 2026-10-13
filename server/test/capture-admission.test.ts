@@ -297,3 +297,34 @@ test('thinking progress survives the 20-second startup deadline without leaking 
     assert.equal((await f.store.billing.quota(f.token))?.balanceQuestions,29);
   } finally {await f.close();}
 });
+
+for (const operation of ['solve', 'explain', 'recover'] as const) {
+  test(`user reasoning effort is validated and forwarded for ${operation}`, async () => {
+    const f = await fixture(() => new MemoryStore());
+    try {
+      const target = await f.target(operation);
+      const callsBefore = f.calls();
+      const invalid = f.request(target.url, {...target.payload, reasoning_effort: 'medium'});
+      assert.equal((await invalid.response)?.status, 400);
+      await invalid.finished;
+      assert.equal(f.calls(), callsBefore);
+      let effort: unknown;
+      const stream = f.provider.stream.bind(f.provider);
+      f.provider.stream = async (input, delta, signal) => {
+        effort = input.reasoningEffort;
+        return stream(input, delta, signal);
+      };
+      const request = f.request(target.url, {...target.payload, reasoning_effort: 'max'});
+      assert.equal((await request.response)?.status, 200);
+      await request.finished;
+      assert.equal(effort, 'max');
+      if (operation === 'solve') {
+        const duplicate = f.request(target.url, {...target.payload, reasoning_effort: 'low'});
+        const response = await duplicate.response;
+        await duplicate.finished;
+        assert.equal(response?.status, 409);
+        assert.match(response?.payload ?? '', /idempotency_conflict/);
+      }
+    } finally { await f.close(); }
+  });
+}
