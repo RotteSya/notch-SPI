@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-10-13 设置面板视觉整理（本机运行，未发布）：六页统一 36 pt 内容边距、标题层级、细描边圆角卡片和控件留白，窗口调整为 850×620；通用/外观分组，快捷键键帽按实际绘制右缘对齐，人物像列表与编辑器边缘/底部操作对齐，账户状态与额度说明分开。高级页描述改为单选项下方、输入框等宽，长配置可滚动并消除标题栏重复 inset。DEBUG 隔离预览现在支持指定深浅色。三语通用/外观及中文其余四页、人物像编辑态、英文自定义通道已实际查看；未作全语言全状态穷举。Swift 408 项（4 跳过、0 失败，warnings-as-errors）、代码空白检查通过；完整 verify 仍阻于既有 2312 条资料断链。scripts/run-local.sh 已完成 arm64 Release、Developer ID 签名和验签，唯一正常运行包为 dist-qa/NotchSPI.app，无 QA 参数。验证日志 /tmp/notch-settings-{tests-final,verify,run-local}.log。用户随后授权将本次设置面板改动提交并推送 main；本次仅同步源码，未远端发布。
+
 2026-10-13 用户已查看本机最新版并授权本次思考程度改动提交、推送 main。scripts/run-local.sh 已完成 arm64 Release、Developer ID 签名及验签，正常 dist-qa/NotchSPI.app 运行并打开通用设置，实际 low/high/max 三段选择可见、默认 low。Git 自动部署关闭，本次仅同步源码；服务端新契约仍须部署后才能在正式通道应用用户选择。
 
 2026-10-13 思考程度 UI 返工：设置页改为原生 low / high / max 三段单选，一次点击切换；移除重复“思考”前缀及整段说明，行间距从 86 恢复 44，与相邻控件对齐。设置页再次显示时同步当前选择。DEBUG 隔离窗口实测三档切换，相关 Swift 4 项（warnings-as-errors）及 diff 检查通过；未发布、未更新正常运行包。

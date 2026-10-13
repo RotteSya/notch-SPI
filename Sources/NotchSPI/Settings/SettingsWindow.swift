@@ -156,7 +156,7 @@ final class HotkeyRecorderControl: NSControl {
         let keys = KeycapChipView.caps(from: combo)
         let widths = capWidths(keys)
         let total = widths.reduce(0, +) + gap * CGFloat(max(0, keys.count - 1))
-        var x = b.midX - total / 2
+        var x = b.maxX - 10 - total
         let dark = isDarkAppearance
         let radius = capSize * 0.24
 
@@ -263,14 +263,20 @@ final class HotkeySettingsViewController: NSViewController {
     private let personalityControl = HotkeyRecorderControl(combo: Settings.shared.personalityCombo)
     private let toggleControl = HotkeyRecorderControl(combo: Settings.shared.toggleCombo)
     private let autoControl = HotkeyRecorderControl(combo: Settings.shared.autoModeCombo)
-    private let rowYs: [CGFloat] = [0, 70, 140, 232, 276]
+    private let rowYs: [CGFloat] = [16, 96, 176, 276, 328]
     private let hint = HotkeySettingsViewController.makeLabel(
         "", size: 11, weight: .regular, color: .secondaryLabelColor)
     private var conflictObserver: Any?
 
     override func loadView() {
-        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 568, height: 424))
+        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 568, height: 488))
 
+        let captureCard = SettingsCardView(frame: NSRect(x: 0, y: 0, width: 568, height: 256))
+        captureCard.separators = [88, 168]
+        root.addSubview(captureCard)
+        let utilityCard = SettingsCardView(frame: NSRect(x: 0, y: 268, width: 568, height: 104))
+        utilityCard.separators = [52]
+        root.addSubview(utilityCard)
         let rows: [(String, HotkeyRecorderControl, String)] = [
             (CaptureAction.single.title, captureControl, "capture"),
             (CaptureAction.multiple.title, contextControl, "context"),
@@ -282,12 +288,12 @@ final class HotkeySettingsViewController: NSViewController {
         ]
         for (i, (title, control, which)) in rows.enumerated() {
             let label = Self.makeLabel(title, size: 13, weight: i < 3 ? .semibold : .regular, color: .labelColor)
-            label.frame = NSRect(x: 0, y: rowYs[i] + 8, width: 360, height: 18)
+            label.frame = NSRect(x: 16, y: rowYs[i] + 8, width: 340, height: 18)
             if i < 3 {
                 let detail = NSTextField(wrappingLabelWithString: CaptureAction.allCases[i].detail)
                 detail.font = CaptureStyle.caption
                 detail.textColor = .secondaryLabelColor
-                detail.frame = NSRect(x: 0, y: rowYs[i] + 32, width: 368, height: 32)
+                detail.frame = NSRect(x: 16, y: rowYs[i] + 32, width: 350, height: 38)
                 root.addSubview(detail)
             }
             root.addSubview(label)
@@ -299,10 +305,10 @@ final class HotkeySettingsViewController: NSViewController {
         let rule = NSTextField(wrappingLabelWithString: CaptureAction.countdownRule)
         rule.font = CaptureStyle.caption
         rule.textColor = .secondaryLabelColor
-        rule.frame = NSRect(x: 0, y: 332, width: 560, height: 48)
+        rule.frame = NSRect(x: 16, y: 390, width: 536, height: 42)
         root.addSubview(rule)
-        hint.frame = NSRect(x: 0, y: 388, width: 560, height: 34)
-        hint.maximumNumberOfLines = 2
+        hint.frame = NSRect(x: 16, y: 444, width: 536, height: 44)
+        hint.maximumNumberOfLines = 3
         hint.lineBreakMode = .byWordWrapping
         root.addSubview(hint)
 
@@ -383,7 +389,7 @@ final class HotkeySettingsViewController: NSViewController {
             control.isRecording = recording == role.rawValue
             // Keycap rows are content-sized and right-aligned; re-seat after every state change.
             let w = control.intrinsicContentSize.width
-            control.frame = NSRect(x: 568 - w, y: y, width: w, height: 34)
+            control.frame = NSRect(x: 552 - w, y: y, width: w, height: 34)
         }
         hint.stringValue = taken.isEmpty
             ? L10n.t("点击右侧键帽，然后按下新的组合键（需包含 ⌘/⇧/⌥/⌃ 至少一个）。",
@@ -428,25 +434,8 @@ private final class HairlineCardScrollView: NSScrollView {
     }
 }
 
-/// A faintly elevated rounded card with a hairline rim, drawn in draw(_:) so the dynamic colors
-/// resolve per appearance on every repaint (layer/box styling proved unreliable here). Purely
-/// decorative — never intercepts the scroll view sitting on top of it.
-private final class CardSurfaceView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let r = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10)
-        NSColor.labelColor.withAlphaComponent(0.045).setFill()
-        path.fill()
-        path.lineWidth = 1
-        NSColor.labelColor.withAlphaComponent(0.12).setStroke()
-        path.stroke()
-    }
-}
-
 private func cardBox(frame: NSRect) -> NSView {
-    CardSurfaceView(frame: frame)
+    SettingsCardView(frame: frame)
 }
 
 /// One persona row: an accent presence dot marks the active persona (the one captures follow),
@@ -513,32 +502,36 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
     private static let cellID = NSUserInterfaceItemIdentifier("personaCell")
 
     override func loadView() {
-        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 640, height: 450))
+        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 640, height: 504))
 
+        let listCaption = Self.makeLabel(L10n.t("人物像资料库", "人物像ライブラリ", "Persona library"), size: 11, weight: .regular, color: .secondaryLabelColor)
+        listCaption.frame = NSRect(x: 36, y: 16, width: 176, height: 16)
+        root.addSubview(listCaption)
         // Left: list + add/delete.
         configureList()
-        listScroll.frame = NSRect(x: 20, y: 46, width: 196, height: 344)
+        listScroll.frame = NSRect(x: 36, y: 36, width: 176, height: 358)
         root.addSubview(cardBox(frame: listScroll.frame))
         root.addSubview(listScroll)
 
         configureBarButton(addButton, title: "＋", action: #selector(addPersona))
-        addButton.frame = NSRect(x: 20, y: 396, width: 30, height: 24)
+        addButton.frame = NSRect(x: 36, y: 404, width: 30, height: 24)
         addButton.toolTip = L10n.t("新建人物像", "人物像を新規作成", "New persona")
         root.addSubview(addButton)
 
         configureBarButton(deleteButton, title: "－", action: #selector(deletePersona))
-        deleteButton.frame = NSRect(x: 52, y: 396, width: 30, height: 24)
+        deleteButton.frame = NSRect(x: 68, y: 404, width: 30, height: 24)
         deleteButton.toolTip = L10n.t("删除所选人物像", "選択した人物像を削除", "Delete selected persona")
         root.addSubview(deleteButton)
 
         // Right: editor for the selected persona (the two cards carry the split; no divider).
         let nameCaption = Self.makeLabel(L10n.t("名称", "名前", "Name"), size: 11, weight: .regular, color: .secondaryLabelColor)
-        nameCaption.frame = NSRect(x: 252, y: 16, width: 368, height: 16)
+        nameCaption.frame = NSRect(x: 236, y: 16, width: 368, height: 16)
         root.addSubview(nameCaption)
 
-        nameField.frame = NSRect(x: 252, y: 36, width: 368, height: 24)
+        nameField.frame = NSRect(x: 236, y: 36, width: 368, height: 24)
         nameField.placeholderString = L10n.t("例如：A社 求める人物像", "例：A社 求める人物像", "e.g. Company A ideal candidate")
         nameField.font = .systemFont(ofSize: 13)
+        nameField.bezelStyle = .roundedBezel
         nameField.delegate = self
         root.addSubview(nameField)
 
@@ -547,11 +540,13 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
                    "人物像の説明（回答はこの像に沿うよう選ばれます）",
                    "Persona description (answers will lean toward this profile)"),
             size: 11, weight: .regular, color: .secondaryLabelColor)
-        descCaption.frame = NSRect(x: 252, y: 72, width: 368, height: 16)
+        descCaption.frame = NSRect(x: 236, y: 76, width: 368, height: 32)
+        descCaption.maximumNumberOfLines = 2
+        descCaption.lineBreakMode = .byWordWrapping
         root.addSubview(descCaption)
 
         configureDescEditor()
-        descScroll.frame = NSRect(x: 252, y: 94, width: 368, height: 236)
+        descScroll.frame = NSRect(x: 236, y: 116, width: 368, height: 278)
         let descCard = cardBox(frame: descScroll.frame)
         root.addSubview(descCard)
         root.addSubview(descScroll)
@@ -560,13 +555,13 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         setActiveButton.bezelStyle = .rounded
         setActiveButton.target = self
         setActiveButton.action = #selector(setActiveTapped)
-        setActiveButton.frame = NSRect(x: 252, y: 342, width: 200, height: 28)
+        setActiveButton.frame = NSRect(x: 236, y: 404, width: 200, height: 28)
         root.addSubview(setActiveButton)
 
         let example = Self.makeLabel(
             L10n.t("例：", "例：", "e.g. ") + "●創意と挑戦心を持ち、主体的に行動できる方 ●変化を常とし、外的変化へ柔軟に適応できる方 ●チームワークを重要視し、協調性を発揮できる方",
             size: 10.5, weight: .regular, color: .tertiaryLabelColor)
-        example.frame = NSRect(x: 252, y: 382, width: 368, height: 52)
+        example.frame = NSRect(x: 236, y: 448, width: 368, height: 52)
         example.maximumNumberOfLines = 3
         example.lineBreakMode = .byWordWrapping
         root.addSubview(example)
@@ -577,10 +572,10 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
                                        "人物像がまだありません。\n左下の「＋」で作成できます。",
                                        "No personas yet.\nCreate one with + below.")
         emptyHint.font = .systemFont(ofSize: 12.5)
-        emptyHint.textColor = .tertiaryLabelColor
+        emptyHint.textColor = .secondaryLabelColor
         emptyHint.alignment = .center
         emptyHint.maximumNumberOfLines = 2
-        emptyHint.frame = NSRect(x: 252, y: 190, width: 368, height: 44)
+        emptyHint.frame = NSRect(x: 236, y: 190, width: 368, height: 44)
         root.addSubview(emptyHint)
 
         view = root

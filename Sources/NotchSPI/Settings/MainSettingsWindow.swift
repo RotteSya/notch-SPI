@@ -41,8 +41,8 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    static let contentSize = NSSize(width: 830, height: 540)
-    static let sidebarWidth: CGFloat = 190
+    static let contentSize = NSSize(width: 850, height: 620)
+    static let sidebarWidth: CGFloat = 210
     static var pageSize: NSSize { NSSize(width: contentSize.width - sidebarWidth, height: contentSize.height) }
 
     /// Wired by NotchController so hotkey edits re-register and menu labels refresh.
@@ -122,6 +122,13 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         contentHost.autoresizingMask = [.width, .height]
         root.addSubview(contentHost)
 
+        let brand = NSTextField(labelWithString: "NotchSPI")
+        brand.font = .systemFont(ofSize: 18, weight: .semibold)
+        brand.frame = NSRect(x: 26, y: 48, width: 160, height: 26)
+        sidebar.addSubview(brand)
+        let version = captionLabel(UpdateChecker.currentVersion)
+        version.frame = NSRect(x: 26, y: Self.contentSize.height - 40, width: 160, height: 18)
+        sidebar.addSubview(version)
         buildSidebarRows()
     }
 
@@ -135,7 +142,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             selectionPill.cornerRadius = 8
             sidebar.layer?.addSublayer(selectionPill)
         }
-        var y: CGFloat = 52 // clear the (hidden-title) titlebar / traffic lights
+        var y: CGFloat = 100 // align navigation with the first content group
         for page in Page.allCases {
             let row = SidebarRowButton(page: page) { [weak self] in self?.show(page: $0) }
             row.onNavigate = { [weak self] direction in
@@ -146,10 +153,10 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
                 self.window?.makeFirstResponder(target)
                 self.show(page: next)
             }
-            row.frame = NSRect(x: 10, y: y, width: Self.sidebarWidth - 20, height: 34)
+            row.frame = NSRect(x: 14, y: y, width: Self.sidebarWidth - 28, height: 38)
             sidebar.addSubview(row)
             rowButtons.append(row)
-            y += 38
+            y += 44
         }
         restyleChrome()
         movePill(to: current, animated: false)
@@ -165,7 +172,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     private func restyleChrome() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        selectionPill.backgroundColor = NotchPalette.accent.withAlphaComponent(0.22).cgColor
+        selectionPill.backgroundColor = NotchPalette.accent.withAlphaComponent(0.13).cgColor
         CATransaction.commit()
         rowButtons.forEach { $0.needsDisplay = true }
     }
@@ -432,6 +439,34 @@ final class SettingsFlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
+/// Shared card geometry. Decorative surfaces never steal clicks from their controls.
+final class SettingsCardView: NSView {
+    var separators: [CGFloat] = []
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
+        NSColor.controlBackgroundColor.withAlphaComponent(0.65).setFill()
+        path.fill()
+        NSColor.labelColor.withAlphaComponent(0.10).setStroke()
+        path.lineWidth = 0.5
+        path.stroke()
+        for y in separators {
+            let line = NSBezierPath()
+            line.move(to: NSPoint(x: 16, y: y))
+            line.line(to: NSPoint(x: bounds.width - 16, y: y))
+            line.lineWidth = 0.5
+            line.stroke()
+        }
+    }
+}
+
+private func settingsCard(_ root: NSView, y: CGFloat, height: CGFloat, separators: [CGFloat] = []) {
+    let card = SettingsCardView(frame: NSRect(x: 36, y: y, width: 568, height: height))
+    card.separators = separators
+    root.addSubview(card, positioned: .below, relativeTo: root.subviews.first)
+}
+
 @MainActor
 protocol SettingsPage {
     func pageDidShow()
@@ -439,7 +474,7 @@ protocol SettingsPage {
 
 func pageTitleLabel(_ text: String) -> NSTextField {
     let f = NSTextField(labelWithString: text)
-    f.font = .systemFont(ofSize: 20, weight: .bold)
+    f.font = .systemFont(ofSize: 23, weight: .semibold)
     f.textColor = .labelColor
     return f
 }
@@ -472,19 +507,22 @@ private final class GeneralPageController: NSViewController, SettingsPage {
 
     private static let autoCapChoices = [5, 10, 20, 30, 50]
 
-    private let contentWidth: CGFloat = 560
+    private let contentWidth: CGFloat = 536
 
     override func loadView() {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
 
         let title = pageTitleLabel(L10n.t("通用", "一般", "General"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
 
-        var y: CGFloat = 100
+        settingsCard(root, y: 96, height: 104, separators: [52])
+        settingsCard(root, y: 216, height: 146, separators: [52])
+        settingsCard(root, y: 378, height: 196, separators: [64])
+        var y: CGFloat = 110
 
         // 语言
-        addRow(root, y: y, label: L10n.t("语言", "言語", "Language"), control: languagePopup, controlWidth: 200)
+        addRow(root, y: y, label: L10n.t("语言", "言語", "Language"), control: languagePopup, controlWidth: 280)
         for lang in AppLanguage.allCases {
             languagePopup.addItem(withTitle: lang.pickerLabel)
             languagePopup.lastItem?.representedObject = lang.rawValue
@@ -492,7 +530,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         languagePopup.selectItem(at: AppLanguage.allCases.firstIndex(of: L10n.setting) ?? 0)
         languagePopup.target = self
         languagePopup.action = #selector(languagePicked)
-        y += 44
+        y += 52
 
         // Three visible choices; changing effort is a single click.
         let effortTitle = L10n.t("思考程度", "思考の強さ", "Reasoning effort")
@@ -503,24 +541,24 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         reasoningEffortControl.setAccessibilityLabel(effortTitle)
         for (index, effort) in Settings.reasoningEffortCycle.enumerated() {
             reasoningEffortControl.setLabel(effort, forSegment: index)
-            reasoningEffortControl.setWidth(64, forSegment: index)
+            reasoningEffortControl.setWidth(90, forSegment: index)
         }
         reasoningEffortControl.selectedSegment = Settings.reasoningEffortCycle.firstIndex(of: Settings.shared.reasoningEffort) ?? 0
         reasoningEffortControl.target = self
         reasoningEffortControl.action = #selector(reasoningEffortPicked)
-        addRow(root, y: y, label: effortTitle, control: reasoningEffortControl, controlWidth: 200)
-        y += 44
+        addRow(root, y: y, label: effortTitle, control: reasoningEffortControl, controlWidth: 280)
+        y = 230
 
         // 截图目标
         addRow(root, y: y, label: L10n.t("截图目标", "キャプチャ対象", "Capture target"),
-               control: targetPopup, controlWidth: 260)
+               control: targetPopup, controlWidth: 280)
         targetPopup.target = self
         targetPopup.action = #selector(targetPicked)
-        y += 44
+        y += 52
 
         // 自动连答上限
         addRow(root, y: y, label: L10n.t("自动连答上限", "自動連続回答の上限", "Auto session cap"),
-               control: autoCapPopup, controlWidth: 200)
+               control: autoCapPopup, controlWidth: 280)
         for cap in Self.autoCapChoices {
             autoCapPopup.addItem(withTitle: L10n.questions(cap))
             autoCapPopup.lastItem?.representedObject = cap
@@ -533,35 +571,35 @@ private final class GeneralPageController: NSViewController, SettingsPage {
             "自动模式单次会话最多连答的题数，达到后自动停止。下次开启会话时生效。",
             "自動モード1セッションで回答する最大数。上限に達すると自動停止します。次回セッションから有効。",
             "Max questions one auto session will answer before stopping. Applies from the next session."))
-        autoCapHint.frame = NSRect(x: 36 + 160, y: y + 30, width: contentWidth - 160, height: 30)
+        autoCapHint.frame = NSRect(x: 52, y: y + 34, width: contentWidth, height: 34)
         root.addSubview(autoCapHint)
-        y += 72
+        y = 392
 
         // 开机自启
         loginCheckbox.title = L10n.t("登录时自动启动", "ログイン時に自動起動", "Launch at login")
         loginCheckbox.target = self
         loginCheckbox.action = #selector(loginToggled)
-        loginCheckbox.frame = NSRect(x: 36 + 160, y: y, width: 300, height: 20)
+        loginCheckbox.frame = NSRect(x: 52, y: y, width: contentWidth, height: 20)
         root.addSubview(loginCheckbox)
-        loginCaption.frame = NSRect(x: 36 + 160, y: y + 24, width: contentWidth - 160, height: 30)
+        loginCaption.frame = NSRect(x: 52, y: y + 24, width: contentWidth, height: 24)
         root.addSubview(loginCaption)
-        y += 62
+        y = 458
 
         let privacyLabel = rowLabel(L10n.t("隐私与诊断", "プライバシーと診断", "Privacy & diagnostics"))
-        privacyLabel.alignment = .right
-        privacyLabel.frame = NSRect(x: 36, y: y + 1, width: 148, height: 18)
+        privacyLabel.alignment = .left
+        privacyLabel.frame = NSRect(x: 52, y: y + 1, width: 180, height: 18)
         root.addSubview(privacyLabel)
         telemetryCheckbox.title = L10n.t("共享匿名可靠性数据", "匿名の信頼性データを共有", "Share anonymous reliability data")
         telemetryCheckbox.state = ProductTelemetry.shared.sharingEnabled ? .on : .off
         telemetryCheckbox.target = self
         telemetryCheckbox.action = #selector(telemetryToggled)
-        telemetryCheckbox.frame = NSRect(x: 36 + 160, y: y, width: 350, height: 20)
+        telemetryCheckbox.frame = NSRect(x: 240, y: y, width: 348, height: 20)
         root.addSubview(telemetryCheckbox)
         let telemetryCaption = captionLabel(L10n.t(
             "共享完成状态、场景、耗时、操作和数据缺失记录。关闭后清空待传数据，仅同步共享偏好；必要的计费记录仍会保留。不会上传截图、题目、答案或提示词。",
             "完了状態・用途・時間・操作とデータ欠落を共有します。停止すると送信待ちデータを削除し、共有設定のみ同期します。必要な課金記録は保持します。画像・問題・回答・プロンプトは送信しません。",
             "Shares completion states, profiles, timings, actions, and data gaps. Turning this off clears pending data and syncs only the preference; required billing records remain. Screenshots, questions, answers, and prompts are excluded."))
-        telemetryCaption.frame = NSRect(x: 36 + 160, y: y + 24, width: contentWidth - 160, height: 88)
+        telemetryCaption.frame = NSRect(x: 52, y: y + 32, width: contentWidth, height: 68)
         root.addSubview(telemetryCaption)
 
         view = root
@@ -569,10 +607,10 @@ private final class GeneralPageController: NSViewController, SettingsPage {
 
     private func addRow(_ root: NSView, y: CGFloat, label: String, control: NSControl, controlWidth: CGFloat) {
         let l = rowLabel(label)
-        l.alignment = .right
-        l.frame = NSRect(x: 36, y: y + 3, width: 148, height: 18)
+        l.alignment = .left
+        l.frame = NSRect(x: 52, y: y + 4, width: 224, height: 18)
         root.addSubview(l)
-        control.frame = NSRect(x: 36 + 160, y: y, width: controlWidth, height: 26)
+        control.frame = NSRect(x: 308, y: y, width: controlWidth, height: 26)
         root.addSubview(control)
     }
 
@@ -675,12 +713,12 @@ private final class HotkeysPageController: NSViewController, SettingsPage {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
 
         let title = pageTitleLabel(L10n.t("快捷键", "ショートカット", "Hotkeys"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
 
         embedded.onChange = { [weak self] in self?.onChange?() }
         addChild(embedded)
-        embedded.view.frame = NSRect(x: 36, y: 92, width: 568, height: 424)
+        embedded.view.frame = NSRect(x: 36, y: 96, width: 568, height: 488)
         root.addSubview(embedded.view)
 
         view = root
@@ -702,22 +740,25 @@ private final class AppearancePageController: NSViewController, SettingsPage {
     private let revealCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let autoCopyCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
 
-    private let labelW: CGFloat = 148
-    private let fieldX: CGFloat = 36 + 160
+    private let labelW: CGFloat = 176
+    private let fieldX: CGFloat = 236
 
     override func loadView() {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
 
         let title = pageTitleLabel(L10n.t("外观", "外観", "Appearance"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
 
-        var y: CGFloat = 100
+        settingsCard(root, y: 96, height: 126)
+        settingsCard(root, y: 238, height: 94)
+        settingsCard(root, y: 348, height: 190, separators: [82, 136])
+        var y: CGFloat = 114
 
         // 强调色 swatches
         let accentLabel = rowLabel(L10n.t("强调色", "アクセントカラー", "Accent color"))
-        accentLabel.alignment = .right
-        accentLabel.frame = NSRect(x: 36, y: y + 12, width: labelW, height: 18)
+        accentLabel.alignment = .left
+        accentLabel.frame = NSRect(x: 52, y: y + 12, width: labelW, height: 18)
         root.addSubview(accentLabel)
         var x: CGFloat = fieldX
         for theme in AccentTheme.all {
@@ -734,14 +775,14 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         let accentHint = captionLabel(L10n.t("Rose 指示器、刘海边缘的光、按钮都会跟随这个颜色。",
                                              "Rose インジケーター、ノッチの光、ボタンがこの色に染まります。",
                                              "The Rose, the notch's edge light, and every button follow this color."))
-        accentHint.frame = NSRect(x: fieldX, y: y + 62, width: 380, height: 32)
+        accentHint.frame = NSRect(x: fieldX, y: y + 62, width: 352, height: 36)
         root.addSubview(accentHint)
-        y += 112
+        y = 254
 
         // 答案字号 — continuous slider with a live px readout and a WYSIWYG sample chip.
         let sizeLabel = rowLabel(L10n.t("答案字号", "回答の文字サイズ", "Answer text size"))
-        sizeLabel.alignment = .right
-        sizeLabel.frame = NSRect(x: 36, y: y + 6, width: labelW, height: 18)
+        sizeLabel.alignment = .left
+        sizeLabel.frame = NSRect(x: 52, y: y + 6, width: labelW, height: 18)
         root.addSubview(sizeLabel)
         sizeSlider.minValue = Double(Appearance.answerFontRange.lowerBound)
         sizeSlider.maxValue = Double(Appearance.answerFontRange.upperBound)
@@ -761,12 +802,12 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         sizeSample.frame = NSRect(x: fieldX, y: y + 30, width: 320, height: 30)
         sizeSample.lineBreakMode = .byTruncatingTail
         root.addSubview(sizeSample)
-        y += 74
+        y = 364
 
         // 答完后收起 — a seconds slider, disabled while "keep expanded" is on.
         let delayLabel = rowLabel(L10n.t("答完后收起", "回答後にたたむ", "Fold after answering"))
-        delayLabel.alignment = .right
-        delayLabel.frame = NSRect(x: 36, y: y + 6, width: labelW, height: 18)
+        delayLabel.alignment = .left
+        delayLabel.frame = NSRect(x: 52, y: y + 6, width: labelW, height: 18)
         root.addSubview(delayLabel)
         delaySlider.minValue = Appearance.collapseSecondsRange.lowerBound
         delaySlider.maxValue = Appearance.collapseSecondsRange.upperBound
@@ -787,25 +828,25 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         stayCheckbox.state = Appearance.stayExpanded ? .on : .off
         stayCheckbox.frame = NSRect(x: fieldX, y: y, width: 340, height: 20)
         root.addSubview(stayCheckbox)
-        y += 44
+        y = 448
 
         // 简略模式默认展开推理
         let reasonLabel = rowLabel(L10n.t("简略模式", "簡潔モード", "Brief mode"))
-        reasonLabel.alignment = .right
-        reasonLabel.frame = NSRect(x: 36, y: y + 1, width: labelW, height: 18)
+        reasonLabel.alignment = .left
+        reasonLabel.frame = NSRect(x: 52, y: y + 1, width: labelW, height: 18)
         root.addSubview(reasonLabel)
         revealCheckbox.title = L10n.t("答完后默认展开「推理过程」", "回答後に「考え方」を最初から開く", "Show the reasoning unfolded by default")
         revealCheckbox.target = self
         revealCheckbox.action = #selector(revealToggled)
         revealCheckbox.state = Appearance.revealReasoningByDefault ? .on : .off
-        revealCheckbox.frame = NSRect(x: fieldX, y: y, width: 360, height: 20)
+        revealCheckbox.frame = NSRect(x: fieldX, y: y, width: 352, height: 20)
         root.addSubview(revealCheckbox)
-        y += 36
+        y = 502
 
         // 剪贴板：答完后自动复制答案
         let copyLabel = rowLabel(L10n.t("剪贴板", "クリップボード", "Clipboard"))
-        copyLabel.alignment = .right
-        copyLabel.frame = NSRect(x: 36, y: y + 1, width: labelW, height: 18)
+        copyLabel.alignment = .left
+        copyLabel.frame = NSRect(x: 52, y: y + 1, width: labelW, height: 18)
         root.addSubview(copyLabel)
         autoCopyCheckbox.title = L10n.t("答完后自动复制答案到剪贴板",
                                         "回答後に答えをクリップボードへ自動コピー",
@@ -813,14 +854,14 @@ private final class AppearancePageController: NSViewController, SettingsPage {
         autoCopyCheckbox.target = self
         autoCopyCheckbox.action = #selector(autoCopyToggled)
         autoCopyCheckbox.state = Appearance.autoCopyAnswer ? .on : .off
-        autoCopyCheckbox.frame = NSRect(x: fieldX, y: y, width: 400, height: 20)
+        autoCopyCheckbox.frame = NSRect(x: fieldX, y: y, width: 352, height: 20)
         root.addSubview(autoCopyCheckbox)
-        y += 40
+        y = 558
 
         let liveHint = captionLabel(L10n.t("所有更改即时生效 — 抬头看看刘海。",
                                            "変更はすぐ反映されます — ノッチを見てみて。",
                                            "Everything applies instantly — glance up at the notch."))
-        liveHint.frame = NSRect(x: fieldX, y: y, width: 380, height: 20)
+        liveHint.frame = NSRect(x: 52, y: y, width: 536, height: 34)
         root.addSubview(liveHint)
 
         view = root
@@ -998,22 +1039,24 @@ private final class AccountPageController: NSViewController, SettingsPage {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
 
         let title = pageTitleLabel(L10n.t("账户与额度", "アカウントと残高", "Account"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
 
+        settingsCard(root, y: 96, height: 310)
+        settingsCard(root, y: 422, height: 116)
         ring.frame = NSRect(x: 60, y: 104, width: 170, height: 170)
         root.addSubview(ring)
 
         var y: CGFloat = 116
-        usageLabel.frame = NSRect(x: 270, y: y, width: 320, height: 20)
+        usageLabel.frame = NSRect(x: 270, y: y, width: 318, height: 20)
         root.addSubview(usageLabel)
         y += 26
-        tokensLabel.frame = NSRect(x: 270, y: y, width: 320, height: 18)
+        tokensLabel.frame = NSRect(x: 270, y: y, width: 318, height: 18)
         root.addSubview(tokensLabel)
         y += 30
 
         packsButton.font = .systemFont(ofSize: 12)
-        packsButton.frame = NSRect(x: 268, y: y, width: 328, height: 28)
+        packsButton.frame = NSRect(x: 268, y: y, width: 320, height: 28)
         root.addSubview(packsButton)
         y += 36
         topUpButton.title = L10n.topUp
@@ -1028,7 +1071,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         refreshButton.bezelStyle = .rounded
         refreshButton.target = self
         refreshButton.action = #selector(refreshTapped)
-        refreshButton.frame = NSRect(x: 448, y: y, width: 148, height: 30)
+        refreshButton.frame = NSRect(x: 446, y: y, width: 142, height: 30)
         root.addSubview(refreshButton)
         y += 40
 
@@ -1049,10 +1092,10 @@ private final class AccountPageController: NSViewController, SettingsPage {
         resetButton.isHidden = true
         root.addSubview(resetButton)
 
-        statusLabel.frame = NSRect(x: 270, y: y + 36, width: 326, height: 76)
+        statusLabel.frame = NSRect(x: 270, y: y + 36, width: 318, height: 76)
         root.addSubview(statusLabel)
 
-        deviceLabel.frame = NSRect(x: 36, y: 448, width: 380, height: 18)
+        deviceLabel.frame = NSRect(x: 52, y: 560, width: 350, height: 18)
         root.addSubview(deviceLabel)
 
         // Copy the full device code so a user can send it to support for a manual quota grant.
@@ -1062,17 +1105,17 @@ private final class AccountPageController: NSViewController, SettingsPage {
         copyCodeButton.controlSize = .small
         copyCodeButton.target = self
         copyCodeButton.action = #selector(copyCodeTapped)
-        copyCodeButton.frame = NSRect(x: 424, y: 444, width: 172, height: 24)
+        copyCodeButton.frame = NSRect(x: 416, y: 554, width: 172, height: 24)
         root.addSubview(copyCodeButton)
 
         let note = captionLabel(L10n.t(
             "首次联网自动获得一次性免费额度，无需注册。免费与付费题数用于同一官方服务；先用免费额度，成功获得可用答案扣 1 题，失败不扣。当前额度不设到期时间；付费题包一次性购买，不自动续费。",
             "初回接続で無料枠を自動付与。登録不要。同じ公式サービスで無料枠から消費し、利用可能な回答につき1問、失敗は消費なし。現在の残高に期限なし。パックは一回払い・自動更新なし。",
             "One free grant on first connection; no sign-up. Both balances use the official service. Free questions are used first; one usable answer costs one question, failures cost none. Credits currently have no expiry. Packs are one-time purchases, with no auto-renewal."))
-        note.frame = NSRect(x: 36, y: 380, width: 560, height: 58)
+        note.frame = NSRect(x: 52, y: 462, width: 536, height: 64)
         root.addSubview(note)
 
-        quotaLabel.frame = NSRect(x: 36, y: 346, width: 560, height: 28)
+        quotaLabel.frame = NSRect(x: 52, y: 436, width: 536, height: 22)
         root.addSubview(quotaLabel)
         startButton.title = L10n.t("截图查题", "撮影して質問", "Capture a question")
         startButton.bezelStyle = .rounded
@@ -1520,7 +1563,7 @@ private final class PersonasPageController: NSViewController, SettingsPage {
     override func loadView() {
         let root = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
         let title = pageTitleLabel(L10n.t("人物像", "人物像", "Personas"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
         let hint = captionLabel(L10n.t("性格测试作答时，答案会尽量贴合当前选中的人物像。",
                                        "性格検査の回答は、選択中の人物像に沿うように選ばれます。",
@@ -1529,7 +1572,7 @@ private final class PersonasPageController: NSViewController, SettingsPage {
         root.addSubview(hint)
         embedded.onChange = { [weak self] in self?.onChange() }
         addChild(embedded)
-        embedded.view.frame = NSRect(x: 0, y: 96, width: 640, height: 440)
+        embedded.view.frame = NSRect(x: 0, y: 96, width: 640, height: 504)
         root.addSubview(embedded.view)
         view = root
     }
@@ -1559,7 +1602,14 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
     }
 
     override func loadView() {
-        view = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
+        let scroll = NSScrollView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
+        scroll.drawsBackground = false
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = .init()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.documentView = document
+        view = scroll
         populate()
         accountObserver = NotificationCenter.default.addObserver(
             forName: OfficialAPI.accountDidChange, object: nil, queue: .main
@@ -1572,24 +1622,26 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
     }
 
     /// (Re)build the whole page. Idempotent so the CLI-switch observer can call it again.
+    private let document = SettingsFlippedView()
+
     private func populate() {
-        let root = view
+        let root = document
         root.subviews.forEach { $0.removeFromSuperview() }
         modeRadios.removeAll()
         let cliEnabled = OfficialAPI.cliEnabled
         builtWithCLIEnabled = cliEnabled
 
         let title = pageTitleLabel(L10n.t("高级", "詳細", "Advanced"))
-        title.frame = NSRect(x: 36, y: 46, width: 300, height: 26)
+        title.frame = NSRect(x: 36, y: 46, width: 568, height: 30)
         root.addSubview(title)
 
-        var y: CGFloat = 92
+        var y: CGFloat = 112
 
         // 答题通道 (service channel). The CLI radio exists only on devices where the operator
         // has flipped the per-device switch (镜像自官方服务的 cli_enabled) — everyone else sees
         // just official / custom key, and routing reroutes any stale cli mode to official.
         let channelLabel = rowLabel(L10n.t("答题通道", "回答チャネル", "Answering channel"))
-        channelLabel.frame = NSRect(x: 36, y: y, width: 200, height: 18)
+        channelLabel.frame = NSRect(x: 52, y: y, width: 536, height: 18)
         root.addSubview(channelLabel)
         y += 26
 
@@ -1605,17 +1657,19 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         for mode in visibleModes {
             let radio = NSButton(radioButtonWithTitle: L10n.serviceModeLabel(mode), target: self,
                                  action: #selector(modePicked(_:)))
-            radio.frame = NSRect(x: 40, y: y, width: 220, height: 18)
+            radio.frame = NSRect(x: 52, y: y, width: 536, height: 18)
             radio.identifier = NSUserInterfaceItemIdentifier(mode)
             radio.state = selectedMode == mode ? .on : .off
             root.addSubview(radio)
             modeRadios.append(radio)
             let d = captionLabel(descs[mode] ?? "")
-            d.frame = NSRect(x: 262, y: y + 1, width: 330, height: 30)
+            d.frame = NSRect(x: 72, y: y + 24, width: 516, height: 30)
             root.addSubview(d)
-            y += 30
+            y += 64
         }
-        y += 8
+        settingsCard(root, y: 96, height: y - 92)
+        y += 32
+        let detailTop = y - 12
 
         // Custom-key mode: pick a third-party provider, then paste that vendor's key + (optionally)
         // a model. Everything routes through APIProvider — presets fill endpoint/model, and the
@@ -1625,7 +1679,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
 
             // 厂商
             let providerLabel = rowLabel(L10n.t("厂商", "プロバイダ", "Provider"))
-            providerLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            providerLabel.frame = NSRect(x: 52, y: y + 4, width: 136, height: 18)
             root.addSubview(providerLabel)
             providerPopup.removeAllItems()
             for p in APIProvider.all {
@@ -1637,14 +1691,14 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
             providerPopup.selectItem(at: APIProvider.all.firstIndex { $0.id == provider.id } ?? 0)
             providerPopup.target = self
             providerPopup.action = #selector(providerPicked)
-            providerPopup.frame = NSRect(x: 150, y: y, width: 230, height: 26)
+            providerPopup.frame = NSRect(x: 200, y: y, width: 230, height: 26)
             root.addSubview(providerPopup)
             if provider.consoleURL != nil {
                 let getKey = NSButton(title: L10n.t("获取 Key ↗", "キーを取得 ↗", "Get key ↗"),
                                       target: self, action: #selector(openConsole))
                 getKey.bezelStyle = .recessed
                 getKey.controlSize = .small
-                getKey.frame = NSRect(x: 392, y: y + 2, width: 110, height: 22)
+                getKey.frame = NSRect(x: 442, y: y + 2, width: 110, height: 22)
                 root.addSubview(getKey)
             }
             y += 40
@@ -1652,11 +1706,12 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
             // Base URL — custom provider only.
             if provider.isCustom {
                 let urlLabel = rowLabel("Base URL")
-                urlLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+                urlLabel.frame = NSRect(x: 52, y: y + 4, width: 136, height: 18)
                 root.addSubview(urlLabel)
                 baseURLField.placeholderString = "https://api.example.com/v1"
                 baseURLField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-                baseURLField.frame = NSRect(x: 150, y: y, width: 442, height: 24)
+                baseURLField.bezelStyle = .roundedBezel
+                baseURLField.frame = NSRect(x: 200, y: y, width: 388, height: 24)
                 baseURLField.delegate = self
                 baseURLField.identifier = NSUserInterfaceItemIdentifier("apiBaseURL")
                 root.addSubview(baseURLField)
@@ -1665,11 +1720,12 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
 
             // API Key
             let keyLabel = rowLabel("API Key")
-            keyLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            keyLabel.frame = NSRect(x: 52, y: y + 4, width: 136, height: 18)
             root.addSubview(keyLabel)
             apiKeyField.placeholderString = provider.keyPlaceholder
             apiKeyField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-            apiKeyField.frame = NSRect(x: 150, y: y, width: 442, height: 24)
+            apiKeyField.bezelStyle = .roundedBezel
+            apiKeyField.frame = NSRect(x: 200, y: y, width: 388, height: 24)
             apiKeyField.delegate = self
             apiKeyField.identifier = NSUserInterfaceItemIdentifier("apiKey")
             root.addSubview(apiKeyField)
@@ -1677,13 +1733,14 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
 
             // 模型
             let modelLabel = rowLabel(L10n.t("模型", "モデル", "Model"))
-            modelLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            modelLabel.frame = NSRect(x: 52, y: y + 4, width: 136, height: 18)
             root.addSubview(modelLabel)
             apiModelField.placeholderString = provider.defaultModel.isEmpty
                 ? L10n.t("必填（需支持视觉）", "必須（視覚対応）", "required (vision-capable)")
                 : provider.defaultModel
             apiModelField.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-            apiModelField.frame = NSRect(x: 150, y: y, width: 300, height: 24)
+            apiModelField.bezelStyle = .roundedBezel
+            apiModelField.frame = NSRect(x: 200, y: y, width: 388, height: 24)
             apiModelField.delegate = self
             apiModelField.identifier = NSUserInterfaceItemIdentifier("apiModel")
             root.addSubview(apiModelField)
@@ -1698,7 +1755,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
                 : L10n.t("Key 只存本机钥匙串；截图会直接发给所选厂商（模型需支持视觉）。留空则使用官方服务。",
                          "キーはこのMacのキーチェーンにのみ保存。スクショは選択したプロバイダに送信（視覚対応モデルが必要）。空欄なら公式サービスを利用。",
                          "Keys stay in your local Keychain; the screenshot goes straight to the chosen provider (model must support vision). Empty → the official service."))
-            keyHint.frame = NSRect(x: 40, y: y, width: 552, height: 44)
+            keyHint.frame = NSRect(x: 52, y: y, width: 536, height: 48)
             root.addSubview(keyHint)
             y += 52
         } else if selectedMode == ServiceMode.cli {
@@ -1706,7 +1763,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
             // unlocked the CLI channel for this device (cliEnabled); there's no key to infer it
             // from, so the picker stays here (persistent popup ⇒ clear it before repopulating).
             let backendLabel = rowLabel(L10n.t("引擎", "エンジン", "Engine"))
-            backendLabel.frame = NSRect(x: 40, y: y + 4, width: 100, height: 18)
+            backendLabel.frame = NSRect(x: 52, y: y + 4, width: 136, height: 18)
             root.addSubview(backendLabel)
             backendPopup.removeAllItems()
             for (id, label) in [("codex", "Codex"), ("claude", "Claude")] {
@@ -1716,7 +1773,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
             backendPopup.selectItem(at: Settings.shared.cli == "claude" ? 1 : 0)
             backendPopup.target = self
             backendPopup.action = #selector(backendPicked)
-            backendPopup.frame = NSRect(x: 150, y: y, width: 140, height: 26)
+            backendPopup.frame = NSRect(x: 200, y: y, width: 140, height: 26)
             root.addSubview(backendPopup)
             y += 42
 
@@ -1724,11 +1781,15 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
                 "驱动本机已安装并登录的对应命令行。",
                 "ローカルにインストール・ログイン済みの対応 CLI を利用します。",
                 "Drives the matching local CLI (must be installed and signed in)."))
-            cliHint.frame = NSRect(x: 40, y: y, width: 552, height: 20)
+            cliHint.frame = NSRect(x: 52, y: y, width: 536, height: 32)
             root.addSubview(cliHint)
             y += 28
         }
 
+        if selectedMode != ServiceMode.official {
+            settingsCard(root, y: detailTop, height: y - detailTop + 4)
+            y += 24
+        }
         // Updates + version
         let updateButton = NSButton(title: L10n.t("检查更新…", "アップデートを確認…", "Check for Updates…"),
                                     target: self, action: #selector(checkUpdates))
@@ -1740,6 +1801,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         root.addSubview(versionLabel)
 
         reloadKeys()
+        root.setFrameSize(NSSize(width: 640, height: max(MainSettingsWindowController.pageSize.height, y + 64)))
     }
 
     /// Fill the custom-key fields from the active provider's stored key / model / base URL. A model

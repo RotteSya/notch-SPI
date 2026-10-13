@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         let designArguments = CommandLine.arguments
+        // Visual-QA: force an appearance so light/dark can both be screenshotted regardless of
+        // the system setting (`--qa-appearance light|dark`).
+        if let i = designArguments.firstIndex(of: "--qa-appearance"), i + 1 < designArguments.count {
+            NSApp.appearance = NSAppearance(named: designArguments[i + 1] == "dark" ? .darkAqua : .aqua)
+        }
         let designIndex = designArguments.firstIndex(of: "--qa-design-review")
         if Bundle.main.bundleIdentifier == "com.rottesya.notchspi.design-qa"
             || (ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" && designIndex != nil) {
@@ -69,11 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 controller.openSettings(page: page)
             }
-        }
-        // Visual-QA: force an appearance so light/dark can both be screenshotted regardless of
-        // the system setting (`--qa-appearance light|dark`).
-        if let i = args.firstIndex(of: "--qa-appearance"), i + 1 < args.count {
-            NSApp.appearance = NSAppearance(named: args[i + 1] == "dark" ? .darkAqua : .aqua)
         }
         // Visual-QA: seed a small persona library (dev-domain defaults only) so the 人物像 page
         // can be screenshotted with real rows + the active badge.
