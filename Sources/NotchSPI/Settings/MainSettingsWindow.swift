@@ -34,7 +34,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             case .general: return L10n.t("通用", "一般", "General")
             case .hotkeys: return L10n.t("快捷键", "ショートカット", "Hotkeys")
             case .appearance: return L10n.t("外观", "外観", "Appearance")
-            case .account: return L10n.t("账户与额度", "アカウントと残高", "Account")
+            case .account: return MonthPassPreview.isEnabled ? L10n.t("账户与订阅", "アカウントとプラン", "Account & plan") : L10n.t("账户与额度", "アカウントと残高", "Account")
             case .personas: return L10n.t("人物像", "人物像", "Personas")
             case .advanced: return L10n.t("高级", "詳細", "Advanced")
             }
@@ -49,6 +49,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     var onHotkeysChanged: (() -> Void)?
     var onAnythingChanged: (() -> Void)?
     var onStartQuestion: (() -> Void)?
+    var onMonthPassStatusChanged: ((String) -> Void)?
 
     private let sidebar = SettingsFlippedView()
     private let contentHost = SettingsFlippedView()
@@ -307,6 +308,11 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             return vc
         case .appearance: return AppearancePageController()
         case .account:
+            if MonthPassPreview.isEnabled {
+                let vc = MonthPassAccountPage()
+                vc.onStatusChange = { [weak self] in self?.onMonthPassStatusChanged?($0) }
+                return vc
+            }
             let vc = AccountPageController()
             vc.onStartQuestion = { [weak self] in self?.onStartQuestion?() }
             return vc

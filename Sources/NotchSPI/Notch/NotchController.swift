@@ -818,14 +818,15 @@ final class NotchController: NSObject {
 
         // Quota at a glance + one-tap top-up (official channel only).
         if Settings.shared.serviceMode == ServiceMode.official {
-            let balanceTitle = OfficialAPI.balanceQuestions.map { L10n.questionsLeft($0) } ?? L10n.quotaUnknown
+            let balanceTitle = MonthPassPreview.isEnabled ? model.statusText
+                : OfficialAPI.balanceQuestions.map { L10n.questionsLeft($0) } ?? L10n.quotaUnknown
             let balance = NSMenuItem(title: balanceTitle, action: #selector(openAccount), keyEquivalent: "")
             balance.target = self
             if let img = NSImage(systemSymbolName: "circle.dotted.circle", accessibilityDescription: nil) {
                 balance.image = img
             }
             menu.addItem(balance)
-            let topUp = NSMenuItem(title: L10n.topUp, action: #selector(topUpTapped), keyEquivalent: "")
+            let topUp = NSMenuItem(title: MonthPassPreview.isEnabled ? L10n.t("订阅方案", "プランを見る", "View subscription") : L10n.topUp, action: #selector(topUpTapped), keyEquivalent: "")
             topUp.target = self
             menu.addItem(topUp)
             menu.addItem(.separator())
@@ -1556,6 +1557,10 @@ final class NotchController: NSObject {
     func openSettings(page: MainSettingsWindowController.Page) {
         if settingsController == nil {
             let c = MainSettingsWindowController()
+            c.onMonthPassStatusChanged = { [weak self] in
+                guard MonthPassPreview.isEnabled else { return }
+                self?.model.statusText = $0
+            }
             c.onStartQuestion = { [weak self, weak c] in
                 c?.window?.orderOut(nil)
                 self?.screenshotTapped(mode: "tutor", multiple: false)

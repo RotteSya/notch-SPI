@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto';
+// Local monthly-pass presentation. Kept separate until subscription fulfillment is implemented.
+export {renderMonthPassPreview, MONTH_PASS_PREVIEW_CSP} from './month-pass-page.ts';
 import {escapeHtml,formatMoney,normalizeLang} from './payments.ts';
 import type {StoredPurchaseSession} from './db.ts';
 const strings={
