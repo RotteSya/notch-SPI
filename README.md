@@ -40,3 +40,8 @@ One image keeps waiting. Opening a preview pauses submission; closing it starts 
 reduced-motion alternative. See the [capture notes](docs/direct-target-capture.md).
 
 Engineering handover: [HANDOVER.md](HANDOVER.md).
+
+The notch gear menu opens **Recent Questions** in a separate window. Successful tutor
+answers and their images are saved locally in the background (up to 100 entries,
+30 days, or 200 MiB). Reviewing saved answers never submits another request. No new
+hotkey or extra capture step is required. See [recent questions](docs/recent-questions.md).

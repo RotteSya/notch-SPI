@@ -7,7 +7,8 @@ import AppKit
 enum DesignVisualQA {
     static func start(_ scenario: String) -> NotchController {
         let defaults = UserDefaults(suiteName: "com.rottesya.notchspi.design-fixtures")!
-        let controller = NotchController(activateServices: false, onboardingDefaults: defaults)
+        let history = RecentQuestionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-preview-\(UUID())"))
+        let controller = NotchController(activateServices: false, onboardingDefaults: defaults, recentQuestions: history)
         controller.qaOnboardingPermission = { true }
         // Retry controls exercise failure recovery without capturing the user's screen.
         controller.qaScreenshotCapture = { .failure(.captureFailed) }
@@ -38,7 +39,7 @@ enum DesignVisualQA {
         model.status = .idle
         model.answer = "FINAL: B. 60 km/h"
         let collectionCount = scenario.hasPrefix("collecting-") ? Int(scenario.suffix(1)) : nil
-        let count = collectionCount ?? (["multiple", "collecting", "mixed"].contains(scenario) ? 4 : 1)
+        let count = collectionCount ?? (["history", "multiple", "collecting", "mixed"].contains(scenario) ? 4 : 1)
         for index in 0..<count {
             let size = scenario == "mixed" && index == 1 ? NSSize(width: 400, height: 700)
                 : scenario == "mixed" && index == 2 ? NSSize(width: 1100, height: 300) : NSSize(width: 640, height: 400)
@@ -68,6 +69,21 @@ enum DesignVisualQA {
             }
         }
         model.screenshotStatus = L10n.t("已提交 \(model.screenshots.count) 张截图", "画像 \(model.screenshots.count) 枚を送信済み", "\(model.screenshots.count) screenshot(s) submitted")
+        if scenario == "history" || scenario == "history-empty" {
+            if scenario == "history" {
+                for index in 0..<4 {
+                    let id = UUID()
+                    history.save(snapshot: .init(captureID: id, sessionID: UUID(), generation: 0,
+                        assets: Array(model.screenshots.prefix(index + 1)), expiresAt: Date().addingTimeInterval(900)),
+                        answer: index == 2 ? "FINAL: A、C（请核对第二张图的条件）" : "FINAL: B. 60 km/h", needsReview: index == 2)
+                    if index == 3 {
+                        history.updateExplanation(id: id, text: "平均速度 = 路程 ÷ 时间。\n\n已知路程 120 km，时间 2 h，所以 120 ÷ 2 = 60 km/h。\n\n注意：这里使用的是总路程与总时间，单位一致。")
+                    }
+                }
+            }
+            controller.openRecentQuestions()
+            return controller
+        }
         switch scenario {
         case "ready":
             model.screenshots = []; model.screenshotImages = [:]

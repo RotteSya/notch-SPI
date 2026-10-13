@@ -162,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationPending = true
         controller?.prepareForTermination()
         Task { @MainActor in
+            await RecentQuestionStore.shared.flush()
             let cleaned = await Task.detached(priority: .userInitiated) {
                 CaptureFileLifecycle.shared.removeAllForTermination()
             }.value

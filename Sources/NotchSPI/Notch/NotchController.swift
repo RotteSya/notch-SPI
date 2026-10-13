@@ -93,6 +93,8 @@ final class NotchController: NSObject {
     private var autoLockedBundleID: String?
     private var autoPaused = false // edge-transition tracking for the DEBUG log only
     private var settingsController: MainSettingsWindowController?
+    private let recentQuestions: RecentQuestionStore
+    private var recentQuestionsWindow: RecentQuestionsWindowController?
     private let onboardingProgress: NotchOnboardingProgress
     private var onboardingAttempt = false
     private var onboardingPermissionReturnStep: NotchOnboardingStep = .practice
@@ -151,12 +153,16 @@ final class NotchController: NSObject {
         }
     }
 
-    init(activateServices: Bool = true, onboardingDefaults: UserDefaults = .standard) {
+    init(activateServices: Bool = true, onboardingDefaults: UserDefaults = .standard,
+         recentQuestions: RecentQuestionStore? = nil) {
         activatesServices = activateServices
+        self.recentQuestions = recentQuestions ?? (activateServices ? .shared : RecentQuestionStore(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-test-\(UUID())")))
         onboardingProgress = NotchOnboardingProgress(defaults: onboardingDefaults)
         panel = NotchPanel(contentRect: .zero)
         super.init()
         if activateServices {
+            self.recentQuestions.list { _, _ in } // Quiet startup retention cleanup, off the main thread.
             ClientConfigService.shared.refresh()
             ProductTelemetry.shared.flush()
         }
@@ -792,6 +798,11 @@ final class NotchController: NSObject {
             cancel.target = self; menu.addItem(cancel)
         }
         menu.addItem(.separator())
+        let recent = NSMenuItem(title: L10n.t("最近查题…", "最近の問題…", "Recent Questions…"),
+                                action: #selector(openRecentQuestions), keyEquivalent: "")
+        recent.target = self
+        menu.addItem(recent)
+        menu.addItem(.separator())
         if Settings.shared.mode != "personality" {
             if currentRunSnapshot?.screenQuery != nil, !running, model.status == .error {
                 let item = NSMenuItem(title: L10n.t("核对本次额度", "今回の残高を確認", "Check this request's charge"),
@@ -912,6 +923,21 @@ final class NotchController: NSObject {
         return menu
     }
 
+    @objc func openRecentQuestions() {
+        if recentQuestionsWindow == nil { recentQuestionsWindow = RecentQuestionsWindowController(store: recentQuestions) }
+        recentQuestionsWindow?.present()
+    }
+
+    /// Saving is passive: it never changes the live model, opens a window, or submits work.
+    func recordRecentQuestion(_ capture: QuestionCaptureSnapshot, succeeded: Bool, mode: String,
+                              resultProtocol: String?, composition: ObjectiveResultComposition?) {
+        guard succeeded, mode == "tutor", !onboardingAttempt, model.onboardingStep == nil,
+              model.status != .error, composition?.state != .retake,
+              resultProtocol == nil || composition?.finalAnswer != nil,
+              !model.answer.isEmpty, model.answer != L10n.noOutput else { return }
+        recentQuestions.save(snapshot: capture, answer: model.answer, needsReview: composition?.state == .review)
+    }
+
     private func showExplanation() {
         synchronizeMaterialScope()
         guard !running else { return }
@@ -940,6 +966,7 @@ final class NotchController: NSObject {
             guard let self, self.accepts(run, generation: generation) else { return }
             self.model.explanationLoading = false
             if ok {
+                self.recentQuestions.updateExplanation(id: capture.captureID, text: self.model.explanation)
                 self.model.statusText = L10n.t("解释已生成", "解説を生成しました", "Explanation ready")
             } else {
                 self.model.statusText = L10n.t("解释生成失败；原答案保留，本次不会自动重试。", "解説を生成できませんでした。元の回答を保持します。", "Explanation failed. The original answer is preserved; no automatic retry will run.")
@@ -1017,6 +1044,9 @@ final class NotchController: NSObject {
                         && !self.model.explanationAttempted && capture.expiresAt > Date()
                     self.model.resultState = result.state; self.model.resultReason = result.result?.reason
                     self.model.parserPath = result.parserPath
+                    if !self.onboardingAttempt, self.model.onboardingStep == nil {
+                        self.recentQuestions.save(snapshot: capture, answer: result.visibleText, needsReview: result.state == .review)
+                    }
                     self.model.status = .idle
                     self.model.statusText = result.state == .review ? self.objectiveReviewMessage(result.result?.reason)
                         : L10n.t("答案已恢复 · 未追加扣题", "回答を復元しました・追加消費なし", "Answer recovered · no additional charge")
@@ -2495,6 +2525,10 @@ final class NotchController: NSObject {
                 latency.complete(success: ok && self.model.status != .error && composition?.state != .retake
                     && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
                     && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if let materialSnapshot {
+                    self.recordRecentQuestion(materialSnapshot, succeeded: ok, mode: snapshot.mode,
+                                              resultProtocol: snapshot.resultProtocol, composition: composition)
+                }
                 self.onboardingCaptureFinished(success: ok && composition?.state != .retake
                     && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
                     && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
