@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class RecentQuestionsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+final class RecentQuestionsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     private let store: RecentQuestionStore
     private var records: [RecentQuestion] = []
     private let table = NSTableView()
@@ -25,6 +25,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         window.isReleasedWhenClosed = false
         window.sharingType = ScreenShareGuard.windowSharingType
         super.init(window: window)
+        window.delegate = self
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 680)); window.contentView = root
         let header = NSTextField(labelWithString: L10n.t("最近查题", "最近の問題", "Recent Questions"))
         header.font = .systemFont(ofSize: 24, weight: .semibold)
@@ -93,6 +94,12 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         window.setContentSize(NSSize(width: 960, height: 680))
         window.center(); reload()
     }
+    private lazy var answerFieldEditor: AnswerReadingFieldEditor = {
+        let editor = AnswerReadingFieldEditor(); editor.isFieldEditor = true; return editor
+    }()
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        AnswerText.isReadingLabel(client) ? answerFieldEditor : nil
+    }
     required init?(coder: NSCoder) { nil }
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
@@ -121,27 +128,39 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         thumbnail.image = ScreenshotThumbnail.load(store.imageURL(for: record, index: record.imageCount - 1), maxPixelSize: 160)
         thumbnail.imageScaling = .scaleProportionallyUpOrDown
         thumbnail.setAccessibilityLabel(L10n.t("题目缩略图", "問題のサムネイル", "Question thumbnail"))
-        let title = NSTextField(labelWithString: String(record.conclusion.prefix(100)).replacingOccurrences(of: "\n", with: " "))
-        title.font = .systemFont(ofSize: 14, weight: .medium); title.lineBreakMode = .byTruncatingTail
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let title = AnswerText.label(record.reading.conclusion.replacingOccurrences(of: "\n", with: " "), size: 14, weight: .medium)
+        // Table field cells can omit attachment-only strings. Use the same CoreText
+        // renderer as the notch for mathematical previews; ordinary titles retain
+        // native truncation and table selection behaviour.
+        let preview: NSView
+        if title.attributedStringValue.containsAttachments {
+            let mathPreview = StreamingAnswerView()
+            mathPreview.setAnswer(title.attributedStringValue, isPlaceholder: true)
+            mathPreview.setAccessibilityLabel(L10n.t("答案", "回答", "Answer"))
+            preview = mathPreview
+        } else {
+            title.lineBreakMode = .byTruncatingTail
+            preview = title
+            cell.textField = title
+        }
         let date = DateFormatter.localizedString(from: record.createdAt, dateStyle: .short, timeStyle: .short)
         let info = NSTextField(labelWithString: date + (record.needsReview ? " · " + L10n.t("需核对", "要確認", "Review") : ""))
         info.font = .systemFont(ofSize: 11); info.textColor = .secondaryLabelColor
         info.lineBreakMode = .byTruncatingTail
         info.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for view in [thumbnail, title, info] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
+        for view in [thumbnail, preview, info] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
         NSLayoutConstraint.activate([
             thumbnail.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
             thumbnail.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             thumbnail.widthAnchor.constraint(equalToConstant: 48), thumbnail.heightAnchor.constraint(equalToConstant: 48),
-            title.leadingAnchor.constraint(equalTo: thumbnail.trailingAnchor, constant: 10),
-            title.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
-            title.topAnchor.constraint(equalTo: cell.topAnchor, constant: 14),
-            info.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            info.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            info.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 7)
+            preview.leadingAnchor.constraint(equalTo: thumbnail.trailingAnchor, constant: 10),
+            preview.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -10),
+            preview.topAnchor.constraint(equalTo: cell.topAnchor, constant: 6),
+            preview.heightAnchor.constraint(equalToConstant: 36),
+            info.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+            info.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+            info.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 3)
         ])
-        cell.textField = title
         return cell
     }
     func tableViewSelectionDidChange(_ notification: Notification) { renderSelection() }

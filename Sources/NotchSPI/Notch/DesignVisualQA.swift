@@ -69,11 +69,18 @@ enum DesignVisualQA {
             }
         }
         model.screenshotStatus = L10n.t("已提交 \(model.screenshots.count) 张截图", "画像 \(model.screenshots.count) 枚を送信済み", "\(model.screenshots.count) screenshot(s) submitted")
-        if scenario == "reading-consistency" {
+        if scenario == "reading-consistency" || scenario == "math-reading" {
             let capture = QuestionCaptureSnapshot(captureID: UUID(), sessionID: UUID(), generation: 0,
                 assets: model.screenshots, expiresAt: Date().addingTimeInterval(900))
             model.answer = "**计算步骤**：平均速度 = 路程 ÷ 时间。\nFINAL: **（1）B. 60 km/h**\n（2）120 km ÷ 2 h = 60 km/h\n（3）公式：\\(v_1 = \\frac{s_1}{t_1}\\)"
             model.explanation = "**解释**\n保留题号、单位和换行。`120 / 2 = 60`\n\n" + String(repeating: "换算时检查 km 与 h，结论始终与原题一起核对。\n", count: 18) + "\n解释结束。"
+            if scenario == "math-reading" {
+                model.answer = #"FINAL: \(x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}\)"#
+                model.explanation = #"椭圆：\(\frac{x_1^2}{8}+\frac{y_2^2}{2}=1\)"# + "\n\n" + #"概率：$P(A \mid B)=\frac{P(A \cap B)}{P(B)}$"# + "\n\n" + #"\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]"# + "\n\n" + #"\[\int_0^1 x^2\,dx = \frac{1}{3}\]"#
+            }
+            if scenario == "math-reading" {
+                model.explanation += "\n\n长公式：\\(" + Array(repeating: "x_1^2", count: 30).joined(separator: "+") + "\\)"
+            }
             model.resultState = .review
             model.statusText = AnswerReadingContent.reviewMessage
             model.reasoningRevealed = true

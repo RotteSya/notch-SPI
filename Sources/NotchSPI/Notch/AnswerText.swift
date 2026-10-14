@@ -3,7 +3,7 @@ import AppKit
 /// Identical inline typography and plain-text copying on all answer surfaces.
 /// Math source is preserved literally: Markdown must not eat TeX backslashes or subscripts.
 enum AnswerText {
-    private static let math = try! NSRegularExpression(pattern: #"\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$|\$[^\n$]+\$"#)
+    private static let math = try! NSRegularExpression(pattern: #"\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$|\$[^\n$]+\$|\\\([\s\S]*$|\\\[[\s\S]*$|\$\$[\s\S]*$|\$[^\n$]*$"#)
     private struct ProtectedText {
         let markdown: String
         let replacements: [(String, String)]
@@ -49,16 +49,29 @@ enum AnswerText {
                 }
             }
             a[.font] = font
-            out.append(NSAttributedString(string: source.restore(String(value[run.range].characters)), attributes: a))
+            let restored = source.restore(String(value[run.range].characters))
+            let text = restored as NSString
+            var start = 0
+            let matches = run.inlinePresentationIntent?.contains(.code) == true ? [] : math.matches(in: restored, range: NSRange(location: 0, length: text.length))
+            for match in matches {
+                out.append(NSAttributedString(string: text.substring(with: NSRange(location: start, length: match.range.location - start)), attributes: a))
+                let raw = text.substring(with: match.range)
+                out.append(AnswerMath.formula(raw, attributes: a) ?? NSAttributedString(string: raw, attributes: a))
+                start = NSMaxRange(match.range)
+            }
+            out.append(NSAttributedString(string: text.substring(from: start), attributes: a))
         }
         return out
     }
+    static func isReadingLabel(_ client: Any?) -> Bool { client is AnswerReadingLabel }
     static func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular,
                       color: NSColor = .labelColor) -> NSTextField {
         let label = AnswerReadingLabel(wrappingLabelWithString: "")
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 4; paragraph.paragraphSpacing = 6
-        label.attributedStringValue = attributed(text, baseFont: .systemFont(ofSize: size, weight: weight),
+        label.originalText = attributed(text, baseFont: .systemFont(ofSize: size, weight: weight),
             codeFont: .monospacedSystemFont(ofSize: max(10, size - 0.5), weight: weight), color: color, para: paragraph)
+        label.attributedStringValue = label.originalText
+        label.setAccessibilityValue(AnswerMath.sourceText(label.originalText))
         label.isSelectable = true
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -69,6 +82,10 @@ enum AnswerText {
 /// Measure using the actual column width, including after window resizing. A fixed
 /// preferredMaxLayoutWidth otherwise leaves the last lines outside the label's frame.
 private final class AnswerReadingLabel: NSTextField {
+    var originalText = NSAttributedString()
+    override func accessibilityValue() -> String? { AnswerMath.sourceText(originalText) }
+    override func accessibilityLabel() -> String? { AnswerMath.sourceText(originalText) }
+
     override var intrinsicContentSize: NSSize {
         guard bounds.width > 4 else { return super.intrinsicContentSize }
         let rect = attributedStringValue.boundingRect(with: NSSize(width: bounds.width - 4, height: 100_000),
@@ -79,6 +96,19 @@ private final class AnswerReadingLabel: NSTextField {
     override func setFrameSize(_ newSize: NSSize) {
         let changed = abs(newSize.width - frame.width) > 0.5
         super.setFrameSize(newSize)
-        if changed { invalidateIntrinsicContentSize() }
+        if changed {
+            attributedStringValue = AnswerMath.fitting(originalText, width: max(1, newSize.width - 4))
+            invalidateIntrinsicContentSize()
+        }
+    }
+}
+
+/// Preserve editable TeX when a user copies a text selection containing a formula.
+final class AnswerReadingFieldEditor: NSTextView {
+    override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard let storage = textStorage, NSMaxRange(selectedRange()) <= storage.length else { return false }
+        let selected = storage.attributedSubstring(from: selectedRange())
+        pboard.clearContents()
+        return pboard.setString(AnswerMath.sourceText(selected), forType: .string)
     }
 }

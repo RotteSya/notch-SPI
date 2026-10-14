@@ -119,6 +119,9 @@ fi
 echo "==> Assembling $APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+mkdir -p "$APP/Contents/Resources"
+ditto "$BINDIR/SwiftMath_SwiftMath.bundle" "$APP/Contents/Resources/SwiftMath_SwiftMath.bundle"
+ditto Resources/ThirdParty "$APP/Contents/Resources/ThirdParty"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 cp "Resources/$ICON_FILE" "$APP/Contents/Resources/$ICON_FILE"
 

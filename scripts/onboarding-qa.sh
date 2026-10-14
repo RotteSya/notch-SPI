@@ -31,8 +31,12 @@ mkdir -p "$QA_OUTPUT"
 swift build
 mkdir -p "$QA_APP/Contents/MacOS"
 # Replace the executable inode instead of overwriting a previously validated Mach-O.
-cp .build/debug/NotchSPI "$QA_APP/Contents/MacOS/NotchSPI.next"
+bin_dir="$(swift build --show-bin-path)"
+cp "$bin_dir/NotchSPI" "$QA_APP/Contents/MacOS/NotchSPI.next"
 mv -f "$QA_APP/Contents/MacOS/NotchSPI.next" "$QA_APP/Contents/MacOS/NotchSPI"
+mkdir -p "$QA_APP/Contents/Resources"
+ditto "$bin_dir/SwiftMath_SwiftMath.bundle" "$QA_APP/Contents/Resources/SwiftMath_SwiftMath.bundle"
+ditto Resources/ThirdParty "$QA_APP/Contents/Resources/ThirdParty"
 cat > "$QA_APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

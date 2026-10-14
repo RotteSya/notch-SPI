@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 scenario="${1:-answer}"
 shift "$(( $# > 0 ? 1 : 0 ))"
 case "$scenario" in
-  reading-consistency|expanded-answer|history|history-empty|month-pass|settings|motion-review|intake-review|permission|ready|answer|success|welcome|working|failure|long|multiline|multiple|mixed|collecting|collecting-1|collecting-2|collecting-3|collecting-4|multi-flow|reasoning) ;;
+  math-reading|reading-consistency|expanded-answer|history|history-empty|month-pass|settings|motion-review|intake-review|permission|ready|answer|success|welcome|working|failure|long|multiline|multiple|mixed|collecting|collecting-1|collecting-2|collecting-3|collecting-4|multi-flow|reasoning) ;;
   *) echo "Unknown design fixture: $scenario" >&2; exit 2 ;;
 esac
 swift build
@@ -14,6 +14,9 @@ qa_app="$PWD/output/design-qa/NotchSPI Design QA.app"
 mkdir -p "$qa_app/Contents/MacOS"
 cp "$bin_dir/NotchSPI" "$qa_app/Contents/MacOS/NotchSPI.next"
 mv "$qa_app/Contents/MacOS/NotchSPI.next" "$qa_app/Contents/MacOS/NotchSPI"
+mkdir -p "$qa_app/Contents/Resources"
+ditto "$bin_dir/SwiftMath_SwiftMath.bundle" "$qa_app/Contents/Resources/SwiftMath_SwiftMath.bundle"
+ditto Resources/ThirdParty "$qa_app/Contents/Resources/ThirdParty"
 cat > "$qa_app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

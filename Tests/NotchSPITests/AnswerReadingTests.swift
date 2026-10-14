@@ -46,7 +46,7 @@ final class AnswerReadingTests: XCTestCase {
         XCTAssertEqual(plain, "答案：\(formula)\n（2）60 km/h\n（3）$a_1 + b_2$")
         XCTAssertEqual(AnswerComposer.clipboardAnswer("FINAL: " + raw), "答案：" + formula)
         let label = AnswerText.label(raw, size: 15)
-        XCTAssertEqual(label.attributedStringValue.string, plain)
+        XCTAssertEqual(AnswerMath.sourceText(label.attributedStringValue), plain)
         let font = label.attributedStringValue.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         XCTAssertTrue(font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } ?? false)
         XCTAssertFalse(plain.contains("NSPIMATHPLACEHOLDER"))

@@ -92,6 +92,12 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         renderImages(content); renderAnswer(content)
         window.setContentSize(NSSize(width: 1060, height: 720)); window.center()
     }
+    private lazy var answerFieldEditor: AnswerReadingFieldEditor = {
+        let editor = AnswerReadingFieldEditor(); editor.isFieldEditor = true; return editor
+    }()
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        AnswerText.isReadingLabel(client) ? answerFieldEditor : nil
+    }
     required init?(coder: NSCoder) { nil }
 
     func present() { window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }

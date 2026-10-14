@@ -47,9 +47,9 @@ final class StreamingAnswerView: NSView {
     override func isAccessibilityElement() -> Bool { attributed.length > 0 }
     override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
     override func accessibilityLabel() -> String? {
-        isPlaceholder ? L10n.t("操作提示", "操作のヒント", "Usage hint") : L10n.t("答案", "回答", "Answer")
+        super.accessibilityLabel() ?? (isPlaceholder ? L10n.t("操作提示", "操作のヒント", "Usage hint") : L10n.t("答案", "回答", "Answer"))
     }
-    override func accessibilityValue() -> Any? { attributed.string }
+    override func accessibilityValue() -> Any? { AnswerMath.sourceText(attributed) }
     override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
         guard !isPlaceholder else { return nil }
         var actions: [NSAccessibilityCustomAction] = []
@@ -78,7 +78,7 @@ final class StreamingAnswerView: NSView {
     func setAnswer(_ attr: NSAttributedString, isPlaceholder: Bool) {
         guard !attributed.isEqual(to: attr) || isPlaceholder != self.isPlaceholder else { return }
         let new = attr.string
-        let accessibilityChanged = new != plain || isPlaceholder != self.isPlaceholder
+        let accessibilityChanged = AnswerMath.sourceText(attr) != AnswerMath.sourceText(attributed) || isPlaceholder != self.isPlaceholder
         defer {
             if accessibilityChanged { NSAccessibility.post(element: self, notification: .valueChanged) }
         }
@@ -146,7 +146,7 @@ final class StreamingAnswerView: NSView {
 
     static func measure(_ attr: NSAttributedString, width: CGFloat) -> CGFloat {
         guard attr.length > 0, width > 1 else { return 0 }
-        let setter = CTFramesetterCreateWithAttributedString(attr)
+        let setter = CTFramesetterCreateWithAttributedString(AnswerMath.fitting(attr, width: width))
         let size = CTFramesetterSuggestFrameSizeWithConstraints(
             setter, CFRange(location: 0, length: 0), nil,
             CGSize(width: width, height: .greatestFiniteMagnitude), nil)
@@ -169,7 +169,7 @@ final class StreamingAnswerView: NSView {
         guard attributed.length > 0, bounds.width > 1 else { return nil }
         let key = attributed.string
         if let c = frameCache, c.key == key, c.width == bounds.width { return c.frame }
-        let setter = CTFramesetterCreateWithAttributedString(attributed)
+        let setter = CTFramesetterCreateWithAttributedString(AnswerMath.fitting(attributed, width: bounds.width))
         let path = CGPath(rect: CGRect(x: 0, y: 0, width: bounds.width, height: Self.layoutHeight), transform: nil)
         let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil)
         frameCache = (key, bounds.width, frame)
@@ -222,6 +222,19 @@ final class StreamingAnswerView: NSView {
                     ?? (NSFont.systemFont(ofSize: NotchType.answerFontSize) as CTFont)
                 let runColor = (attrs[NSAttributedString.Key.foregroundColor.rawValue as NSString] as? NSColor)
                     ?? NotchPalette.primary
+
+                if let attachment = attrs[NSAttributedString.Key.attachment.rawValue] as? NSTextAttachment,
+                   let image = attachment.image {
+                    let rect = CGRect(x: originX + positions[0].x + 2,
+                        y: originY + attachment.bounds.minY + 2,
+                        width: max(1, attachment.bounds.width - 4), height: max(1, attachment.bounds.height - 4))
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+                    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1,
+                               respectFlipped: false, hints: nil)
+                    NSGraphicsContext.restoreGraphicsState()
+                    continue
+                }
 
                 // A hotkey cap in the placeholder: seat a mini glass keycap under this run —
                 // the world's "press this" material, at text scale. Chip before glyphs, so the
