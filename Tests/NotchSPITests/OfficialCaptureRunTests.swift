@@ -120,7 +120,7 @@ private final class CaptureRunFixture {
     let session = URLSession(configuration: .ephemeral)
     let root: URL
     let paths: [String]
-    let id = UUID()
+    var id = UUID()
     var requests: [CaptureHTTPRequest] = []
     var deltas: [String] = []
     var receipts: [OfficialUsageReceipt] = []
@@ -180,6 +180,40 @@ private final class CaptureRunFixture {
 
 @MainActor
 final class OfficialCaptureRunTests: XCTestCase {
+    func testInterruptedConnectionReconcilesOnceAndNextQuestionUsesSameAccountWithoutReposting() async throws {
+        let f = try CaptureRunFixture()
+        let firstID = f.id
+        let released = try JSONSerialization.data(withJSONObject: f.snapshot(charged: 0))
+        var posts = 0
+        let server = try await connect(f) { request, reply in
+            if request.method == "GET" {
+                XCTAssertEqual(request.path, "/v1/captures/\(firstID.uuidString.lowercased())/status")
+                reply.respond(type: "application/json", body: released)
+            } else {
+                posts += 1
+                if posts == 1 {
+                    reply.respond(body: try! f.frame(["type": "delta", "text": "partial FINAL: A"]), complete: false)
+                } else { reply.respond(body: try! f.answer()) }
+            }
+        }
+        defer { server.stop(); f.cleanup() }
+        let account = f.account.value
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(f.completions.first?.0, false)
+        XCTAssertEqual(f.settlements.count, 1)
+        XCTAssertEqual(f.settlements.first?.questionsCharged, 0)
+        XCTAssertEqual(posts, 1, "Interrupted transport must not silently start another paid solve")
+        f.id = UUID(); f.completions.removeAll(); f.deltas.removeAll(); f.callbackOrder.removeAll()
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.receipts.first?.captureID, f.id)
+        XCTAssertEqual(f.account.value, account)
+        XCTAssertEqual(posts, 2)
+        XCTAssertEqual(f.requests.filter { $0.method == "GET" }.count, 1)
+    }
+
     private func connect(_ fixture: CaptureRunFixture,
         handler: @escaping @MainActor (CaptureHTTPRequest, CaptureHTTPReply) -> Void) async throws -> CaptureHTTPServer {
         let server = try CaptureHTTPServer { request, reply in fixture.requests.append(request); handler(request, reply) }

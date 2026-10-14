@@ -23,6 +23,10 @@ final class NotchController: NSObject {
     var qaScreenshotWarmUp: (() -> Void)?
     var qaSubmittedLatency: CaptureLatency?
     var qaScreenshotClock: (() -> TimeInterval)?
+    // Exercise the real intake, composition and completion path without a paid provider.
+    var qaAnswerStream: ((@escaping (String) -> Void, @escaping (Bool, String) -> Void) -> Void)?
+    var qaRequestRunning: Bool { running }
+    func qaSuspendCaptureWork() { suspendCaptureWork() }
     func qaOpenScreenshotPreview(_ id: UUID) { notchView.qaPreviewScreenshot(id) }
     func qaPreviewScreenshots(_ value: Bool) { screenshotRound.setPreviewing(value, now: screenshotNow); updateScreenshotRound() }
     func qaRemoveScreenshot(_ id: UUID) { removeScreenshot(id) }
@@ -32,6 +36,7 @@ final class NotchController: NSObject {
     func qaCancelScreenshotRound() { cancelRoundByUser() }
     func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
     var qaExpandedAnswerWindow: ExpandedAnswerWindowController? { expandedAnswerWindow }
+    var qaRecentQuestionsWindow: RecentQuestionsWindowController? { recentQuestionsWindow }
     func qaSeedExpandedAnswer(_ capture: QuestionCaptureSnapshot) {
         currentQuestionSnapshot = capture; currentAnswerCaptureID = capture.captureID
     }
@@ -258,6 +263,11 @@ final class NotchController: NSObject {
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor in self?.newQuestionGroup() } })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.suspendCaptureWork() }
+        })
         observers.append(NotificationCenter.default.addObserver(
             forName: OfficialAPI.accountDidChange, object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor in self?.synchronizeMaterialScope() } })
@@ -1183,6 +1193,7 @@ final class NotchController: NSObject {
     }
 
     private func invalidateQuestionContext(clearAnswer: Bool) {
+        let interrupted = running || model.explanationLoading
         cancelScreenshotRound()
         capturePreparation.cancel()
         officialTask?.cancel()
@@ -1203,8 +1214,19 @@ final class NotchController: NSObject {
         if clearAnswer {
             model.answer = ""; model.resultState = nil; model.resultReason = nil; model.parserPath = .none
             model.status = .idle; model.statusText = L10n.statusReady
+        } else if interrupted {
+            model.status = .error
+            model.statusText = L10n.t("本次查题已中断，可按原快捷键继续。", "今回の質問は中断されました。同じショートカットで続けられます。", "This request was interrupted. Use the same shortcut to continue.")
         }
         refreshMaterials()
+    }
+
+    private func suspendCaptureWork() {
+        guard running || model.explanationLoading || intakeTask != nil || screenshotRound.isActive
+            || pendingSingle != nil || autoEngine.isActive else { return }
+        // Never submit an unattended countdown after wake or accept a pre-sleep callback.
+        // Completed answers and already-open readers remain available.
+        invalidateQuestionContext(clearAnswer: false)
     }
 
     private func synchronizeMaterialScope() {
@@ -2434,12 +2456,13 @@ final class NotchController: NSObject {
             var objectiveFilter = ObjectiveResultStreamFilter()
             var firstTokenMS: Int?
             var completionRecorded = false
+            var streamFinished = false
             var receipt: OfficialUsageReceipt?
             // Shared by both channels so CLI mode and direct-API mode render identically.
             let onDelta: (String) -> Void = { [weak self] delta in
                 // A run the watchdog gave up on may still be streaming; its output must not land
                 // in the panel the user is now watching.
-                guard let self, self.accepts(snapshot, generation: generation) else { return }
+                guard !streamFinished, let self, self.accepts(snapshot, generation: generation) else { return }
                 if firstTokenMS == nil { firstTokenMS = latency.elapsedMS; latency.mark(.firstDelta) }
                 let previousAnswer = self.model.answer
                 if let personalityRun { personalityRun.append(delta, to: self.model) }
@@ -2460,7 +2483,8 @@ final class NotchController: NSObject {
                 defer { withExtendedLifetime(materialSnapshot) {} }
                 // Same guard as onDelta: a timed-out run must not reset `running` or overwrite the
                 // status of the capture the user started after it.
-                guard let self, self.accepts(snapshot, generation: generation) else { return }
+                guard !streamFinished, let self, self.accepts(snapshot, generation: generation) else { return }
+                streamFinished = true
                 latency.mark(.responseCompleted)
                 let composition: ObjectiveResultComposition?
                 if snapshot.resultProtocol == "objective_v1", snapshot.mode == "tutor" {
@@ -2561,6 +2585,15 @@ final class NotchController: NSObject {
                         }
                     }
                 }
+                // A plausible FINAL line is not evidence of successful delivery. Keep partial
+                // text for inspection, but never expose it as a completed answer or explanation.
+                if !ok {
+                    let failure = String(stderr.suffix(600)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.model.status = .error
+                    self.model.statusText = failure.isEmpty
+                        ? L10n.t("答案未完整接收，可按原快捷键继续。", "回答を完全に受信できませんでした。同じショートカットで続けられます。", "The answer was not fully received. Use the same shortcut to continue.")
+                        : failure
+                }
                 if case .official = snapshot.channel, !ok,
                    let balance = OfficialAPI.balanceQuestions, balance <= 0 {
                     // 截屏中途遇到 402：直接打开账户页引导充值，而不是让用户自己找入口。
@@ -2573,7 +2606,7 @@ final class NotchController: NSObject {
                 }
                 self.model.explanationAvailable = snapshot.mode == "tutor" && ok && composition?.finalAnswer != nil
                     && (snapshot.channel != .official || (snapshot.screenQuery != nil && receipt?.explanationAvailable == true))
-                if !ok, composition?.noResultReason == nil, composition?.state != .retake {
+                if !ok, receipt?.settlementStatus != "released", composition?.noResultReason == nil, composition?.state != .retake {
                     self.reconcileQuestion(snapshot, generation: generation)
                 }
                 latency.complete(success: ok && self.model.status != .error && composition?.state != .retake
@@ -2595,6 +2628,12 @@ final class NotchController: NSObject {
             }
 
             latency.mark(.submitted)
+            #if DEBUG
+            if let qaAnswerStream = self.qaAnswerStream {
+                qaAnswerStream(onDelta, onDone)
+                return
+            }
+            #endif
             switch snapshot.channel {
             case .cli:
                 guard let binPath else {
