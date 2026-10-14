@@ -10,7 +10,10 @@ struct HotkeyCombo: Equatable {
 final class Settings {
     static let shared = Settings()
     private let d: UserDefaults
-    init(defaults: UserDefaults = .standard) { self.d = defaults }
+    private let secrets: KeychainStore.Access
+    init(defaults: UserDefaults = .standard, secrets: KeychainStore.Access = .live) {
+        self.d = defaults; self.secrets = secrets
+    }
 
     var cli: String {
         get { d.string(forKey: "cli") ?? "codex" }
@@ -151,13 +154,18 @@ final class Settings {
     /// (and its UserDefaults copy removed) on first read.
     func apiKey(for cli: String) -> String {
         let account = "apiKey.\(cli)"
-        if let v = KeychainStore.read(account) {
-            return v.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch secrets.read(account) {
+        case .value(let value): return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .unavailable:
+            // An upgrade/re-sign can temporarily deny access. This is not an empty
+            // Keychain: never replace its credential with a potentially stale legacy copy.
+            return ""
+        case .missing: break
         }
         let legacy = (d.string(forKey: account) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         // Remove the plaintext copy only on a confirmed Keychain write; a failed one would
         // otherwise silently discard a key the user has to go find and paste again.
-        if !legacy.isEmpty, KeychainStore.write(legacy, account: account) {
+        if !legacy.isEmpty, secrets.write(legacy, account) {
             d.removeObject(forKey: account)
         }
         return legacy
@@ -166,7 +174,7 @@ final class Settings {
     func setAPIKey(_ key: String, for cli: String) {
         let account = "apiKey.\(cli)"
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        if KeychainStore.write(trimmed, account: account) {
+        if secrets.write(trimmed, account) {
             d.removeObject(forKey: account) // never leave a plaintext copy behind
         } else if !trimmed.isEmpty {
             d.set(trimmed, forKey: account) // see OfficialAPI.deviceToken: recoverable > lost

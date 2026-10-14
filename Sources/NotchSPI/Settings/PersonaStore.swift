@@ -30,12 +30,13 @@ private struct PersonaLibrary: Codable {
 /// working-directory-relative files, which would be unreliable for a `.app` bundle).
 final class PersonaStore {
     static let shared = PersonaStore()
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
     private let key = "personaLibrary"
 
     private var library: PersonaLibrary
 
-    private init() {
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
         if let data = d.data(forKey: key),
            let lib = try? JSONDecoder().decode(PersonaLibrary.self, from: data) {
             library = lib
@@ -112,7 +113,7 @@ final class PersonaStore {
     /// Mirror the active persona into the legacy `Settings` fields the capture pipeline reads.
     /// Clearing them when there's no active persona keeps the "还没有人物像" prompt correct.
     private func syncActiveToSettings() {
-        Settings.shared.personaName = active?.name ?? ""
-        Settings.shared.personaText = active?.text ?? ""
+        d.set(active?.name ?? "", forKey: "personaName")
+        d.set(active?.text ?? "", forKey: "personaText")
     }
 }
