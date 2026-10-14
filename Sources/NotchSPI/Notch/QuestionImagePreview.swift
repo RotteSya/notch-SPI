@@ -30,7 +30,7 @@ final class QuestionImagePreview: NSWindowController, NSWindowDelegate {
         view.setAccessibilityLabel(title)
         root.addSubview(view)
         let hint = NSTextField(wrappingLabelWithString: collecting
-            ? L10n.t("预览期间暂停提交 · 关闭后重新倒计时 4 秒 · Esc 关闭", "プレビュー中は送信を停止 · 閉じると4秒後に送信 · Escで閉じる", "Sending paused during preview · closes with a fresh 4s timer · Esc to close")
+            ? L10n.t("预览期间暂停提交 · 2 张起，关闭后 4 秒提交 · Esc 关闭", "プレビュー中は送信を停止 · 2枚以上なら閉じて4秒後に送信 · Escで閉じる", "Sending paused · with 2+ images, closing starts a fresh 4s timer · Esc to close")
             : L10n.t("Esc 关闭预览", "Esc で閉じる", "Esc to close preview"))
         hint.font = CaptureStyle.caption; hint.textColor = .secondaryLabelColor
         hint.frame = NSRect(x: 16, y: 10, width: size.width - 32, height: 48)

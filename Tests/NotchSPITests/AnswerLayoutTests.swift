@@ -199,6 +199,31 @@ final class AnswerLayoutTests: XCTestCase {
         XCTAssertFalse(model.usesContentShelf)
     }
 
+    @MainActor func testProtocolOnlyRetakeAndInterruptedAnswerExposeReasonInContentCard() {
+        let model = TutorModel()
+        model.resultState = .retake
+        model.answer = L10n.noOutput
+        model.statusText = "题目模糊，请重新截取完整题干和选项。"
+        XCTAssertEqual(model.displayedAnswer, model.statusText)
+        XCTAssertTrue(model.usesStatusShelf)
+        XCTAssertFalse(model.canExpandAnswer)
+        let retakeHeading = model.captureHeading
+        model.captureFeedback = "本轮已取消。按快捷键开始新的截图。"
+        XCTAssertEqual(model.displayedAnswer, model.captureFeedback)
+        XCTAssertNotEqual(model.captureHeading, retakeHeading)
+        model.captureFeedback = ""
+        model.resultState = nil
+        model.status = .error
+        model.answer = "FINAL: partial answer"
+        model.statusText = "答案未完整接收，可按原快捷键继续。"
+        XCTAssertEqual(model.displayedAnswer, model.statusText)
+        XCTAssertTrue(model.usesStatusShelf)
+        // A new capture still suppresses the preceding message immediately.
+        model.screenshotRoundActive = true
+        XCTAssertTrue(model.hidesAnswer)
+        XCTAssertFalse(model.usesStatusShelf)
+    }
+
     @MainActor func testRecoveryAndSetupInstructionsNeverUseAnswerShelf() {
         let model = TutorModel()
         model.answer = "FINAL: B"

@@ -51,7 +51,7 @@ final class TutorModel: ObservableObject {
     @Published var screenshotNotice = ""
     @Published var captureFeedback = ""
     // Keep the preceding answer alive for its request, but never present it as this round's answer.
-    var hidesAnswer: Bool { screenshotRoundActive || (showScreenshotTray && answer.isEmpty && captureFeedback.isEmpty) }
+    var hidesAnswer: Bool { screenshotRoundActive || (showScreenshotTray && answer.isEmpty && !isStatusMessage) }
     var displayedAnswer: String {
         if !captureFeedback.isEmpty { return captureFeedback }
         if mode == "personality", status == .error {
@@ -59,6 +59,12 @@ final class TutorModel: ObservableObject {
             return choices.isEmpty
                 ? L10n.t("未收到可用选项。请确认截图包含完整题目和选项，再重新截图。", "有効な選択肢がありません。問題と選択肢全体を含めて再度撮影してください。", "No usable choices returned. Capture the complete question and all its options again.")
                 : choices
+        }
+        // A protocol-only retake has no answer text. Its actionable reason lives in
+        // statusText; the compact heading alone cannot explain what needs fixing.
+        if (resultState == .retake || status == .error),
+           !statusText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return statusText
         }
         return renderedAnswer
     }
@@ -107,9 +113,9 @@ final class TutorModel: ObservableObject {
             }
             return L10n.t("等待下一张", "次の画像待ち", "Next image")
         }
+        if !captureFeedback.isEmpty { return status == .error ? L10n.t("未完成", "未完了", "Incomplete") : L10n.t("已取消", "キャンセル済み", "Canceled") }
         if resultState == .retake { return L10n.t("需要重拍", "再撮影が必要", "Retake needed") }
         if status == .error { return L10n.t("未完成", "未完了", "Incomplete") }
-        if !captureFeedback.isEmpty { return status == .error ? L10n.t("未完成", "未完了", "Incomplete") : L10n.t("已取消", "キャンセル済み", "Canceled") }
         if explanationLoading { return L10n.t("解释中", "解説中", "Explaining") }
         if recoveryAttempted && status == .running { return L10n.t("恢复中", "復元中", "Recovering") }
         return statusText

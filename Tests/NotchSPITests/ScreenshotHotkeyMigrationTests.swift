@@ -3,6 +3,22 @@ import Carbon.HIToolbox
 @testable import NotchSPI
 
 final class ScreenshotHotkeyMigrationTests: XCTestCase {
+    func testShiftedNumberLabelsStayReadableWithoutRebindingSavedHotkeys() {
+        isolated { settings in
+            for (code, label, number) in [(UInt32(kVK_ANSI_1), "！", "1"),
+                                          (UInt32(kVK_ANSI_2), "@", "2"),
+                                          (UInt32(kVK_ANSI_9), "（", "9")] {
+                let saved = HotkeyCombo(keyCode: code, modifiers: UInt32(cmdKey | shiftKey), label: label)
+                settings.captureCombo = saved
+                XCTAssertEqual(settings.captureCombo, saved)
+                XCTAssertEqual(Settings.displayString(settings.captureCombo), "⇧⌘" + number)
+                XCTAssertEqual(KeycapChipView.caps(from: settings.captureCombo), ["⇧", "⌘", number])
+            }
+            let custom = HotkeyCombo(keyCode: UInt32(kVK_ANSI_1), modifiers: UInt32(cmdKey), label: "&")
+            XCTAssertEqual(Settings.displayString(custom), "⌘&")
+        }
+    }
+
     private func isolated(_ body: (Settings) -> Void) {
         let suite = "ScreenshotHotkeysTests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!

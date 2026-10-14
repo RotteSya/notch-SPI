@@ -1637,6 +1637,9 @@ final class NotchController: NSObject {
                     self.model.captureFeedback = message ?? L10n.t("截图已取消。按快捷键重新截图。", "キャプチャをキャンセルしました。ショートカットで再開できます。", "Capture canceled. Press the shortcut to capture again.")
                 }
                 self.resizeToFit()
+                // Capture can fail before a request exists, so its completion handler never
+                // restores the guide's disabled primary. Keep keyboard retry available here.
+                self.restoreOnboardingControlFocus()
             }
             let result: Result<ScreenCapture.Shot, CaptureError>
             #if DEBUG

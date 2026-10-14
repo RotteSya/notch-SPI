@@ -5,6 +5,19 @@ struct HotkeyCombo: Equatable {
     var keyCode: UInt32
     var modifiers: UInt32 // Carbon modifier mask (cmdKey, shiftKey, …)
     var label: String     // display label for the key, e.g. "1", "Space"
+
+    // Older recordings retained Shift's punctuation (including IME full-width forms).
+    // Show the physical number key without changing the registered key or saved binding.
+    var displayLabel: String {
+        let shifted: [UInt32: (String, String)] = [
+            18: ("!", "1"), 19: ("@", "2"), 20: ("#", "3"), 21: ("$", "4"),
+            23: ("%", "5"), 22: ("^", "6"), 26: ("&", "7"), 28: ("*", "8"),
+            25: ("(", "9"), 29: (")", "0")
+        ]
+        guard modifiers & UInt32(shiftKey) != 0, let pair = shifted[keyCode],
+              label.folding(options: .widthInsensitive, locale: nil) == pair.0 else { return label }
+        return pair.1
+    }
 }
 
 final class Settings {
@@ -300,7 +313,7 @@ final class Settings {
         if c.modifiers & UInt32(optionKey) != 0 { s += "⌥" }
         if c.modifiers & UInt32(shiftKey) != 0 { s += "⇧" }
         if c.modifiers & UInt32(cmdKey) != 0 { s += "⌘" }
-        return s + c.label
+        return s + c.displayLabel
     }
 
     // MARK: - Labels
