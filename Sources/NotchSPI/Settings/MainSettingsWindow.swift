@@ -64,7 +64,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     /// can be cleaned up deterministically).
     private weak var displayedPageView: NSView?
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     /// Navigation timing. DEBUG-only NSPI_QA_SLOW_NAV=1 stretches it for frame-by-frame QA.
     private static var navTimeScale: CFTimeInterval {
@@ -140,7 +140,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         // beneath every row's hover chip and content.
         sidebar.wantsLayer = true
         if selectionPill.superlayer == nil {
-            selectionPill.cornerRadius = 8
+            selectionPill.cornerRadius = 12
             sidebar.layer?.addSublayer(selectionPill)
         }
         var y: CGFloat = 100 // align navigation with the first content group
@@ -183,6 +183,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         guard let row = rowButtons.first(where: { $0.page == page }) else { return }
         let target = row.frame
         guard animated, !reduceMotion, selectionPill.frame.height > 0 else {
+            selectionPill.removeAnimation(forKey: "glide")
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             selectionPill.frame = target
@@ -200,16 +201,14 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         spring.mass = 1
         spring.stiffness = 380
         spring.damping = 30
-        spring.duration = spring.settlingDuration * Self.navTimeScale
+        spring.duration = spring.settlingDuration
         spring.speed = Float(1 / Self.navTimeScale)
         selectionPill.add(spring, forKey: "glide")
     }
 
-    /// Page hand-off with depth (the onboarding's two-plane language, turned vertical to match
-    /// the sidebar's axis): the incoming page springs in from the direction of travel while the
-    /// outgoing one yields with a shorter parallax drift. Never a hard cut.
+    /// A short reading transition with one active page; cached controls and scroll positions
+    /// survive navigation without old outgoing animations leaking into a return visit.
     func show(page: Page) {
-        let delta = page.rawValue - current.rawValue
         let vc = pageControllers[page] ?? makeController(for: page)
         pageControllers[page] = vc
 
@@ -237,67 +236,25 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
         contentHost.addSubview(incoming)
         (vc as? SettingsPage)?.pageDidShow()
 
-        guard let outgoing, !isInitial, !reduceMotion else {
-            outgoing?.removeFromSuperview()
-            return
-        }
+        // Cached pages must never bring an old fade/translation back when navigation
+        // is reversed. Only the active page remains hittable and in the accessibility tree.
         incoming.wantsLayer = true
-        outgoing.wantsLayer = true
-        guard let inLayer = incoming.layer, let outLayer = outgoing.layer else {
-            outgoing.removeFromSuperview()
-            return
-        }
-
-        let dir: CGFloat = delta == 0 ? 0 : (delta > 0 ? 1 : -1)
-        let scale = Self.navTimeScale
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [weak self, weak outgoing] in
-            guard let outgoing, outgoing !== self?.displayedPageView else { return }
-            outgoing.removeFromSuperview()
-            outgoing.layer?.removeAllAnimations()
-            outgoing.alphaValue = 1
-        }
-
-        if dir != 0 {
-            // Travel axis follows the sidebar: going down the list, content rises from below.
-            let slideIn = CASpringAnimation(keyPath: "transform.translation.y")
-            slideIn.fromValue = dir * 26
-            slideIn.toValue = 0
-            slideIn.mass = 1
-            slideIn.stiffness = 260
-            slideIn.damping = 30
-            slideIn.duration = min(slideIn.settlingDuration, 0.7) * scale
-            slideIn.speed = Float(1 / scale)
-            inLayer.add(slideIn, forKey: "slideIn")
-
-            let slideOut = CABasicAnimation(keyPath: "transform.translation.y")
-            slideOut.fromValue = 0
-            slideOut.toValue = -dir * 18
-            slideOut.duration = 0.26 * scale
-            slideOut.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.4, 1)
-            slideOut.fillMode = .forwards
-            slideOut.isRemovedOnCompletion = false
-            outLayer.add(slideOut, forKey: "slideOut")
-        }
-
-        let fadeIn = CABasicAnimation(keyPath: "opacity")
-        fadeIn.fromValue = 0
-        fadeIn.toValue = 1
-        fadeIn.duration = 0.24 * scale
-        fadeIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        inLayer.add(fadeIn, forKey: "fadeIn")
-
-        let fadeOut = CABasicAnimation(keyPath: "opacity")
-        fadeOut.fromValue = 1
-        fadeOut.toValue = 0
-        fadeOut.duration = 0.20 * scale
-        fadeOut.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        fadeOut.fillMode = .forwards
-        fadeOut.isRemovedOnCompletion = false
-        outLayer.add(fadeOut, forKey: "fadeOut")
-
-        CATransaction.commit()
+        incoming.layer?.removeAllAnimations()
+        incoming.alphaValue = 1
+        outgoing?.layer?.removeAllAnimations()
+        outgoing?.removeFromSuperview()
+        guard !isInitial, !reduceMotion else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0; fade.toValue = 1
+        fade.duration = 0.16 * Self.navTimeScale
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        incoming.layer?.add(fade, forKey: "page-reveal")
     }
+
+    #if DEBUG
+    var qaVisiblePageCount: Int { contentHost.subviews.count }
+    var qaVisiblePage: NSView? { displayedPageView }
+    #endif
 
     private func makeController(for page: Page) -> NSViewController {
         switch page {
@@ -335,7 +292,7 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     func open(page: Page) {
         show(page: page)
         if let row = rowButtons.first(where: { $0.page == page }) { window?.makeFirstResponder(row) }
-        window?.center()
+        if window?.isVisible != true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         #if DEBUG
@@ -399,7 +356,7 @@ private final class SidebarRowButton: NSControl {
         // The chosen backdrop is the window's shared selection pill (it glides between rows);
         // a row only paints its own transient hover chip.
         if hovering && !isChosen {
-            let path = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
+            let path = NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12)
             NSColor.labelColor.withAlphaComponent(0.06).setFill()
             path.fill()
         }
@@ -417,7 +374,7 @@ private final class SidebarRowButton: NSControl {
         title.draw(at: NSPoint(x: 38, y: bounds.midY - ts.height / 2), withAttributes: attrs)
         if window?.firstResponder === self {
             NSColor.keyboardFocusIndicatorColor.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8)
+            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 12, yRadius: 12)
             ring.lineWidth = 2
             ring.stroke()
         }
@@ -451,8 +408,8 @@ final class SettingsCardView: NSView {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-        NSColor.controlBackgroundColor.withAlphaComponent(0.65).setFill()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 18, yRadius: 18)
+        NSColor.textBackgroundColor.withAlphaComponent(0.75).setFill()
         path.fill()
         NSColor.labelColor.withAlphaComponent(0.10).setStroke()
         path.lineWidth = 0.5
@@ -1434,7 +1391,7 @@ final class QuotaRingView: NSView {
     private let conic = CAGradientLayer()
     private let arcMask = CAShapeLayer()
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

@@ -33,6 +33,7 @@ enum NotchPalette {
 
     // Motion durations (s). The single morph time is shared by the controller's panel-frame
     // animation and the view's radius/content tween, so the whole instrument moves as one body.
+    static let referenceDuration: CFTimeInterval = 0.32
     static let morphDuration: CFTimeInterval = {
         #if DEBUG
         // Visual QA: NSPI_SLOW_MORPH=1 stretches the morph to 2.4s for frame-by-frame inspection.
@@ -54,6 +55,15 @@ enum NotchMotion {
 
     /// Out-cubic remains the opacity curve and the guide's opening curve.
     static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
+
+    /// Local progress preserves the visible opacity when a hover reverses a morph.
+    /// Closing fades before the narrow mask reaches the answer; opening lets the slab lead.
+    static func contentOpacity(progress: CGFloat, origin: CGFloat, opening: Bool) -> CGFloat {
+        let t = min(1, max(0, progress))
+        let staged = opening ? notchRamp(t, 0.12, 0.86) : notchRamp(t, 0, 0.72)
+        let smooth = staged * staged * (3 - 2 * staged)
+        return opening ? origin + (1 - origin) * smooth : origin * (1 - smooth)
+    }
 
     /// A damped approach without oscillation: retract promptly and ease into rest.
     /// The quadratic envelope reaches the exact pose with zero velocity at the
@@ -98,6 +108,7 @@ enum NotchMetrics {
 /// (subview layout) so the measured panel height always matches the laid-out content.
 /// `cardHeight = headerHeight + answerHeight + answerBottomPad`.
 enum NotchLayout {
+    static let statusInsetV: CGFloat = 12
     static let headerHeight: CGFloat = 48     // rose + mode + status + controls row (incl. gap below)
     static let contentInsetH: CGFloat = 20    // horizontal padding for header & answer
     static let answerBottomPad: CGFloat = 16  // padding under the answer
@@ -255,10 +266,26 @@ enum NotchType {
             depth: model.answerDepth,
             finished: !(model.status == .running || model.status == .streaming),
             revealed: model.reasoningRevealed,
-            failed: model.status == .error || !model.captureFeedback.isEmpty)
+            failed: model.isStatusMessage)
     }
 
-    static func answerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
+    static func answerString(_ answer: String, presentation p: AnswerPresentation, inShelf: Bool = false) -> NSAttributedString {
+        let text = composeAnswerString(answer, presentation: p)
+        guard inShelf else { return text }
+        let result = NSMutableAttributedString(attributedString: text)
+        text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
+            guard attributes[.nspiAnswerCard] == nil else { return }
+            let paragraph = (attributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                ?? NSMutableParagraphStyle()
+            paragraph.firstLineHeadIndent += cardPadH
+            paragraph.headIndent += cardPadH
+            paragraph.tailIndent -= cardPadH
+            result.addAttribute(.paragraphStyle, value: paragraph, range: range)
+        }
+        return result
+    }
+
+    private static func composeAnswerString(_ answer: String, presentation p: AnswerPresentation) -> NSAttributedString {
         if answer.isEmpty {
             // Mid-run there is nothing to say yet: the light field and the status line carry
             // "thinking" — a hotkey hint here would contradict the capture the user just fired.
@@ -317,12 +344,13 @@ enum NotchType {
         return out
     }
 
-    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat) -> CGFloat {
+    static func answerHeight(_ answer: String, presentation: AnswerPresentation, width: CGFloat, inShelf: Bool = false) -> CGFloat {
         guard width > 1 else { return 0 }
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
-        let attr = answerString(answer, presentation: presentation)
+        let attr = answerString(answer, presentation: presentation, inShelf: inShelf)
         return StreamingAnswerView.measure(attr, width: width)
+            + (inShelf && presentation.failed ? NotchLayout.statusInsetV * 2 : 0)
     }
 
     // MARK: Composition pieces

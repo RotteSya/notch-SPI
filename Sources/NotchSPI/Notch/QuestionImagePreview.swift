@@ -16,6 +16,7 @@ final class QuestionImagePreview: NSWindowController, NSWindowDelegate {
         let scale = min(1, (screen.width - 120) / max(1, imageSize.width), (screen.height - 180) / max(1, imageSize.height))
         let size = NSSize(width: max(400, imageSize.width * scale), height: max(240, imageSize.height * scale))
         let window = QuestionPreviewWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 400, height: 240)
         window.title = title
         window.isReleasedWhenClosed = false
         window.sharingType = ScreenShareGuard.windowSharingType
@@ -23,16 +24,16 @@ final class QuestionImagePreview: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.onDelete = { [weak self] in self?.onRemove?() }
         let root = NSView(frame: NSRect(origin: .zero, size: size))
-        let view = NSImageView(frame: NSRect(x: 0, y: 34, width: size.width, height: size.height - 34))
+        let view = NSImageView(frame: NSRect(x: 0, y: 68, width: size.width, height: size.height - 68))
         view.image = image; view.imageScaling = .scaleProportionallyUpOrDown
         view.autoresizingMask = [.width, .height]
         view.setAccessibilityLabel(title)
         root.addSubview(view)
-        let hint = NSTextField(labelWithString: collecting
+        let hint = NSTextField(wrappingLabelWithString: collecting
             ? L10n.t("预览期间暂停提交 · 关闭后重新倒计时 4 秒 · Esc 关闭", "プレビュー中は送信を停止 · 閉じると4秒後に送信 · Escで閉じる", "Sending paused during preview · closes with a fresh 4s timer · Esc to close")
             : L10n.t("Esc 关闭预览", "Esc で閉じる", "Esc to close preview"))
         hint.font = CaptureStyle.caption; hint.textColor = .secondaryLabelColor
-        hint.frame = NSRect(x: 16, y: 10, width: size.width - 32, height: 18)
+        hint.frame = NSRect(x: 16, y: 10, width: size.width - 32, height: 48)
         hint.autoresizingMask = [.width]
         root.addSubview(hint)
         window.contentView = root

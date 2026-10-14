@@ -72,7 +72,7 @@ final class AnswerLayoutTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(atBottom.first).alpha, 0, accuracy: 0.001)
     }
 
-    @MainActor func testSubmittedScreenshotsKeepQuestionGeometryWithoutHidingAnswer() {
+    @MainActor func testAnswerShelfWaitsForFlightsAndKeepsNewCaptureIsolated() {
         let model = TutorModel()
         model.screenshotRoundActive = true
         model.answer = "FINAL: B"
@@ -83,11 +83,23 @@ final class AnswerLayoutTests: XCTestCase {
             sha256: "fixture", width: 640, height: 400, byteCount: 0, targetFingerprint: "fixture", capturedAt: Date())]
         model.screenshotRoundActive = false
         XCTAssertFalse(model.hidesAnswer)
-        XCTAssertEqual(model.screenshotTrayHeight, collectionHeight, "Submission must not move or shrink the question gallery.")
+        XCTAssertEqual(model.screenshotTrayHeight, CaptureStyle.referenceHeight)
+        let id = model.screenshots[0].id
+        model.flyingScreenshots = [id]
+        XCTAssertEqual(model.screenshotTrayHeight, collectionHeight, "An in-flight screenshot must retain its original landing slot")
+        model.flyingScreenshots = []
+        model.answer = ""
+        XCTAssertEqual(model.screenshotTrayHeight, collectionHeight, "Waiting must not masquerade as a finished answer")
+        model.answer = "FINAL: B"
+        XCTAssertTrue(model.usesAnswerShelf)
+        model.screenshotRoundActive = true
+        XCTAssertFalse(model.usesAnswerShelf)
+        XCTAssertTrue(model.hidesAnswer)
+        model.screenshotRoundActive = false
         model.screenshots = []
         XCTAssertEqual(model.screenshotTrayHeight, 0)
     }
-    @MainActor func testQuestionGalleryStaysAboveAnswerAndAllFourSlotsStayInBounds() throws {
+    @MainActor func testAnswerPrecedesCompactReferencesAndAllFourPreviewsRemainAvailable() throws {
         let model = TutorModel()
         let panel = NotchPanel(contentRect: .init(x: 0, y: 0, width: 644, height: 488))
         let view = NotchView(model: model,
@@ -120,9 +132,86 @@ final class AnswerLayoutTests: XCTestCase {
             view.refreshScreenshotTray()
             gallery.layoutSubtreeIfNeeded()
             let after = try model.screenshots.map { try XCTUnwrap(gallery.screenFrame(for: $0.id)) }
-            XCTAssertEqual(before, after, "Finishing a question must preserve every source image's position and size.")
-            XCTAssertLessThanOrEqual(gallery.frame.maxY, scroll.frame.minY)
+            XCTAssertLessThanOrEqual(scroll.frame.maxY, gallery.frame.minY)
+            let compactOnScreen = panel.convertToScreen(gallery.convert(gallery.bounds, to: nil))
+            for frame in after { XCTAssertTrue(compactOnScreen.contains(frame)) }
+            for pair in zip(after, after.dropFirst()) { XCTAssertLessThan(pair.0.maxX, pair.1.minX) }
+            XCTAssertLessThan(after[0].height, before[0].height)
+            XCTAssertEqual(model.answer, "FINAL: B")
         }
     }
 
+    @MainActor func testShelfExplanationSharesPaddingAndMeasurementWithAnswer() {
+        let p = AnswerPresentation(mode: "tutor", depth: "guided", finished: true, revealed: true)
+        let answer = String(repeating: "**步骤**：长解释保留阅读边距。\n", count: 20) + "FINAL: B"
+        let text = NotchType.answerString(answer, presentation: p, inShelf: true)
+        text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+            guard let paragraph = value as? NSParagraphStyle else { return }
+            XCTAssertGreaterThanOrEqual(paragraph.headIndent, NotchType.cardPadH)
+            XCTAssertLessThanOrEqual(paragraph.tailIndent, -NotchType.cardPadH)
+        }
+        for width: CGFloat in [280, 560] {
+            XCTAssertEqual(NotchType.answerHeight(answer, presentation: p, width: width, inShelf: true),
+                           StreamingAnswerView.measure(text, width: width))
+        }
+    }
+
+    @MainActor func testStatusShelfKeepsFailureSemanticsAndSafeTextMeasurement() {
+        let model = TutorModel()
+        for state in [TutorModel.Status.error, .idle] {
+            model.status = state
+            model.resultState = state == .idle ? .retake : nil
+            model.answer = "请重新截取完整题干和选项。"
+            XCTAssertTrue(model.usesStatusShelf)
+            XCTAssertTrue(model.usesContentShelf)
+            XCTAssertFalse(model.usesAnswerShelf)
+            XCTAssertFalse(model.canExpandAnswer)
+            let presentation = NotchType.presentation(for: model)
+            XCTAssertTrue(presentation.failed)
+            let text = NotchType.answerString(model.displayedAnswer, presentation: presentation, inShelf: true)
+            XCTAssertNil(text.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil))
+            let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+            XCTAssertGreaterThanOrEqual(paragraph?.headIndent ?? 0, NotchType.cardPadH)
+            XCTAssertEqual(NotchType.answerHeight(model.displayedAnswer, presentation: presentation, width: 280, inShelf: true), StreamingAnswerView.measure(text, width: 280) + NotchLayout.statusInsetV * 2)
+            model.screenshotCapturing = true
+            XCTAssertFalse(model.usesStatusShelf)
+            model.screenshotCapturing = false
+            model.onboardingStep = .working
+            XCTAssertTrue(model.usesStatusShelf)
+            model.onboardingStep = .permission
+            XCTAssertFalse(model.usesStatusShelf)
+            model.onboardingStep = nil
+        }
+    }
+
+    @MainActor func testStatusTitlePreservesDetailedReasonAndFeedbackOverridesOldAnswer() {
+        let model = TutorModel()
+        model.answer = "FINAL: previous answer"
+        model.status = .error
+        model.statusText = "网络断开，连接超时。"
+        model.captureFeedback = "截图失败，请重新截取题目。"
+        XCTAssertEqual(model.displayedAnswer, model.captureFeedback)
+        XCTAssertEqual(model.captureStatusDetail, model.captureFeedback)
+        XCTAssertNotEqual(model.captureHeading, model.captureFeedback)
+        XCTAssertTrue(model.usesStatusShelf)
+        model.screenshotRoundActive = true
+        XCTAssertTrue(model.hidesAnswer)
+        XCTAssertFalse(model.usesContentShelf)
+    }
+
+    @MainActor func testRecoveryAndSetupInstructionsNeverUseAnswerShelf() {
+        let model = TutorModel()
+        model.answer = "FINAL: B"
+        XCTAssertTrue(model.usesAnswerShelf)
+        model.status = .error
+        XCTAssertFalse(model.usesAnswerShelf)
+        model.status = .idle; model.resultState = .retake
+        XCTAssertFalse(model.usesAnswerShelf)
+        model.resultState = nil; model.captureFeedback = "Capture interrupted"
+        XCTAssertFalse(model.usesAnswerShelf)
+        model.captureFeedback = ""; model.onboardingStep = .welcome
+        XCTAssertFalse(model.usesAnswerShelf)
+        model.onboardingStep = nil; model.mode = "personality"
+        XCTAssertFalse(model.usesAnswerShelf)
+    }
 }

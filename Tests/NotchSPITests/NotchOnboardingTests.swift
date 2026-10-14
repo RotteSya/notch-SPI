@@ -3,6 +3,47 @@ import XCTest
 @testable import NotchSPI
 
 final class NotchOnboardingTests: XCTestCase {
+    @MainActor func testFirstAnswerUsesDailyShelfWithoutChangingGuideActions() {
+        let model = TutorModel()
+        model.answer = "FINAL: B. 60 km/h"
+        model.status = .idle
+        for step in [NotchOnboardingStep.working, .success] {
+            model.onboardingStep = step
+            XCTAssertTrue(model.usesAnswerShelf)
+            XCTAssertFalse(model.canExpandAnswer)
+            model.screenshotCapturing = true
+            XCTAssertFalse(model.usesAnswerShelf)
+            model.screenshotCapturing = false
+        }
+        model.onboardingStep = .welcome
+        XCTAssertFalse(model.usesAnswerShelf)
+    }
+
+    @MainActor func testRapidGuideChangesKeepOneTextPlateAndPassiveSurface() async throws {
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 600, height: 400),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let view = NotchOnboardingView(frame: window.contentView!.bounds)
+        window.contentView = view
+        defer { window.orderOut(nil) }
+        view.update(step: .welcome, granted: false, denied: false, failed: false)
+        view.layoutSubtreeIfNeeded()
+        let count = view.subviews.count
+        let surface = try XCTUnwrap(view.subviews.first { $0 is AnswerShelfView })
+        XCTAssertNil(surface.hitTest(NSPoint(x: 20, y: 20)))
+        for _ in 0..<8 {
+            for step in [NotchOnboardingStep.permission, .welcome, .working, .success] {
+                view.update(step: step, granted: false, denied: true, failed: true)
+                view.layoutSubtreeIfNeeded()
+                XCTAssertEqual(view.subviews.count, count)
+                XCTAssertFalse(view.subviews.contains { $0 is NSImageView })
+                XCTAssertTrue(view.primary.isEnabled)
+            }
+        }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(view.subviews.count, count)
+        XCTAssertEqual(surface.layer?.cornerRadius, 18)
+    }
+
     @MainActor func testImmediateAnimationReversalCancelsPreviousDestination() {
         let host = NSView()
         let tween = DisplayTween(host: host)

@@ -85,6 +85,39 @@ final class ContinuousReadingTests: XCTestCase {
         root.layoutSubtreeIfNeeded()
         XCTAssertEqual(detail.contentView.bounds.minY, y, accuracy: 1)
     }
+    @MainActor func testHistorySwitchRestoresEachRecordAndClampsShortenedContent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = RecentQuestionStore(directory: directory)
+        let reader = RecentQuestionsWindowController(store: store)
+        defer { reader.close(); try? FileManager.default.removeItem(at: directory) }
+        await store.flush()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        let text = String(repeating: "Long explanation keeps the reading location.\n\n", count: 100)
+        var records = (0..<2).map { RecentQuestion(id: UUID(), createdAt: Date(), answer: "FINAL: Answer \($0)", explanation: text, needsReview: false, imageCount: 0) }
+        reader.applyRecords(records, failed: false)
+        let root = try XCTUnwrap(reader.window?.contentView)
+        root.layoutSubtreeIfNeeded()
+        let scrolls = root.subviews.compactMap { $0 as? NSScrollView }
+        let table = try XCTUnwrap(scrolls.first?.documentView as? NSTableView)
+        let detail = try XCTUnwrap(scrolls.last)
+        detail.contentView.scroll(to: NSPoint(x: 0, y: 300))
+        table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(detail.contentView.bounds.minY, 0, accuracy: 1)
+        detail.contentView.scroll(to: NSPoint(x: 0, y: 500))
+        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(detail.contentView.bounds.minY, 300, accuracy: 1)
+        table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(detail.contentView.bounds.minY, 500, accuracy: 1)
+        records[1].explanation = "Short explanation."
+        reader.applyRecords(records, failed: false)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(detail.contentView.bounds.minY, 0, accuracy: 1)
+        XCTAssertEqual(detail.layer?.cornerRadius, 18)
+    }
+
     @MainActor func testRepeatedReaderCreationAndPendingUpdatesReleaseControllers() async throws {
         weak var last: ExpandedAnswerWindowController?
         let long = String(repeating: "Long explanation \\(\\frac{x_1^2}{2}+1\\).\n", count: 50)

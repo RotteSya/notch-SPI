@@ -22,8 +22,8 @@ enum NotchOnboardingStep: String {
         case .permission: return 276
         case .practice: return 220
         case .capture: return 220
-        case .working: return 148
-        case .success: return 116
+        case .working: return 156
+        case .success: return 124
         }
     }
 }
@@ -58,7 +58,7 @@ final class NotchOnboardingView: NSView {
     private let targetButton = GlowButton(title: "", style: .ghost)
     private let copyPlate = OnboardingCopyPlate()
     private var practiceFailed = false
-    private var outgoingCopy: NSImageView?
+    private let surface = AnswerShelfView(frame: .zero)
     private let shortcut = label(11, .medium, .init(white: 1, alpha: 0.58))
     private let eyebrow = label(10, .semibold, .init(white: 1, alpha: 0.62))
     private let heading = label(27, .semibold, .white)
@@ -79,6 +79,7 @@ final class NotchOnboardingView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        addSubview(surface)
         addSubview(copyPlate)
         [heading, detail, note, illustration].forEach(copyPlate.addSubview)
         [eyebrow, primary, secondary, back, closeButton, languages, shortcut, targetButton].forEach(addSubview)
@@ -129,8 +130,7 @@ final class NotchOnboardingView: NSView {
         let changed = self.step != step || self.failed != failed
             || self.granted != granted || self.denied != denied || self.practiceFailed != practiceFailed
         let previous = self.step
-        let backwards = previous.map { step.motionOrder < $0.motionOrder } ?? false
-        if changed, previous != nil { transitionCopy(backwards: backwards) }
+        if changed, previous != nil { transitionCopy() }
         self.practiceFailed = practiceFailed
         self.step = step; self.granted = granted; self.denied = denied; self.failed = failed
         let t = L10n.t
@@ -221,6 +221,8 @@ final class NotchOnboardingView: NSView {
         guard let step else { return }
         let w = bounds.width, inset: CGFloat = 30
         copyPlate.frame = bounds
+        surface.frame = NSRect(x: 12, y: 36 + bodyAdjustment,
+                               width: max(0, w - 24), height: max(0, step.height - 36 - (step.showsLiveContent ? 8 : 0)))
         eyebrow.frame = .init(x: 44, y: 12, width: 270, height: 18)
         closeButton.frame = .init(x: w - 115, y: 6, width: 96, height: 28)
         heading.frame = .init(x: inset, y: 47, width: w - inset * 2, height: 38)
@@ -284,49 +286,19 @@ final class NotchOnboardingView: NSView {
             ? label + L10n.t("（未运行，请先打开）", "（未起動）", " (not running; open it first)") : label
     }
 
-    private func transitionCopy(backwards: Bool) {
-        outgoingCopy?.removeFromSuperview()
-        outgoingCopy = nil
-        guard !onboardingReduceMotion(), window != nil, !copyPlate.isHidden else {
-            copyPlate.layer?.removeAllAnimations()
-            return
-        }
-        // Preserve one outgoing image, never a stack of abandoned pages. It cannot intercept input.
-        // The welcome diagram shares space with the next step's practice link. Retire it
-        // immediately so outgoing decoration never competes with a newly active control.
-        let illustrationWasHidden = illustration.isHidden
-        illustration.isHidden = true
-        defer { illustration.isHidden = illustrationWasHidden }
-        let copyBounds = copyPlate.subviews.filter { !$0.isHidden }
-            .reduce(CGRect.null) { $0.union($1.frame) }.intersection(copyPlate.bounds)
-        if copyPlate.layer?.animation(forKey: "arrive") == nil, !copyBounds.isEmpty,
-           let bitmap = copyPlate.bitmapImageRepForCachingDisplay(in: copyBounds) {
-            copyPlate.cacheDisplay(in: copyBounds, to: bitmap)
-            let image = NSImage(size: copyBounds.size)
-            image.addRepresentation(bitmap)
-            let old = OnboardingCopyImage(frame: copyBounds.offsetBy(dx: copyPlate.frame.minX, dy: copyPlate.frame.minY))
-            old.image = image; old.imageScaling = .scaleNone; old.wantsLayer = true
-            addSubview(old, positioned: .above, relativeTo: copyPlate)
-            outgoingCopy = old
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1; fade.toValue = 0; fade.duration = onboardingMotionDuration(0.09)
-            old.layer?.opacity = 0
-            old.layer?.add(fade, forKey: "leave")
-            DispatchQueue.main.asyncAfter(deadline: .now() + onboardingMotionDuration(0.10)) { [weak self, weak old] in
-                old?.removeFromSuperview()
-                if self?.outgoingCopy === old { self?.outgoingCopy = nil }
-            }
-        }
-        let move = CABasicAnimation(keyPath: "transform.translation.y")
-        move.fromValue = backwards ? -6 : 6; move.toValue = 0
+    private func transitionCopy() {
+        // Keep a single live text plate. Fast back/forward and permission refreshes
+        // must not leave snapshots over newly active controls or delay readable copy.
+        let visibleOpacity = copyPlate.layer?.animation(forKey: "arrive") == nil
+            ? nil : copyPlate.layer?.presentation()?.opacity
+        copyPlate.layer?.removeAllAnimations()
+        guard !onboardingReduceMotion(), window != nil, !copyPlate.isHidden else { return }
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0; fade.toValue = 1
-        let arrive = CAAnimationGroup()
-        arrive.animations = [move, fade]; arrive.duration = onboardingMotionDuration(0.22)
-        arrive.beginTime = CACurrentMediaTime() + onboardingMotionDuration(0.10)
-        arrive.fillMode = .backwards
-        arrive.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.8, 0.25, 1)
-        copyPlate.layer?.add(arrive, forKey: "arrive")
+        fade.fromValue = visibleOpacity.map { max(0.35, $0) } ?? 0
+        fade.toValue = 1
+        fade.duration = onboardingMotionDuration(0.16)
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        copyPlate.layer?.add(fade, forKey: "arrive")
     }
 
     private static func label(_ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor) -> NSTextField {
@@ -364,9 +336,4 @@ private final class OnboardingCopyPlate: NSView {
     override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private final class OnboardingCopyImage: NSImageView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func isAccessibilityElement() -> Bool { false }
 }

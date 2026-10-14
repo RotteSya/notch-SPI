@@ -6,7 +6,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private var records: [RecentQuestion] = []
     private let table = NSTableView()
     private let detail = HistoryDetailStack()
-    private let detailScroll = NSScrollView()
+    private let detailScroll = AnswerReaderScrollView()
     private let status = NSTextField(labelWithString: "")
     private let copyButton = NSButton()
     private let copyAllButton = NSButton()
@@ -15,6 +15,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private var observer: NSObjectProtocol?
     private var selectedID: UUID?
     private var displayed: RecentQuestion?
+    private var readingPositions: [UUID: NSPoint] = [:]
     private var reloadingSelection = false
 
     init(store: RecentQuestionStore) {
@@ -53,7 +54,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         table.delegate = self; table.dataSource = self; table.style = .sourceList
         table.allowsEmptySelection = false
         table.setAccessibilityLabel(L10n.t("最近查题列表", "最近の問題一覧", "Recent questions list"))
-        let list = NSScrollView(); list.hasVerticalScroller = true; list.documentView = table
+        let list = AnswerReaderScrollView(); list.hasVerticalScroller = true; list.documentView = table
         list.borderType = .noBorder
         detail.orientation = .vertical; detail.alignment = .leading; detail.spacing = 18
         detail.edgeInsets = NSEdgeInsets(top: 24, left: 28, bottom: 28, right: 28)
@@ -61,7 +62,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         detailScroll.documentView = detail; detailScroll.hasVerticalScroller = true
         detailScroll.drawsBackground = true; detailScroll.backgroundColor = .textBackgroundColor
         detail.widthAnchor.constraint(equalTo: detailScroll.contentView.widthAnchor).isActive = true
-        let divider = NSBox(); divider.boxType = .separator
+        let divider = NSBox(); divider.boxType = .separator; divider.isHidden = true
         for view in [header, subtitle, list, divider, detailScroll, status, toolbar] {
             view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view)
         }
@@ -71,16 +72,16 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             subtitle.leadingAnchor.constraint(equalTo: header.leadingAnchor),
             subtitle.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 8),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -20),
-            list.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            list.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
             list.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            list.widthAnchor.constraint(equalToConstant: 260),
+            list.widthAnchor.constraint(equalToConstant: 244),
             list.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
             list.bottomAnchor.constraint(equalTo: toolbar.topAnchor, constant: -16),
             divider.leadingAnchor.constraint(equalTo: list.trailingAnchor),
             divider.topAnchor.constraint(equalTo: list.topAnchor), divider.bottomAnchor.constraint(equalTo: list.bottomAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
+            divider.widthAnchor.constraint(equalToConstant: 16),
             detailScroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
-            detailScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            detailScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
             detailScroll.topAnchor.constraint(equalTo: list.topAnchor), detailScroll.bottomAnchor.constraint(equalTo: list.bottomAnchor),
             toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
             toolbar.heightAnchor.constraint(equalToConstant: 32),
@@ -129,6 +130,8 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         let anchor = self.records.indices.contains(topRow) ? self.records[topRow].id : nil
         let offset = topRow >= 0 ? origin.y - table.rect(ofRow: topRow).minY : 0
         self.records = records
+        let retained = Set(records.map(\.id))
+        readingPositions = readingPositions.filter { retained.contains($0.key) }
         let row = selectedID.flatMap { id in records.firstIndex { $0.id == id } } ?? 0
         reloadingSelection = true
         table.reloadData()
@@ -190,7 +193,12 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         copyButton.isEnabled = selected != nil; deleteButton.isEnabled = selected != nil; clearButton.isEnabled = !records.isEmpty
         copyAllButton.isEnabled = selected != nil
         guard displayed != selected || detail.arrangedSubviews.isEmpty else { return }
-        let position = displayed?.id == selected?.id ? detailScroll.contentView.bounds.origin : .zero
+        if let previous = displayed?.id, records.contains(where: { $0.id == previous }) {
+            readingPositions[previous] = detailScroll.contentView.bounds.origin
+        }
+        let switched = displayed?.id != selected?.id
+        let position = selected.flatMap { readingPositions[$0.id] } ?? .zero
+        if switched { detailScroll.transitionToRecord() }
         displayed = selected; selectedID = selected?.id
         for view in detail.arrangedSubviews { detail.removeArrangedSubview(view); view.removeFromSuperview() }
         guard let record = selected else {
@@ -198,7 +206,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             addText(L10n.t("继续使用原来的快捷键查题，完成后会自动保存在这里。", "いつものショートカットで解答すると、ここに自動保存されます。", "Use your usual capture shortcut. Completed answers will appear here automatically."), size: 14)
             return
         }
-        addText(L10n.t("答案", "回答", "Answer"), size: 12, color: .secondaryLabelColor)
+        addText(L10n.t("答案", "回答", "Answer"), size: 12, color: NotchPalette.accent)
         addText(record.reading.conclusion, size: 24, weight: .semibold)
         if record.needsReview { addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange) }
         if !record.detail.isEmpty {
@@ -217,8 +225,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             view.heightAnchor.constraint(equalTo: view.widthAnchor, multiplier: min(3, max(0.1, size.height / max(1, size.width)))).isActive = true
         }
         detail.layoutSubtreeIfNeeded()
-        detailScroll.contentView.scroll(to: position)
-        detailScroll.reflectScrolledClipView(detailScroll.contentView)
+        detailScroll.restoreReadingPosition(position)
     }
     private func add(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false; detail.addArrangedSubview(view)

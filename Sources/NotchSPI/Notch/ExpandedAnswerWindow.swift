@@ -26,7 +26,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     var onClose: (() -> Void)?
     private let images = AnswerReadingStack()
     private let answer = AnswerReadingStack()
-    private let answerScroll = NSScrollView()
+    private let answerScroll = AnswerReaderScrollView()
     private let explainButton = NSButton()
     private let note = NSTextField(labelWithString: "")
     private var pending: DispatchWorkItem?
@@ -45,7 +45,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         title.font = .systemFont(ofSize: 24, weight: .semibold)
         let subtitle = NSTextField(labelWithString: L10n.t("题图与解释并排查看", "問題画像と解説を並べて表示", "Question images and explanation, side by side"))
         subtitle.font = .systemFont(ofSize: 13); subtitle.textColor = .secondaryLabelColor
-        let imageScroll = NSScrollView()
+        let imageScroll = AnswerReaderScrollView()
         for (scroll, stack) in [(imageScroll, images), (answerScroll, answer)] {
             scroll.documentView = stack; scroll.hasVerticalScroller = true
             scroll.drawsBackground = true; scroll.backgroundColor = .textBackgroundColor
@@ -54,7 +54,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         }
         imageScroll.setAccessibilityLabel(L10n.t("题目截图", "問題画像", "Question images"))
         answerScroll.setAccessibilityLabel(L10n.t("完整答案和解释", "回答と解説の全文", "Full answer and explanation"))
-        let divider = NSBox(); divider.boxType = .separator
+        let divider = NSBox(); divider.boxType = .separator; divider.isHidden = true
         let copy = NSButton(title: L10n.t("复制答案", "回答をコピー", "Copy answer"), target: self, action: #selector(copyAnswer))
         let copyAll = NSButton(title: L10n.t("复制全部", "全文をコピー", "Copy all"), target: self, action: #selector(copyAllText))
         explainButton.title = L10n.t("生成解释", "解説を生成", "Explain")
@@ -71,16 +71,16 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
             title.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
-            imageScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            imageScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             imageScroll.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            imageScroll.widthAnchor.constraint(equalTo: root.widthAnchor, multiplier: 0.48),
+            imageScroll.widthAnchor.constraint(equalTo: root.widthAnchor, multiplier: 0.42, constant: -24),
             imageScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
             imageScroll.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -16),
             divider.leadingAnchor.constraint(equalTo: imageScroll.trailingAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
+            divider.widthAnchor.constraint(equalToConstant: 16),
             divider.topAnchor.constraint(equalTo: imageScroll.topAnchor), divider.bottomAnchor.constraint(equalTo: imageScroll.bottomAnchor),
             answerScroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
-            answerScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            answerScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
             answerScroll.topAnchor.constraint(equalTo: imageScroll.topAnchor), answerScroll.bottomAnchor.constraint(equalTo: imageScroll.bottomAnchor),
             actions.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
             actions.heightAnchor.constraint(equalToConstant: 32), actions.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
@@ -149,7 +149,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     private func renderAnswer(_ content: ExpandedAnswerContent) {
         let position = answerScroll.contentView.bounds.origin
         answer.beginTextUpdate()
-        answer.addText(L10n.t("答案", "回答", "Answer"), size: 12, color: .secondaryLabelColor)
+        answer.addText(L10n.t("答案", "回答", "Answer"), size: 12, color: NotchPalette.accent)
         answer.addText(content.reading.conclusion, size: 24, weight: .semibold)
         if content.needsReview {
             answer.addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange)
@@ -171,7 +171,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
             : L10n.t("保留这道题的内容 · 不随新题切换", "この問題の内容を表示しています", "Keeping this question open")
         answer.endTextUpdate()
         answer.layoutSubtreeIfNeeded()
-        answerScroll.contentView.scroll(to: position); answerScroll.reflectScrolledClipView(answerScroll.contentView)
+        answerScroll.restoreReadingPosition(position)
     }
     @objc private func copyAnswer() { if let content { copy(content.reading.copyAnswer) } }
     @objc private func copyAllText() { if let content { copy(content.copyText) } }

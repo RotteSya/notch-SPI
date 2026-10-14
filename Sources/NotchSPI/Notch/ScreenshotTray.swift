@@ -26,10 +26,19 @@ final class ScreenshotTray: NSView {
     private var fraction: CGFloat = 0
     private var preview: QuestionImagePreview?
     private var collecting = false
+    private var compact = false
+    private var animateReferenceLayout = false
+    private var reorderPending = false
+    private var reorderFrames: [UUID: (CGRect, CGRect)] = [:]
+    private var removeFrames: [UUID: (CGRect, CGRect)] = [:]
+    private lazy var reorder = DisplayTween(host: self, value: 1)
+
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        reorder.ease = { $0 * $0 * (3 - 2 * $0) }
+        reorder.onChange = { [weak self] progress in self?.applyReorder(progress) }
         status.font = .systemFont(ofSize: 12, weight: .medium)
         status.textColor = NotchPalette.secondary
         status.lineBreakMode = .byTruncatingTail
@@ -46,8 +55,18 @@ final class ScreenshotTray: NSView {
 
     func update(assets: [ContextAsset], images: [UUID: NSImage], flying: Set<UUID>,
                 message: String, remaining: TimeInterval?, cancellable: Bool,
-                capturing: Bool = false, notice: String = "", undoAvailable: Bool = false) {
+                capturing: Bool = false, notice: String = "", undoAvailable: Bool = false, compact: Bool = false) {
+        if self.compact != compact {
+            finishReorder()
+            animateReferenceLayout = !onboardingReduceMotion() && !ids.isEmpty
+            self.compact = compact
+        }
         let next = assets.map(\.id)
+        if capturing || !flying.isEmpty || onboardingReduceMotion() { finishReorder() }
+        if ids != next {
+            reorderPending = collecting && cancellable && !compact && !capturing
+                && flying.isEmpty && !ids.isEmpty && !onboardingReduceMotion()
+        }
         if ids != next || capturing || (collecting && !cancellable) { preview?.close(); preview = nil }
         collecting = cancellable
         self.assets = assets
@@ -140,13 +159,39 @@ final class ScreenshotTray: NSView {
         needsLayout = true
     }
 
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        if compact {
+            NotchPalette.rule.setFill()
+            NSRect(x: 16, y: 0, width: max(0, bounds.width - 32), height: 0.5).fill()
+        }
+    }
+
+    func stopReferenceMotion() {
+        animateReferenceLayout = false
+        finishReorder()
+        layer?.removeAnimation(forKey: "reference-handoff")
+        for card in cards.values {
+            card.layer?.removeAnimation(forKey: "reference-layout")
+            card.layer?.removeAnimation(forKey: "landing")
+        }
+    }
+
     func showPreview(_ id: UUID) {
         guard let index = ids.firstIndex(of: id), let asset = assets.first(where: { $0.id == id }) else { return }
+        // Replacing an open preview is still one paused interval. Only the current
+        // preview may resume the timer; closing its predecessor must not do so.
+        let replacing = preview != nil
+        preview?.onClose = nil
         preview?.close()
         let controller = QuestionImagePreview(asset: asset,
             title: L10n.t("截图 \(index + 1) / \(ids.count) · 预览", "画像 \(index + 1) / \(ids.count)", "Screenshot \(index + 1) / \(ids.count) · Preview"), collecting: collecting)
-        if collecting { onPreviewChanged?(true) }
-        controller.onClose = { [weak self] in self?.onPreviewChanged?(false) }
+        if collecting && !replacing { onPreviewChanged?(true) }
+        controller.onClose = { [weak self, weak controller] in
+            guard let self, self.preview === controller else { return }
+            self.preview = nil
+            if self.collecting { self.onPreviewChanged?(false) }
+        }
         if collecting { controller.onRemove = { [weak self] in self?.onRemove?(id) } }
         preview = controller
         controller.present()
@@ -162,6 +207,35 @@ final class ScreenshotTray: NSView {
         super.layout()
         // Slots stay fixed through capture, countdown and submission. The flight and
         // preview use the same aspect-fit geometry, including portrait source pages.
+        if compact {
+            let inset: CGFloat = 16
+            let gap: CGFloat = 8
+            let width = min(64, max(24, (bounds.width - 2 * inset - 90 - 3 * gap) / 4))
+            for (index, id) in ids.enumerated() {
+                guard let card = cards[id] else { continue }
+                let oldBounds = card.layer?.presentation()?.bounds ?? card.bounds
+                let oldPosition = card.layer?.presentation()?.position ?? card.layer?.position
+                card.frame = NSRect(x: inset + CGFloat(index) * (width + gap), y: 12, width: width, height: 38)
+                thumbnails[id]?.frame = card.bounds.insetBy(dx: 3, dy: 3)
+                ordinals[id]?.isHidden = ids.count == 1
+                if animateReferenceLayout, let layer = card.layer, let oldPosition {
+                    let move = CABasicAnimation(keyPath: "position")
+                    move.fromValue = NSValue(point: oldPosition); move.toValue = NSValue(point: layer.position)
+                    let resize = CABasicAnimation(keyPath: "bounds")
+                    resize.fromValue = NSValue(rect: oldBounds); resize.toValue = NSValue(rect: layer.bounds)
+                    let group = CAAnimationGroup(); group.animations = [move, resize]
+                    group.duration = NotchPalette.referenceDuration
+                    group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    layer.add(group, forKey: "reference-layout")
+                }
+            }
+            let labelX = inset + CGFloat(ids.count) * (width + gap) + 4
+            status.frame = NSRect(x: labelX, y: 22, width: max(0, bounds.width - labelX - inset), height: 18)
+            animateReferenceLayout = false
+            return
+        }
+        for id in ids { cards[id]?.layer?.removeAnimation(forKey: "reference-layout"); ordinals[id]?.isHidden = false }
+        animateReferenceLayout = false
         let gap = CaptureStyle.cardGap
         let cardSize = NSSize(width: min(CaptureStyle.cardSize.width, max(0, (bounds.width - 3 * gap) / 4)),
                               height: CaptureStyle.cardSize.height)
@@ -169,12 +243,21 @@ final class ScreenshotTray: NSView {
             NSRect(x: CGFloat(index) * (cardSize.width + gap), y: 30,
                    width: cardSize.width, height: cardSize.height)
         }
+        if reorderPending { reorderFrames.removeAll(); removeFrames.removeAll() }
         for (index, id) in ids.enumerated() {
             if let card = cards[id], let asset = assets.first(where: { $0.id == id }) {
-                card.frame = ScreenshotFlightGeometry.cardFrame(image: NSSize(width: asset.width, height: asset.height), in: slot(index))
+                let target = ScreenshotFlightGeometry.cardFrame(image: NSSize(width: asset.width, height: asset.height), in: slot(index))
+                if reorderPending, card.frame.width > 0, card.frame != target {
+                    reorderFrames[id] = (card.frame, target)
+                }
+                card.frame = target
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 4, dy: 4)
                 let rect = slot(index)
-                removeButtons[id]?.frame = NSRect(x: rect.maxX - 24, y: rect.minY + 2, width: 22, height: 22)
+                let removeTarget = NSRect(x: rect.maxX - 24, y: rect.minY + 2, width: 22, height: 22)
+                if reorderPending, let button = removeButtons[id], button.frame.width > 0 {
+                    removeFrames[id] = (button.frame, removeTarget)
+                }
+                removeButtons[id]?.frame = removeTarget
             }
         }
         nextSlot.frame = slot(min(ids.count, 3))
@@ -184,8 +267,34 @@ final class ScreenshotTray: NSView {
         undo.frame = NSRect(x: max(0, bounds.width - 100), y: 120, width: 100, height: 26)
         detail.frame = NSRect(x: 0, y: 120, width: max(0, bounds.width - (undo.isHidden ? 0 : 108)), height: 30)
         progress.frame = NSRect(x: 0, y: 113, width: bounds.width * fraction, height: 2)
+        if reorderPending {
+            reorderPending = false
+            reorder.set(0)
+            reorder.animate(to: 1, duration: 0.22)
+        } else if reorder.isAnimating { applyReorder(reorder.value) }
     }
 
+    private func applyReorder(_ progress: CGFloat) {
+        for (id, frames) in reorderFrames {
+            cards[id]?.frame = notchLerpRect(frames.0, frames.1, progress)
+            if let card = cards[id] { thumbnails[id]?.frame = card.bounds.insetBy(dx: 4, dy: 4) }
+        }
+        for (id, frames) in removeFrames {
+            removeButtons[id]?.frame = notchLerpRect(frames.0, frames.1, progress)
+        }
+    }
+
+    private func finishReorder() {
+        reorder.set(1)
+        reorderPending = false
+        reorderFrames.removeAll(); removeFrames.removeAll()
+    }
+
+    #if DEBUG
+    func qaUseManualReorderClock() { reorder.qaManualTime = 0 }
+    func qaAdvanceReorder(by dt: CFTimeInterval) { reorder.qaAdvance(by: dt) }
+    var qaPreview: QuestionImagePreview? { preview }
+    #endif
 }
 
 /// A passive continuation cue; the configured capture shortcut remains in the status.

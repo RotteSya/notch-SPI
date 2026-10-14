@@ -35,6 +35,7 @@ enum CaptureStyle {
     static let cardSize = NSSize(width: 128, height: 80)
     static let cardRadius: CGFloat = 8
     static let cardGap: CGFloat = 12
+    static let referenceHeight: CGFloat = 60
     static let trayHeight: CGFloat = 156
     static let actionHeight: CGFloat = 40
     static let caption = NSFont.systemFont(ofSize: 11)

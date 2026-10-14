@@ -39,6 +39,11 @@ final class NotchController: NSObject {
     func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple) }
     func qaCancelScreenshotRound() { cancelRoundByUser() }
     func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
+    @objc func qaShowQuickMenu() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.showSettings() }
+    }
+    @objc func qaLightAppearance() { NSApp.appearance = NSAppearance(named: .aqua) }
+    @objc func qaDarkAppearance() { NSApp.appearance = NSAppearance(named: .darkAqua) }
     var qaExpandedAnswerWindow: ExpandedAnswerWindowController? { expandedAnswerWindow }
     var qaRecentQuestionsWindow: RecentQuestionsWindowController? { recentQuestionsWindow }
     func qaSeedExpandedAnswer(_ capture: QuestionCaptureSnapshot) {
@@ -794,7 +799,15 @@ final class NotchController: NSObject {
     // MARK: - Gear menu (quick actions only — everything else lives in 设置)
 
     private func showSettings() {
-        buildQuickMenu().popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        guard let anchor = notchView.quickMenuAnchor else { return }
+        let windowPoint = panel.convertPoint(fromScreen: anchor)
+        let localPoint = notchView.convert(windowPoint, from: nil)
+        let menu = buildQuickMenu()
+        let placement = QuickMenuPlacement()
+        menu.delegate = placement
+        _ = withExtendedLifetime(placement) {
+            menu.popUp(positioning: nil, at: localPoint, in: notchView)
+        }
     }
 
     private func buildQuickMenu() -> NSMenu {
@@ -805,6 +818,7 @@ final class NotchController: NSObject {
             let item = NSMenuItem(title: entry.title + "    " + Settings.displayString(entry.combo),
                                   action: selectors[index], keyEquivalent: "")
             item.target = self
+            item.image = NSImage(systemSymbolName: ["viewfinder", "rectangle.stack", "person.crop.square"][index], accessibilityDescription: nil)
             menu.addItem(item)
         }
         if model.screenshotRoundActive {
@@ -815,11 +829,14 @@ final class NotchController: NSObject {
         let recent = NSMenuItem(title: L10n.t("最近查题…", "最近の問題…", "Recent Questions…"),
                                 action: #selector(openRecentQuestions), keyEquivalent: "")
         recent.target = self
+        recent.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
         menu.addItem(recent)
         if model.canExpandAnswer {
             let full = NSMenuItem(title: L10n.t("展开查看完整答案…", "回答の詳細を開く…", "Open Full Answer…"),
                                   action: #selector(openExpandedAnswer), keyEquivalent: "")
-            full.target = self; menu.addItem(full)
+            full.target = self
+            full.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: nil)
+            menu.addItem(full)
         }
         menu.addItem(.separator())
         if Settings.shared.mode != "personality" {
@@ -858,6 +875,7 @@ final class NotchController: NSObject {
             menu.addItem(balance)
             let topUp = NSMenuItem(title: MonthPassPreview.isEnabled ? L10n.t("订阅方案", "プランを見る", "View subscription") : L10n.topUp, action: #selector(topUpTapped), keyEquivalent: "")
             topUp.target = self
+            topUp.image = NSImage(systemSymbolName: "plus.circle", accessibilityDescription: nil)
             menu.addItem(topUp)
             menu.addItem(.separator())
         }
@@ -901,6 +919,7 @@ final class NotchController: NSObject {
         let targetMenu = NSMenu()
         targetMenu.delegate = self
         targetItem.submenu = targetMenu
+        targetItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
         menu.addItem(targetItem)
 
         // Persona quick-switch (only when personas exist).
@@ -926,6 +945,7 @@ final class NotchController: NSObject {
 
         let settings = NSMenuItem(title: L10n.openSettings, action: #selector(openSettingsGeneral), keyEquivalent: ",")
         settings.target = self
+        settings.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         menu.addItem(settings)
         let guide = NSMenuItem(title: Settings.shared.onboardingDone
             ? L10n.t("重新体验新手引导", "ガイドをもう一度", "Replay welcome guide")
@@ -933,12 +953,22 @@ final class NotchController: NSObject {
             action: #selector(replayOnboarding), keyEquivalent: "")
         guide.target = self
         guide.isEnabled = !running && intakeTask == nil && !screenshotRound.isActive
+        guide.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         menu.addItem(guide)
 
         let quit = NSMenuItem(title: L10n.quitApp, action: #selector(quitApp), keyEquivalent: "")
         quit.target = self
+        quit.image = NSImage(systemSymbolName: "power", accessibilityDescription: nil)
         menu.addItem(quit)
 
+        // Conditional recovery sections may be empty. Keep native menu grouping compact
+        // without moving actions into submenus or registering another shortcut path.
+        var previousWasSeparator = true
+        for item in menu.items {
+            if item.isSeparatorItem && previousWasSeparator { menu.removeItem(item); continue }
+            previousWasSeparator = item.isSeparatorItem
+        }
+        if menu.items.last?.isSeparatorItem == true, let last = menu.items.last { menu.removeItem(last) }
         return menu
     }
 
@@ -1672,7 +1702,11 @@ final class NotchController: NSObject {
             }.value
             guard let self, self.intakeGeneration == generation,
                   self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
-            guard let pixels else { self.model.flyingScreenshots.remove(asset.id); return }
+            guard let pixels else {
+                self.model.flyingScreenshots.remove(asset.id)
+                self.resizeToFit()
+                return
+            }
             let image = NSImage(cgImage: pixels, size: NSSize(width: pixels.width, height: pixels.height))
             #if DEBUG
             ScreenCapture.trace("intake.thumbnail.ready")
@@ -1687,6 +1721,7 @@ final class NotchController: NSObject {
                     guard let self, self.intakeGeneration == generation,
                           self.model.screenshots.contains(where: { $0.id == asset.id }) else { return }
                     self.model.flyingScreenshots.remove(asset.id)
+                    self.resizeToFit()
                     self.notchView.screenshotLanded()
                 })
         }
@@ -1825,7 +1860,7 @@ final class NotchController: NSObject {
             guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                presentation: NotchType.presentation(for: model), width: width)
+                presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
             return min(step.height + model.materialAreaHeight + max(50, answerH) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
@@ -1833,7 +1868,7 @@ final class NotchController: NSObject {
         // panel height always matches the drawn answer — no last-line clip, no trailing gap.
         let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
         let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
-                                             presentation: NotchType.presentation(for: model), width: width)
+                                             presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
         let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
@@ -3021,5 +3056,17 @@ extension NotchController: NSMenuDelegate {
             gone.state = .on
             menu.addItem(gone)
         }
+    }
+}
+
+/// Keep native menu placement in the full usable screen, below the hardware cutout.
+@MainActor
+final class QuickMenuPlacement: NSObject, NSMenuDelegate {
+    func confinementRect(for menu: NSMenu, on screen: NSScreen?) -> NSRect {
+        guard let screen else { return .zero }
+        var safe = screen.visibleFrame
+        let top = min(safe.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
+        safe.size.height = max(0, top - safe.minY)
+        return safe.insetBy(dx: 6, dy: 6)
     }
 }

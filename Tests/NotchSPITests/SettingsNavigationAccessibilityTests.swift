@@ -3,6 +3,30 @@ import XCTest
 @testable import NotchSPI
 
 final class SettingsNavigationAccessibilityTests: XCTestCase {
+    @MainActor func testRapidPageReversalKeepsOneLivePageAndPreservesWindowPosition() async throws {
+        let controller = MainSettingsWindowController()
+        defer { controller.close() }
+        controller.open(page: .general)
+        let general = try XCTUnwrap(controller.qaVisiblePage)
+        let window = try XCTUnwrap(controller.window)
+        window.setFrameOrigin(NSPoint(x: 80, y: 100))
+        let position = window.frame.origin
+        for _ in 0..<8 {
+            controller.show(page: .hotkeys)
+            controller.show(page: .appearance)
+            controller.open(page: .general)
+            XCTAssertEqual(controller.qaVisiblePageCount, 1)
+            XCTAssertTrue(controller.qaVisiblePage === general)
+            XCTAssertEqual(window.frame.origin, position)
+            XCTAssertNil(general.layer?.animation(forKey: "fadeOut"))
+            XCTAssertNil(general.layer?.animation(forKey: "slideOut"))
+        }
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertEqual(controller.qaVisiblePageCount, 1)
+        XCTAssertTrue(controller.qaVisiblePage === general)
+        XCTAssertNotNil(general.superview)
+    }
+
     @MainActor func testThemeControlsApplyTheSelectionThroughAccessibilityAndKeyboard() throws {
         let previous = Appearance.theme.id
         defer { Appearance.setTheme(previous) }

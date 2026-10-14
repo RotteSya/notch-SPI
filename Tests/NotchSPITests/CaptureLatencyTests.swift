@@ -50,6 +50,69 @@ final class CaptureLatencyTests: XCTestCase {
         }
     }
 
+    @MainActor func testLongReadingSurvivesUpdatesAndRapidReopenButNewCaptureResets() throws {
+        _ = NSApplication.shared
+        let model = TutorModel()
+        model.answerDepth = "guided"
+        model.answerLatency = CaptureLatency(entry: .single)
+        model.answer = "FINAL: B\n" + String(repeating: "长答案阅读位置保持不变。\n", count: 90)
+        model.status = .idle
+        model.expanded = true
+        let panel = NotchPanel(contentRect: .init(x: 0, y: 0, width: 600, height: 400))
+        let view = NotchView(model: model,
+            frameProvider: { .init(x: 0, y: 0, width: $0 ? 600 : 200, height: $0 ? 400 : 32) },
+            onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view
+        view.qaUseManualMorphClock()
+        view.refreshScreenshotTray()
+        view.qaAdvanceMorph(by: 0.5)
+        defer { panel.orderOut(nil) }
+        XCTAssertGreaterThan(view.qaReadingMaximum, 300)
+        view.qaUserScroll(to: 240)
+        for _ in 0..<8 {
+            model.answer += "新增一段解释。\n"
+            view.refreshScreenshotTray()
+            model.expanded = false; view.refreshScreenshotTray(); view.qaAdvanceMorph(by: 0.06)
+            model.expanded = true; view.refreshScreenshotTray(); view.qaAdvanceMorph(by: 0.5)
+            view.qaStepReading(by: 0.1)
+            XCTAssertEqual(view.qaReadingOffset, 240, accuracy: 1)
+            XCTAssertTrue(view.qaReadingDetached)
+        }
+        // A fast next question can replace a complete answer within a single model refresh.
+        model.answerLatency = CaptureLatency(entry: .single)
+        model.answer = "FINAL: C\n" + String(repeating: "这是下一题。\n", count: 90)
+        view.refreshScreenshotTray()
+        XCTAssertEqual(view.qaReadingOffset, 0, accuracy: 1)
+        XCTAssertFalse(view.qaReadingDetached)
+    }
+
+    @MainActor func testLayoutClampDoesNotDetachLiveReadingAndCompletionStopsOldSpring() {
+        _ = NSApplication.shared
+        let model = TutorModel()
+        model.answer = String(repeating: "正在推导这道题的详细计算步骤。\n", count: 90)
+        model.status = .streaming; model.expanded = true
+        let panel = NotchPanel(contentRect: .init(x: 0, y: 0, width: 600, height: 400))
+        let view = NotchView(model: model,
+            frameProvider: { .init(x: 0, y: 0, width: $0 ? 600 : 200, height: $0 ? 400 : 32) },
+            onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view; view.qaUseManualMorphClock()
+        view.refreshScreenshotTray(); view.qaAdvanceMorph(by: 0.5)
+        defer { panel.orderOut(nil) }
+        for _ in 0..<80 { view.qaStepReading(by: 0.016) }
+        XCTAssertGreaterThan(view.qaReadingOffset, 300)
+        model.answer = String(repeating: "缩短后的推导。\n", count: 12)
+        view.refreshScreenshotTray()
+        XCTAssertFalse(view.qaReadingDetached, "Layout clamping is not a reader gesture")
+        model.answer = "FINAL: B. 最终答案"
+        model.status = .idle; view.refreshScreenshotTray()
+        let stopped = view.qaReadingOffset
+        for _ in 0..<20 { view.qaStepReading(by: 0.016) }
+        XCTAssertEqual(view.qaReadingOffset, stopped, accuracy: 0.1)
+        XCTAssertLessThanOrEqual(stopped, view.qaReadingMaximum)
+    }
+
     @MainActor func testCompleteAnswerRequiresSuccessfulCompletionAndDraw() {
         var now = 100.0
         let trace = CaptureLatency(entry: .single, now: { now })

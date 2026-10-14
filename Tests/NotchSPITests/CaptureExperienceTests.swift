@@ -3,6 +3,25 @@ import XCTest
 @testable import NotchSPI
 
 final class CaptureExperienceTests: XCTestCase {
+    @MainActor func testQuickMenuKeepsDirectActionsAndNeverHasEmptySections() {
+        let controller = NotchController(activateServices: false)
+        defer { controller.prepareForTermination() }
+        for recovering in [false, true] {
+            controller.model.recoveryAvailable = recovering
+            let menu = controller.qaScreenshotMenu()
+            XCTAssertFalse(menu.items.first?.isSeparatorItem ?? true)
+            XCTAssertFalse(menu.items.last?.isSeparatorItem ?? true)
+            for pair in zip(menu.items, menu.items.dropFirst()) {
+                XCTAssertFalse(pair.0.isSeparatorItem && pair.1.isSeparatorItem)
+            }
+            for item in menu.items.prefix(3) {
+                XCTAssertNotNil(item.image)
+                XCTAssertNil(item.submenu)
+                XCTAssertEqual(item.keyEquivalent, "")
+            }
+        }
+    }
+
     @MainActor func testCollectingHidesPreviousAnswerAndRecoveryActionsUntilRoundEnds() {
         let model = TutorModel()
         model.answer = "Previous answer\nFINAL: A"

@@ -3,6 +3,35 @@ import XCTest
 @testable import NotchSPI
 
 final class HardwareNotchLayoutTests: XCTestCase {
+    @MainActor func testMenuConfinementLeavesHardwareBandAndDockFree() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let placement = QuickMenuPlacement()
+        let rect = placement.confinementRect(for: NSMenu(), on: screen)
+        XCTAssertTrue(screen.visibleFrame.contains(rect))
+        XCTAssertLessThan(rect.maxY, screen.frame.maxY - screen.safeAreaInsets.top)
+        XCTAssertGreaterThan(rect.minY, screen.visibleFrame.minY)
+        XCTAssertEqual(placement.confinementRect(for: NSMenu(), on: nil), .zero)
+    }
+
+    func testContentFadeReversalStartsAtVisibleOpacityAndStaysMonotonic() {
+        for opening in [true, false] {
+            for origin in [CGFloat(0), 0.13, 0.57, 1] {
+                var previous = origin
+                XCTAssertEqual(NotchMotion.contentOpacity(progress: 0, origin: origin, opening: opening), origin)
+                for tick in 1...100 {
+                    let alpha = NotchMotion.contentOpacity(progress: CGFloat(tick) / 100, origin: origin, opening: opening)
+                    XCTAssertTrue((0...1).contains(alpha))
+                    if opening { XCTAssertGreaterThanOrEqual(alpha, previous) }
+                    else { XCTAssertLessThanOrEqual(alpha, previous) }
+                    let reversed = NotchMotion.contentOpacity(progress: 0, origin: alpha, opening: !opening)
+                    XCTAssertEqual(reversed, alpha, accuracy: 0.000001)
+                    previous = alpha
+                }
+                XCTAssertEqual(previous, opening ? 1 : 0, accuracy: 0.000001)
+            }
+        }
+    }
+
     private func screen(top: CGFloat = 38, origin: CGPoint = .zero, scale: CGFloat = 2,
                         auxiliary: Bool = true) -> NotchScreenLayout {
         let frame = CGRect(origin: origin, size: CGSize(width: 1512, height: 982))
@@ -46,6 +75,10 @@ final class HardwareNotchLayoutTests: XCTestCase {
         let rect = panel.convertToScreen(gear.convert(gear.bounds, to: nil))
         XCTAssertLessThanOrEqual(rect.maxY, try XCTUnwrap(layout.cutout).minY)
         XCTAssertGreaterThanOrEqual(layout.headerInset, layout.contentInset)
+        let menuAnchor = try XCTUnwrap(view.quickMenuAnchor)
+        XCTAssertEqual(menuAnchor.x, rect.minX, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(menuAnchor.y, rect.minY - 6)
+        XCTAssertLessThan(menuAnchor.y, try XCTUnwrap(layout.cutout).minY)
     }
 
     @MainActor func testDisplayChangesKeepEveryCaptureStateOutsideCutoutWithoutChangingModel() throws {
@@ -101,6 +134,56 @@ final class HardwareNotchLayoutTests: XCTestCase {
                 model.expanded = true; view.refreshScreenshotTray()
                 for _ in 0..<20 { view.qaAdvanceMorph(by: 0.02); check() }
             }
+        }
+    }
+
+    @MainActor func testReferenceHandoffAndInterruptionStayBelowHardware() throws {
+        func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+        for layout in [screen(), screen(top: 64), screen(auxiliary: false), screen(top: 0)] {
+            let model = TutorModel()
+            model.expanded = true; model.status = .running
+            model.screenshots = (0..<4).map { _ in
+                .init(id: UUID(), sessionID: UUID(),
+                    file: QuestionAssetFile(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+                    sha256: "fixture", width: 640, height: 400, byteCount: 0,
+                    targetFingerprint: "fixture", capturedAt: Date())
+            }
+            let expanded = layout.expanded(contentHeight: 360 + layout.bodyAdjustment(onboarding: false))
+            let collapsed = layout.collapsed(sideExtension: 60)
+            let panel = NotchPanel(contentRect: expanded)
+            defer { panel.close() }
+            let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
+                onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+                onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+            panel.contentView = view; view.screenLayout = layout
+            view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+            view.refreshScreenshotTray()
+            let tray = try XCTUnwrap(descendants(view).compactMap { $0 as? ScreenshotTray }.first)
+            let oldY = tray.frame.minY
+            model.answer = "FINAL: B. 60 km/h"; model.status = .streaming
+            view.refreshScreenshotTray(); tray.layoutSubtreeIfNeeded()
+            let finalY = tray.frame.minY
+            XCTAssertGreaterThan(finalY, oldY)
+            // The handoff is a monotone ease-in/ease-out translation. Check its
+            // complete swept bounds, not just the final model-layer geometry.
+            if let cutout = layout.cutout {
+                for step in 0...30 {
+                    let y = oldY + (finalY - oldY) * CGFloat(step) / 30
+                    var rect = tray.frame; rect.origin.y = y
+                    let screenRect = panel.convertToScreen(try XCTUnwrap(tray.superview).convert(rect, to: nil))
+                    XCTAssertLessThanOrEqual(screenRect.maxY, cutout.minY)
+                }
+            }
+            model.screenshotRoundActive = true
+            view.refreshScreenshotTray(); tray.layoutSubtreeIfNeeded()
+            XCTAssertTrue(model.hidesAnswer)
+            XCTAssertFalse(model.usesAnswerShelf)
+            XCTAssertNil(tray.layer?.animation(forKey: "reference-handoff"))
+            XCTAssertEqual(model.screenshots.count, 4)
+            model.screenshotRoundActive = false
+            view.refreshScreenshotTray()
+            view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+            XCTAssertNil(tray.layer?.animation(forKey: "reference-handoff"), "Display changes must discard the old coordinate system")
         }
     }
 

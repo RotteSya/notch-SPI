@@ -67,9 +67,32 @@ final class TutorModel: ObservableObject {
         let base: CGFloat = materials.isEmpty ? CaptureStyle.actionHeight : 74
         return base + (materialUndoAvailable ? 30 : 0)
     }
+    /// Presentation only: preserve capture slots until the last flight lands, then
+    /// keep readable content above a compact reference strip throughout streaming.
+    var usesAnswerShelf: Bool {
+        mode == "tutor" && (onboardingStep == nil || onboardingStep?.showsLiveContent == true) && !screenshotRoundActive
+            && !screenshotCapturing && flyingScreenshots.isEmpty && !hidesAnswer
+            && captureFeedback.isEmpty && screenshotNotice.isEmpty && !screenshotUndoAvailable
+            && status != .error && resultState != .retake
+            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    /// Message semantics stay separate from successful answer semantics.
+    var isStatusMessage: Bool { status == .error || resultState == .retake || !captureFeedback.isEmpty }
+    var usesStatusShelf: Bool {
+        mode == "tutor" && (onboardingStep == nil || onboardingStep?.showsLiveContent == true) && !screenshotRoundActive
+            && !screenshotCapturing && flyingScreenshots.isEmpty && !hidesAnswer
+            && screenshotNotice.isEmpty && !screenshotUndoAvailable && isStatusMessage
+            && !displayedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var usesContentShelf: Bool { usesAnswerShelf || usesStatusShelf }
+    var showsWaitingSurface: Bool {
+        mode == "tutor" && (onboardingStep == nil || onboardingStep?.showsLiveContent == true) && !screenshotRoundActive
+            && !screenshotCapturing && flyingScreenshots.isEmpty && showScreenshotTray
+            && answer.isEmpty && captureFeedback.isEmpty && status == .running
+    }
     var screenshotTrayHeight: CGFloat {
         guard showScreenshotTray else { return 0 }
-        return CaptureStyle.trayHeight
+        return usesContentShelf ? CaptureStyle.referenceHeight : CaptureStyle.trayHeight
     }
     var materialAreaHeight: CGFloat { screenshotTrayHeight + materialStripHeight }
     /// Compact visual status; detailed service messages remain available to accessibility.
@@ -84,6 +107,8 @@ final class TutorModel: ObservableObject {
             }
             return L10n.t("等待下一张", "次の画像待ち", "Next image")
         }
+        if resultState == .retake { return L10n.t("需要重拍", "再撮影が必要", "Retake needed") }
+        if status == .error { return L10n.t("未完成", "未完了", "Incomplete") }
         if !captureFeedback.isEmpty { return status == .error ? L10n.t("未完成", "未完了", "Incomplete") : L10n.t("已取消", "キャンセル済み", "Canceled") }
         if explanationLoading { return L10n.t("解释中", "解説中", "Explaining") }
         if recoveryAttempted && status == .running { return L10n.t("恢复中", "復元中", "Recovering") }

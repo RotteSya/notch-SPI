@@ -42,6 +42,9 @@ final class NotchView: NSView {
     /// A display change is a coordinate-system change, not a content resize. Discard old
     /// animation anchors so a running spring cannot pull the panel back to a removed screen.
     func resetScreenFrames(collapsed: CGRect, expanded: CGRect) {
+        screenshotTray.stopReferenceMotion()
+        answerShelf.layer?.removeAllAnimations()
+        statusText.layer?.removeAnimation(forKey: "status-handoff")
         ticker.pause()
         collapsedAnchor = collapsed
         expandedAnchor = expanded
@@ -88,7 +91,9 @@ final class NotchView: NSView {
     // Interior light field (Metal) — the obsidian's living light, between body and content.
     private let luma = NotchLumaView()
     private var lastAnswerLen = 0
+    private var lastAnswerPulse: CFTimeInterval = -.infinity
     private var hadAnswerCard = false
+    private var readingCapture: CaptureLatency?
     private var followBottom = false
     private var userDetached = false   // the user scrolled up to read; never yank them back down
 
@@ -102,6 +107,14 @@ final class NotchView: NSView {
     private let modeLabel = NotchView.makeLabel(size: 12.5, weight: .semibold, color: NotchPalette.primary)
     private let statusText = NotchView.makeLabel(size: 11, weight: .regular, color: NotchPalette.secondary)
     private let capsule = NotchCapsuleButton()
+    /// Screen-space anchor below the actual control, independent of the current pointer.
+    var quickMenuAnchor: NSPoint? {
+        guard let window else { return nil }
+        let rect = window.convertToScreen(gearButton.convert(gearButton.bounds, to: nil))
+        let safeTop = window.screen?.visibleFrame.maxY ?? rect.minY
+        return NSPoint(x: rect.minX, y: min(rect.minY - 6, safeTop - 6))
+    }
+
     private lazy var gearButton = NotchControlButton(
         systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
@@ -109,6 +122,9 @@ final class NotchView: NSView {
         systemName: "arrow.up.left.and.arrow.down.right", tint: NotchPalette.secondary,
         label: L10n.t("展开查看完整答案", "回答の詳細を開く", "Open full answer"),
         action: { [weak self] in self?.onExpandAnswer?() })
+    private let answerShelf = AnswerShelfView()
+    private var laidOutShelf = false
+    private var wasStatusMessage = false
     private let answerScroll = FollowScrollView()
     private let answerStream = StreamingAnswerView()
     /// Top-edge dissolve for scrolled answers: once the text scrolls under the header it fades
@@ -149,6 +165,11 @@ final class NotchView: NSView {
     private var reduceMotion: Bool { onboardingReduceMotion() }
 
     #if DEBUG
+    var qaReadingOffset: CGFloat { answerScroll.contentView.bounds.origin.y }
+    var qaReadingDetached: Bool { userDetached }
+    var qaReadingMaximum: CGFloat { maxScrollOffset() }
+    func qaUserScroll(to y: CGFloat) { scrollTo(y); noteUserScroll() }
+    func qaStepReading(by dt: CFTimeInterval) { springTick(dt) }
     var qaPaintedCardFrame: CGRect { convert(surface.cardRect, to: nil) }
 
     func qaUseManualMorphClock() {
@@ -206,7 +227,7 @@ final class NotchView: NSView {
         ])
 
         configureAnswerArea()
-        [modeLabel, statusText, capsule, gearButton, expandAnswerButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
+        [answerShelf, modeLabel, statusText, capsule, gearButton, expandAnswerButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
         expandedContent.wantsLayer = true
         expandedContent.layer?.mask = contentMask
         addSubview(expandedContent)
@@ -229,6 +250,7 @@ final class NotchView: NSView {
         geoMorph.onChange = { [weak self] g in
             self?.applyMorphFrame(g)
             self?.applyLayout()
+            if g == 1, self?.wasExpanded == true { self?.updateFollow() }
             if g == 0, let self, self.closingOnboarding {
                 // Retire the held composition only once it is fully behind the closed mask.
                 self.closingOnboarding = false
@@ -261,7 +283,7 @@ final class NotchView: NSView {
         answerStream.onToggleReasoning = { [weak self] in self?.onToggleReasoning() }
         answerStream.canCopyAnswer = { [weak self] in
             guard let self else { return false }
-            return !self.model.hidesAnswer && self.model.captureFeedback.isEmpty && self.model.mode != "personality" && self.model.resultState != .retake
+            return !self.model.hidesAnswer && !self.model.isStatusMessage && self.model.mode != "personality"
                 && self.model.status != .running && self.model.status != .streaming
                 && AnswerComposer.clipboardAnswer(self.model.answer) != nil
         }
@@ -292,6 +314,11 @@ final class NotchView: NSView {
     // MARK: Refresh (content from model)
 
     private func refresh() {
+        if reduceMotion {
+            screenshotTray.stopReferenceMotion()
+            answerShelf.layer?.removeAllAnimations()
+            statusText.layer?.removeAnimation(forKey: "status-handoff")
+        }
         if model.expanded {
             if closingOnboarding { lastOnboardingStep = nil }
             closingOnboarding = false
@@ -327,7 +354,13 @@ final class NotchView: NSView {
 
         luma.setState(model.status)
         // Streaming token arrival → one ripple through the light field.
-        if model.status == .streaming, model.answer.count > lastAnswerLen { luma.pulse() }
+        if model.answer.isEmpty { lastAnswerPulse = -.infinity }
+        let now = CACurrentMediaTime()
+        if !reduceMotion, model.status == .streaming, model.answer.count > lastAnswerLen,
+           now - lastAnswerPulse >= 0.32 {
+            luma.pulse()
+            lastAnswerPulse = now
+        }
         lastAnswerLen = model.answer.count
 
         materialStrip.isHidden = !model.showMaterialStrip
@@ -335,11 +368,22 @@ final class NotchView: NSView {
         screenshotTray.update(assets: model.screenshots, images: model.screenshotImages,
             flying: model.flyingScreenshots, message: model.screenshotHint,
             remaining: model.screenshotRemaining, cancellable: model.screenshotRoundActive,
-            capturing: model.screenshotCapturing, notice: model.screenshotNotice, undoAvailable: model.screenshotUndoAvailable)
+            capturing: model.screenshotCapturing, notice: model.screenshotNotice, undoAvailable: model.screenshotUndoAvailable, compact: model.usesContentShelf)
         // Hidden views still own their assets; clearing the last material must release them.
         materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality",
                              undoAvailable: model.materialUndoAvailable)
-        statusText.stringValue = model.captureHeading
+        let heading = model.captureHeading
+        if statusText.stringValue != heading {
+            if !reduceMotion, model.expanded, !statusText.stringValue.isEmpty {
+                statusText.wantsLayer = true
+                let transition = CATransition()
+                transition.type = .fade
+                transition.duration = 0.16
+                transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                statusText.layer?.add(transition, forKey: "status-handoff")
+            }
+            statusText.stringValue = heading
+        }
         statusText.toolTip = model.captureStatusDetail
         toolTip = model.captureStatusDetail + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
         setAccessibilityLabel("NotchSPI · " + model.captureHeading + " · " + model.captureStatusDetail)
@@ -354,12 +398,26 @@ final class NotchView: NSView {
                 ? (model.personaLabel.isEmpty ? L10n.t("设置人物像", "人物像を設定", "Set persona") : model.personaLabel)
                 : model.depthLabel
 
+        answerStream.drawsAnswerCard = !model.usesContentShelf
         answerScroll.isHidden = model.hidesAnswer
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
-            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model))
+            : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model), inShelf: model.usesContentShelf)
         answerStream.completedCapture = !model.hidesAnswer && model.status == .idle
             && model.answerLatency?.needsCompletedDraw == true ? model.answerLatency : nil
-        answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty)
+        let capture = model.answerLatency
+        let newCapture = capture != nil && capture !== readingCapture
+        readingCapture = capture
+        if newCapture {
+            userDetached = false
+            hadAnswerCard = false
+            scrollSpring.snap(0)
+            scrollTo(0)
+        }
+        if model.isStatusMessage != wasStatusMessage {
+            scrollSpring.snap(0); scrollTo(0); userDetached = false
+            wasStatusMessage = model.isStatusMessage
+        }
+        answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty || model.isStatusMessage)
         // Once FINAL arrives, keep the answer at the top instead of following its reasoning
         // to the bottom. Respect a reader who deliberately scrolled away from the live tail.
         let hasAnswerCard = attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
@@ -369,6 +427,7 @@ final class NotchView: NSView {
         }
         hadAnswerCard = hasAnswerCard
         followBottom = model.status == .streaming && !hasAnswerCard
+        if hasAnswerCard { scrollSpring.snap(answerScroll.contentView.bounds.origin.y) }
         if model.answer.isEmpty {
             // A new turn resets the reading position instantly — no smooth scroll to the top.
             scrollSpring.snap(0)
@@ -432,6 +491,7 @@ final class NotchView: NSView {
         }
         // The morph owns the frame now — quiesce the streaming springs at today's reality.
         ticker.pause()
+        scrollSpring.snap(answerScroll.contentView.bounds.origin.y)
         heightSpring.snap(current.height)
 
         let target: CGFloat = on ? 1 : 0
@@ -444,7 +504,7 @@ final class NotchView: NSView {
             morph.set(target); geoMorph.set(target)
         } else {
             let guiding = model.onboardingStep != nil || closingOnboarding
-            morph.ease = guiding ? { $0 } : NotchMotion.outCubic
+            morph.ease = { $0 }
             morph.animate(to: target, duration: guiding ? onboardingMotionDuration(on ? 0.38 : 0.26) : NotchPalette.morphDuration)
             if !on { geoMorph.ease = NotchMotion.close }
             else { geoMorph.ease = !guiding ? NotchMotion.springSettle : NotchMotion.outCubic }
@@ -499,7 +559,7 @@ final class NotchView: NSView {
             active = true
         }
         if followBottom && !userDetached { scrollSpring.target = maxScrollOffset() }
-        if !scrollSpring.settled {
+        if wasExpanded, !userDetached, !scrollSpring.settled {
             scrollSpring.step(dt)
             scrollTo(scrollSpring.value)
             active = true
@@ -515,7 +575,7 @@ final class NotchView: NSView {
 
     private func scrollTo(_ y: CGFloat) {
         answerScroll.performProgrammaticScroll {
-            answerScroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: max(0, y)))
+            answerScroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: min(maxScrollOffset(), max(0, y))))
             answerScroll.reflectScrolledClipView(answerScroll.contentView)
         }
         updateScrollFade()
@@ -668,7 +728,11 @@ final class NotchView: NSView {
             let smooth = reveal * reveal * (3 - 2 * reveal)
             ca = wasExpanded ? contentAlphaOrigin + (1 - contentAlphaOrigin) * smooth
                 : contentAlphaOrigin * (1 - smooth)
-        } else { ca = notchRamp(p, 0.38, 0.88) }
+        } else {
+            let distance = morphProgressTarget - opacityProgressOrigin
+            let local = abs(distance) < 0.0001 ? 1 : (p - opacityProgressOrigin) / distance
+            ca = NotchMotion.contentOpacity(progress: local, origin: contentAlphaOrigin, opening: wasExpanded)
+        }
         expandedContent.alphaValue = ca
         expandedContent.isHidden = ca <= 0.001
 
@@ -741,6 +805,12 @@ final class NotchView: NSView {
     /// Lay the plate at its FINAL size — called when the target size or the content changes,
     /// never per morph tick, so the CTFramesetter cache stays warm and nothing re-wraps.
     private func layoutPlate(_ size: CGSize) {
+        // AppKit can clamp the clip origin while either viewport or document resizes.
+        // Those notifications are layout, not the reader taking over the scroll wheel.
+        answerScroll.performProgrammaticScroll { layoutPlateContents(size) }
+    }
+
+    private func layoutPlateContents(_ size: CGSize) {
         guard !closingOnboarding else { return }
         let inset = NotchLayout.contentInsetH
         // Answer fills below the header; the panel height is sized by the controller, so a long
@@ -753,18 +823,44 @@ final class NotchView: NSView {
         let trayHeight = model.screenshotTrayHeight
         let w = max(0, size.width - inset * 2)
         let h = max(0, size.height - headerHeight - stripHeight - NotchLayout.answerBottomPad)
-        // Keep the question in place as collection becomes an answer.
-        let top = headerHeight + trayHeight
-        answerScroll.frame = CGRect(x: inset, y: top, width: w, height: h)
-        materialStrip.frame = CGRect(x: inset, y: top + h,
+        let shelf = model.usesContentShelf
+        let oldTrayY = screenshotTray.frame.minY + (screenshotTray.layer?.presentation()?.transform.m42 ?? 0)
+        let top = headerHeight + (shelf ? 0 : trayHeight)
+        let statusInset = model.usesStatusShelf ? NotchLayout.statusInsetV : 0
+        answerScroll.frame = CGRect(x: inset, y: top + statusInset, width: w, height: max(0, h - statusInset * 2))
+        materialStrip.frame = CGRect(x: inset, y: top + h + (shelf ? trayHeight : 0),
                                      width: w, height: model.materialStripHeight)
         screenshotTray.frame = CGRect(x: inset,
-            y: headerHeight,
+            y: shelf ? headerHeight + h : headerHeight,
             width: w, height: trayHeight)
+        let intakeSurface = model.showsWaitingSurface || (model.mode == "tutor"
+            && model.onboardingStep == nil && model.screenshotRoundActive)
+        answerShelf.isHidden = !(shelf || intakeSurface)
+        let waitingPad: CGFloat = intakeSurface ? 8 : 0
+        answerShelf.frame = CGRect(x: inset - waitingPad, y: headerHeight - waitingPad,
+                                  width: w + waitingPad * 2, height: h + trayHeight + waitingPad)
+        if shelf != laidOutShelf {
+            screenshotTray.layer?.removeAnimation(forKey: "reference-handoff")
+            answerShelf.layer?.removeAnimation(forKey: "shelf-reveal")
+            if shelf, !reduceMotion, lastPlateSize != .zero {
+                // Only references travel; answer ink is immediately in its final reading position.
+                // Both endpoints live beneath the hardware band, including interrupted morphs.
+                let shift = CABasicAnimation(keyPath: "transform.translation.y")
+                shift.fromValue = max(headerHeight, oldTrayY) - screenshotTray.frame.minY
+                shift.toValue = 0; shift.duration = NotchPalette.referenceDuration
+                shift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                screenshotTray.layer?.add(shift, forKey: "reference-handoff")
+                let reveal = CABasicAnimation(keyPath: "opacity")
+                reveal.fromValue = 0; reveal.toValue = 1; reveal.duration = NotchPalette.referenceDuration
+                reveal.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                answerShelf.layer?.add(reveal, forKey: "shelf-reveal")
+            }
+            laidOutShelf = shelf
+        }
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
         // long answer scrolls; the CTFramesetter measure matches what it draws.
-        let docH = max(h, answerStream.measuredHeight(width: w))
+        let docH = max(answerScroll.frame.height, answerStream.measuredHeight(width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
         updateScrollFade()
     }
@@ -872,8 +968,9 @@ private final class FollowScrollView: NSScrollView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func performProgrammaticScroll(_ operation: () -> Void) {
+        let previous = programmaticScroll
         programmaticScroll = true
-        defer { programmaticScroll = false }
+        defer { programmaticScroll = previous }
         operation()
     }
 
@@ -1003,4 +1100,19 @@ private final class NotchCapsuleButton: NSControl {
         onClick?()
         return true
     }
+}
+
+/// A passive backdrop: the original answer scroller and image buttons retain hit testing.
+final class AnswerShelfView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 18
+        layer?.backgroundColor = NSColor(white: 1, alpha: 0.045).cgColor
+        layer?.borderColor = NSColor(white: 1, alpha: 0.10).cgColor
+        layer?.borderWidth = 0.5
+        setAccessibilityElement(false)
+    }
+    required init?(coder: NSCoder) { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

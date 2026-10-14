@@ -13,6 +13,9 @@ import CoreText
 // scroll shows a window onto it; while streaming, NotchView keeps it pinned to the bottom. Reduce
 // Motion births instantly. Selection is traded for the animation; a right-click menu copies.
 final class StreamingAnswerView: NSView {
+    /// The notch shelf supplies one continuous surface for answer and references.
+    /// Other readers continue to paint the standalone answer chip.
+    var drawsAnswerCard = true { didSet { if oldValue != drawsAnswerCard { needsDisplay = true } } }
     var completedCapture: CaptureLatency?
     private var attributed = NSAttributedString()
     private var plain = ""
@@ -300,6 +303,7 @@ final class StreamingAnswerView: NSView {
     private func drawCardChip(_ chip: NSRange, lines: [CTLine], origins: [CGPoint],
                               shift: CGFloat, ctx: CGContext, now: CFTimeInterval,
                               utf16Births: [CFTimeInterval], reduceMotion: Bool) {
+        guard drawsAnswerCard else { return }
         var top = -CGFloat.greatestFiniteMagnitude    // y-up context coords
         var bottom = CGFloat.greatestFiniteMagnitude
         for (li, line) in lines.enumerated() {

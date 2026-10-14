@@ -511,6 +511,9 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         configureList()
         listScroll.frame = NSRect(x: 36, y: 36, width: 176, height: 358)
         root.addSubview(cardBox(frame: listScroll.frame))
+        listScroll.wantsLayer = true
+        listScroll.layer?.cornerRadius = 18
+        listScroll.layer?.masksToBounds = true
         root.addSubview(listScroll)
 
         configureBarButton(addButton, title: "＋", action: #selector(addPersona))

@@ -5,6 +5,7 @@ import AppKit
 /// Requires the ephemeral vault and lives in its own QA application bundle.
 @MainActor
 enum DesignVisualQA {
+    private static var shelfReplay: ShelfMotionReplay?
     static func start(_ scenario: String) -> NotchController {
         let defaults = UserDefaults(suiteName: "com.rottesya.notchspi.design-fixtures")!
         let history = RecentQuestionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-preview-\(UUID())"))
@@ -25,7 +26,26 @@ enum DesignVisualQA {
             return controller
         }
         if scenario == "settings" {
+            controller.setExpanded(true)
+            controller.qaRefreshScreenshotLayout()
             controller.openSettings(page: .general)
+            let menu = NSMenu(title: "界面验收")
+            for (title, action) in [
+                ("打开刘海菜单", #selector(NotchController.qaShowQuickMenu)),
+                ("浅色", #selector(NotchController.qaLightAppearance)),
+                ("深色", #selector(NotchController.qaDarkAppearance))
+            ] {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = controller
+                if action == #selector(NotchController.qaShowQuickMenu) {
+                    item.keyEquivalent = "m"
+                    item.keyEquivalentModifierMask = [.command, .option]
+                }
+                menu.addItem(item)
+            }
+            let item = NSMenuItem(title: "界面验收", action: nil, keyEquivalent: "")
+            item.submenu = menu
+            NSApp.mainMenu?.addItem(item)
             return controller
         }
         if scenario == "intake-review" {
@@ -150,6 +170,15 @@ enum DesignVisualQA {
             model.answer = ""; model.status = .error
             model.captureFeedback = L10n.t("截图失败，请确认目标窗口仍然打开后重试。", "対象ウィンドウを確認し、もう一度お試しください。", "Check that the target window is still open, then try again.")
             controller.qaPresentOnboarding(.working)
+        case "network-wait":
+            model.answer = ""; model.status = .running
+            model.statusText = L10n.t("等待服务响应", "応答を待っています", "Waiting for response")
+        case "network-failure":
+            model.answer = L10n.t("网络连接中断，未能完成本次查题。请检查网络后重新查题。", "接続が切れました。接続を確認して再度お試しください。", "The connection was interrupted. Check your network and try again.")
+            model.status = .error; model.statusText = model.answer
+        case "retake-review":
+            model.answer = L10n.t("题目文字不够清晰。请重新截取完整题干和选项。", "文字が不鮮明です。問題文と選択肢を撮り直してください。", "The text is unclear. Capture the complete question and choices again.")
+            model.resultState = .retake; model.statusText = model.answer
         case "long":
             model.answerDepth = "guided"
             model.answer = Array(repeating: "**解题过程**\n平均速度等于路程除以时间。`120 ÷ 2 = 60`。请注意路程与时间的单位一致。", count: 16).joined(separator: "\n\n") + "\nFINAL: B. 60 km/h"
@@ -184,6 +213,43 @@ enum DesignVisualQA {
             NSApp.mainMenu?.addItem(item)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { controller.qaResetMotionReview() }
         }
+        if scenario == "shelf-motion" {
+            model.answer = ""; model.screenshots = []; model.screenshotImages = [:]
+            model.status = .ready
+            controller.setExpanded(false)
+            ScreenshotVisualQA.start(controller, localService: false)
+            controller.qaScreenshotSubmit = { [weak controller] _, _ in
+                guard let controller else { return }
+                controller.model.answer = ""; controller.model.status = .running
+                controller.model.statusText = L10n.t("思考中", "考え中", "Thinking")
+                controller.qaRefreshScreenshotLayout()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak controller] in
+                    guard let controller else { return }
+                    controller.model.status = .streaming
+                    controller.model.answer = "FINAL: B."
+                    controller.qaRefreshScreenshotLayout()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak controller] in
+                    guard let controller else { return }
+                    controller.model.answer = "FINAL: B. 60 km/h"
+                    controller.model.status = .idle; controller.model.statusText = L10n.statusDone
+                    controller.qaRefreshScreenshotLayout()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak controller] in controller?.setExpanded(false) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak controller] in controller?.setExpanded(true) }
+            }
+        }
+        if scenario == "shelf-motion" {
+            let replay = ShelfMotionReplay(controller)
+            shelfReplay = replay
+            let menu = NSMenu(title: "动效预览")
+            for (title, action) in [("重放单图", #selector(ShelfMotionReplay.single)), ("重放四图", #selector(ShelfMotionReplay.multiple))] {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = replay; menu.addItem(item)
+            }
+            let item = NSMenuItem(title: "动效预览", action: nil, keyEquivalent: "")
+            item.submenu = menu; NSApp.mainMenu?.addItem(item)
+        }
         if scenario == "multi-flow" {
             ScreenshotVisualQA.start(controller, localService: false)
             DispatchQueue.main.asyncAfter(deadline: .now() + 13) { [weak controller] in
@@ -191,6 +257,20 @@ enum DesignVisualQA {
             }
         }
         return controller
+    }
+}
+@MainActor
+private final class ShelfMotionReplay: NSObject {
+    weak var controller: NotchController?
+    init(_ controller: NotchController) { self.controller = controller }
+    @objc func single() { controller?.qaPressScreenshot(multiple: false) }
+    @objc func multiple() {
+        controller?.qaPressScreenshot(multiple: true)
+        for delay in [0.5, 1.0, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.controller?.qaPressScreenshot(multiple: true)
+            }
+        }
     }
 }
 #endif
