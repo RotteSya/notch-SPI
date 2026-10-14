@@ -9,6 +9,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private let detailScroll = NSScrollView()
     private let status = NSTextField(labelWithString: "")
     private let copyButton = NSButton()
+    private let copyAllButton = NSButton()
     private let deleteButton = NSButton()
     private let clearButton = NSButton()
     private var observer: NSObjectProtocol?
@@ -36,12 +37,14 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
         copyButton.title = L10n.t("复制答案", "回答をコピー", "Copy answer")
         copyButton.target = self; copyButton.action = #selector(copyAnswer)
+        copyAllButton.title = L10n.t("复制全部", "全文をコピー", "Copy all")
+        copyAllButton.target = self; copyAllButton.action = #selector(copyAllText)
         deleteButton.title = L10n.t("删除记录", "削除", "Delete")
         deleteButton.target = self; deleteButton.action = #selector(deleteSelected)
         clearButton.title = L10n.t("清空记录…", "すべて削除…", "Clear all…")
         clearButton.target = self; clearButton.action = #selector(clearAll)
-        for button in [copyButton, deleteButton, clearButton] { button.bezelStyle = .rounded }
-        let toolbar = NSStackView(views: [copyButton, deleteButton, clearButton]); toolbar.spacing = 10
+        for button in [copyButton, copyAllButton, deleteButton, clearButton] { button.bezelStyle = .rounded }
+        let toolbar = NSStackView(views: [copyButton, copyAllButton, deleteButton, clearButton]); toolbar.spacing = 10
 
         let column = NSTableColumn(identifier: .init("question")); column.width = 244
         table.addTableColumn(column); table.headerView = nil; table.rowHeight = 72
@@ -146,6 +149,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private var selected: RecentQuestion? { records.indices.contains(table.selectedRow) ? records[table.selectedRow] : nil }
     private func renderSelection() {
         copyButton.isEnabled = selected != nil; deleteButton.isEnabled = selected != nil; clearButton.isEnabled = !records.isEmpty
+        copyAllButton.isEnabled = selected != nil
         guard displayed != selected || detail.arrangedSubviews.isEmpty else { return }
         displayed = selected; selectedID = selected?.id
         for view in detail.arrangedSubviews { detail.removeArrangedSubview(view); view.removeFromSuperview() }
@@ -155,8 +159,8 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             return
         }
         addText(L10n.t("答案", "回答", "Answer"), size: 12, color: .secondaryLabelColor)
-        addText(record.conclusion, size: 24, weight: .semibold)
-        if record.needsReview { addText(L10n.t("此答案需要核对，请结合原题确认。", "元の問題と照合して確認してください。", "This answer needs review. Check it against the original question."), size: 13, color: .systemOrange) }
+        addText(record.reading.conclusion, size: 24, weight: .semibold)
+        if record.needsReview { addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange) }
         if !record.detail.isEmpty {
             addText(L10n.t("解释", "解説", "Explanation"), size: 12, color: .secondaryLabelColor)
             addText(record.detail, size: 15)
@@ -181,17 +185,17 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         view.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -56).isActive = true
     }
     private func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) {
-        let plain = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))).map { String($0.characters) } ?? text
-        let label = NSTextField(wrappingLabelWithString: plain)
+        let label = AnswerText.label(text, size: size, weight: weight, color: color)
         label.preferredMaxLayoutWidth = 580
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.font = .systemFont(ofSize: size, weight: weight); label.textColor = color
-        label.isSelectable = true; label.setContentCompressionResistancePriority(.required, for: .vertical)
         add(label)
     }
     @objc private func copyAnswer() {
         guard let record = selected else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(record.conclusion, forType: .string)
+    }
+    @objc private func copyAllText() {
+        guard let record = selected else { return }
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(record.copyText, forType: .string)
     }
     @objc private func deleteSelected() { if let record = selected { store.delete(id: record.id) } }
     @objc private func clearAll() {

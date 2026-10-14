@@ -9,14 +9,11 @@ struct RecentQuestion: Codable, Equatable, Identifiable {
     var needsReview: Bool
     let imageCount: Int
 
-    var conclusion: String { AnswerComposer.clipboardAnswer(answer) ?? answer }
-    var detail: String {
-        let parsed = AnswerComposer.parse(answer, streaming: false)
-        let body = [parsed.working, parsed.overflow].filter { !$0.isEmpty }.joined(separator: "\n\n")
-        let extra = AnswerComposer.parse(explanation, streaming: false)
-        return [body, extra.working, extra.final, extra.overflow]
-            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
-    }
+    var reading: AnswerReadingContent { .init(answer: answer, explanation: explanation) }
+    var conclusion: String { reading.copyAnswer }
+    var detail: String { reading.detail }
+    var copyText: String { reading.copyAll }
+
 }
 
 /// All disk work is serialized off the main thread. Retaining the snapshot keeps temporary

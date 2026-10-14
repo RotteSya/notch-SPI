@@ -8,7 +8,7 @@ import Foundation
 /// FINAL lines, the LAST one wins. Two contradictory answers on screen become structurally
 /// impossible: the answer card always shows exactly one conclusion.
 ///
-/// Pure string logic — no AppKit, fully unit-tested.
+/// Parsing is string-based; clipboard formatting shares the answer readers’ text rules.
 enum AnswerComposer {
     static func missingResultMessage(transportOK: Bool, error: String) -> String {
         let detail = error.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,12 +78,8 @@ enum AnswerComposer {
     /// nil when the reply carries no answer card (no marker → nothing to auto-copy).
     static func clipboardAnswer(_ raw: String) -> String? {
         guard let final = parse(raw, streaming: false).final, !final.isEmpty else { return nil }
-        if let a = try? AttributedString(
-            markdown: final, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            let flat = String(a.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !flat.isEmpty { return flat }
-        }
-        return final
+        let plain = AnswerText.plain(final).trimmingCharacters(in: .whitespacesAndNewlines)
+        return plain.isEmpty ? final : plain
     }
 
     // MARK: - Helpers

@@ -163,7 +163,7 @@ extension NSAttributedString.Key {
     /// Marks the answer-card range. Value: "label" (the small caption) or "answer" (the payload).
     /// The streaming view draws the glass chip behind this range.
     static let nspiAnswerCard = NSAttributedString.Key("nspiAnswerCard")
-    /// Marks the clickable "▸ 推理过程" line that folds/unfolds the scratch work.
+    /// Marks the clickable "▸ 解释" line that folds/unfolds the scratch work.
     static let nspiReasoningToggle = NSAttributedString.Key("nspiReasoningToggle")
     /// Marks one hotkey cap ("⇧", "⌘", "1") in the idle placeholder. The streaming view draws a
     /// mini glass keycap behind the range — the product's "press this" language, inline in text.
@@ -387,7 +387,7 @@ enum NotchType {
         para.lineSpacing = 2
         para.paragraphSpacingBefore = cardPadV + 10
         para.firstLineHeadIndent = 2
-        let title = L10n.t("推理过程", "考え方", "Reasoning")
+        let title = L10n.t("解释", "解説", "Explanation")
         return NSAttributedString(string: "\(expanded ? "▾" : "▸") \(title)", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NotchPalette.secondary,
@@ -402,44 +402,9 @@ enum NotchType {
         _ text: String, baseFont: NSFont, codeFont: NSFont, color: NSColor,
         para: NSParagraphStyle, extra: [NSAttributedString.Key: Any] = [:]
     ) -> NSAttributedString {
-        var attrs: [NSAttributedString.Key: Any] = [
-            .font: baseFont, .foregroundColor: color, .paragraphStyle: para,
-        ]
-        for (k, v) in extra { attrs[k] = v }
-        let out = NSMutableAttributedString()
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            for run in attributed.runs {
-                let piece = String(attributed[run.range].characters)
-                var font = baseFont
-                if let intent = run.inlinePresentationIntent {
-                    if intent.contains(.code) {
-                        font = codeFont
-                    } else {
-                        font = variant(baseFont,
-                                       bold: intent.contains(.stronglyEmphasized),
-                                       italic: intent.contains(.emphasized))
-                    }
-                }
-                var a = attrs
-                a[.font] = font
-                out.append(NSAttributedString(string: piece, attributes: a))
-            }
-        } else {
-            out.append(NSAttributedString(string: text, attributes: attrs))
-        }
-        return out
+        AnswerText.attributed(text, baseFont: baseFont, codeFont: codeFont, color: color, para: para, extra: extra)
     }
 
-    private static func variant(_ font: NSFont, bold: Bool, italic: Bool) -> NSFont {
-        var f = font
-        let fm = NSFontManager.shared
-        if bold { f = fm.convert(f, toHaveTrait: .boldFontMask) }
-        if italic { f = fm.convert(f, toHaveTrait: .italicFontMask) }
-        return f
-    }
 }
 
 // MARK: - Display-link tween

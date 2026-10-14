@@ -12,17 +12,11 @@ struct ExpandedAnswerContent: Equatable {
     let canExplain: Bool
     let explanationFailed: Bool
 
-    var conclusion: String { AnswerComposer.clipboardAnswer(answer) ?? answer }
-    var detail: String {
-        let parsed = AnswerComposer.parse(answer, streaming: false)
-        let extra = AnswerComposer.parse(explanation, streaming: false)
-        return [parsed.final == nil ? "" : parsed.working, parsed.overflow,
-                extra.working, extra.final, extra.overflow].compactMap { $0 }
-            .filter { !$0.isEmpty }.joined(separator: "\n\n")
-    }
-    var copyText: String {
-        [conclusion, detail].filter { !$0.isEmpty }.joined(separator: "\n\n")
-    }
+    var reading: AnswerReadingContent { .init(answer: answer, explanation: explanation) }
+    var conclusion: String { reading.copyAnswer }
+    var detail: String { reading.detail }
+    var copyText: String { reading.copyAll }
+
 }
 
 @MainActor
@@ -149,9 +143,9 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         let position = answerScroll.contentView.bounds.origin
         answer.clear()
         answer.addText(L10n.t("答案", "回答", "Answer"), size: 12, color: .secondaryLabelColor)
-        answer.addText(content.conclusion, size: 24, weight: .semibold)
+        answer.addText(content.reading.conclusion, size: 24, weight: .semibold)
         if content.needsReview {
-            answer.addText(L10n.t("此答案需要核对，请结合原题确认。", "元の問題と照合して確認してください。", "This answer needs review. Check it against the original question."), size: 13, color: .systemOrange)
+            answer.addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange)
         }
         if !content.detail.isEmpty {
             answer.addText(L10n.t("解释", "解説", "Explanation"), size: 12, color: .secondaryLabelColor)
@@ -171,11 +165,10 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         answer.layoutSubtreeIfNeeded()
         answerScroll.contentView.scroll(to: position); answerScroll.reflectScrolledClipView(answerScroll.contentView)
     }
-    @objc private func copyAnswer() { if let content { copy(content.conclusion) } }
+    @objc private func copyAnswer() { if let content { copy(content.reading.copyAnswer) } }
     @objc private func copyAllText() { if let content { copy(content.copyText) } }
     private func copy(_ text: String) {
-        let plain = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))).map { String($0.characters) } ?? text
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(plain, forType: .string)
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }
     @objc private func explain() {
         guard currentQuestion, let content, content.canExplain, !content.explaining else { return }
@@ -208,12 +201,8 @@ private final class AnswerReadingStack: NSStackView {
         view.widthAnchor.constraint(equalTo: widthAnchor, constant: -56).isActive = true
     }
     func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) {
-        let plain = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))).map { String($0.characters) } ?? text
-        let label = NSTextField(wrappingLabelWithString: plain)
+        let label = AnswerText.label(text, size: size, weight: weight, color: color)
         label.preferredMaxLayoutWidth = 450
-        label.font = .systemFont(ofSize: size, weight: weight); label.textColor = color; label.isSelectable = true
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setContentCompressionResistancePriority(.required, for: .vertical)
         addFullWidth(label)
     }
 }

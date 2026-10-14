@@ -69,6 +69,21 @@ enum DesignVisualQA {
             }
         }
         model.screenshotStatus = L10n.t("已提交 \(model.screenshots.count) 张截图", "画像 \(model.screenshots.count) 枚を送信済み", "\(model.screenshots.count) screenshot(s) submitted")
+        if scenario == "reading-consistency" {
+            let capture = QuestionCaptureSnapshot(captureID: UUID(), sessionID: UUID(), generation: 0,
+                assets: model.screenshots, expiresAt: Date().addingTimeInterval(900))
+            model.answer = "**计算步骤**：平均速度 = 路程 ÷ 时间。\nFINAL: **（1）B. 60 km/h**\n（2）120 km ÷ 2 h = 60 km/h\n（3）公式：\\(v_1 = \\frac{s_1}{t_1}\\)"
+            model.explanation = "**解释**\n保留题号、单位和换行。`120 / 2 = 60`\n\n" + String(repeating: "换算时检查 km 与 h，结论始终与原题一起核对。\n", count: 18) + "\n解释结束。"
+            model.resultState = .review
+            model.statusText = AnswerReadingContent.reviewMessage
+            model.reasoningRevealed = true
+            controller.qaSeedExpandedAnswer(capture)
+            history.save(snapshot: capture, answer: model.answer, needsReview: true)
+            history.updateExplanation(id: capture.captureID, text: model.explanation)
+            controller.setExpanded(true); controller.qaRefreshScreenshotLayout()
+            controller.openExpandedAnswer(); controller.openRecentQuestions()
+            return controller
+        }
         if scenario == "expanded-answer" {
             controller.qaSeedExpandedAnswer(.init(captureID: UUID(), sessionID: UUID(), generation: 0,
                 assets: model.screenshots, expiresAt: Date().addingTimeInterval(900)))

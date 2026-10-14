@@ -24,7 +24,7 @@ final class StreamingAnswerView: NSView {
     private var frameCache: (key: String, width: CGFloat, frame: CTFrame)?
     private var heightCache: (width: CGFloat, height: CGFloat)?
 
-    /// Fires when the "▸ 推理过程" line is clicked (brief mode's folded scratch work).
+    /// Fires when the "▸ 解释" line is clicked (brief mode's folded scratch work).
     var onToggleReasoning: (() -> Void)?
     var canCopyAnswer: (() -> Bool)?
     var onCopyAnswer: (() -> Void)?
@@ -61,7 +61,7 @@ final class StreamingAnswerView: NSView {
             })
         }
         if toggleRange != nil, onToggleReasoning != nil {
-            actions.append(NSAccessibilityCustomAction(name: L10n.t("展开或收起推理过程", "考え方を開く／閉じる", "Expand or collapse reasoning")) { [weak self] in
+            actions.append(NSAccessibilityCustomAction(name: L10n.t("展开或收起解释", "解説を開く／閉じる", "Expand or collapse explanation")) { [weak self] in
                 guard let self, !self.isPlaceholder, self.toggleRange != nil,
                       let toggle = self.onToggleReasoning else { return false }
                 toggle(); return true

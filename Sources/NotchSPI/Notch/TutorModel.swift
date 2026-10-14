@@ -30,8 +30,7 @@ final class TutorModel: ObservableObject {
     @Published var recoveryAvailable = false
     @Published var recoveryAttempted = false
     var renderedAnswer: String {
-        guard !explanation.isEmpty, let final = AnswerComposer.parse(answer, streaming: false).final else { return answer }
-        return explanation + "\nFINAL: " + final
+        AnswerReadingContent(answer: answer, explanation: explanation).notchText
     }
     var canExpandAnswer: Bool {
         mode == "tutor" && onboardingStep == nil && status == .idle && !hidesAnswer
