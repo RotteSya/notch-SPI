@@ -169,6 +169,55 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
     }
 
+    @MainActor func testSpaceAndWakeNotificationsCoalesceWithoutReplacingActiveQuestionOrFocus() async throws {
+        try await withController { controller, gate in
+            controller.qaPressScreenshot(multiple: false)
+            try await waitFor { gate.callbacks.count == 1 }
+            gate.callbacks[0].0("streaming text")
+            let answer = controller.model.answer
+            let focus = NSApp.keyWindow
+            let initial = controller.qaScreenRefreshCount
+            for _ in 0..<5 {
+                NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+                NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            }
+            XCTAssertTrue(controller.qaScreenRecheckPending)
+            let immediate = controller.qaScreenRefreshCount
+            XCTAssertGreaterThan(immediate, initial)
+            try await Task.sleep(for: .milliseconds(900))
+            XCTAssertFalse(controller.qaScreenRecheckPending)
+            XCTAssertEqual(controller.qaScreenRefreshCount, immediate + 1)
+            XCTAssertEqual(controller.model.answer, answer)
+            XCTAssertTrue(controller.qaRequestRunning)
+            XCTAssertEqual(gate.callbacks.count, 1)
+            XCTAssertTrue(NSApp.keyWindow === focus)
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+            XCTAssertFalse(controller.qaRequestRunning)
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+            gate.finish(0, answer: "stale sleeping result")
+            XCTAssertFalse(controller.model.answer.contains("stale sleeping result"))
+            controller.qaPressScreenshot(multiple: false)
+            try await waitFor { gate.callbacks.count == 2 }
+            gate.finish(1, answer: "B")
+            XCTAssertEqual(controller.model.status, .idle)
+        }
+    }
+
+    @MainActor func testSleepAndTerminationCancelPendingDisplayRechecks() async throws {
+        let controller = NotchController(activateServices: false)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertTrue(controller.qaScreenRecheckPending)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertFalse(controller.qaScreenRecheckPending)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        XCTAssertTrue(controller.qaScreenRecheckPending)
+        controller.prepareForTermination()
+        let count = controller.qaScreenRefreshCount
+        try await Task.sleep(for: .milliseconds(900))
+        XCTAssertFalse(controller.qaScreenRecheckPending)
+        XCTAssertEqual(controller.qaScreenRefreshCount, count)
+    }
+
     @MainActor func testReaderAndHistoryStayOnOldQuestionThroughDisplayChangeAndNextCapture() async throws {
         try await withController { controller, gate in
             controller.qaPressScreenshot(multiple: false)

@@ -23,6 +23,8 @@ final class NotchController: NSObject {
     var qaScreenshotWarmUp: (() -> Void)?
     var qaSubmittedLatency: CaptureLatency?
     var qaScreenshotClock: (() -> TimeInterval)?
+    var qaScreenRecheckPending: Bool { screenRefreshWork != nil }
+    private(set) var qaScreenRefreshCount = 0
     // Exercise the real intake, composition and completion path without a paid provider.
     var qaAnswerStream: ((@escaping (String) -> Void, @escaping (Bool, String) -> Void) -> Void)?
     var qaRequestRunning: Bool { running }
@@ -293,9 +295,7 @@ final class NotchController: NSObject {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.refreshScreenLayout()
-                ScreenCapture.invalidateShareableContent()
-                if self?.activatesServices == true { ScreenCapture.prefetchShareableContent() }
+                self?.screenEnvironmentChanged()
             }
         })
         // Re-read geometry after wake even when macOS preserves the display IDs.
@@ -303,10 +303,13 @@ final class NotchController: NSObject {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.refreshScreenLayout()
-                ScreenCapture.invalidateShareableContent()
-                if self?.activatesServices == true { ScreenCapture.prefetchShareableContent() }
+                self?.screenEnvironmentChanged()
             }
+        })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screenEnvironmentChanged() }
         })
         for name in [NSWindow.didChangeScreenNotification, NSWindow.didChangeBackingPropertiesNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
@@ -315,7 +318,7 @@ final class NotchController: NSObject {
         }
     }
 
-    deinit { onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
+    deinit { screenRefreshWork?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
 
     /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
     /// reads the key of the active third-party provider.
@@ -1232,6 +1235,7 @@ final class NotchController: NSObject {
     }
 
     private func suspendCaptureWork() {
+        screenRefreshWork?.cancel(); screenRefreshWork = nil
         guard running || model.explanationLoading || intakeTask != nil || screenshotRound.isActive
             || pendingSingle != nil || autoEngine.isActive else { return }
         // Never submit an unattended countdown after wake or accept a pre-sleep callback.
@@ -1330,6 +1334,7 @@ final class NotchController: NSObject {
     }
 
     func prepareForTermination() {
+        screenRefreshWork?.cancel(); screenRefreshWork = nil
         onboardingPermissionTimer?.invalidate(); onboardingPermissionTimer = nil
         terminating = true
         newQuestionGroup()
@@ -1698,6 +1703,26 @@ final class NotchController: NSObject {
 
     private var layoutScreenID: CGDirectDisplayID?
     private var updatingScreenLayout = false
+    private var screenRefreshWork: DispatchWorkItem?
+
+    /// Space animations and wake can report an intermediate display topology first.
+    /// Apply safety geometry now, then coalesce a final read after the transition settles.
+    /// Neither pass activates a window, resets the question, or resubmits a capture.
+    private func screenEnvironmentChanged() {
+        guard !terminating else { return }
+        refreshScreenLayout()
+        ScreenCapture.invalidateShareableContent()
+        screenRefreshWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.terminating else { return }
+            self.screenRefreshWork = nil
+            self.refreshScreenLayout()
+            ScreenCapture.invalidateShareableContent()
+            if self.activatesServices { ScreenCapture.prefetchShareableContent() }
+        }
+        screenRefreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: work)
+    }
 
     private var screen: NSScreen? {
         let screens = NSScreen.screens
@@ -1721,6 +1746,9 @@ final class NotchController: NSObject {
 
     private func refreshScreenLayout(followWindow: Bool = false) {
         guard !updatingScreenLayout else { return }
+        #if DEBUG
+        qaScreenRefreshCount += 1
+        #endif
         updatingScreenLayout = true
         defer { updatingScreenLayout = false }
         if followWindow, let current = panel.screen {
@@ -1736,6 +1764,19 @@ final class NotchController: NSObject {
         }
         notchView.screenLayout = nextLayout
         notchView.resetScreenFrames(collapsed: frame(expanded: false), expanded: frame(expanded: true))
+        #if DEBUG
+        if CommandLine.arguments.contains("--qa-display-transitions") {
+            func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+            let overlaps = descendants(notchView).filter { view in
+                guard !view.isHiddenOrHasHiddenAncestor,
+                      view is NSControl || view is NSScrollView || view is RoseLoaderView,
+                      let cutout = nextLayout?.cutout else { return false }
+                return panel.convertToScreen(view.convert(view.bounds, to: nil)).intersects(cutout)
+            }.count
+            let message = "Display QA: refresh=\(qaScreenRefreshCount) screens=\(NSScreen.screens.count) frame=\(panel.frame) cutoutOverlaps=\(overlaps) panelKey=\(panel.isKeyWindow)\n"
+            FileHandle.standardError.write(Data(message.utf8))
+        }
+        #endif
     }
 
     /// The transparent left extension (collapsed) that puts the Rose in the menu bar beside the cutout.
