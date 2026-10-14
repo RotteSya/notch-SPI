@@ -53,6 +53,28 @@ final class QuestionSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyAndExpiredSessionsDoNotRepeatedlyExpireDuringLongIdle() {
+        var now = Date()
+        let session = QuestionSessionStore(now: { now })
+        let initial = session.sessionID
+        now.addTimeInterval(86400)
+        XCTAssertFalse(session.expireIfNeeded())
+        XCTAssertEqual(session.sessionID, initial)
+        session.begin(scope: "reader", newQuestionGroup: true)
+        now.addTimeInterval(QuestionSessionStore.lifetime)
+        XCTAssertTrue(session.expireIfNeeded())
+        let expired = session.sessionID
+        for _ in 0..<100 {
+            now.addTimeInterval(86400)
+            XCTAssertFalse(session.expireIfNeeded())
+            XCTAssertEqual(session.sessionID, expired)
+        }
+        session.begin(scope: "reader", newQuestionGroup: false)
+        now.addTimeInterval(QuestionSessionStore.lifetime)
+        XCTAssertTrue(session.expireIfNeeded(), "New activity must rearm expiry")
+    }
+
+    @MainActor
     func testChangingTargetCannotAppendAnotherWindowsMaterial() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

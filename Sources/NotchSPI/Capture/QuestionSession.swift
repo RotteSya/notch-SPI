@@ -41,6 +41,7 @@ final class QuestionSessionStore {
     private(set) var currentQuestion: ContextAsset?
     private(set) var lastActivity = Date()
     private var scope = ""
+    private var expiryPending = false
     private var removedReference: (asset: ContextAsset, index: Int, session: UUID, until: Date)?
     var canUndoRemoval: Bool { removedReference.map { $0.session == sessionID && now() < $0.until } ?? false }
     private let now: () -> Date
@@ -66,6 +67,7 @@ final class QuestionSessionStore {
     func begin(scope: String, newQuestionGroup: Bool) {
         if newQuestionGroup || scope != self.scope || now().timeIntervalSince(lastActivity) >= Self.lifetime { clear() }
         self.scope = scope
+        expiryPending = true
         lastActivity = now()
     }
     /// First-use registration can bind already saved local material to the newly confirmed
@@ -79,6 +81,7 @@ final class QuestionSessionStore {
         return true
     }
     func clear() {
+        expiryPending = false
         removedReference = nil
         references = []
         currentQuestion = nil
@@ -89,7 +92,7 @@ final class QuestionSessionStore {
     @discardableResult
     func expireIfNeeded() -> Bool {
         if let removedReference, now() >= removedReference.until { self.removedReference = nil }
-        guard now().timeIntervalSince(lastActivity) >= Self.lifetime else { return false }
+        guard expiryPending, now().timeIntervalSince(lastActivity) >= Self.lifetime else { return false }
         clear()
         return true
     }
@@ -149,6 +152,7 @@ final class QuestionSessionStore {
             guard references.count < 3 else { throw SessionError.full }
             references.append(asset)
         } else { currentQuestion = asset }
+        expiryPending = true
         lastActivity = now()
         return asset
     }

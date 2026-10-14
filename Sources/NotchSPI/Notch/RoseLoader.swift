@@ -10,13 +10,11 @@ final class RoseLoaderView: NSView {
     /// Welcome-page brand-moment mode: the trail is tinted accent→white toward the head, drawn
     /// additively with a soft bloom under the leading particles, so the rose reads as a signature
     /// of light instead of a dim gray glyph. Defaults off — the notch's quiet loader is unchanged.
-    var hero: Bool = false { didSet { needsDisplay = true } }
+    var hero: Bool = false { didSet { needsDisplay = true; if hero != oldValue { updateClock() } } }
 
-    /// Whether the pipeline is actively working. At rest the rose still breathes/rotates, but
-    /// those motions are minutes-slow (28s/rev, 4.3s pulse) — 24fps is imperceptible from 60 and
-    /// this indicator is ALWAYS on screen beside the notch, so the idle cost matters. Working
-    /// (running/streaming) takes the full clock.
-    var busy: Bool = false { didSet { if busy != oldValue { retuneClock() } } }
+    /// Animate active work and the welcome illustration. Ordinary idle stays on one
+    /// still frame rather than redrawing a persistent menu-bar ornament all day.
+    var busy: Bool = false { didSet { if busy != oldValue { updateClock(); needsDisplay = true } } }
 
     // config (from the original)
     private let particleCount = 48
@@ -32,7 +30,16 @@ final class RoseLoaderView: NSView {
     private let roseScale = 3.25
     private let pathSteps = 160
 
+    private final class ClockTarget: NSObject {
+        weak var view: RoseLoaderView?
+        init(_ view: RoseLoaderView) { self.view = view }
+        @objc func tick() { view?.needsDisplay = true }
+    }
+    private var clockTarget: ClockTarget?
     private var link: CADisplayLink?
+    #if DEBUG
+    var qaClockActive: Bool { link != nil }
+    #endif
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     override init(frame frameRect: NSRect) { super.init(frame: frameRect) }
@@ -45,12 +52,19 @@ final class RoseLoaderView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil { startLink() } else { stopLink() }
+        updateClock()
     }
 
-    private func startLink() {
-        guard link == nil, !reduceMotion else { needsDisplay = true; return }
-        let l = displayLink(target: self, selector: #selector(tick))
+    private func updateClock() {
+        guard window != nil, (busy || hero), !reduceMotion else {
+            stopLink()
+            needsDisplay = true
+            return
+        }
+        if link != nil { retuneClock(); return }
+        let target = ClockTarget(self)
+        clockTarget = target
+        let l = displayLink(target: target, selector: #selector(ClockTarget.tick))
         l.add(to: .main, forMode: .common)
         link = l
         retuneClock()
@@ -62,8 +76,7 @@ final class RoseLoaderView: NSView {
         link.preferredFrameRateRange = CAFrameRateRange(minimum: max(15, fps - 12), maximum: fps, preferred: fps)
     }
 
-    private func stopLink() { link?.invalidate(); link = nil }
-    @objc private func tick() { needsDisplay = true }
+    private func stopLink() { link?.invalidate(); link = nil; clockTarget = nil }
     deinit { link?.invalidate() }
 
     // MARK: Geometry
@@ -87,7 +100,7 @@ final class RoseLoaderView: NSView {
         let sz = bounds.size
         guard sz.width > 1, sz.height > 1 else { return }
         // Reduce Motion: render one static, pleasing pose instead of animating.
-        let timeMs = reduceMotion ? 1500.0 : CACurrentMediaTime() * 1000
+        let timeMs = reduceMotion || (!busy && !hero) ? 1500.0 : CACurrentMediaTime() * 1000
 
         let scale = min(sz.width, sz.height) / 100
         let pulseAngle = (timeMs.truncatingRemainder(dividingBy: pulseDurationMs)) / pulseDurationMs * 2 * .pi

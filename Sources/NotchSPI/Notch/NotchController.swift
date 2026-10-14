@@ -4,8 +4,8 @@ import Carbon.HIToolbox
 @MainActor
 final class NotchController: NSObject {
     let model = TutorModel()
-    private let questions = QuestionSessionStore()
-    private let intakeStore = QuestionSessionStore()
+    private let questions: QuestionSessionStore
+    private let intakeStore: QuestionSessionStore
     private var screenshotRound = ScreenshotRound<ContextAsset>()
     private var removedScreenshot: (asset: ContextAsset, index: Int, round: UUID, until: TimeInterval)?
     private var intakeTask: Task<Void, Never>?
@@ -29,6 +29,8 @@ final class NotchController: NSObject {
     var qaAnswerStream: ((@escaping (String) -> Void, @escaping (Bool, String) -> Void) -> Void)?
     var qaRequestRunning: Bool { running }
     func qaSuspendCaptureWork() { suspendCaptureWork() }
+    func qaMaintainIdleState() { maintainIdleState() }
+    var qaMaintenanceTimerActive: Bool { materialTimer?.isValid == true }
     func qaOpenScreenshotPreview(_ id: UUID) { notchView.qaPreviewScreenshot(id) }
     func qaPreviewScreenshots(_ value: Bool) { screenshotRound.setPreviewing(value, now: screenshotNow); updateScreenshotRound() }
     func qaRemoveScreenshot(_ id: UUID) { removeScreenshot(id) }
@@ -166,8 +168,10 @@ final class NotchController: NSObject {
     }
 
     init(activateServices: Bool = true, onboardingDefaults: UserDefaults = .standard,
-         recentQuestions: RecentQuestionStore? = nil) {
+         recentQuestions: RecentQuestionStore? = nil, questionNow: @escaping () -> Date = Date.init) {
         activatesServices = activateServices
+        questions = QuestionSessionStore(now: questionNow)
+        intakeStore = QuestionSessionStore(now: questionNow)
         self.recentQuestions = recentQuestions ?? (activateServices ? .shared : RecentQuestionStore(
             directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-test-\(UUID())")))
         onboardingProgress = NotchOnboardingProgress(defaults: onboardingDefaults)
@@ -242,26 +246,7 @@ final class NotchController: NSObject {
             Settings.shared.migrateScreenshotHotkeys()
             registerHotkeys()
         }
-        materialTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if self.questions.expireIfNeeded(), !self.screenshotRound.isActive, self.intakeTask == nil {
-                    self.invalidateQuestionContext(clearAnswer: false)
-                }
-                self.synchronizeMaterialScope()
-                if self.model.materialUndoAvailable != self.questions.canUndoRemoval {
-                    if self.model.materialUndoAvailable { self.model.statusText = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.") }
-                    self.refreshMaterials()
-                }
-                if let removed = self.removedScreenshot, self.screenshotNow >= removed.until {
-                    self.removedScreenshot = nil
-                    self.intakeNotice = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.")
-                    self.model.statusText = self.intakeNotice
-                    self.updateScreenshotRound()
-                }
-                if self.autoReviewPending, case .stop(let reason) = self.autoEngine.tickPaused() { self.stopAutoSession(reason) }
-            }
-        }
+        startMaterialMaintenance()
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in Task { @MainActor in self?.newQuestionGroup() } })
@@ -1195,6 +1180,34 @@ final class NotchController: NSObject {
         }
     }
 
+    private func startMaterialMaintenance() {
+        guard materialTimer == nil, !terminating else { return }
+        materialTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.maintainIdleState() }
+        }
+        // Maintenance can share a wakeup; capture countdowns keep their own precise timer.
+        materialTimer?.tolerance = 0.2
+    }
+
+    private func maintainIdleState() {
+        guard !terminating else { return }
+        if !screenshotRound.isActive, intakeTask == nil, questions.expireIfNeeded() {
+            invalidateQuestionContext(clearAnswer: false, preserveCompletedReading: true)
+        }
+        synchronizeMaterialScope()
+        if model.materialUndoAvailable != questions.canUndoRemoval {
+            if model.materialUndoAvailable { model.statusText = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.") }
+            refreshMaterials()
+        }
+        if let removed = removedScreenshot, screenshotNow >= removed.until {
+            removedScreenshot = nil
+            intakeNotice = L10n.t("撤销时间已过，请重新截图。", "元に戻せません。再度撮影してください。", "Undo expired. Capture again.")
+            model.statusText = intakeNotice
+            updateScreenshotRound()
+        }
+        if autoReviewPending, case .stop(let reason) = autoEngine.tickPaused() { stopAutoSession(reason) }
+    }
+
     private func refreshMaterials() {
         model.materials = questions.references
         model.materialUndoAvailable = questions.canUndoRemoval
@@ -1205,8 +1218,9 @@ final class NotchController: NSObject {
         invalidateQuestionContext(clearAnswer: true)
     }
 
-    private func invalidateQuestionContext(clearAnswer: Bool) {
+    private func invalidateQuestionContext(clearAnswer: Bool, preserveCompletedReading: Bool = false) {
         let interrupted = running || model.explanationLoading
+        let explanation = preserveCompletedReading && !interrupted && model.status == .idle ? model.explanation : ""
         cancelScreenshotRound()
         capturePreparation.cancel()
         officialTask?.cancel()
@@ -1218,7 +1232,7 @@ final class NotchController: NSObject {
         questions.clear(); currentQuestionSnapshot = nil; currentRunSnapshot = nil; selectedRegion = nil
         currentCaptureID = nil
         currentAnswerCaptureID = nil
-        model.explanationFailed = false; model.explanation = ""; model.explanationAvailable = false
+        model.explanationFailed = false; model.explanation = explanation; model.explanationAvailable = false
         model.explanationLoading = false; model.explanationAttempted = false
         model.recoveryAvailable = false; model.recoveryAttempted = false
         autoReviewPending = false
@@ -1334,13 +1348,17 @@ final class NotchController: NSObject {
     }
 
     func prepareForTermination() {
+        materialTimer?.invalidate(); materialTimer = nil
         screenRefreshWork?.cancel(); screenRefreshWork = nil
         onboardingPermissionTimer?.invalidate(); onboardingPermissionTimer = nil
         terminating = true
         newQuestionGroup()
     }
 
-    func cancelTermination() { terminating = false }
+    func cancelTermination() {
+        terminating = false
+        startMaterialMaintenance()
+    }
 
     // MARK: - Shortcut screenshot intake
 

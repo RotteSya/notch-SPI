@@ -1,11 +1,12 @@
 import AppKit
+import Combine
 import XCTest
 @testable import NotchSPI
 
 /// Real controller intake/composition, with only image acquisition and provider transport gated.
 /// No model, user credentials, system sleep or real network configuration is involved.
 final class CaptureFlowStabilityTests: XCTestCase {
-    @MainActor private func withController(_ body: (NotchController, StreamGate) async throws -> Void) async throws {
+    @MainActor private func withController(questionNow: @escaping () -> Date = Date.init, _ body: (NotchController, StreamGate) async throws -> Void) async throws {
         let settings = Settings.shared
         let service = settings.serviceMode, provider = settings.apiProvider, mode = settings.mode
         let oldKey = settings.apiKey(for: APIProvider.byID("openai").storageKey)
@@ -13,7 +14,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
         settings.serviceMode = ServiceMode.customKey; settings.apiProvider = "openai"; settings.mode = "tutor"
         settings.setAPIKey("offline-test-key", for: settings.activeProvider.storageKey)
         Appearance.autoCopyAnswer = false
-        let controller = NotchController(activateServices: false)
+        let controller = NotchController(activateServices: false, questionNow: questionNow)
         let gate = StreamGate()
         controller.qaAnswerStream = { delta, done in gate.callbacks.append((delta, done)) }
         controller.qaScreenshotCapture = {
@@ -48,6 +49,91 @@ final class CaptureFlowStabilityTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Capture flow did not reach expected state")
+    }
+
+    @MainActor func testIdleExpiryPreservesCompletedReadingAndNextShortcutUsesFreshCapture() async throws {
+        var now = Date()
+        try await withController(questionNow: { now }) { controller, gate in
+            // Exercise the first capture after a full day without any existing question.
+            now.addTimeInterval(24 * 3600)
+            controller.qaMaintainIdleState()
+            controller.qaPressScreenshot(multiple: false)
+            try await waitFor { gate.callbacks.count == 1 }
+            gate.finish(0, answer: "A")
+            controller.model.explanation = "Completed explanation stays readable."
+            controller.model.explanationAvailable = true
+            let answer = controller.model.answer
+            let paths = controller.model.screenshots.map { $0.file.url.path }
+            XCTAssertFalse(paths.isEmpty)
+            now.addTimeInterval(QuestionSessionStore.lifetime + 1)
+            controller.qaMaintainIdleState()
+            XCTAssertEqual(controller.model.answer, answer)
+            XCTAssertEqual(controller.model.explanation, "Completed explanation stays readable.")
+            XCTAssertFalse(controller.model.explanationAvailable, "Expired material cannot start a new explanation")
+            XCTAssertTrue(controller.model.canExpandAnswer)
+            XCTAssertTrue(controller.model.screenshots.isEmpty)
+            XCTAssertTrue(controller.model.screenshotImages.isEmpty)
+            var publications = 0
+            let observation = controller.model.objectWillChange.sink { publications += 1 }
+            // Advance multiple idle days; empty sessions must not repeatedly clear/redraw.
+            for _ in 0..<96 {
+                now.addTimeInterval(3600)
+                controller.qaMaintainIdleState()
+            }
+            XCTAssertEqual(publications, 0)
+            observation.cancel()
+            XCTAssertEqual(gate.callbacks.count, 1)
+            gate.callbacks[0].0("stale result")
+            XCTAssertEqual(controller.model.answer, answer)
+            // The transport test double owns the old callback lease until released.
+            gate.callbacks[0] = ({ _ in }, { _, _ in })
+            try await waitFor { paths.allSatisfy { !FileManager.default.fileExists(atPath: $0) } }
+            controller.qaPressScreenshot(multiple: false)
+            try await waitFor { gate.callbacks.count == 2 }
+            gate.finish(1, answer: "B")
+            XCTAssertEqual(controller.model.status, .idle)
+            XCTAssertTrue(controller.model.answer.contains("B"))
+            XCTAssertFalse(controller.qaRequestRunning)
+        }
+    }
+
+    @MainActor func testIdleRoseStopsClockAndWorkRestartsItWithoutRetainingDetachedView() async throws {
+        weak var releasedRose: RoseLoaderView?
+        autoreleasepool {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 30, height: 30),
+                styleMask: .borderless, backing: .buffered, defer: false)
+            let rose = RoseLoaderView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+            releasedRose = rose
+            window.contentView = rose
+            XCTAssertFalse(rose.qaClockActive)
+            for _ in 0..<50 {
+                rose.busy = true
+                XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                rose.busy = false
+                XCTAssertFalse(rose.qaClockActive)
+            }
+            rose.hero = true
+            XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            window.contentView = nil
+            XCTAssertFalse(rose.qaClockActive)
+        }
+        try await waitFor { releasedRose == nil }
+    }
+
+    @MainActor func testMaintenanceStopsOnTerminationAndRestartsIfQuitIsCancelled() {
+        let controller = NotchController(activateServices: false)
+        XCTAssertTrue(controller.qaMaintenanceTimerActive)
+        controller.prepareForTermination()
+        XCTAssertFalse(controller.qaMaintenanceTimerActive)
+        controller.model.answer = "unchanged after shutdown"
+        controller.qaMaintainIdleState()
+        XCTAssertEqual(controller.model.answer, "unchanged after shutdown")
+        controller.cancelTermination()
+        XCTAssertTrue(controller.qaMaintenanceTimerActive)
+        controller.cancelTermination()
+        XCTAssertTrue(controller.qaMaintenanceTimerActive)
+        controller.prepareForTermination()
+        XCTAssertFalse(controller.qaMaintenanceTimerActive)
     }
 
     @MainActor func testPartialAnswerFailureCannotBecomeCompletedOrOpenReaderAndNextShortcutWorks() async throws {
