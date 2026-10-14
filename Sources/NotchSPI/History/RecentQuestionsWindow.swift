@@ -30,12 +30,12 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         window.delegate = self
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 680)); window.contentView = root
         let header = NSTextField(labelWithString: L10n.t("最近查题", "最近の問題", "Recent Questions"))
-        header.font = .systemFont(ofSize: 24, weight: .semibold)
+        header.font = InformationHierarchy.pageTitle
         let subtitle = NSTextField(labelWithString: L10n.t(
             "自动保存在本机 · 最近 30 天，最多 100 条 / 200 MB · 回看不扣题",
             "このMacに自動保存 · 過去30日、最大100件 / 200 MB · 閲覧は消費なし",
             "Saved on this Mac · Last 30 days, up to 100 entries / 200 MB · No charge to review"))
-        subtitle.font = .systemFont(ofSize: 12); subtitle.textColor = .secondaryLabelColor
+        subtitle.font = InformationHierarchy.subtitle; subtitle.textColor = .secondaryLabelColor
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
         copyButton.title = L10n.t("复制答案", "回答をコピー", "Copy answer")
@@ -168,7 +168,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         }
         let date = DateFormatter.localizedString(from: record.createdAt, dateStyle: .short, timeStyle: .short)
         let info = NSTextField(labelWithString: date + (record.needsReview ? " · " + L10n.t("需核对", "要確認", "Review") : ""))
-        info.font = .systemFont(ofSize: 11); info.textColor = .secondaryLabelColor
+        info.font = .systemFont(ofSize: InformationHierarchy.metadataSize); info.textColor = .secondaryLabelColor
         info.lineBreakMode = .byTruncatingTail
         info.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for view in [thumbnail, preview, info] { view.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(view) }
@@ -206,14 +206,14 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             addText(L10n.t("继续使用原来的快捷键查题，完成后会自动保存在这里。", "いつものショートカットで解答すると、ここに自動保存されます。", "Use your usual capture shortcut. Completed answers will appear here automatically."), size: 14)
             return
         }
-        addText(L10n.t("答案", "回答", "Answer"), size: 12, color: NotchPalette.accent)
-        addText(record.reading.conclusion, size: 24, weight: .semibold)
+        addSection(L10n.t("答案", "回答", "Answer"))
+        addText(record.reading.conclusion, size: InformationHierarchy.conclusionSize, weight: .semibold)
         if record.needsReview { addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange) }
         if !record.detail.isEmpty {
-            addText(L10n.t("解释", "解説", "Explanation"), size: 12, color: .secondaryLabelColor)
-            addText(record.detail, size: 15)
+            addSection(L10n.t("解释", "解説", "Explanation"))
+            addText(record.detail, size: InformationHierarchy.bodySize)
         }
-        addText(L10n.t("题目截图", "問題の画像", "Question images"), size: 12, color: .secondaryLabelColor)
+        addSection(L10n.t("题目截图", "問題の画像", "Question images"))
         for index in 0..<record.imageCount {
             if record.imageCount > 1 { addText("\(index + 1) / \(record.imageCount)", size: 11, color: .secondaryLabelColor) }
             let view = HistoryImageView()
@@ -230,6 +230,12 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private func add(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false; detail.addArrangedSubview(view)
         view.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -56).isActive = true
+    }
+    private func addSection(_ text: String) {
+        addText(text, size: InformationHierarchy.sectionSize, weight: .semibold, color: .secondaryLabelColor)
+        if let label = detail.arrangedSubviews.last {
+            detail.setCustomSpacing(InformationHierarchy.sectionGap, after: label)
+        }
     }
     private func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) {
         let label = AnswerText.label(text, size: size, weight: weight, color: color)

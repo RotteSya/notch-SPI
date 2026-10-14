@@ -1,6 +1,19 @@
 import AppKit
 import QuartzCore
 
+/// Semantic text roles shared by native settings and reading windows. The notch's
+/// answer size remains user-adjustable; window chrome should not compete with it.
+enum InformationHierarchy {
+    static let pageTitle = NSFont.systemFont(ofSize: 22, weight: .semibold)
+    static let subtitle = NSFont.systemFont(ofSize: 13)
+    static let rowTitle = NSFont.systemFont(ofSize: 13, weight: .medium)
+    static let conclusionSize: CGFloat = 24
+    static let bodySize: CGFloat = 15
+    static let sectionSize: CGFloat = 12
+    static let metadataSize: CGFloat = 11
+    static let sectionGap: CGFloat = 8
+}
+
 // The notch design system, in pure AppKit (ported from the notchmeet reference). The notch is a
 // single piece of machined obsidian that *lives* in the physical cutout and grows out of it.
 // Collapsed, it fuses with the hardware notch (pure black at the top seam). Expanded, its lower

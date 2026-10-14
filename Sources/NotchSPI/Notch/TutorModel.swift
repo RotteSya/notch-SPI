@@ -118,6 +118,10 @@ final class TutorModel: ObservableObject {
         if status == .error { return L10n.t("未完成", "未完了", "Incomplete") }
         if explanationLoading { return L10n.t("解释中", "解説中", "Explaining") }
         if recoveryAttempted && status == .running { return L10n.t("恢复中", "復元中", "Recovering") }
+        if status == .idle, !answer.isEmpty, answer != L10n.noOutput {
+            return resultState == .review
+                ? L10n.t("需核对", "要確認", "Review needed") : L10n.statusDone
+        }
         return statusText
     }
     var captureStatusDetail: String {

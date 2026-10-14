@@ -437,12 +437,12 @@ protocol SettingsPage {
 
 func pageTitleLabel(_ text: String) -> NSTextField {
     let f = NSTextField(labelWithString: text)
-    f.font = .systemFont(ofSize: 23, weight: .semibold)
+    f.font = InformationHierarchy.pageTitle
     f.textColor = .labelColor
     return f
 }
 
-func captionLabel(_ text: String, size: CGFloat = 11) -> NSTextField {
+func captionLabel(_ text: String, size: CGFloat = InformationHierarchy.metadataSize) -> NSTextField {
     let f = NSTextField(wrappingLabelWithString: text)
     f.font = .systemFont(ofSize: size)
     f.textColor = .secondaryLabelColor
@@ -452,7 +452,7 @@ func captionLabel(_ text: String, size: CGFloat = 11) -> NSTextField {
 
 private func rowLabel(_ text: String) -> NSTextField {
     let f = NSTextField(labelWithString: text)
-    f.font = .systemFont(ofSize: 13)
+    f.font = InformationHierarchy.rowTitle
     f.textColor = .labelColor
     return f
 }

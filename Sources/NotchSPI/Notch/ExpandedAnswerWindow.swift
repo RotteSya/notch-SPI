@@ -42,9 +42,9 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         window.delegate = self
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 1060, height: 720)); window.contentView = root
         let title = NSTextField(labelWithString: L10n.t("完整答案", "回答の詳細", "Full Answer"))
-        title.font = .systemFont(ofSize: 24, weight: .semibold)
+        title.font = InformationHierarchy.pageTitle
         let subtitle = NSTextField(labelWithString: L10n.t("题图与解释并排查看", "問題画像と解説を並べて表示", "Question images and explanation, side by side"))
-        subtitle.font = .systemFont(ofSize: 13); subtitle.textColor = .secondaryLabelColor
+        subtitle.font = InformationHierarchy.subtitle; subtitle.textColor = .secondaryLabelColor
         let imageScroll = AnswerReaderScrollView()
         for (scroll, stack) in [(imageScroll, images), (answerScroll, answer)] {
             scroll.documentView = stack; scroll.hasVerticalScroller = true
@@ -130,7 +130,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func renderImages(_ content: ExpandedAnswerContent) {
-        images.addText(L10n.t("题目截图", "問題画像", "Question images"), size: 12, color: .secondaryLabelColor)
+        images.addSection(L10n.t("题目截图", "問題画像", "Question images"))
         if content.assets.isEmpty {
             images.addText(L10n.t("当前题图已清理，可在最近查题中查看保存的记录。", "画像の保存期間が終了しました。最近の問題をご確認ください。", "The current images have expired. Check saved entries in Recent Questions."), size: 14)
         }
@@ -149,14 +149,14 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     private func renderAnswer(_ content: ExpandedAnswerContent) {
         let position = answerScroll.contentView.bounds.origin
         answer.beginTextUpdate()
-        answer.addText(L10n.t("答案", "回答", "Answer"), size: 12, color: NotchPalette.accent)
-        answer.addText(content.reading.conclusion, size: 24, weight: .semibold)
+        answer.addSection(L10n.t("答案", "回答", "Answer"))
+        answer.addText(content.reading.conclusion, size: InformationHierarchy.conclusionSize, weight: .semibold)
         if content.needsReview {
             answer.addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange)
         }
         if !content.detail.isEmpty {
-            answer.addText(L10n.t("解释", "解説", "Explanation"), size: 12, color: .secondaryLabelColor)
-            answer.addText(content.detail, size: 15)
+            answer.addSection(L10n.t("解释", "解説", "Explanation"))
+            answer.addText(content.detail, size: InformationHierarchy.bodySize)
         }
         if content.explaining {
             answer.addText(L10n.t("正在生成解释…", "解説を生成中…", "Generating explanation…"), size: 13, color: .secondaryLabelColor)
@@ -224,17 +224,23 @@ private final class AnswerReadingStack: NSStackView {
         }
         nextTextViews = nil
     }
-    func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) {
+    func addSection(_ text: String) {
+        let label = addText(text, size: InformationHierarchy.sectionSize, weight: .semibold, color: .secondaryLabelColor)
+        setCustomSpacing(InformationHierarchy.sectionGap, after: label)
+    }
+    @discardableResult
+    func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
         let key = "\(size)|\(weight.rawValue)|\(color)|\(text)"
         if nextTextViews != nil, let existing = arrangedSubviews.compactMap({ $0 as? NSTextField }).first(where: {
             textKeys[ObjectIdentifier($0)] == key && !(nextTextViews?.contains($0) ?? false)
         }) {
-            nextTextViews?.append(existing); return
+            nextTextViews?.append(existing); return existing
         }
         let label = AnswerText.label(text, size: size, weight: weight, color: color)
         label.preferredMaxLayoutWidth = 450
         textKeys[ObjectIdentifier(label)] = key
         addFullWidth(label)
         nextTextViews?.append(label)
+        return label
     }
 }

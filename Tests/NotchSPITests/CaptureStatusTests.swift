@@ -2,6 +2,21 @@ import XCTest
 @testable import NotchSPI
 
 final class CaptureStatusTests: XCTestCase {
+    @MainActor func testCompletedHeadingKeepsDetailsAndYieldsToWarnings() {
+        let model = TutorModel()
+        model.status = .idle
+        model.answer = "FINAL: B"
+        model.statusText = "完成 · 剩余 864 题"
+        XCTAssertEqual(model.captureHeading, L10n.statusDone)
+        XCTAssertEqual(model.captureStatusDetail, model.statusText)
+        model.resultState = .review
+        XCTAssertEqual(model.captureHeading, L10n.t("需核对", "要確認", "Review needed"))
+        model.captureFeedback = "连接中断，请重新截图。"
+        model.status = .error
+        XCTAssertEqual(model.captureHeading, L10n.t("未完成", "未完了", "Incomplete"))
+        XCTAssertEqual(model.captureStatusDetail, model.captureFeedback)
+    }
+
     @MainActor func testCountdownHasOneVisualSummaryWithoutChangingTimer() {
         let model = TutorModel()
         model.screenshotRoundActive = true
