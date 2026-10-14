@@ -1,0 +1,14 @@
+[
+ {"id":"quadratic","pages":["Solve over the real numbers: 2x^2 - 5x - 3 = 0. Give all roots."],"expected":"x=3 or x=-1/2"},
+ {"id":"rational-domain","pages":["Solve (x^2 - 1)/(x - 1) = 3. State the excluded value and the solution."],"expected":"excluded x=1; solution x=2"},
+ {"id":"extraneous-root","pages":["Solve sqrt(x + 6) = x over the real numbers. Check both roots of the squared equation."],"expected":"x=3; reject x=-2"},
+ {"id":"probability-subparts","pages":["A bag contains 5 red and 3 blue balls. Draw two balls without replacement.\n(1) Find the probability that the colors differ.\n(2) Find the expected number of red balls drawn."],"expected":"(1) 15/28; (2) 5/4"},
+ {"id":"units-average","pages":["A car travels 120 km at 40 km/h and returns the same 120 km at 60 km/h.\n(1) Find total travel time.\n(2) Find average speed for the whole trip."],"expected":"(1) 5 h; (2) 48 km/h"},
+ {"id":"bounded-extrema","pages":["f(x) = -x^2 + 4x + 1, with 0 <= x <= 3.\n(1) Find its maximum and where it occurs.\n(2) Find its minimum and where it occurs."],"expected":"(1) max 5 at x=2; (2) min 1 at x=0"},
+ {"id":"calculus-subparts","pages":["f(x) = 3x^2 + 2x + 1.\n(1) Compute the integral of f(x) from 0 to 1.\n(2) Find the slope of the tangent to f at x=1."],"expected":"(1) 3; (2) 8"},
+ {"id":"two-image-context","pages":["REFERENCE FOR THE NEXT PAGE\nA coffee recipe uses 3 grams of beans for every 50 mL of water.\nBeans cost 12 yuan per 100 grams.\nIgnore the cost of water and any preparation loss.","Using the recipe and prices on the previous page:\n(1) How many grams of beans are needed for 3 cups, each using 150 mL of water?\n(2) What is the total cost of those beans?"],"expected":"(1) 27 g; (2) 3.24 yuan"},
+ {"id":"missing-critical-value","pages":["Solve ax + 3 = 7 for a numerical value of x.\nThe value of a was printed below but is cropped out of this screenshot."],"expected":"retake; no numeric answer"},
+ {"id":"unreadable","pages":["Find the value of x in the equation 7x - 11 = 31."],"blur":22,"expected":"retake; no guessed answer"},
+ {"id":"ellipse-subparts","pages":["Ellipse: x^2/8 + y^2/2 = 1.\n(1) Find the length of the major axis.\n(2) Find the two foci.\n(3) Find the eccentricity. Keep exact values."],"expected":"(1) 4sqrt(2); (2) (+/-sqrt(6),0); (3) sqrt(3)/2"},
+ {"id":"multiple-selection","pages":["Select ALL true statements about f(x)=x^2-4x+3.\nA. Its zeros are 1 and 3.\nB. Its minimum is -1 at x=2.\nC. It is nonnegative for every real x.\nD. It is strictly decreasing on (-infinity,2)."],"expected":"A,B,D"}
+]

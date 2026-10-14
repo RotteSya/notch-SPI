@@ -107,6 +107,55 @@ final class PromptsSelectionTests: XCTestCase {
 
 /// The direct-API channel's pure request-building and SSE-parsing logic. No network, no keychain.
 final class APIKeyRunnerTests: XCTestCase {
+    func testStreamCompletionRequiresNormalReasonAndTerminalEvent() {
+        for proto in [APIWireProtocol.openai, .anthropic] {
+            let stop = proto == .openai
+                ? #"data: {"choices":[{"finish_reason":"stop","delta":{}}]}"#
+                : #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#
+            let end = proto == .openai ? "data: [DONE]" : #"data: {"type":"message_stop"}"#
+            var state = APIKeyRunner.StreamCompletion()
+            XCTAssertNotNil(state.error)
+            state.observe(proto: proto, line: stop)
+            XCTAssertNotNil(state.error, "A reason without the terminal event is incomplete")
+            state.observe(proto: proto, line: end)
+            XCTAssertNil(state.error)
+            var missingReason = APIKeyRunner.StreamCompletion()
+            missingReason.observe(proto: proto, line: end)
+            XCTAssertNotNil(missingReason.error)
+        }
+    }
+
+    func testMalformedAndErrorEventsCannotBeHiddenByANormalTerminal() {
+        for bad in ["data: {broken", #"data: {"error":{"message":"interrupted"}}"#] {
+            var state = APIKeyRunner.StreamCompletion()
+            for line in [bad, #"data: {"choices":[{"finish_reason":"stop"}]}"#, "data: [DONE]"] {
+                state.observe(proto: .openai, line: line)
+            }
+            XCTAssertNotNil(state.error)
+        }
+    }
+
+    func testOutputLimitsFiltersToolsAndConflictingStopsCannotComplete() {
+        for reason in ["length", "content_filter", "tool_calls", "unknown"] {
+            var state = APIKeyRunner.StreamCompletion()
+            state.observe(proto: .openai, line: "data: {\"choices\":[{\"finish_reason\":\"\(reason)\"}]}")
+            state.observe(proto: .openai, line: "data: [DONE]")
+            XCTAssertNotNil(state.error, reason)
+        }
+        for reason in ["max_tokens", "tool_use", "pause_turn", "refusal"] {
+            var state = APIKeyRunner.StreamCompletion()
+            state.observe(proto: .anthropic, line: "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"\(reason)\"}}")
+            state.observe(proto: .anthropic, line: #"data: {"type":"message_stop"}"#)
+            XCTAssertNotNil(state.error, reason)
+        }
+        var conflict = APIKeyRunner.StreamCompletion()
+        for reason in ["length", "stop"] {
+            conflict.observe(proto: .openai, line: "data: {\"choices\":[{\"finish_reason\":\"\(reason)\"}]}")
+        }
+        conflict.observe(proto: .openai, line: "data: [DONE]")
+        XCTAssertNotNil(conflict.error)
+    }
+
     func testAnthropicRequestShape() throws {
         let req = try XCTUnwrap(APIKeyRunner.makeRequest(
             proto: .anthropic, endpoint: APIKeyRunner.anthropicEndpoint,

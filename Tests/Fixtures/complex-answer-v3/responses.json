@@ -1,0 +1,62 @@
+[
+  {
+    "id": "quadratic",
+    "raw": "FINAL: x = 3, -1/2\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"x = 3, -1/2\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "rational-domain",
+    "raw": "FINAL: Excluded value: x = 1; solution: x = 2\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"Excluded value: x = 1; solution: x = 2\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "extraneous-root",
+    "raw": "FINAL: x = 3\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"x = 3\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "probability-subparts",
+    "raw": "FINAL: (1) 15/28; (2) 5/4\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"(1) 15/28; (2) 5/4\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "units-average",
+    "raw": "FINAL: (1) 5 h; (2) 48 km/h\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"(1) 5 h; (2) 48 km/h\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "bounded-extrema",
+    "raw": "FINAL: (1) maximum 5 at x=2; (2) minimum 1 at x=0\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"(1) maximum 5 at x=2; (2) minimum 1 at x=0\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "calculus-subparts",
+    "raw": "FINAL: 3; 8\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"3; 8\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "two-image-context",
+    "raw": "FINAL: 27 grams; 3.24 yuan\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"27 grams; 3.24 yuan\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "missing-critical-value",
+    "raw": "NSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"retake\",\"answer\":null,\"reason\":\"cropped\"}",
+    "expected_state": "retake"
+  },
+  {
+    "id": "unreadable",
+    "raw": "NSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"retake\",\"answer\":null,\"reason\":\"unreadable\"}",
+    "expected_state": "retake"
+  },
+  {
+    "id": "ellipse-subparts",
+    "raw": "FINAL: (1) 4√2; (2) (-√6, 0) and (√6, 0); (3) √3/2\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"(1) 4√2; (2) (-√6, 0) and (√6, 0); (3) √3/2\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  },
+  {
+    "id": "multiple-selection",
+    "raw": "FINAL: A, B, D\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"multiple_choice\",\"state\":\"ready\",\"answer\":\"A, B, D\",\"reason\":\"none\"}",
+    "expected_state": "usable"
+  }
+]

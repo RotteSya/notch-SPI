@@ -141,6 +141,45 @@ enum APIKeyRunner {
         return msg
     }
 
+    /// HTTP EOF alone cannot prove complete model delivery. Require the protocol's
+    /// terminal event and a normal stop reason, even when a plausible FINAL arrived.
+    struct StreamCompletion {
+        private(set) var terminal = false
+        private var reason: String?
+        private var failure: String?
+
+        mutating func observe(proto: APIWireProtocol, line: String) {
+            guard !terminal else { return }
+            if let error = parseStreamError(line) { failure = error }
+            if proto == .openai, sseData(line) == "[DONE]" { terminal = true; return }
+            guard let object = jsonObject(fromSSELine: line) else {
+                if sseData(line) != nil { failure = Self.incomplete }
+                return
+            }
+            let next: String?
+            if proto == .anthropic {
+                if object["type"] as? String == "message_stop" { terminal = true }
+                next = (object["delta"] as? [String: Any])?["stop_reason"] as? String
+            } else {
+                next = (object["choices"] as? [[String: Any]])?.first?["finish_reason"] as? String
+            }
+            guard let next else { return }
+            if let reason, reason != next { failure = Self.incomplete }
+            reason = next
+            let normal = proto == .anthropic ? ["end_turn", "stop_sequence"] : ["stop"]
+            if !normal.contains(next) {
+                failure = ["length", "max_tokens"].contains(next)
+                    ? L10n.t("答案达到输出上限，未完整生成。", "出力上限に達し、回答が未完成です。", "The answer reached the output limit and is incomplete.")
+                    : Self.incomplete
+            }
+        }
+
+        var error: String? { failure ?? (terminal && reason != nil ? nil : Self.incomplete) }
+        private static var incomplete: String {
+            L10n.t("答案未完整接收，可按原快捷键继续。", "回答を完全に受信できませんでした。同じショートカットで続けられます。", "The answer was not fully received. Use the same shortcut to continue.")
+        }
+    }
+
     /// Human-readable message from a non-200 response body.
     static func errorMessage(from data: Data, statusCode: Int) -> String {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -206,6 +245,7 @@ enum APIKeyRunner {
             #endif
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                defer { bytes.task.cancel() }
                 guard let http = response as? HTTPURLResponse else {
                     await finish(onDone, ok: false, err: L10n.t("无效的服务器响应", "サーバー応答が不正です", "Invalid server response"))
                     return
@@ -219,16 +259,15 @@ enum APIKeyRunner {
                     await finish(onDone, ok: false, err: errorMessage(from: body, statusCode: http.statusCode))
                     return
                 }
-                var streamError: String?
+                var completion = StreamCompletion()
                 for try await line in bytes.lines {
+                    completion.observe(proto: proto, line: line)
                     if let text = parseDelta(proto: proto, line: line) {
                         await MainActor.run { onDelta(text) }
-                    } else if let err = parseStreamError(line) {
-                        streamError = err
-                        break
                     }
+                    if completion.terminal || parseStreamError(line) != nil { break }
                 }
-                if let streamError {
+                if let streamError = completion.error {
                     await finish(onDone, ok: false, err: L10n.t("API 流式响应中断：\(streamError)", "APIストリームが中断：\(streamError)", "API stream interrupted: \(streamError)"))
                 } else {
                     await finish(onDone, ok: true, err: "")

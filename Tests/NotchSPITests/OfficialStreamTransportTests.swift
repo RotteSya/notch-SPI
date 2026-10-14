@@ -122,3 +122,35 @@ final class OfficialStreamTransportTests: XCTestCase {
         XCTAssertEqual(receipts, 1)
     }
 }
+
+final class DirectAPIStreamTransportTests: XCTestCase {
+    @MainActor func testRealHTTPTruncationAndEOFRejectPlausibleFinalWhileNormalStopCompletes() async throws {
+        for proto in [APIWireProtocol.openai, .anthropic] {
+            for reason in ["length", "stop", "missing"] {
+                let text = (proto == .openai
+                    ? #"data: {"choices":[{"delta":{"content":"FINAL: (1) 3; (2) 48 km/h"}}]}"#
+                    : #"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"FINAL: (1) 3; (2) 48 km/h"}}"#) + "\n\n"
+                let ending: String
+                if reason == "missing" { ending = "" }
+                else if proto == .openai {
+                    ending = "data: {\"choices\":[{\"finish_reason\":\"\(reason)\",\"delta\":{}}]}\n\ndata: [DONE]\n\n"
+                } else {
+                    let stop = reason == "length" ? "max_tokens" : "end_turn"
+                    ending = "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"\(stop)\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+                }
+                let server = try LocalStreamServer(bytes: Data((text + ending).utf8), complete: true)
+                let url = try await server.start()
+                let finished = expectation(description: reason)
+                var received = "", succeeded = false, failure = ""
+                APIKeyRunner.run(proto: proto, endpoint: url.absoluteString, apiKey: "offline-test", model: "offline",
+                    imagePaths: [], prompt: .init(system: "offline", task: "offline"),
+                    onDelta: { received += $0 }, onDone: { ok, error in succeeded = ok; failure = error; finished.fulfill() })
+                await fulfillment(of: [finished], timeout: 5)
+                server.stop()
+                XCTAssertEqual(received, "FINAL: (1) 3; (2) 48 km/h")
+                XCTAssertEqual(succeeded, reason == "stop")
+                XCTAssertEqual(failure.isEmpty, reason == "stop")
+            }
+        }
+    }
+}

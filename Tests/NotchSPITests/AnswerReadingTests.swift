@@ -39,6 +39,37 @@ final class AnswerReadingTests: XCTestCase {
         }
         XCTAssertFalse(visible.string.contains("FINAL:"))
     }
+    @MainActor func testComplexSubpartsSurviveEveryReaderAndLineEnding() {
+        for newline in ["\n", "\r\n", "\r"] {
+            let answer = [#"(1) x = \(3\) or \(-\frac{1}{2}\)."#,
+                "(2) Reject x=-2 because x>=0.", "FINAL: (1) 3, -1/2; (2) 3; (3) 48 km/h",
+                "(4) 15/28"].joined(separator: newline)
+            let explanation = #"Check: \(2x^2-5x-3=0\)."#
+            let value = AnswerReadingContent(answer: answer, explanation: explanation)
+            let notch = NotchType.answerString(value.notchText,
+                presentation: .init(mode: "tutor", depth: "brief", finished: true, revealed: true)).string
+            let reader = expanded(answer: answer, explanation: explanation)
+            let history = RecentQuestion(id: UUID(), createdAt: Date(), answer: answer,
+                explanation: explanation, needsReview: false, imageCount: 2)
+            XCTAssertEqual(reader.copyText, history.copyText)
+            for fragment in ["(1)", "(2)", "(3)", "(4)", "48 km/h", "15/28", "Check:"] {
+                XCTAssertTrue(notch.contains(fragment), fragment)
+                XCTAssertTrue(reader.copyText.contains(fragment), fragment)
+            }
+            XCTAssertFalse(notch.contains("FINAL:"))
+            XCTAssertEqual(AnswerComposer.parse(answer, streaming: false).overflow, "(4) 15/28")
+        }
+    }
+
+    @MainActor func testUnmarkedSavedAnswerKeepsExplanationInNotchToo() {
+        let value = AnswerReadingContent(answer: "(1) 3; (2) 48 km/h", explanation: "Verification steps\nFINAL: 48 km/h")
+        let notch = NotchType.answerString(value.notchText,
+            presentation: .init(mode: "tutor", depth: "brief", finished: true, revealed: true)).string
+        XCTAssertTrue(notch.contains("Verification steps"))
+        XCTAssertTrue(notch.contains("(1) 3"))
+        XCTAssertFalse(notch.contains("FINAL:"))
+    }
+
     func testMathCharactersSurviveDisplayAndCopyIncludingMarkdownAroundMath() {
         let formula = #"\(\frac{x_1^2}{8}+\frac{y_2^2}{2}=1\)"#
         let raw = "**答案：\(formula)**\n（2）`60 km/h`\n（3）$a_1 + b_2$"

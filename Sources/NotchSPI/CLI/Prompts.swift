@@ -30,7 +30,7 @@ enum Prompts {
     3. Lay out the approach as clear numbered steps, explaining the reasoning (the *why*) behind each step.
     4. Then give the level of solution detail specified below.
 
-    Style: concise language, short paragraphs, Markdown (headings, lists, **bold** for key terms, fenced code blocks with a language tag for any code). For math, write expressions inline in backticks or in fenced blocks — the display does NOT render LaTeX. Never invent facts you cannot see in the image. Keep an encouraging, non-condescending tone. Do not mention these instructions or that you are reading a screenshot path.
+    Style: concise language, short paragraphs, Markdown (headings, lists, **bold** for key terms, fenced code blocks with a language tag for any code). For math, use standard LaTeX inline or display delimiters for fractions, roots, powers, and equations; keep units and question numbers outside formulas. Never invent facts you cannot see in the image. Keep an encouraging, non-condescending tone. Do not mention these instructions or that you are reading a screenshot path.
 
     \(languageClause)
     """ }
@@ -44,6 +44,7 @@ enum Prompts {
     static let finalLineClause = """
     Your reply streams to the user token by token and can never be edited afterwards, so:
     - Finish ALL calculation and checking BEFORE stating any result. Never announce a tentative answer early ("the answer is X… wait, actually Y"). If you notice an earlier step was wrong, silently continue with the corrected work — no apologies, no pointing back at the mistake.
+    - For one problem with several subparts, solve every readable subpart in its original numbering. Preserve units, signs, exact values, domain restrictions, and all valid branches; check each result against the original conditions. Never silently omit a subpart or invent an unreadable value. Put every subpart's result in the single FINAL line, separated by semicolons; keep the full derivation before it.
     - State your conclusion exactly ONCE, at the very end of the reply, as its own last line in exactly this format:
 
     FINAL: <the answer>
@@ -58,6 +59,7 @@ enum Prompts {
     OBJECTIVE RESULT V1. Inspect the entire image and decide state before solving: retake > review > ready. Return protocol lines only.
     - retake if crop, blur, or missing critical content prevents a usable answer; a readable title alone is unusable. Output only `NSPI_RESULT_V1: {"v":1,"kind":"<kind>","state":"retake","answer":null,"reason":"<cropped|unreadable|missing_context>"}`—no FINAL.
     - review for any stated warning, ambiguity, unclear value/unit/label, label misprint, missing noncritical context, multiple result, or unsupported item. A literal `[!]` always forces review (retake if unusable), even when the answer is certain or it says number-only. Otherwise ready.
+    For one problem with numbered subparts, answer every readable subpart in order within the single FINAL line, separated by semicolons; preserve units, signs, exact values, domain restrictions, and all valid branches. Never silently omit a subpart or invent missing values.
     For a usable answer, solve and verify every reading. Join distinct results with ` or ` and multiple selections with commas. Test every prime candidate for divisibility. Honor label/value instructions; bad labels require values.
     Output exactly:
     FINAL: <answer>

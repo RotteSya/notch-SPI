@@ -41,6 +41,7 @@ enum AnswerComposer {
     /// holds back a trailing half-arrived marker ("FIN", "**FINA") so the letters F-I-N-A-L never
     /// flash as visible text in the instant before the parser can swallow them.
     static func parse(_ raw: String, streaming: Bool) -> Parse {
+        let raw = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let ns = raw as NSString
         let matches = markerRegex.matches(in: raw, range: NSRange(location: 0, length: ns.length))
         guard let m = matches.last else {

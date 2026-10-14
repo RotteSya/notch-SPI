@@ -16,8 +16,12 @@ struct AnswerReadingContent {
     var copyAnswer: String { AnswerText.plain(conclusion) }
     var copyAll: String { AnswerText.plain([conclusion, detail].filter { !$0.isEmpty }.joined(separator: "\n\n")) }
     var notchText: String {
-        guard !explanation.isEmpty, let final = parsed.final else { return answer }
+        guard !explanation.isEmpty else { return answer }
         let extra = AnswerComposer.parse(explanation, streaming: false)
+        guard let final = parsed.final else {
+            return [answer, extra.working, extra.final, extra.overflow].compactMap { $0 }
+                .filter { !$0.isEmpty }.joined(separator: "\n\n")
+        }
         let body = [parsed.working, extra.working, extra.final, extra.overflow]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         return body + "\nFINAL: " + final + (parsed.overflow.isEmpty ? "" : "\n" + parsed.overflow)
