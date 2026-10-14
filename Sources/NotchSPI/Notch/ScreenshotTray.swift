@@ -117,15 +117,16 @@ final class ScreenshotTray: NSView {
             }
         }
         let title = cancellable
-            ? L10n.t("收集题目 · \(assets.count) / 4", "問題を収集中 · \(assets.count) / 4", "Collecting question · \(assets.count) / 4")
-            : L10n.t("题目 · \(assets.count) 张截图", "問題 · 画像\(assets.count)枚", "Question · \(assets.count) image\(assets.count == 1 ? "" : "s")")
+            ? L10n.t("题图 \(assets.count)/4", "画像 \(assets.count)/4", "Images \(assets.count)/4")
+            : L10n.t("题图 \(assets.count)", "画像 \(assets.count)枚", "Images \(assets.count)")
         if status.stringValue != title { status.stringValue = title }
         nextSlot.isHidden = !cancellable || assets.count >= 4
         let hint: String
         if !notice.isEmpty { hint = notice }
         else if cancellable { hint = message }
-        else { hint = L10n.t("点击截图，查看完整题目", "画像をクリックして問題全体を確認", "Click an image to view the full question") }
+        else { hint = "" }
         if detail.stringValue != hint { detail.stringValue = hint }
+        detail.isHidden = hint.isEmpty
         detail.toolTip = hint
         detail.textColor = notice.isEmpty ? NotchPalette.secondary : .systemOrange
         cancel.isHidden = !cancellable

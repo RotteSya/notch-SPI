@@ -46,6 +46,7 @@ final class TutorModel: ObservableObject {
     @Published var screenshotUndoAvailable = false
     @Published var materialUndoAvailable = false
     var showScreenshotTray: Bool { screenshotRoundActive || !screenshots.isEmpty }
+    @Published var screenshotPreviewing = false
     @Published var screenshotCapturing = false
     @Published var screenshotNotice = ""
     @Published var captureFeedback = ""
@@ -71,14 +72,32 @@ final class TutorModel: ObservableObject {
         return CaptureStyle.trayHeight
     }
     var materialAreaHeight: CGFloat { screenshotTrayHeight + materialStripHeight }
+    /// Compact visual status; detailed service messages remain available to accessibility.
     var captureHeading: String {
         if screenshotRoundActive {
-            if screenshotCapturing { return L10n.t("正在捕获", "キャプチャ中", "Capturing") }
-            if screenshotRemaining != nil { return L10n.t("即将提问", "まもなく送信", "Asking soon") }
-            return L10n.t("等待下一张", "次の画像を待機", "Waiting for next image")
+            if screenshotCapturing { return L10n.t("截图中", "撮影中", "Capturing") }
+            if screenshotPreviewing { return L10n.t("已暂停", "一時停止", "Paused") }
+            if let remaining = screenshotRemaining {
+                if remaining <= 0 { return L10n.t("等待提交", "送信待ち", "Queued") }
+                let seconds = Int(ceil(remaining))
+                return L10n.t("\(seconds) 秒后查题", "\(seconds)秒後に送信", "Asking in \(seconds)s")
+            }
+            return L10n.t("等待下一张", "次の画像待ち", "Next image")
         }
-        if !captureFeedback.isEmpty { return status == .error ? L10n.t("未能完成", "完了できませんでした", "Could not complete") : L10n.t("已取消", "キャンセル済み", "Canceled") }
+        if !captureFeedback.isEmpty { return status == .error ? L10n.t("未完成", "未完了", "Incomplete") : L10n.t("已取消", "キャンセル済み", "Canceled") }
+        if explanationLoading { return L10n.t("解释中", "解説中", "Explaining") }
+        if recoveryAttempted && status == .running { return L10n.t("恢复中", "復元中", "Recovering") }
         return statusText
+    }
+    var captureStatusDetail: String {
+        if screenshotRoundActive { return screenshotNotice.isEmpty ? screenshotStatus : screenshotNotice }
+        return captureFeedback.isEmpty ? statusText : captureFeedback
+    }
+    var screenshotHint: String {
+        if !screenshotNotice.isEmpty { return screenshotNotice }
+        guard screenshotRoundActive, !screenshotCapturing, !screenshotPreviewing, screenshotRemaining == nil else { return "" }
+        let key = Settings.displayString(Settings.shared.contextCombo)
+        return L10n.t("\(key) 继续截图", "\(key) で追加", "\(key) to add")
     }
     @Published var materials: [ContextAsset] = []
     var showMaterialStrip: Bool { onboardingStep == nil && !screenshotRoundActive && (materialUndoAvailable || !materials.isEmpty || resultState == .retake || status == .error || (mode == "tutor" && explanationAvailable)) }

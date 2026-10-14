@@ -333,16 +333,16 @@ final class NotchView: NSView {
         materialStrip.isHidden = !model.showMaterialStrip
         screenshotTray.isHidden = !model.showScreenshotTray
         screenshotTray.update(assets: model.screenshots, images: model.screenshotImages,
-            flying: model.flyingScreenshots, message: model.screenshotStatus,
+            flying: model.flyingScreenshots, message: model.screenshotHint,
             remaining: model.screenshotRemaining, cancellable: model.screenshotRoundActive,
             capturing: model.screenshotCapturing, notice: model.screenshotNotice, undoAvailable: model.screenshotUndoAvailable)
         // Hidden views still own their assets; clearing the last material must release them.
         materialStrip.update(model.materials, explanationAvailable: model.explanationAvailable, personality: model.mode == "personality",
                              undoAvailable: model.materialUndoAvailable)
         statusText.stringValue = model.captureHeading
-        statusText.toolTip = model.captureHeading
-        toolTip = model.captureHeading + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
-        setAccessibilityLabel("NotchSPI · " + model.captureHeading)
+        statusText.toolTip = model.captureStatusDetail
+        toolTip = model.captureStatusDetail + " · " + CaptureAction.allCases.map { $0.title + " " + Settings.displayString($0.combo) }.joined(separator: " · ")
+        setAccessibilityLabel("NotchSPI · " + model.captureHeading + " · " + model.captureStatusDetail)
         statusText.textColor = model.resultState == .review
             ? NSColor(calibratedRed: 0.95, green: 0.66, blue: 0.20, alpha: 1)
             : NotchPalette.secondary
@@ -719,7 +719,7 @@ final class NotchView: NSView {
 
         let daily = onboarding.isHidden
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = !daily }
-        statusText.toolTip = statusText.stringValue
+        statusText.toolTip = model.captureStatusDetail
         guard screenLayout?.usesHeaderWings == true, let cutout else { return }
 
         // Two compact lines on the left retain the complete usual status/quota text.

@@ -1391,7 +1391,7 @@ final class NotchController: NSObject {
         model.screenshots = []; model.screenshotImages = [:]
         model.screenshotRoundActive = false; model.screenshotRemaining = nil
         model.screenshotStatus = ""
-        model.screenshotCapturing = false; model.screenshotNotice = ""; model.captureFeedback = ""
+        model.screenshotCapturing = false; model.screenshotPreviewing = false; model.screenshotNotice = ""; model.captureFeedback = ""
         if onboardingAttempt {
             onboardingAttempt = false
             if model.onboardingStep == .working, !terminating { setOnboardingStep(.capture) }
@@ -1401,6 +1401,7 @@ final class NotchController: NSObject {
 
     private func updateScreenshotRound() {
         let remaining = screenshotRound.remaining(now: screenshotNow)
+        model.screenshotPreviewing = screenshotRound.previewing
         if model.screenshotRemaining != remaining { model.screenshotRemaining = remaining }
         model.screenshotCapturing = screenshotRound.captureToken != nil
         model.screenshotRoundActive = screenshotRound.isActive || intakeTask != nil || removedScreenshot != nil
