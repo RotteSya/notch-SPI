@@ -106,9 +106,10 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     func update(_ next: ExpandedAnswerContent) {
         guard content?.id == next.id, next != content, currentQuestion else { return }
         content = next
-        pending?.cancel()
+        guard pending == nil else { return }
         let item = DispatchWorkItem { [weak self] in
             guard let self, let content = self.content else { return }
+            self.pending = nil
             self.renderAnswer(content)
         }
         pending = item
@@ -147,7 +148,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
 
     private func renderAnswer(_ content: ExpandedAnswerContent) {
         let position = answerScroll.contentView.bounds.origin
-        answer.clear()
+        answer.beginTextUpdate()
         answer.addText(L10n.t("答案", "回答", "Answer"), size: 12, color: .secondaryLabelColor)
         answer.addText(content.reading.conclusion, size: 24, weight: .semibold)
         if content.needsReview {
@@ -168,6 +169,7 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         note.stringValue = currentQuestion
             ? L10n.t("查看已有内容 · 可照常用快捷键查下一题", "次の問題はいつものショートカットで", "Use your usual shortcut for the next question")
             : L10n.t("保留这道题的内容 · 不随新题切换", "この問題の内容を表示しています", "Keeping this question open")
+        answer.endTextUpdate()
         answer.layoutSubtreeIfNeeded()
         answerScroll.contentView.scroll(to: position); answerScroll.reflectScrolledClipView(answerScroll.contentView)
     }
@@ -201,14 +203,38 @@ private final class AnswerReadingStack: NSStackView {
         edgeInsets = NSEdgeInsets(top: 24, left: 28, bottom: 28, right: 28)
     }
     required init?(coder: NSCoder) { nil }
-    func clear() { for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() } }
+    func clear() { textKeys.removeAll(); nextTextViews = nil; for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() } }
     func addFullWidth(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false; addArrangedSubview(view)
         view.widthAnchor.constraint(equalTo: widthAnchor, constant: -56).isActive = true
     }
+    private var textKeys: [ObjectIdentifier: String] = [:]
+    private var nextTextViews: [NSTextField]?
+    func beginTextUpdate() { nextTextViews = [] }
+    func endTextUpdate() {
+        guard let desired = nextTextViews else { return }
+        for view in arrangedSubviews where !desired.contains(where: { $0 === view }) {
+            textKeys.removeValue(forKey: ObjectIdentifier(view))
+            removeArrangedSubview(view); view.removeFromSuperview()
+        }
+        for (index, view) in desired.enumerated() {
+            if arrangedSubviews.indices.contains(index), arrangedSubviews[index] === view { continue }
+            if arrangedSubviews.contains(where: { $0 === view }) { removeArrangedSubview(view) }
+            insertArrangedSubview(view, at: index)
+        }
+        nextTextViews = nil
+    }
     func addText(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) {
+        let key = "\(size)|\(weight.rawValue)|\(color)|\(text)"
+        if nextTextViews != nil, let existing = arrangedSubviews.compactMap({ $0 as? NSTextField }).first(where: {
+            textKeys[ObjectIdentifier($0)] == key && !(nextTextViews?.contains($0) ?? false)
+        }) {
+            nextTextViews?.append(existing); return
+        }
         let label = AnswerText.label(text, size: size, weight: weight, color: color)
         label.preferredMaxLayoutWidth = 450
+        textKeys[ObjectIdentifier(label)] = key
         addFullWidth(label)
+        nextTextViews?.append(label)
     }
 }

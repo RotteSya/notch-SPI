@@ -178,7 +178,8 @@ final class CaptureFlowStabilityTests: XCTestCase {
             let reader = try XCTUnwrap(controller.qaExpandedAnswerWindow)
             let history = try XCTUnwrap(controller.qaRecentQuestionsWindow)
             let original = reader.content?.id, answer = reader.content?.answer
-            for index in 1...3 {
+            let keyWindow = NSApp.keyWindow
+            for index in 1...20 {
                 controller.qaPressScreenshot(multiple: false)
                 try await waitFor { gate.callbacks.count == index + 1 }
                 NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -191,6 +192,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
                 XCTAssertFalse(reader.content?.canExplain ?? true)
                 XCTAssertTrue(controller.qaRecentQuestionsWindow === history)
                 XCTAssertTrue(history.window?.isVisible == true)
+                XCTAssertTrue(NSApp.keyWindow === keyWindow)
             }
         }
     }

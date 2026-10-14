@@ -69,16 +69,16 @@ enum DesignVisualQA {
             }
         }
         model.screenshotStatus = L10n.t("已提交 \(model.screenshots.count) 张截图", "画像 \(model.screenshots.count) 枚を送信済み", "\(model.screenshots.count) screenshot(s) submitted")
-        if scenario == "reading-consistency" || scenario == "math-reading" {
+        if scenario == "reading-consistency" || scenario == "math-reading" || scenario == "reading-stability" {
             let capture = QuestionCaptureSnapshot(captureID: UUID(), sessionID: UUID(), generation: 0,
                 assets: model.screenshots, expiresAt: Date().addingTimeInterval(900))
             model.answer = "**计算步骤**：平均速度 = 路程 ÷ 时间。\nFINAL: **（1）B. 60 km/h**\n（2）120 km ÷ 2 h = 60 km/h\n（3）公式：\\(v_1 = \\frac{s_1}{t_1}\\)"
             model.explanation = "**解释**\n保留题号、单位和换行。`120 / 2 = 60`\n\n" + String(repeating: "换算时检查 km 与 h，结论始终与原题一起核对。\n", count: 18) + "\n解释结束。"
-            if scenario == "math-reading" {
+            if scenario == "math-reading" || scenario == "reading-stability" {
                 model.answer = #"FINAL: \(x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}\)"#
                 model.explanation = #"椭圆：\(\frac{x_1^2}{8}+\frac{y_2^2}{2}=1\)"# + "\n\n" + #"概率：$P(A \mid B)=\frac{P(A \cap B)}{P(B)}$"# + "\n\n" + #"\[\sum_{i=1}^{n} i = \frac{n(n+1)}{2}\]"# + "\n\n" + #"\[\int_0^1 x^2\,dx = \frac{1}{3}\]"#
             }
-            if scenario == "math-reading" {
+            if scenario == "math-reading" || scenario == "reading-stability" {
                 model.explanation += "\n\n长公式：\\(" + Array(repeating: "x_1^2", count: 30).joined(separator: "+") + "\\)"
             }
             model.resultState = .review
@@ -89,6 +89,27 @@ enum DesignVisualQA {
             history.updateExplanation(id: capture.captureID, text: model.explanation)
             controller.setExpanded(true); controller.qaRefreshScreenshotLayout()
             controller.openExpandedAnswer(); controller.openRecentQuestions()
+            if scenario == "reading-stability" {
+                let initial = model.explanation + "\n\n" + String(repeating: "连续阅读测试：保留当前阅读位置，不切换题目。\n", count: 40)
+                model.explanation = initial
+                history.updateExplanation(id: capture.captureID, text: initial)
+                for index in 1...400 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 20 + Double(index) * 0.04) { [weak controller] in
+                        guard let controller else { return }
+                        controller.model.explanation = initial + "\n实时解释进度：\(index) / 400"
+                        if let reader = controller.qaExpandedAnswerWindow, let old = reader.content {
+                            reader.update(.init(id: old.id, assets: old.assets, answer: old.answer,
+                                explanation: controller.model.explanation, needsReview: old.needsReview,
+                                explaining: index < 400, canExplain: false, explanationFailed: false))
+                        }
+                        if index % 40 == 0 {
+                            history.save(snapshot: .init(captureID: UUID(), sessionID: UUID(), generation: 0,
+                                assets: capture.assets, expiresAt: capture.expiresAt),
+                                answer: "FINAL: 后台新题 \(index / 40)", needsReview: false)
+                        }
+                    }
+                }
+            }
             return controller
         }
         if scenario == "expanded-answer" {

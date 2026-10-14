@@ -22,6 +22,7 @@ final class StreamingAnswerView: NSView {
     private var link: CADisplayLink?
     private var proxy: StreamProxy?
     private var frameCache: (key: String, width: CGFloat, frame: CTFrame)?
+    private var fittedCache: (width: CGFloat, text: NSAttributedString)?
     private var heightCache: (width: CGFloat, height: CGFloat)?
 
     /// Fires when the "▸ 解释" line is clicked (brief mode's folded scratch work).
@@ -85,6 +86,7 @@ final class StreamingAnswerView: NSView {
         self.isPlaceholder = isPlaceholder
         attributed = attr
         frameCache = nil
+        fittedCache = nil
         heightCache = nil
         extractRanges()
 
@@ -138,15 +140,20 @@ final class StreamingAnswerView: NSView {
     /// Layout reuses the exact attributed content already prepared for drawing. The
     /// viewport may change height many times without changing text, style or width.
     func measuredHeight(width: CGFloat) -> CGFloat {
+        guard attributed.length > 0, width > 1 else { return 0 }
         if let cache = heightCache, cache.width == width { return cache.height }
-        let height = Self.measure(attributed, width: width)
+        let height = Self.measureFitted(fittedText(width: width), width: width)
         heightCache = (width, height)
         return height
     }
 
     static func measure(_ attr: NSAttributedString, width: CGFloat) -> CGFloat {
         guard attr.length > 0, width > 1 else { return 0 }
-        let setter = CTFramesetterCreateWithAttributedString(AnswerMath.fitting(attr, width: width))
+        return measureFitted(AnswerMath.fitting(attr, width: width), width: width)
+    }
+
+    private static func measureFitted(_ attr: NSAttributedString, width: CGFloat) -> CGFloat {
+        let setter = CTFramesetterCreateWithAttributedString(attr)
         let size = CTFramesetterSuggestFrameSizeWithConstraints(
             setter, CFRange(location: 0, length: 0), nil,
             CGSize(width: width, height: .greatestFiniteMagnitude), nil)
@@ -165,11 +172,18 @@ final class StreamingAnswerView: NSView {
             ? NotchType.cardPadV + 1 : 0
     }
 
+    private func fittedText(width: CGFloat) -> NSAttributedString {
+        if let cached = fittedCache, cached.width == width { return cached.text }
+        let text = AnswerMath.fitting(attributed, width: width)
+        fittedCache = (width, text)
+        return text
+    }
+
     private func currentFrame() -> CTFrame? {
         guard attributed.length > 0, bounds.width > 1 else { return nil }
         let key = attributed.string
         if let c = frameCache, c.key == key, c.width == bounds.width { return c.frame }
-        let setter = CTFramesetterCreateWithAttributedString(AnswerMath.fitting(attributed, width: bounds.width))
+        let setter = CTFramesetterCreateWithAttributedString(fittedText(width: bounds.width))
         let path = CGPath(rect: CGRect(x: 0, y: 0, width: bounds.width, height: Self.layoutHeight), transform: nil)
         let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil)
         frameCache = (key, bounds.width, frame)

@@ -15,6 +15,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private var observer: NSObjectProtocol?
     private var selectedID: UUID?
     private var displayed: RecentQuestion?
+    private var reloadingSelection = false
 
     init(store: RecentQuestionStore) {
         self.store = store
@@ -89,7 +90,10 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             status.trailingAnchor.constraint(lessThanOrEqualTo: toolbar.leadingAnchor, constant: -16)
         ])
         observer = NotificationCenter.default.addObserver(forName: RecentQuestionStore.changed, object: store, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reload() }
+            MainActor.assumeIsolated {
+                guard let self, self.window?.isVisible == true else { return }
+                self.reload()
+            }
         }
         window.setContentSize(NSSize(width: 960, height: 680))
         window.center(); reload()
@@ -110,15 +114,31 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
     private func reload() {
         store.list { [weak self] records, failed in
             guard let self else { return }
-            self.records = records
-            self.status.stringValue = failed
-                ? L10n.t("部分记录未能读取或保存", "一部の記録を読み書きできません", "Some records could not be read or saved")
-                : L10n.t("\(records.count) 条记录", "\(records.count) 件", "\(records.count) entries")
-            let row = self.selectedID.flatMap { id in records.firstIndex { $0.id == id } } ?? 0
-            self.table.reloadData()
-            if !records.isEmpty { self.table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
-            self.renderSelection()
+            self.applyRecords(records, failed: failed)
         }
+    }
+    /// Apply one serialized store snapshot without transiently selecting another question.
+    func applyRecords(_ records: [RecentQuestion], failed: Bool) {
+        status.stringValue = failed
+            ? L10n.t("部分记录未能读取或保存", "一部の記録を読み書きできません", "Some records could not be read or saved")
+            : L10n.t("\(records.count) 条记录", "\(records.count) 件", "\(records.count) entries")
+        guard self.records != records || detail.arrangedSubviews.isEmpty else { return }
+        let clip = table.enclosingScrollView?.contentView
+        let origin = clip?.bounds.origin ?? .zero
+        let topRow = table.row(at: NSPoint(x: 0, y: origin.y))
+        let anchor = self.records.indices.contains(topRow) ? self.records[topRow].id : nil
+        let offset = topRow >= 0 ? origin.y - table.rect(ofRow: topRow).minY : 0
+        self.records = records
+        let row = selectedID.flatMap { id in records.firstIndex { $0.id == id } } ?? 0
+        reloadingSelection = true
+        table.reloadData()
+        if !records.isEmpty { table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false) }
+        reloadingSelection = false
+        if let anchor, let index = records.firstIndex(where: { $0.id == anchor }), let clip {
+            clip.scroll(to: NSPoint(x: origin.x, y: table.rect(ofRow: index).minY + offset))
+            table.enclosingScrollView?.reflectScrolledClipView(clip)
+        }
+        renderSelection()
     }
     func numberOfRows(in tableView: NSTableView) -> Int { records.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -163,13 +183,14 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         ])
         return cell
     }
-    func tableViewSelectionDidChange(_ notification: Notification) { renderSelection() }
+    func tableViewSelectionDidChange(_ notification: Notification) { if !reloadingSelection { renderSelection() } }
 
     private var selected: RecentQuestion? { records.indices.contains(table.selectedRow) ? records[table.selectedRow] : nil }
     private func renderSelection() {
         copyButton.isEnabled = selected != nil; deleteButton.isEnabled = selected != nil; clearButton.isEnabled = !records.isEmpty
         copyAllButton.isEnabled = selected != nil
         guard displayed != selected || detail.arrangedSubviews.isEmpty else { return }
+        let position = displayed?.id == selected?.id ? detailScroll.contentView.bounds.origin : .zero
         displayed = selected; selectedID = selected?.id
         for view in detail.arrangedSubviews { detail.removeArrangedSubview(view); view.removeFromSuperview() }
         guard let record = selected else {
@@ -196,7 +217,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             view.heightAnchor.constraint(equalTo: view.widthAnchor, multiplier: min(3, max(0.1, size.height / max(1, size.width)))).isActive = true
         }
         detail.layoutSubtreeIfNeeded()
-        detailScroll.contentView.scroll(to: .zero)
+        detailScroll.contentView.scroll(to: position)
         detailScroll.reflectScrolledClipView(detailScroll.contentView)
     }
     private func add(_ view: NSView) {
