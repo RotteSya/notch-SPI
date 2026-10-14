@@ -81,8 +81,8 @@ struct NotchScreenLayout: Equatable {
         guard contentInset > 0 else { return nil }
         // If auxiliary data is unavailable, reserve the entire top band. Never invent
         // a hardware width from the decorative fallback.
-        let left = auxiliaryLeft?.maxX ?? frame.minX
-        let right = auxiliaryRight?.minX ?? frame.maxX
+        let left = hasTopWings ? auxiliaryLeft!.maxX : frame.minX
+        let right = hasTopWings ? auxiliaryRight!.minX : frame.maxX
         return CGRect(x: left, y: frame.maxY - contentInset,
                       width: max(0, right - left), height: contentInset)
     }
@@ -104,7 +104,7 @@ struct NotchScreenLayout: Equatable {
     }
 
     func collapsed(sideExtension: CGFloat) -> CGRect {
-        if contentInset > 0 && (auxiliaryLeft == nil || auxiliaryRight == nil) {
+        if contentInset > 0 && !hasTopWings {
             var fallback = metrics
             fallback.notchWidth = 200
             fallback.notchHeight = 28
@@ -120,10 +120,28 @@ struct NotchScreenLayout: Equatable {
         max(1, frame.maxY - visibleFrame.minY - NotchMetrics.shadowMarginBottom)
     }
 
-    var hasTopWings: Bool { cutout != nil && auxiliaryLeft != nil && auxiliaryRight != nil }
+    var hasTopWings: Bool {
+        guard contentInset > 0, let left = auxiliaryLeft, let right = auxiliaryRight,
+              !left.isEmpty, !right.isEmpty else { return false }
+        let band = CGRect(x: frame.minX, y: frame.maxY - contentInset,
+                          width: frame.width, height: contentInset)
+        return left.intersects(band) && right.intersects(band)
+            && left.minX >= frame.minX && right.maxX <= frame.maxX
+            && left.maxX < right.minX
+    }
 
-    // Only unknown hardware geometry needs the conservative full-width fallback.
-    var headerInset: CGFloat { cutout != nil && !hasTopWings ? contentInset : 0 }
+    /// Keep all header actions available when scaling or a side Dock leaves too
+    /// little room beside the camera. The whole header then lives below the cutout.
+    var usesHeaderWings: Bool {
+        guard hasTopWings, let cutout else { return false }
+        let panel = expanded(contentHeight: 100)
+        let left = panel.minX + NotchMetrics.shadowMarginH
+        let right = panel.maxX - NotchMetrics.shadowMarginH
+        return cutout.minX - left >= 120 && right - cutout.maxX >= 132
+    }
+
+    // Unknown geometry and cramped wings use the same conservative content fallback.
+    var headerInset: CGFloat { contentInset > 0 && !usesHeaderWings ? contentInset : 0 }
 
     func bodyAdjustment(onboarding: Bool) -> CGFloat {
         max(headerInset, contentInset - (onboarding ? 38 : NotchLayout.headerHeight))

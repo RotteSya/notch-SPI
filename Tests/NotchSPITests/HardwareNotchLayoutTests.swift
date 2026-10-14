@@ -12,6 +12,98 @@ final class HardwareNotchLayoutTests: XCTestCase {
             auxiliaryRight: top > 0 && auxiliary ? CGRect(x: frame.minX + 852, y: frame.maxY - top, width: 660, height: top) : nil)
     }
 
+    func testInvalidAuxiliaryAreasReserveEntireHardwareBand() {
+        for area in [CGRect.zero, CGRect(x: 900, y: 944, width: 612, height: 38),
+                     CGRect(x: -1512, y: 944, width: 660, height: 38)] {
+            var layout = screen()
+            layout.auxiliaryLeft = area
+            XCTAssertEqual(layout.cutout, CGRect(x: 0, y: 944, width: 1512, height: 38))
+            XCTAssertFalse(layout.hasTopWings)
+            XCTAssertEqual(layout.headerInset, 38)
+            XCTAssertLessThanOrEqual(layout.collapsed(sideExtension: 60).maxY, 944)
+        }
+    }
+
+    @MainActor func testNarrowScreenKeepsHeaderControlsVisibleBelowHardware() throws {
+        var layout = screen()
+        layout.visibleFrame = CGRect(x: 560, y: 40, width: 390, height: 902)
+        let model = TutorModel()
+        model.expanded = true; model.answer = "FINAL: B"; model.status = .idle
+        let expanded = layout.expanded(contentHeight: 300 + layout.bodyAdjustment(onboarding: false))
+        let collapsed = layout.collapsed(sideExtension: 60)
+        let panel = NotchPanel(contentRect: expanded)
+        defer { panel.close() }
+        let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
+            onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view; view.screenLayout = layout
+        view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+        view.refreshScreenshotTray()
+        func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+        let controls = descendants(view).filter { $0 is NSControl }
+        let gear = try XCTUnwrap(controls.first { $0.accessibilityLabel() == L10n.settingsTitle })
+        XCTAssertFalse(gear.isHiddenOrHasHiddenAncestor)
+        let rect = panel.convertToScreen(gear.convert(gear.bounds, to: nil))
+        XCTAssertLessThanOrEqual(rect.maxY, try XCTUnwrap(layout.cutout).minY)
+        XCTAssertGreaterThanOrEqual(layout.headerInset, layout.contentInset)
+    }
+
+    @MainActor func testDisplayChangesKeepEveryCaptureStateOutsideCutoutWithoutChangingModel() throws {
+        let model = TutorModel()
+        var layout = screen()
+        func frame(_ expanded: Bool) -> CGRect {
+            expanded ? layout.expanded(contentHeight: 460 + layout.bodyAdjustment(onboarding: false))
+                : layout.collapsed(sideExtension: 60)
+        }
+        let panel = NotchPanel(contentRect: frame(false))
+        defer { panel.close() }
+        let view = NotchView(model: model, frameProvider: frame,
+            onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+            onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+        panel.contentView = view
+        view.screenLayout = layout
+        view.resetScreenFrames(collapsed: frame(false), expanded: frame(true))
+        view.qaUseManualMorphClock()
+        func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+        func check() {
+            view.layoutSubtreeIfNeeded()
+            guard let cutout = layout.cutout else { return }
+            for child in descendants(view) where child is NSControl || child is NSScrollView || child is RoseLoaderView {
+                guard !child.isHiddenOrHasHiddenAncestor else { continue }
+                let rect = panel.convertToScreen(child.convert(child.bounds, to: nil))
+                XCTAssertFalse(rect.intersects(cutout), "\(type(of: child)) overlaps hardware: \(rect)")
+            }
+        }
+        var narrow = screen()
+        narrow.visibleFrame = CGRect(x: 560, y: 40, width: 390, height: 902)
+        let attached = NSScreen.screens.map {
+            NotchScreenLayout(frame: $0.frame, visibleFrame: $0.visibleFrame, scale: $0.backingScaleFactor,
+                safeTop: $0.safeAreaInsets.top, auxiliaryLeft: $0.auxiliaryTopLeftArea, auxiliaryRight: $0.auxiliaryTopRightArea)
+        }
+        for layout in attached { print("Hardware QA: frame=\(layout.frame), safeTop=\(layout.safeTop), cutout=\(String(describing: layout.cutout))") }
+        for status in [TutorModel.Status.ready, .running, .streaming, .error, .idle] {
+            model.status = status
+            model.answer = "FINAL: **B**\n（2）60 km/h"
+            model.statusText = String(repeating: "正在恢复 接続を復旧中 Recovering connection · ", count: 8)
+            model.screenshotRoundActive = status == .ready
+            model.screenshotRemaining = status == .ready ? 3 : nil
+            model.screenshotCapturing = status == .running
+            for next in [screen(), screen(top: 64, origin: CGPoint(x: -1512, y: 300), scale: 1),
+                         screen(auxiliary: false), narrow, screen(top: 0)] + attached {
+                model.expanded = true; view.refreshScreenshotTray(); view.qaAdvanceMorph(by: 0.12)
+                layout = next; view.screenLayout = layout
+                view.resetScreenFrames(collapsed: frame(false), expanded: frame(true)); check()
+                XCTAssertEqual(model.status, status)
+                XCTAssertEqual(model.answer, "FINAL: **B**\n（2）60 km/h")
+                XCTAssertEqual(model.screenshotRemaining, status == .ready ? 3 : nil)
+                model.expanded = false; view.refreshScreenshotTray()
+                for _ in 0..<20 { view.qaAdvanceMorph(by: 0.02); check() }
+                model.expanded = true; view.refreshScreenshotTray()
+                for _ in 0..<20 { view.qaAdvanceMorph(by: 0.02); check() }
+            }
+        }
+    }
+
     func testHardwareAndDecorativeMetricsAreIndependent() {
         for scale: CGFloat in [1, 2] {
             for origin in [CGPoint.zero, CGPoint(x: -1512, y: 400), CGPoint(x: 700, y: -982)] {
@@ -249,7 +341,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
         func assertSafe(file: StaticString = #filePath, line: UInt = #line) {
             view.layoutSubtreeIfNeeded()
             guard let cutout = layout.cutout else { return }
-            for child in descendants(view) where child is NSControl || child is RoseLoaderView {
+            for child in descendants(view) where child is NSControl || child is RoseLoaderView || child is NSScrollView {
                 guard !child.isHiddenOrHasHiddenAncestor else { continue }
                 let rect = panel.convertToScreen(child.convert(child.bounds, to: nil))
                 XCTAssertFalse(rect.intersects(cutout), "\(type(of: child)): \(rect) intersects \(cutout)", file: file, line: line)
@@ -299,7 +391,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
         view.qaAdvanceMorph(by: 0.04)
         assertSafe()
         for next in [screen(top: 0, origin: CGPoint(x: -1512, y: 350), scale: 1),
-                     screen(top: 44, origin: CGPoint(x: 200, y: -982)), screen(auxiliary: false)] {
+                     screen(top: 64, origin: CGPoint(x: 200, y: -982)), screen(auxiliary: false)] {
             layout = next
             view.screenLayout = layout
             view.resetScreenFrames(collapsed: frames(false), expanded: frames(true))

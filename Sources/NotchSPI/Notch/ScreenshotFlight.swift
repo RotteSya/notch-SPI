@@ -47,6 +47,25 @@ enum ScreenshotFlightGeometry {
         let size = CGSize(width: image.width * scale + 8, height: image.height * scale + 8)
         return CGRect(x: slot.midX - size.width / 2, y: slot.midY - size.height / 2, width: size.width, height: size.height)
     }
+    /// Include the card's rotation: even its corners must stay below camera cutouts.
+    static func avoidingCutouts(_ frame: CGRect, angle: CGFloat, cutouts: [CGRect]) -> CGRect {
+        let width = abs(cos(angle)) * frame.width + abs(sin(angle)) * frame.height
+        let height = abs(sin(angle)) * frame.width + abs(cos(angle)) * frame.height
+        guard width > 0, height > 0 else { return frame }
+        var lower = -CGFloat.infinity, upper = CGFloat.infinity
+        for cutout in cutouts where frame.midX + width / 2 > cutout.minX && frame.midX - width / 2 < cutout.maxX {
+            if cutout.maxY <= frame.midY { lower = max(lower, cutout.maxY + 1) }
+            else { upper = min(upper, cutout.minY - 1) }
+        }
+        // Stacked displays may bound both sides. Fit the image between them rather
+        // than pushing a full-screen image behind the next display's camera.
+        let scale = min(1, max(0, upper - lower) / height)
+        let size = CGSize(width: frame.width * scale, height: frame.height * scale)
+        let centerY = min(max(frame.midY, lower + height * scale / 2), upper - height * scale / 2)
+        return CGRect(x: frame.midX - size.width / 2, y: centerY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
     static func frame(source: CGRect, destination: CGRect, progress: CGFloat, reduced: Bool) -> CGRect {
         if reduced { return destination }
         if progress <= 0 { return source }
@@ -155,9 +174,15 @@ final class ScreenshotFlight {
                 let p = reduced ? 1 : ScreenshotFlightGeometry.travelProgress(t)
                 let inset = 4 * p
                 let radius = CaptureStyle.cardRadius * p
-                let local = frame.offsetBy(dx: -self.panel.frame.minX, dy: -self.panel.frame.minY)
                 let direction: CGFloat = end.midX < origin.midX ? -1 : 1
                 let angle = reduced ? 0 : sin(.pi * p) * 2.2 * direction * .pi / 180
+                let cutouts = NSScreen.screens.compactMap { screen in
+                    NotchScreenLayout(frame: screen.frame, visibleFrame: screen.visibleFrame,
+                        scale: screen.backingScaleFactor, safeTop: screen.safeAreaInsets.top,
+                        auxiliaryLeft: screen.auxiliaryTopLeftArea, auxiliaryRight: screen.auxiliaryTopRightArea).cutout
+                }
+                let safeFrame = ScreenshotFlightGeometry.avoidingCutouts(frame, angle: angle, cutouts: cutouts)
+                let local = safeFrame.offsetBy(dx: -self.panel.frame.minX, dy: -self.panel.frame.minY)
                 CATransaction.begin(); CATransaction.setDisableActions(true)
                 self.card.bounds = CGRect(origin: .zero, size: local.size)
                 self.card.position = CGPoint(x: local.midX, y: local.midY)

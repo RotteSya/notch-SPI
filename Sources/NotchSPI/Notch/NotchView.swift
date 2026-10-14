@@ -651,8 +651,8 @@ final class NotchView: NSView {
                    y: (window?.frame.maxY ?? 0) - cutout.maxY - card.minY,
                    width: cutout.width, height: cutout.height)
         }
-        layoutHeader(width: screenLayout?.hasTopWings == true ? liveWidth : plateSize.width, cutout: cutout)
-        onboarding.configureTopLayout(cutout: screenLayout?.hasTopWings == true ? cutout : nil,
+        layoutHeader(width: screenLayout?.usesHeaderWings == true ? liveWidth : plateSize.width, cutout: cutout)
+        onboarding.configureTopLayout(cutout: screenLayout?.usesHeaderWings == true ? cutout : nil,
             availableWidth: liveWidth, headerInset: screenLayout?.headerInset ?? 0,
             bodyAdjustment: screenLayout?.bodyAdjustment(onboarding: true) ?? 0)
 
@@ -690,7 +690,7 @@ final class NotchView: NSView {
 
         let gearX = width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
-        let expandFits = screenLayout?.hasTopWings != true || gearX - 32 >= (cutout?.maxX ?? 0) + 8
+        let expandFits = screenLayout?.usesHeaderWings != true || gearX - 32 >= (cutout?.maxX ?? 0) + 8
         let showExpand = model.canExpandAnswer && expandFits && onboarding.isHidden
         expandAnswerButton.isHidden = !showExpand
         expandAnswerButton.frame = CGRect(x: gearX - 32, y: cy - 12, width: 28, height: 24)
@@ -720,7 +720,7 @@ final class NotchView: NSView {
         let daily = onboarding.isHidden
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = !daily }
         statusText.toolTip = statusText.stringValue
-        guard screenLayout?.hasTopWings == true, let cutout else { return }
+        guard screenLayout?.usesHeaderWings == true, let cutout else { return }
 
         // Two compact lines on the left retain the complete usual status/quota text.
         // The right pill truncates within its wing and keeps its full tooltip/AX label.

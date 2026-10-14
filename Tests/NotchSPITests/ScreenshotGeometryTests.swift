@@ -30,6 +30,27 @@ final class ScreenshotGeometryTests: XCTestCase {
         }
     }
 
+    func testRotatedFlightNeverEntersPhysicalCutouts() {
+        let cutouts = [CGRect(x: 660, y: 944, width: 192, height: 38),
+                       CGRect(x: 660, y: -38, width: 192, height: 38)]
+        let source = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let destination = CGRect(x: 690, y: 780, width: 128, height: 80)
+        for sample in 0...100 {
+            let t = CGFloat(sample) / 100
+            let frame = ScreenshotFlightGeometry.frame(source: source, destination: destination, progress: t, reduced: false)
+            let angle = sin(.pi * t) * 2.2 * .pi / 180
+            let safe = ScreenshotFlightGeometry.avoidingCutouts(frame, angle: angle, cutouts: cutouts)
+            let width = abs(cos(angle)) * safe.width + abs(sin(angle)) * safe.height
+            let height = abs(sin(angle)) * safe.width + abs(cos(angle)) * safe.height
+            let rotated = CGRect(x: safe.midX - width / 2, y: safe.midY - height / 2, width: width, height: height)
+            for cutout in cutouts { XCTAssertFalse(rotated.intersects(cutout)) }
+            XCTAssertLessThanOrEqual(safe.width, frame.width)
+            XCTAssertEqual(safe.width / safe.height, frame.width / frame.height, accuracy: 0.00001)
+        }
+        XCTAssertEqual(ScreenshotFlightGeometry.avoidingCutouts(destination, angle: 0, cutouts: cutouts), destination)
+        XCTAssertEqual(ScreenshotFlightGeometry.avoidingCutouts(source, angle: 0, cutouts: []), source)
+    }
+
     func testLiftHasSlowEndsFastMiddleAndNoPauseOrOvershoot() {
         let samples = (0...100).map { ScreenshotFlightGeometry.travelProgress(CGFloat($0) / 100) }
         XCTAssertTrue(zip(samples, samples.dropFirst()).allSatisfy { $0 < $1 })

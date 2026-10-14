@@ -292,7 +292,17 @@ final class NotchController: NSObject {
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
+                self?.refreshScreenLayout()
+                ScreenCapture.invalidateShareableContent()
+                if self?.activatesServices == true { ScreenCapture.prefetchShareableContent() }
+            }
+        })
+        // Re-read geometry after wake even when macOS preserves the display IDs.
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.refreshScreenLayout()
                 ScreenCapture.invalidateShareableContent()
                 if self?.activatesServices == true { ScreenCapture.prefetchShareableContent() }
@@ -1646,6 +1656,7 @@ final class NotchController: NSObject {
             self.model.screenshotImages[asset.id] = image
             self.resizeToFit()
             self.notchView.refreshScreenshotTray()
+            guard self.model.flyingScreenshots.contains(asset.id) else { return }
             self.screenshotFlight.fly(id: asset.id, image: image, from: source,
                 destination: { [weak self] in self?.notchView.screenshotDestination(asset.id) },
                 landed: { [weak self] in
@@ -1716,7 +1727,13 @@ final class NotchController: NSObject {
         }
         guard let current = screen else { return }
         layoutScreenID = (current.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-        notchView.screenLayout = screenLayout
+        let nextLayout = screenLayout
+        if notchView.screenLayout != nextLayout {
+            // Finish only the visual transition; capture, request and countdown continue.
+            screenshotFlight.cancelAll()
+            model.flyingScreenshots.removeAll()
+        }
+        notchView.screenLayout = nextLayout
         notchView.resetScreenFrames(collapsed: frame(expanded: false), expanded: frame(expanded: true))
     }
 
