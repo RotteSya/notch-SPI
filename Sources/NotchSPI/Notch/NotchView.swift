@@ -158,6 +158,7 @@ final class NotchView: NSView {
     private var closingOnboarding = false
     private var wasExpanded = false
     private var lastPlateSize = CGSize.zero
+    private let pointerLocation: () -> NSPoint
     private var hovering = false
     private var manualCollapsePointer: NSPoint?
     private var trackingAreaRef: NSTrackingArea?
@@ -193,7 +194,9 @@ final class NotchView: NSView {
          onSettings: @escaping () -> Void,
          onToggleReasoning: @escaping () -> Void,
          onCopyAnswer: @escaping () -> Void,
-         onStopAuto: @escaping () -> Void) {
+         onStopAuto: @escaping () -> Void,
+         pointerLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }) {
+        self.pointerLocation = pointerLocation
         self.model = model
         self.frameProvider = frameProvider
         self.onHover = onHover
@@ -254,7 +257,7 @@ final class NotchView: NSView {
             self?.applyLayout()
             if g == 1, self?.wasExpanded == true {
                 self?.updateFollow()
-                self?.reconcileHoverAfterMorph(at: NSEvent.mouseLocation)
+                if let self { self.reconcileHoverAfterMorph(at: self.pointerLocation()) }
             }
             if g == 0, let self, self.closingOnboarding {
                 // Retire the held composition only once it is fully behind the closed mask.
@@ -910,7 +913,7 @@ final class NotchView: NSView {
     override func mouseUp(with event: NSEvent) {
         // Completion may collapse beneath a stationary pointer. Clicking must still
         // reopen the retained answer without requiring a fresh mouse-enter event.
-        if !model.expanded { expandFromClick(at: window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation) }
+        if !model.expanded { expandFromClick(at: window?.convertPoint(toScreen: event.locationInWindow) ?? pointerLocation()) }
         else { super.mouseUp(with: event) }
     }
 
@@ -923,9 +926,9 @@ final class NotchView: NSView {
         onHover(true)
     }
 
-    func prepareForManualCollapse(at point: NSPoint = NSEvent.mouseLocation) {
+    func prepareForManualCollapse(at point: NSPoint? = nil) {
         hovering = false
-        manualCollapsePointer = point
+        manualCollapsePointer = point ?? pointerLocation()
     }
 
     func reconcileHoverAfterMorph(at point: NSPoint) {
@@ -947,9 +950,9 @@ final class NotchView: NSView {
         trackingAreaRef = area
     }
 
-    override func mouseEntered(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
-    override func mouseExited(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation, allowsExpansion: false) }
-    override func mouseMoved(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
+    override func mouseEntered(with event: NSEvent) { trackPointer(at: pointerLocation()) }
+    override func mouseExited(with event: NSEvent) { trackPointer(at: pointerLocation(), allowsExpansion: false) }
+    override func mouseMoved(with event: NSEvent) { trackPointer(at: pointerLocation()) }
 
     func trackPointer(at screenPoint: NSPoint, allowsExpansion: Bool = true) {
         // Window frames move during the morph. They are presentation geometry,

@@ -185,7 +185,8 @@ final class NotchController: NSObject {
     }
 
     init(activateServices: Bool = true, onboardingDefaults: UserDefaults = .standard,
-         recentQuestions: RecentQuestionStore? = nil, questionNow: @escaping () -> Date = Date.init) {
+         recentQuestions: RecentQuestionStore? = nil, questionNow: @escaping () -> Date = Date.init,
+         pointerLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }) {
         activatesServices = activateServices
         questions = QuestionSessionStore(now: questionNow)
         intakeStore = QuestionSessionStore(now: questionNow)
@@ -216,7 +217,8 @@ final class NotchController: NSObject {
                 self.resizeToFit() // the height spring glides the fold/unfold
             },
             onCopyAnswer: { [weak self] in _ = self?.copyCurrentAnswer(requireAutoCopy: false) },
-            onStopAuto: { [weak self] in self?.stopAutoSession(.stopButton) }
+            onStopAuto: { [weak self] in self?.stopAutoSession(.stopButton) },
+            pointerLocation: pointerLocation
         )
         view.autoresizingMask = [.width, .height]
         view.onSubmitScreenshotRound = { [weak self] in self?.submitScreenshotRoundNow() }
