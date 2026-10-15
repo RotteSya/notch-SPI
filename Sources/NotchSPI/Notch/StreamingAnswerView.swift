@@ -175,16 +175,27 @@ final class StreamingAnswerView: NSView {
         return ceil(size.height) + topInset(attr) + bottomInset(attr)
     }
 
-    // Core Text ignores paragraphSpacingBefore on the first line. Reserve the card's
-    // inset in view coordinates, shared by measurement, drawing, and hit testing.
-    private static func topInset(_ attr: NSAttributedString) -> CGFloat {
-        attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
+    // Core Text measures glyphs, not the keycap's 2pt vertical padding and
+    // half-point stroke. Reserve 3pt at BOTH ends, including descriptions after
+    // the final cap. Measurement and drawing must use the same top offset.
+    private static func hasKeycaps(_ attr: NSAttributedString) -> Bool {
+        var found = false
+        attr.enumerateAttribute(.nspiKeycap, in: NSRange(location: 0, length: attr.length)) { value, _, stop in
+            if value != nil { found = true; stop.pointee = true }
+        }
+        return found
+    }
+
+    static func topInset(_ attr: NSAttributedString) -> CGFloat {
+        let cardInset: CGFloat = attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
             ? NotchType.cardPadV + 1 : 0
+        return max(cardInset, hasKeycaps(attr) ? 3 : 0)
     }
 
     private static func bottomInset(_ attr: NSAttributedString) -> CGFloat {
-        attr.length > 0 && attr.attribute(.nspiAnswerCard, at: attr.length - 1, effectiveRange: nil) != nil
+        let cardInset: CGFloat = attr.length > 0 && attr.attribute(.nspiAnswerCard, at: attr.length - 1, effectiveRange: nil) != nil
             ? NotchType.cardPadV + 1 : 0
+        return max(cardInset, hasKeycaps(attr) ? 3 : 0)
     }
 
     private func fittedText(width: CGFloat) -> NSAttributedString {
