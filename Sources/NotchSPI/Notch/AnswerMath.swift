@@ -22,15 +22,8 @@ enum AnswerMath {
     private static let cache: NSCache<NSString, Formula> = {
         let cache = NSCache<NSString, Formula>(); cache.countLimit = 256; return cache
     }()
-    private static var fontsAvailable: Bool {
-        [Bundle.main.resourceURL, Bundle.main.bundleURL, Bundle(for: MTMathUILabel.self).resourceURL]
-            .compactMap { $0 }.contains {
-                Bundle(url: $0.appendingPathComponent("SwiftMath_SwiftMath.bundle"))?
-                    .url(forResource: "mathFonts", withExtension: "bundle") != nil
-            }
-    }
     static func formula(_ source: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString? {
-        guard fontsAvailable, source.count <= 2048, source.filter({ $0 == "\\" }).count <= 128, let font = attributes[.font] as? NSFont else { return nil }
+        guard source.count <= 2048, source.filter({ $0 == "\\" }).count <= 128, let font = attributes[.font] as? NSFont else { return nil }
         guard (source.hasPrefix("\\(") && source.hasSuffix("\\)"))
             || (source.hasPrefix("\\[") && source.hasSuffix("\\]"))
             || (source.hasPrefix("$") && source.hasSuffix("$")) else { return nil }
@@ -49,6 +42,8 @@ enum AnswerMath {
         let value: Formula
         if let cached = cache.object(forKey: key) { value = cached }
         else {
+            // SwiftMath resolves its own Bundle.module resources, including the SwiftPM
+            // build directory used by XCTest. Host-bundle guesses reject valid installs.
             var math = MathImage(latex: latex, fontSize: font.pointSize, textColor: color,
                                  labelMode: display ? .display : .text, textAlignment: .left)
             let (error, image, layout) = math.asImage()

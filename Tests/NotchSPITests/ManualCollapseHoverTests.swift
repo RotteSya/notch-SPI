@@ -139,19 +139,31 @@ final class ManualCollapseHoverTests: XCTestCase {
     }
 
     @MainActor func testRealDelayedCollapseIsCancelledByReentry() async throws {
-        let controller = NotchController(activateServices: false)
+        var pointer = NSPoint(x: -10000, y: -10000)
+        let controller = NotchController(activateServices: false, pointerLocation: { pointer })
         // Freeze only presentation time. The production 450ms dispatch timer runs.
         controller.qaUseManualHoverAnimation()
         let compact = controller.qaHoverFrame(expanded: false)
         let inside = NSPoint(x: compact.midX, y: compact.midY)
         let outside = NSPoint(x: -10000, y: -10000)
-        controller.qaTrackPointer(inside)
-        controller.qaTrackPointer(outside, allowsExpansion: false)
+        func move(to point: NSPoint, allowsExpansion: Bool = true) {
+            pointer = point
+            controller.qaTrackPointer(point, allowsExpansion: allowsExpansion)
+        }
+        move(to: inside)
+        move(to: outside, allowsExpansion: false)
+        let stale = try XCTUnwrap(controller.qaPendingCollapse)
         XCTAssertTrue(controller.model.expanded, "Exit retains the existing grace period")
-        controller.qaTrackPointer(inside)
+        move(to: inside)
+        XCTAssertTrue(stale.isCancelled)
+        XCTAssertNil(controller.qaPendingCollapse)
+        // Screen/backing changes can settle geometry even with a frozen animation clock.
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertNil(controller.qaPendingCollapse, "Geometry reconciliation must use the same pointer source")
         try await Task.sleep(nanoseconds: 650_000_000)
         XCTAssertTrue(controller.model.expanded, "Old deadline cannot close a reentered card")
-        controller.qaTrackPointer(outside, allowsExpansion: false)
+        move(to: outside, allowsExpansion: false)
+        XCTAssertNotNil(controller.qaPendingCollapse)
         try await Task.sleep(nanoseconds: 650_000_000)
         XCTAssertFalse(controller.model.expanded, "A sustained exit must collapse")
     }
