@@ -70,7 +70,7 @@ final class ScreenshotTray: NSView {
         if ids != next || capturing || (collecting && !cancellable) { preview?.close(); preview = nil }
         collecting = cancellable
         self.assets = assets
-        for id in ids where !next.contains(id) { cards.removeValue(forKey: id)?.removeFromSuperview(); thumbnails.removeValue(forKey: id); ordinals.removeValue(forKey: id); removeButtons.removeValue(forKey: id)?.removeFromSuperview() }
+        for id in ids where !next.contains(id) { cards.removeValue(forKey: id)?.removeFromSuperview(); thumbnails.removeValue(forKey: id); ordinals.removeValue(forKey: id)?.removeFromSuperview(); removeButtons.removeValue(forKey: id)?.removeFromSuperview() }
         ids = next
         for (index, asset) in assets.enumerated() {
             if cards[asset.id] == nil {
@@ -91,14 +91,13 @@ final class ScreenshotTray: NSView {
                 image.layer?.masksToBounds = true
                 card.addSubview(image)
                 thumbnails[id] = image
-                let ordinal = NSTextField(labelWithString: "\(index + 1)")
+                let ordinal = ScreenshotOrdinalLabel(labelWithString: "\(index + 1)")
                 ordinal.font = .monospacedDigitSystemFont(ofSize: 10, weight: .bold)
                 ordinal.textColor = .white
                 ordinal.drawsBackground = true
                 ordinal.backgroundColor = NSColor.black.withAlphaComponent(0.72)
                 ordinal.alignment = .center
                 ordinal.frame = NSRect(x: 5, y: 5, width: 19, height: 15)
-                card.addSubview(ordinal)
                 ordinals[id] = ordinal
                 let remove = NotchActionButton(title: "×") { [weak self] in self?.onRemove?(id) }
                 remove.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
@@ -107,6 +106,7 @@ final class ScreenshotTray: NSView {
                 card.toolTip = card.accessibilityLabel()
                 cards[id] = card
                 addSubview(card)
+                addSubview(ordinal, positioned: .above, relativeTo: card)
                 if let remove = removeButtons[id] { addSubview(remove, positioned: .above, relativeTo: card) }
             }
             let card = cards[asset.id]!
@@ -119,6 +119,7 @@ final class ScreenshotTray: NSView {
             thumbnails[asset.id]?.image = images[asset.id]
             let wasHidden = card.alphaValue < 1
             card.alphaValue = flying.contains(asset.id) ? 0 : 1
+            ordinals[asset.id]?.alphaValue = card.alphaValue
             if wasHidden, card.alphaValue == 1, !onboardingReduceMotion() {
                 // A short photo-like sway, starting at the flight's exact horizontal pose.
                 let settle = CAKeyframeAnimation(keyPath: "transform")
@@ -220,7 +221,14 @@ final class ScreenshotTray: NSView {
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 3, dy: 3)
                 ordinals[id]?.isHidden = ids.count == 1
                 ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 8, weight: .semibold)
-                ordinals[id]?.frame = NSRect(x: 3, y: 3, width: 12, height: 12)
+                if let ordinal = ordinals[id] {
+                    // In compact mode the badge fits the card and follows its existing
+                    // reference motion automatically, without a second animation clock.
+                    if ordinal.superview !== card { card.addSubview(ordinal) }
+                    let textSize = ordinal.intrinsicContentSize
+                    ordinal.frame = NSRect(x: 3, y: 3,
+                                           width: max(14, ceil(textSize.width)), height: max(12, ceil(textSize.height)))
+                }
                 if animateReferenceLayout, let layer = card.layer, let oldPosition {
                     let move = CABasicAnimation(keyPath: "position")
                     move.fromValue = NSValue(point: oldPosition); move.toValue = NSValue(point: layer.position)
@@ -242,7 +250,6 @@ final class ScreenshotTray: NSView {
             cards[id]?.layer?.removeAnimation(forKey: "reference-layout")
             ordinals[id]?.isHidden = false
             ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 10, weight: .bold)
-            ordinals[id]?.frame = NSRect(x: 5, y: 5, width: 19, height: 15)
         }
         status.alignment = .left
         let inset = NotchType.cardPadH
@@ -265,6 +272,12 @@ final class ScreenshotTray: NSView {
                 card.frame = target
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 4, dy: 4)
                 let rect = slot(index)
+                // The image card can be only 8pt wide/high for extreme crops.
+                // Keep its readable ordinal in the stable slot, like the remove control.
+                if let ordinal = ordinals[id] {
+                    if ordinal.superview !== self { addSubview(ordinal, positioned: .above, relativeTo: card) }
+                    ordinal.frame = NSRect(x: rect.minX + 5, y: rect.minY + 5, width: 19, height: 15)
+                }
                 let removeTarget = NSRect(x: rect.maxX - 24, y: rect.minY + 2, width: 22, height: 22)
                 if reorderPending, let button = removeButtons[id], button.frame.width > 0 {
                     removeFrames[id] = (button.frame, removeTarget)
@@ -333,4 +346,9 @@ private final class ScreenshotNextSlot: NSView {
             in: NSRect(x: 4, y: 43, width: bounds.width - 8, height: 18),
             withAttributes: [.font: CaptureStyle.caption, .foregroundColor: NotchPalette.secondary, .paragraphStyle: paragraph])
     }
+}
+
+// Labels overlay the image but must not intercept its preview click.
+private final class ScreenshotOrdinalLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

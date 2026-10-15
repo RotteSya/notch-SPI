@@ -829,7 +829,7 @@ final class NotchControlButton: NSControl {
         let b = bounds
 
         if hovering {
-            let r = NSBezierPath(roundedRect: b, xRadius: 7, yRadius: 7)
+            let r = NSBezierPath(roundedRect: b.insetBy(dx: 0.5, dy: 0.5), xRadius: 7, yRadius: 7)
             NSColor(white: 1, alpha: 0.10).setFill(); r.fill()
             r.lineWidth = 0.75
             NSColor(white: 1, alpha: 0.12).setStroke(); r.stroke()
