@@ -34,3 +34,8 @@ Scope: selected second concept, native AppKit answer layout and its capture-to-a
 - Reduce-motion long reading verified; original capture/timer/preview tests and hardware matrix pass in the 475-test suite (4 skipped).
 
 Residual limits: no production model call, no real external-monitor unplug/lid-close in this run, no claim that window-only screenshots prove the physical camera cutout. Native geometry tests provide automated safety evidence. Existing opening/closing curves are preserved and connected to the new reference transition, not represented as newly rewritten physics.
+
+
+## 2026-10-15 自适应与衔接补充
+
+在现有黑曜石答案卡上收紧参考条，减轻品牌重量，本地化思考档位，并使无图阅读自动单栏。当前实现与验证以 `docs/v3-adaptive-polish-2026-10-15.md` 为准；本节不将旧设计稿比对或旧硬件观察视为本轮新证据。有效本轮截图在 `output/v3-adaptive-2026-10-15/answer.png` 和 `four-images.png`。完整Swift495项（4跳过），最后40项专项通过；本机签名Release已启动。本轮没有真实模型/外接屏/120Hz性能验收。

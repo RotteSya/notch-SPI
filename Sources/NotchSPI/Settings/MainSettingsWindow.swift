@@ -496,14 +496,15 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         y += 52
 
         // Three visible choices; changing effort is a single click.
-        let effortTitle = L10n.t("思考程度", "思考の強さ", "Reasoning effort")
+        let effortTitle = L10n.t("思考强度", "思考の強さ", "Reasoning effort")
         reasoningEffortControl.segmentCount = Settings.reasoningEffortCycle.count
+        reasoningEffortControl.toolTip = L10n.t("调整模型的思考投入；较高档位可能需要更长时间。", "思考の量を調整します。高い設定では時間がかかる場合があります。", "Adjust reasoning effort. Higher levels may take longer.")
         reasoningEffortControl.trackingMode = .selectOne
         reasoningEffortControl.segmentStyle = .rounded
         reasoningEffortControl.font = .systemFont(ofSize: 13)
         reasoningEffortControl.setAccessibilityLabel(effortTitle)
         for (index, effort) in Settings.reasoningEffortCycle.enumerated() {
-            reasoningEffortControl.setLabel(effort, forSegment: index)
+            reasoningEffortControl.setLabel(L10n.reasoningEffortName(effort), forSegment: index)
             reasoningEffortControl.setWidth(90, forSegment: index)
         }
         reasoningEffortControl.selectedSegment = Settings.reasoningEffortCycle.firstIndex(of: Settings.shared.reasoningEffort) ?? 0

@@ -21,7 +21,7 @@ import QuartzCore
 final class NotchView: NSView {
     let onboarding = NotchOnboardingView(frame: .zero)
     var onExplanation: (() -> Void)?
-    var onExpandAnswer: (() -> Void)?
+    var onCollapse: (() -> Void)?
     var onAddMaterial: (() -> Void)?
     var onNewGroup: (() -> Void)?
     var onSelectRegion: (() -> Void)?
@@ -42,6 +42,7 @@ final class NotchView: NSView {
     /// A display change is a coordinate-system change, not a content resize. Discard old
     /// animation anchors so a running spring cannot pull the panel back to a removed screen.
     func resetScreenFrames(collapsed: CGRect, expanded: CGRect) {
+        referenceHandoffDeadline = 0
         screenshotTray.stopReferenceMotion()
         answerShelf.layer?.removeAllAnimations()
         statusText.layer?.removeAnimation(forKey: "status-handoff")
@@ -90,8 +91,8 @@ final class NotchView: NSView {
     private let surface = NotchSurfaceView()
     // Interior light field (Metal) — the obsidian's living light, between body and content.
     private let luma = NotchLumaView()
-    private var lastAnswerLen = 0
-    private var lastAnswerPulse: CFTimeInterval = -.infinity
+    private var previousLightStatus: TutorModel.Status = .ready
+    private var referenceHandoffDeadline: CFTimeInterval = 0
     private var hadAnswerCard = false
     private var readingCapture: CaptureLatency?
     private var followBottom = false
@@ -118,10 +119,10 @@ final class NotchView: NSView {
     private lazy var gearButton = NotchControlButton(
         systemName: "gearshape", tint: NotchPalette.secondary, label: L10n.settingsTitle,
         action: { [weak self] in self?.onSettings() })
-    private lazy var expandAnswerButton = NotchControlButton(
-        systemName: "arrow.up.left.and.arrow.down.right", tint: NotchPalette.secondary,
-        label: L10n.t("展开查看完整答案", "回答の詳細を開く", "Open full answer"),
-        action: { [weak self] in self?.onExpandAnswer?() })
+    private lazy var collapseButton = NotchControlButton(
+        systemName: "chevron.up", tint: NotchPalette.secondary,
+        label: L10n.t("收起刘海", "ノッチを閉じる", "Collapse notch"),
+        action: { [weak self] in self?.onCollapse?() })
     private let answerShelf = AnswerShelfView()
     private var laidOutShelf = false
     private var wasStatusMessage = false
@@ -158,6 +159,7 @@ final class NotchView: NSView {
     private var wasExpanded = false
     private var lastPlateSize = CGSize.zero
     private var hovering = false
+    private var manualCollapsePointer: NSPoint?
     private var trackingAreaRef: NSTrackingArea?
     private var cancellables = Set<AnyCancellable>()
     private var refreshPending = false
@@ -221,13 +223,13 @@ final class NotchView: NSView {
         // and language (the capsule + status line already say what the instrument is doing).
         // A breath of tracking matches the onboarding's brand moment.
         modeLabel.attributedStringValue = NSAttributedString(string: "NotchSPI", attributes: [
-            .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold),
-            .foregroundColor: NotchPalette.primary,
-            .kern: 0.5,
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor(white: 1, alpha: 0.82),
+            .kern: 0.2,
         ])
 
         configureAnswerArea()
-        [answerShelf, modeLabel, statusText, capsule, gearButton, expandAnswerButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
+        [answerShelf, modeLabel, statusText, capsule, gearButton, collapseButton, answerScroll, materialStrip, screenshotTray, onboarding].forEach { expandedContent.addSubview($0) }
         expandedContent.wantsLayer = true
         expandedContent.layer?.mask = contentMask
         addSubview(expandedContent)
@@ -250,7 +252,10 @@ final class NotchView: NSView {
         geoMorph.onChange = { [weak self] g in
             self?.applyMorphFrame(g)
             self?.applyLayout()
-            if g == 1, self?.wasExpanded == true { self?.updateFollow() }
+            if g == 1, self?.wasExpanded == true {
+                self?.updateFollow()
+                self?.reconcileHoverAfterMorph(at: NSEvent.mouseLocation)
+            }
             if g == 0, let self, self.closingOnboarding {
                 // Retire the held composition only once it is fully behind the closed mask.
                 self.closingOnboarding = false
@@ -315,6 +320,7 @@ final class NotchView: NSView {
 
     private func refresh() {
         if reduceMotion {
+            referenceHandoffDeadline = 0
             screenshotTray.stopReferenceMotion()
             answerShelf.layer?.removeAllAnimations()
             statusText.layer?.removeAnimation(forKey: "status-handoff")
@@ -353,15 +359,13 @@ final class NotchView: NSView {
         compactCount.textColor = model.status == .error ? NotchPalette.error : NotchPalette.secondary
 
         luma.setState(model.status)
-        // Streaming token arrival → one ripple through the light field.
-        if model.answer.isEmpty { lastAnswerPulse = -.infinity }
-        let now = CACurrentMediaTime()
-        if !reduceMotion, model.status == .streaming, model.answer.count > lastAnswerLen,
-           now - lastAnswerPulse >= 0.32 {
+        // A single acknowledgement at completion. Network chunk boundaries should not
+        // keep flashing behind text the user is already reading.
+        if !reduceMotion, model.status == .idle,
+           previousLightStatus == .streaming, model.usesAnswerShelf {
             luma.pulse()
-            lastAnswerPulse = now
         }
-        lastAnswerLen = model.answer.count
+        previousLightStatus = model.status
 
         materialStrip.isHidden = !model.showMaterialStrip
         screenshotTray.isHidden = !model.showScreenshotTray
@@ -754,11 +758,11 @@ final class NotchView: NSView {
 
         let gearX = width - inset - 28
         gearButton.frame = CGRect(x: gearX, y: cy - 12, width: 28, height: 24)
-        let expandFits = screenLayout?.usesHeaderWings != true || gearX - 32 >= (cutout?.maxX ?? 0) + 8
-        let showExpand = model.canExpandAnswer && expandFits && onboarding.isHidden
-        expandAnswerButton.isHidden = !showExpand
-        expandAnswerButton.frame = CGRect(x: gearX - 32, y: cy - 12, width: 28, height: 24)
-        let controlsX = showExpand ? gearX - 32 : gearX
+        let collapseFits = screenLayout?.usesHeaderWings != true || gearX - 32 >= (cutout?.maxX ?? 0) + 8
+        let showCollapse = collapseFits && onboarding.isHidden
+        collapseButton.isHidden = !showCollapse
+        collapseButton.frame = CGRect(x: gearX - 32, y: cy - 12, width: 28, height: 24)
+        let controlsX = showCollapse ? gearX - 32 : gearX
 
         var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
         // Size the label by asking its cell (NSString measurement misses the cell's own
@@ -819,43 +823,56 @@ final class NotchView: NSView {
         let onboardingHeight = (model.onboardingContentHeight ?? 0) + bodyAdjustment
         onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
         let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight + bodyAdjustment : onboardingHeight
-        let stripHeight = model.materialAreaHeight
+        let actionHeight = model.materialStripHeight(width: max(0, size.width - inset * 2))
+        let stripHeight = model.screenshotTrayHeight + actionHeight
         let trayHeight = model.screenshotTrayHeight
         let w = max(0, size.width - inset * 2)
         let h = max(0, size.height - headerHeight - stripHeight - NotchLayout.answerBottomPad)
         let shelf = model.usesContentShelf
-        let oldTrayY = screenshotTray.frame.minY + (screenshotTray.layer?.presentation()?.transform.m42 ?? 0)
+        let oldTrayFrame = screenshotTray.frame
+        // Before the first compositor commit there is no presentation layer yet.
+        // Preserve the pending animation's source as well as an already displayed pose.
+        let pendingOffset = (screenshotTray.layer?.animation(forKey: "reference-handoff") as? CABasicAnimation)?.fromValue as? CGFloat
+        let oldTrayY = screenshotTray.frame.minY + (screenshotTray.layer?.presentation()?.transform.m42 ?? pendingOffset ?? 0)
         let top = headerHeight + (shelf ? 0 : trayHeight)
-        let statusInset = model.usesStatusShelf ? NotchLayout.statusInsetV : 0
+        let statusInset = (model.usesStatusShelf || model.usesReadyShelf) ? NotchLayout.statusInsetV : 0
         answerScroll.frame = CGRect(x: inset, y: top + statusInset, width: w, height: max(0, h - statusInset * 2))
         materialStrip.frame = CGRect(x: inset, y: top + h + (shelf ? trayHeight : 0),
-                                     width: w, height: model.materialStripHeight)
+                                     width: w, height: actionHeight)
         screenshotTray.frame = CGRect(x: inset,
             y: shelf ? headerHeight + h : headerHeight,
             width: w, height: trayHeight)
         let intakeSurface = model.showsWaitingSurface || (model.mode == "tutor"
             && model.onboardingStep == nil && model.screenshotRoundActive)
         answerShelf.isHidden = !(shelf || intakeSurface)
-        let waitingPad: CGFloat = intakeSurface ? 8 : 0
-        answerShelf.frame = CGRect(x: inset - waitingPad, y: headerHeight - waitingPad,
-                                  width: w + waitingPad * 2, height: h + trayHeight + waitingPad)
+        answerShelf.frame = CGRect(x: inset, y: headerHeight,
+                                  width: w, height: h + trayHeight)
+        let now = CACurrentMediaTime()
         if shelf != laidOutShelf {
             screenshotTray.layer?.removeAnimation(forKey: "reference-handoff")
             answerShelf.layer?.removeAnimation(forKey: "shelf-reveal")
-            if shelf, !reduceMotion, lastPlateSize != .zero {
-                // Only references travel; answer ink is immediately in its final reading position.
-                // Both endpoints live beneath the hardware band, including interrupted morphs.
-                let shift = CABasicAnimation(keyPath: "transform.translation.y")
-                shift.fromValue = max(headerHeight, oldTrayY) - screenshotTray.frame.minY
-                shift.toValue = 0; shift.duration = NotchPalette.referenceDuration
-                shift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                screenshotTray.layer?.add(shift, forKey: "reference-handoff")
+            referenceHandoffDeadline = shelf && !reduceMotion && lastPlateSize != .zero
+                ? now + NotchPalette.referenceDuration : 0
+            if referenceHandoffDeadline > now {
                 let reveal = CABasicAnimation(keyPath: "opacity")
                 reveal.fromValue = 0; reveal.toValue = 1; reveal.duration = NotchPalette.referenceDuration
                 reveal.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 answerShelf.layer?.add(reveal, forKey: "shelf-reveal")
             }
             laidOutShelf = shelf
+        }
+        if referenceHandoffDeadline > now, oldTrayFrame != screenshotTray.frame {
+            // Rebase from the currently displayed position when a streamed line changes
+            // the destination. Keep the original deadline, so bursts cannot extend motion.
+            // The entire path remains below the physical hardware band.
+            let shift = CABasicAnimation(keyPath: "transform.translation.y")
+            shift.fromValue = max(headerHeight, oldTrayY) - screenshotTray.frame.minY
+            shift.toValue = 0
+            shift.duration = referenceHandoffDeadline - now
+            shift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            screenshotTray.layer?.add(shift, forKey: "reference-handoff")
+        } else if referenceHandoffDeadline <= now {
+            screenshotTray.layer?.removeAnimation(forKey: "reference-handoff")
         }
 
         // The streaming view is the scroll's documentView, sized to the FULL content height so a
@@ -893,26 +910,67 @@ final class NotchView: NSView {
     override func mouseUp(with event: NSEvent) {
         // Completion may collapse beneath a stationary pointer. Clicking must still
         // reopen the retained answer without requiring a fresh mouse-enter event.
-        if !model.expanded { onHover(true) }
+        if !model.expanded { expandFromClick(at: window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation) }
         else { super.mouseUp(with: event) }
+    }
+
+    func expandFromClick(at point: NSPoint) {
+        let compact = frameProvider(false)
+        guard point.x >= compact.minX, point.x <= compact.maxX,
+              point.y >= compact.minY, point.y <= compact.maxY else { return }
+        manualCollapsePointer = nil
+        hovering = true
+        onHover(true)
+    }
+
+    func prepareForManualCollapse(at point: NSPoint = NSEvent.mouseLocation) {
+        hovering = false
+        manualCollapsePointer = point
+    }
+
+    func reconcileHoverAfterMorph(at point: NSPoint) {
+        // A fast exit can occur before the growing panel reaches the pointer.
+        // Reconcile that missed exit once settled; this cannot initiate expansion.
+        guard model.expanded, hovering else { return }
+        trackPointer(at: point, allowsExpansion: false)
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let t = trackingAreaRef { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                               owner: self, userInfo: nil)
-        addTrackingArea(t)
-        trackingAreaRef = t
+        // inVisibleRect follows resizing automatically. Replacing the area on every
+        // animation frame queues enter/exit events for obsolete window geometry.
+        guard trackingAreaRef == nil else { return }
+        let area = NSTrackingArea(rect: .zero,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingAreaRef = area
     }
 
-    override func mouseEntered(with event: NSEvent) { setHovering(true) }
-    override func mouseExited(with event: NSEvent) { setHovering(false) }
+    override func mouseEntered(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
+    override func mouseExited(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation, allowsExpansion: false) }
+    override func mouseMoved(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
 
-    private func setHovering(_ on: Bool) {
-        guard hovering != on else { return }
-        hovering = on
-        onHover(on)
+    func trackPointer(at screenPoint: NSPoint, allowsExpansion: Bool = true) {
+        // Window frames move during the morph. They are presentation geometry,
+        // not a stable hover boundary. Keep the compact entry region valid all
+        // the way through expansion, including the physical screen's top edge.
+        if let point = manualCollapsePointer {
+            // Geometry-only enter/move events at the click position must not
+            // undo the button. Real pointer movement rearms immediately.
+            if !model.expanded && screenPoint == point { return }
+            manualCollapsePointer = nil
+        }
+        let compact = frameProvider(false)
+        let target = model.expanded ? frameProvider(true).union(compact) : compact
+        let inside = screenPoint.x >= target.minX && screenPoint.x <= target.maxX
+            && screenPoint.y >= target.minY && screenPoint.y <= target.maxY
+        // Resizing can deliver an exit after a manual close. An exit must never
+        // act as a new entry, even if its sampled pointer is over the compact area.
+        if inside && !model.expanded && !allowsExpansion { return }
+        guard hovering != inside || (inside && !model.expanded) else { return }
+        hovering = inside
+        onHover(inside)
     }
 
     // MARK: Factories

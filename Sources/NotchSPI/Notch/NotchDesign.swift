@@ -293,6 +293,11 @@ enum NotchType {
             paragraph.firstLineHeadIndent += cardPadH
             paragraph.headIndent += cardPadH
             paragraph.tailIndent -= cardPadH
+            if answer.isEmpty {
+                paragraph.tabStops = paragraph.tabStops.map {
+                    NSTextTab(textAlignment: $0.alignment, location: $0.location + cardPadH, options: $0.options)
+                }
+            }
             result.addAttribute(.paragraphStyle, value: paragraph, range: range)
         }
         return result
@@ -363,7 +368,7 @@ enum NotchType {
         // height always matches what is drawn — no last-line clip, no trailing gap.
         let attr = answerString(answer, presentation: presentation, inShelf: inShelf)
         return StreamingAnswerView.measure(attr, width: width)
-            + (inShelf && presentation.failed ? NotchLayout.statusInsetV * 2 : 0)
+            + (inShelf && (presentation.failed || answer.isEmpty) ? NotchLayout.statusInsetV * 2 : 0)
     }
 
     // MARK: Composition pieces
@@ -816,6 +821,7 @@ final class NotchControlButton: NSControl {
 
     override var isFlipped: Bool { true }
     override var intrinsicContentSize: NSSize { NSSize(width: 28, height: 24) }
+    override var needsPanelToBecomeKey: Bool { false }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

@@ -5,8 +5,8 @@ import Metal
 // The notch's interior LIGHT FIELD — a real GPU light simulation living inside the obsidian,
 // not a painted gradient. Concept: the slab is machined black glass; the screen's light pools
 // along its lower face and *responds to the tutor*: it breathes faintly while idle, sweeps with
-// a band of focus while the model is thinking (`running`), and ripples with each arriving token
-// while `streaming`. The top third stays pure black so the slab keeps fusing with the hardware
+// a band of focus while the model is thinking (`running`), and acknowledges a completed answer
+// with one soft ripple. The top third stays pure black so the slab keeps fusing with the hardware
 // cutout. Everything is deliberately dim — the field never competes with the answer text; it
 // makes the black feel *alive* instead of printed. Its tint follows the user's accent theme.
 //
@@ -119,7 +119,7 @@ final class NotchLumaView: NSView {
         case .streaming:
             energyTarget = 0.44
             tintTarget = accentRGB()
-            scanTarget = 0                                 // token ripples carry the motion
+            scanTarget = 0                                 // steady light keeps streamed text calm
         case .error:
             energyTarget = 0.30
             tintTarget = SIMD3(1.00, 0.55, 0.22)          // warm amber, never alarm-red
@@ -128,7 +128,7 @@ final class NotchLumaView: NSView {
         updateRunning()
     }
 
-    /// A token just arrived (streaming delta) — one soft pulse through the pool.
+    /// A screenshot landed or an answer completed — one soft pulse through the pool.
     func pulse() {
         flow = min(1.2, flow + 0.55)
         updateRunning()

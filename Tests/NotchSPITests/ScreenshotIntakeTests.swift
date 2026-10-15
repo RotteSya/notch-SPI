@@ -3,6 +3,47 @@ import XCTest
 @testable import NotchSPI
 
 final class ScreenshotIntakeTests: XCTestCase {
+    @MainActor func testTrayFooterCollapsesWithoutMovingCaptureSlots() throws {
+        let model = TutorModel()
+        model.screenshotRoundActive = true
+        model.screenshotRemaining = 3
+        model.screenshots = (0..<4).map { _ in
+            .init(id: UUID(), sessionID: UUID(),
+                  file: QuestionAssetFile(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
+                  sha256: "layout", width: 640, height: 400, byteCount: 0,
+                  targetFingerprint: "fixture", capturedAt: Date())
+        }
+        let tray = ScreenshotTray(frame: .init(x: 0, y: 0, width: 560, height: model.screenshotTrayHeight))
+        func refresh() {
+            tray.frame.size.height = model.screenshotTrayHeight
+            tray.update(assets: model.screenshots, images: [:], flying: [], message: model.screenshotHint,
+                        remaining: model.screenshotRemaining, cancellable: true, notice: model.screenshotNotice,
+                        undoAvailable: model.screenshotUndoAvailable)
+            tray.layoutSubtreeIfNeeded()
+        }
+        refresh()
+        let shortHeight = tray.frame.height
+        let cards = tray.subviews.compactMap { $0 as? NotchActionButton }.filter { $0.subviews.contains { $0 is NSImageView } }
+        XCTAssertEqual(cards.count, 4)
+        let frames = cards.map(\.frame)
+        for card in cards {
+            XCTAssertGreaterThanOrEqual(card.frame.minX, NotchType.cardPadH)
+            XCTAssertLessThanOrEqual(card.frame.maxX, tray.bounds.maxX - NotchType.cardPadH)
+            XCTAssertLessThan(card.frame.maxY, shortHeight)
+        }
+        model.screenshotNotice = "目标已变化，请返回原窗口。"
+        model.screenshotUndoAvailable = true
+        refresh()
+        XCTAssertGreaterThan(tray.frame.height, shortHeight)
+        XCTAssertEqual(cards.map(\.frame), frames, "Footer hints must not move screenshot landing slots")
+        let hint = try XCTUnwrap(tray.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == model.screenshotNotice })
+        XCTAssertLessThanOrEqual(hint.frame.maxY, tray.bounds.maxY)
+        model.screenshotNotice = ""; model.screenshotUndoAvailable = false
+        refresh()
+        XCTAssertEqual(tray.frame.height, shortHeight)
+        XCTAssertEqual(cards.map(\.frame), frames)
+    }
+
     @MainActor private func fixture() throws -> ScreenCapture.Shot {
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 160, pixelsHigh: 100,
             bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
@@ -59,6 +100,35 @@ final class ScreenshotIntakeTests: XCTestCase {
         clock = 2000; controller.qaTickScreenshotRound()
         XCTAssertEqual(batches.count, 1)
         XCTAssertTrue(controller.model.screenshots.isEmpty)
+    }
+
+    @MainActor func testFullRoundNoticeClearsAtSubmissionWithoutChangingDeadlineOrBatch() async throws {
+        let savedMode = Settings.shared.mode
+        defer { Settings.shared.mode = savedMode }
+        let controller = makeController()
+        defer { controller.prepareForTermination() }
+        var clock: Double = 0
+        var batches: [[UUID]] = []
+        controller.qaScreenshotClock = { clock }
+        controller.qaScreenshotSubmit = { assets, _ in
+            batches.append(assets.map(\.id))
+            XCTAssertTrue(controller.model.screenshotNotice.isEmpty)
+        }
+        for count in 1...4 {
+            controller.qaPressScreenshot(multiple: true)
+            try await settle { controller.model.screenshots.count == count && !controller.model.screenshotCapturing }
+        }
+        let ids = controller.model.screenshots.map(\.id)
+        controller.qaPressScreenshot(multiple: true)
+        XCTAssertFalse(controller.model.screenshotNotice.isEmpty)
+        clock = 3.99; controller.qaTickScreenshotRound()
+        XCTAssertTrue(batches.isEmpty)
+        clock = 4; controller.qaTickScreenshotRound(); controller.qaTickScreenshotRound()
+        XCTAssertEqual(batches, [ids])
+        XCTAssertTrue(controller.model.screenshotNotice.isEmpty)
+        controller.model.flyingScreenshots = []
+        controller.model.answer = "FINAL: B"; controller.model.status = .idle
+        XCTAssertTrue(controller.model.usesAnswerShelf)
     }
 
     @MainActor func testCapturePausesAndCancelResumesWhilePreviousRequestIsRunning() async throws {

@@ -115,7 +115,16 @@ enum L10n {
     }
 
     static func reasoningEffortLabel(_ effort: String) -> String {
-        t("思考", "思考", "Thinking") + " · " + effort
+        reasoningEffortName(effort)
+    }
+
+    static func reasoningEffortName(_ effort: String) -> String {
+        switch effort {
+        case "low": return t("轻量", "ライト", "Light")
+        case "high": return t("深入", "詳細", "Deep")
+        case "max": return t("充分", "最大", "Thorough")
+        default: return effort
+        }
     }
 
     // MARK: - Service modes

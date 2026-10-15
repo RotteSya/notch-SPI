@@ -149,7 +149,10 @@ final class NotchOnboardingTests: XCTestCase {
         view.qaAdvanceMorph(by: 0.04)
         XCTAssertFalse(view.onboarding.isHidden)
         XCTAssertEqual(view.onboarding.frame, guideFrame)
-        let click = NSEvent.mouseEvent(with: .leftMouseUp, location: .init(x: 100, y: 16),
+        // The window is still moving. Target the compact region in screen
+        // coordinates, then convert into this intermediate window frame.
+        let clickPoint = panel.convertPoint(fromScreen: NSPoint(x: 100, y: 16))
+        let click = NSEvent.mouseEvent(with: .leftMouseUp, location: clickPoint,
             modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
             eventNumber: 0, clickCount: 1, pressure: 0)!
         view.mouseUp(with: click)

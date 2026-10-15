@@ -68,10 +68,11 @@ final class TutorModel: ObservableObject {
         }
         return renderedAnswer
     }
-    var materialStripHeight: CGFloat {
+    var materialStripHeight: CGFloat { materialStripHeight(width: 560) }
+    func materialStripHeight(width: CGFloat) -> CGFloat {
         guard showMaterialStrip else { return 0 }
-        let base: CGFloat = materials.isEmpty ? CaptureStyle.actionHeight : 74
-        return base + (materialUndoAvailable ? 30 : 0)
+        return QuestionMaterialStrip.requiredHeight(width: width, assetCount: materials.count,
+            explanation: explanationAvailable, personality: mode == "personality", undo: materialUndoAvailable)
     }
     /// Presentation only: preserve capture slots until the last flight lands, then
     /// keep readable content above a compact reference strip throughout streaming.
@@ -90,7 +91,12 @@ final class TutorModel: ObservableObject {
             && screenshotNotice.isEmpty && !screenshotUndoAvailable && isStatusMessage
             && !displayedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    var usesContentShelf: Bool { usesAnswerShelf || usesStatusShelf }
+    var usesReadyShelf: Bool {
+        mode == "tutor" && onboardingStep == nil && !screenshotRoundActive && !screenshotCapturing
+            && flyingScreenshots.isEmpty && answer.isEmpty && captureFeedback.isEmpty
+            && (status == .ready || status == .idle) && !showScreenshotTray
+    }
+    var usesContentShelf: Bool { usesAnswerShelf || usesStatusShelf || usesReadyShelf }
     var showsWaitingSurface: Bool {
         mode == "tutor" && (onboardingStep == nil || onboardingStep?.showsLiveContent == true) && !screenshotRoundActive
             && !screenshotCapturing && flyingScreenshots.isEmpty && showScreenshotTray
@@ -98,7 +104,9 @@ final class TutorModel: ObservableObject {
     }
     var screenshotTrayHeight: CGFloat {
         guard showScreenshotTray else { return 0 }
-        return usesContentShelf ? CaptureStyle.referenceHeight : CaptureStyle.trayHeight
+        if usesContentShelf { return CaptureStyle.referenceHeight }
+        return !screenshotHint.isEmpty || screenshotUndoAvailable
+            ? CaptureStyle.trayDetailHeight : CaptureStyle.trayHeight
     }
     var materialAreaHeight: CGFloat { screenshotTrayHeight + materialStripHeight }
     /// Compact visual status; detailed service messages remain available to accessibility.

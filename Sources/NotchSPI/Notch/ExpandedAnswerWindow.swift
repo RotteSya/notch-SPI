@@ -36,14 +36,14 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         let window = ExpandedAnswerWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = L10n.t("完整答案", "回答の詳細", "Full Answer")
-        window.minSize = NSSize(width: 800, height: 500)
+        window.minSize = NSSize(width: 640, height: 360)
         window.isReleasedWhenClosed = false; window.sharingType = ScreenShareGuard.windowSharingType
         super.init(window: window)
         window.delegate = self
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 1060, height: 720)); window.contentView = root
         let title = NSTextField(labelWithString: L10n.t("完整答案", "回答の詳細", "Full Answer"))
         title.font = InformationHierarchy.pageTitle
-        let subtitle = NSTextField(labelWithString: L10n.t("题图与解释并排查看", "問題画像と解説を並べて表示", "Question images and explanation, side by side"))
+        let subtitle = NSTextField(labelWithString: "")
         subtitle.font = InformationHierarchy.subtitle; subtitle.textColor = .secondaryLabelColor
         let imageScroll = AnswerReaderScrollView()
         for (scroll, stack) in [(imageScroll, images), (answerScroll, answer)] {
@@ -66,18 +66,29 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         for view in [title, subtitle, imageScroll, divider, answerScroll, actions, note] {
             view.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(view)
         }
+        // Establish image availability before choosing a column. An expired or unreadable
+        // file must not reserve half a window for an empty placeholder.
+        let hasImages = renderImages(content)
+        imageScroll.isHidden = !hasImages
+        if !hasImages { images.clear(); images.edgeInsets = NSEdgeInsetsZero }
+        subtitle.stringValue = hasImages
+            ? L10n.t("题图与解释并排查看", "問題画像と解説を並べて表示", "Question images and explanation, side by side")
+            : L10n.t("专注阅读答案与解释 · 当前无可用题图", "回答と解説を表示 · 問題画像はありません", "Answer and explanation · no question images available")
+        let imageWidth = hasImages
+            ? imageScroll.widthAnchor.constraint(equalTo: root.widthAnchor, multiplier: 0.38, constant: -24)
+            : imageScroll.widthAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
+            imageWidth,
             title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             title.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 8),
             imageScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             imageScroll.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            imageScroll.widthAnchor.constraint(equalTo: root.widthAnchor, multiplier: 0.42, constant: -24),
-            imageScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            imageScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 160),
             imageScroll.bottomAnchor.constraint(equalTo: actions.topAnchor, constant: -16),
             divider.leadingAnchor.constraint(equalTo: imageScroll.trailingAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 16),
+            divider.widthAnchor.constraint(equalToConstant: hasImages ? 16 : 0),
             divider.topAnchor.constraint(equalTo: imageScroll.topAnchor), divider.bottomAnchor.constraint(equalTo: imageScroll.bottomAnchor),
             answerScroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
             answerScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
@@ -89,8 +100,20 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
             note.centerYAnchor.constraint(equalTo: actions.centerYAnchor)
         ])
         self.content = content
-        renderImages(content); renderAnswer(content)
-        window.setContentSize(NSSize(width: 1060, height: 720)); window.center()
+        renderAnswer(content)
+        // Size once from laid-out content. Subsequent streaming updates preserve the
+        // user's window frame and reading anchor rather than moving the workspace.
+        let available = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1200, height: 900)
+        let width = min(hasImages ? 1000 : 680, available.width)
+        window.minSize = NSSize(width: min(hasImages ? 800 : 640, available.width),
+                                height: min(360, available.height))
+        window.setContentSize(NSSize(width: width, height: 720))
+        root.layoutSubtreeIfNeeded()
+        let readingHeight = max(answer.fittingSize.height, hasImages ? images.fittingSize.height : 0)
+        let height = min(max(360, ceil(readingHeight) + 156), 720, max(360, available.height - 48))
+        window.setContentSize(NSSize(width: width, height: height))
+        window.center()
+        window.setFrame(window.constrainFrameRect(window.frame, to: window.screen), display: false)
     }
     private lazy var answerFieldEditor: AnswerReadingFieldEditor = {
         let editor = AnswerReadingFieldEditor(); editor.isFieldEditor = true; return editor
@@ -129,21 +152,25 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
         }
     }
 
-    private func renderImages(_ content: ExpandedAnswerContent) {
+    private func renderImages(_ content: ExpandedAnswerContent) -> Bool {
+        var availableCount = 0
         images.addSection(L10n.t("题目截图", "問題画像", "Question images"))
         if content.assets.isEmpty {
             images.addText(L10n.t("当前题图已清理，可在最近查题中查看保存的记录。", "画像の保存期間が終了しました。最近の問題をご確認ください。", "The current images have expired. Check saved entries in Recent Questions."), size: 14)
         }
         for (index, asset) in content.assets.enumerated() {
+            guard let loaded = ScreenshotThumbnail.load(asset.file.url, maxPixelSize: 2400) else { continue }
+            availableCount += 1
             images.addText("\(index + 1) / \(content.assets.count)", size: 12, color: .secondaryLabelColor)
             let image = AnswerReadingImage()
-            image.image = ScreenshotThumbnail.load(asset.file.url, maxPixelSize: 2400)
+            image.image = loaded
             image.imageScaling = .scaleProportionallyUpOrDown
             image.setAccessibilityLabel(L10n.t("题图 \(index + 1)", "問題画像 \(index + 1)", "Question image \(index + 1)"))
             images.addFullWidth(image)
             let size = image.image?.size ?? NSSize(width: 600, height: 400)
             image.heightAnchor.constraint(equalTo: image.widthAnchor, multiplier: max(0.05, size.height / max(1, size.width))).isActive = true
         }
+        return availableCount > 0
     }
 
     private func renderAnswer(_ content: ExpandedAnswerContent) {

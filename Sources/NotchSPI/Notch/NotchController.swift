@@ -51,6 +51,17 @@ final class NotchController: NSObject {
     }
     func qaRefreshScreenshotLayout() { resizeToFit() }
     func qaPinDesignPreview() { pinned = true }
+    func qaTrackPointer(_ point: NSPoint, allowsExpansion: Bool = true) {
+        notchView.trackPointer(at: point, allowsExpansion: allowsExpansion)
+    }
+    func qaClickCompact() {
+        let compact = frame(expanded: false)
+        notchView.expandFromClick(at: NSPoint(x: compact.midX, y: compact.midY))
+    }
+    func qaHoverFrame(expanded: Bool) -> NSRect { frame(expanded: expanded) }
+    var qaPendingCollapse: DispatchWorkItem? { collapseWork }
+    func qaUseManualHoverAnimation() { notchView.qaUseManualMorphClock() }
+
     private var qaHoldingMotion = false
     @objc func qaResetMotionReview() {
         qaHoldingMotion = true
@@ -101,6 +112,7 @@ final class NotchController: NSObject {
     private var runGeneration: UInt64 = 0
     private var visible = true
     private var collapseWork: DispatchWorkItem?
+    private var collapseGeneration: UInt64 = 0
     private var streamedResizeWork: DispatchWorkItem?
     /// Auto-session brain (pure state machine); the controller owns the timer + capture I/O.
     private let autoEngine = AutoSessionEngine()
@@ -222,7 +234,7 @@ final class NotchController: NSObject {
         }
         view.onCancelScreenshotRound = { [weak self] in self?.cancelRoundByUser() }
         view.onExplanation = { [weak self] in self?.showExplanation() }
-        view.onExpandAnswer = { [weak self] in self?.openExpandedAnswer() }
+        view.onCollapse = { [weak self] in self?.collapseByUser() }
         view.onAddMaterial = { [weak self] in self?.saveMaterial() }
         view.onNewGroup = { [weak self] in self?.newQuestionGroup() }
         view.onSelectRegion = { [weak self] in
@@ -380,7 +392,7 @@ final class NotchController: NSObject {
     }
 
     private func presentOnboarding(_ step: NotchOnboardingStep) {
-        collapseWork?.cancel()
+        cancelPendingCollapse()
         visible = true; panel.orderFrontRegardless()
         panel.onboardingActive = true
         setOnboardingStep(step)
@@ -411,7 +423,7 @@ final class NotchController: NSObject {
         model.onboardingPracticeFailed = false
         model.onboardingPermissionGranted = onboardingHasAccess
         onboardingProgress.save(step)
-        collapseWork?.cancel()
+        cancelPendingCollapse()
         setExpanded(true)
         resizeToFit()
     }
@@ -499,7 +511,7 @@ final class NotchController: NSObject {
         // the notch starts from the normal idle state rather than the tutorial answer.
         if collapse { setExpanded(false) }
         pinned = false
-        collapseWork?.cancel(); collapseWork = nil
+        cancelPendingCollapse()
         invalidateQuestionContext(clearAnswer: true)
         model.answerLatency = nil
         endOnboardingPresentation()
@@ -831,13 +843,6 @@ final class NotchController: NSObject {
         recent.target = self
         recent.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)
         menu.addItem(recent)
-        if model.canExpandAnswer {
-            let full = NSMenuItem(title: L10n.t("展开查看完整答案…", "回答の詳細を開く…", "Open Full Answer…"),
-                                  action: #selector(openExpandedAnswer), keyEquivalent: "")
-            full.target = self
-            full.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: nil)
-            menu.addItem(full)
-        }
         menu.addItem(.separator())
         if Settings.shared.mode != "personality" {
             if currentRunSnapshot?.screenQuery != nil, !running, model.status == .error {
@@ -882,7 +887,7 @@ final class NotchController: NSObject {
 
         // Depth only applies to tutor mode; hide it in personality mode.
         if Settings.shared.mode != "personality" {
-            let depthHeader = NSMenuItem(title: L10n.t("思考程度", "思考の強さ", "Reasoning Effort"),
+            let depthHeader = NSMenuItem(title: L10n.t("思考强度", "思考の強さ", "Reasoning Effort"),
                                          action: nil, keyEquivalent: "")
             depthHeader.isEnabled = false
             menu.addItem(depthHeader)
@@ -1421,6 +1426,10 @@ final class NotchController: NSObject {
     }
 
     private func submitScreenshots(_ assets: [ContextAsset], mode: String) {
+        // Collection-only notices have served their purpose once this batch is accepted.
+        // Keeping them would mask the completed answer shelf after a fifth key press.
+        intakeNotice = ""
+        model.screenshotNotice = ""
         let latency = intakeLatency
         intakeLatency = nil
         #if DEBUG
@@ -1602,7 +1611,7 @@ final class NotchController: NSObject {
         let generation = intakeGeneration
         let target = Settings.shared.captureTarget
         let captureContext = ScreenCapture.Context.current(target: target)
-        collapseWork?.cancel()
+        cancelPendingCollapse()
         visible = true; panel.orderFrontRegardless(); setExpanded(true)
         model.screenshotRoundActive = true
         model.screenshotStatus = L10n.t("正在捕获目标…", "画像をキャプチャ中…", "Capturing target…")
@@ -1864,7 +1873,7 @@ final class NotchController: NSObject {
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                 presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
-            return min(step.height + model.materialAreaHeight + max(50, answerH) + NotchLayout.answerBottomPad,
+            return min(step.height + model.screenshotTrayHeight + model.materialStripHeight(width: width) + max(50, answerH) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
@@ -1872,7 +1881,7 @@ final class NotchController: NSObject {
         let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
         let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                                              presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
-        let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.materialAreaHeight
+        let total = NotchLayout.headerHeight + answerH + NotchLayout.answerBottomPad + model.screenshotTrayHeight + model.materialStripHeight(width: width)
         return min(max(total, minExpandedHeight), maxExpandedHeight)
     }
 
@@ -1902,7 +1911,15 @@ final class NotchController: NSObject {
 
     // MARK: - Expand / collapse
 
+    func collapseByUser() {
+        hovering = false
+        notchView.prepareForManualCollapse()
+        cancelPendingCollapse()
+        setExpanded(false)
+    }
+
     func setExpanded(_ on: Bool) {
+        if on { cancelPendingCollapse() }
         guard model.expanded != on else { return }
         // NotchView observes this and drives the whole morph — panel frame included — on one
         // display-link clock, so frame, radii, light field and content can never drift apart.
@@ -1915,17 +1932,24 @@ final class NotchController: NSObject {
         #endif
         hovering = inside
         if inside {
-            collapseWork?.cancel()
             setExpanded(true)
         } else if model.onboardingStep == nil && !pinned && !screenshotRound.isActive {
             scheduleCollapse(after: 0.45)
         }
     }
 
-    private func scheduleCollapse(after delay: TimeInterval) {
+    private func cancelPendingCollapse() {
+        collapseGeneration &+= 1
         collapseWork?.cancel()
+        collapseWork = nil
+    }
+
+    private func scheduleCollapse(after delay: TimeInterval) {
+        cancelPendingCollapse()
+        let generation = collapseGeneration
         let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.collapseGeneration == generation else { return }
+            self.collapseWork = nil
             if self.model.onboardingStep == nil && !self.pinned && !self.hovering && !self.screenshotRound.isActive && self.intakeTask == nil { self.setExpanded(false) }
         }
         collapseWork = work

@@ -5,6 +5,52 @@ import XCTest
 @testable import NotchSPI
 
 final class AnswerLayoutTests: XCTestCase {
+    @MainActor func testReadyShelfKeepsShortcutColumnsAndYieldsToCapture() throws {
+        let model = TutorModel()
+        model.status = .ready
+        XCTAssertTrue(model.usesReadyShelf)
+        let presentation = NotchType.presentation(for: model)
+        let original = NotchType.answerString("", presentation: presentation)
+        let shelf = NotchType.answerString("", presentation: presentation, inShelf: true)
+        XCTAssertEqual(original.string, shelf.string)
+        let before = try XCTUnwrap(original.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        let after = try XCTUnwrap(shelf.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        XCTAssertEqual(after.headIndent - before.headIndent, NotchType.cardPadH)
+        XCTAssertEqual(try XCTUnwrap(after.tabStops.first).location - (try XCTUnwrap(before.tabStops.first).location), NotchType.cardPadH)
+        for width: CGFloat in [320, 560] {
+            XCTAssertEqual(NotchType.answerHeight("", presentation: presentation, width: width, inShelf: true),
+                           StreamingAnswerView.measure(shelf, width: width) + NotchLayout.statusInsetV * 2)
+        }
+        model.screenshotCapturing = true
+        XCTAssertFalse(model.usesReadyShelf)
+        model.screenshotCapturing = false; model.screenshotRoundActive = true
+        XCTAssertFalse(model.usesReadyShelf)
+        model.screenshotRoundActive = false; model.status = .running
+        XCTAssertFalse(model.usesReadyShelf)
+    }
+
+    @MainActor func testConclusionIsImmediatelyReadableIncludingEmojiAndMultilineUpdates() throws {
+        let view = StreamingAnswerView()
+        for text in ["FINAL: ✅ B. 60 km/h", "FINAL: ✅ B. 60 km/h\n第二空：120 km\n第三空：2 h"] {
+            let attr = NotchType.answerString(text,
+                presentation: .init(mode: "tutor", depth: "brief", finished: false, revealed: false), inShelf: true)
+            let before = CACurrentMediaTime()
+            view.setAnswer(attr, isPlaceholder: false)
+            XCTAssertEqual(view.qaGlyphBirths.count, attr.length)
+            var conclusionLength = 0
+            attr.enumerateAttribute(.nspiAnswerCard, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+                guard value != nil else { return }
+                conclusionLength += range.length
+                for offset in range.location..<NSMaxRange(range) {
+                    XCTAssertLessThan(view.qaGlyphBirths[offset], before - 0.18,
+                                      "Answer glyphs must not wait behind the explanation animation")
+                }
+            }
+            XCTAssertGreaterThan(conclusionLength, 0)
+            XCTAssertFalse((view.accessibilityValue() as? String ?? "").contains("FINAL:"))
+        }
+    }
+
     @MainActor func testDisplayedTextMeasurementUpdatesForStyleWidthAndContentChanges() {
         let view = StreamingAnswerView(frame: .zero)
         let text = Array(repeating: "Long answer wraps across the available width.", count: 5).joined(separator: " ")
@@ -77,7 +123,7 @@ final class AnswerLayoutTests: XCTestCase {
         model.screenshotRoundActive = true
         model.answer = "FINAL: B"
         XCTAssertTrue(model.hidesAnswer, "A prior answer must remain hidden while collecting a new question.")
-        let collectionHeight = model.screenshotTrayHeight
+        let collectionHeight = CaptureStyle.trayHeight
         model.screenshots = [.init(id: UUID(), sessionID: UUID(),
             file: QuestionAssetFile(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             sha256: "fixture", width: 640, height: 400, byteCount: 0, targetFingerprint: "fixture", capturedAt: Date())]

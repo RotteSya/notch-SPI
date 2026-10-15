@@ -115,6 +115,18 @@ final class StreamingAnswerView: NSView {
                 next.append(now + min(Self.staggerCap, Double(i - common) * Self.stagger))
             }
         }
+        // Conclusions are useful immediately, including multi-line answers. Only the
+        // supporting explanation receives the glyph entrance; never queue answer digits.
+        if let cardRange {
+            var offset = 0
+            for (index, character) in newChars.enumerated() {
+                let length = String(character).utf16.count
+                if NSIntersectionRange(NSRange(location: offset, length: length), cardRange).length > 0 {
+                    next[index] = now - 10
+                }
+                offset += length
+            }
+        }
         plain = new
         births = next
         utf16Births = Self.utf16BirthTable(plain: plain, births: births)
@@ -370,6 +382,7 @@ final class StreamingAnswerView: NSView {
     }
 
     #if DEBUG
+    var qaGlyphBirths: [CFTimeInterval] { utf16Births }
     /// Visual-QA: where the toggle currently sits (view coords), for the synthetic click hook.
     func qaReasoningToggleRect() -> CGRect? { toggleRange.flatMap { lineRects(for: $0).first } }
     #endif

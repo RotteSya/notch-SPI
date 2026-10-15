@@ -113,7 +113,7 @@ final class ScreenshotTray: NSView {
             ordinals[asset.id]?.stringValue = "\(index + 1)"
             card.setAccessibilityLabel(L10n.t("预览截图 \(index + 1)", "画像 \(index + 1) をプレビュー", "Preview screenshot \(index + 1)"))
             card.toolTip = card.accessibilityLabel()
-            removeButtons[asset.id]?.isHidden = !cancellable
+            removeButtons[asset.id]?.isHidden = !cancellable || flying.contains(asset.id)
             removeButtons[asset.id]?.isEnabled = !capturing
             removeButtons[asset.id]?.setAccessibilityLabel(L10n.t("删除截图 \(index + 1)", "画像 \(index + 1) を削除", "Remove screenshot \(index + 1)"))
             thumbnails[asset.id]?.image = images[asset.id]
@@ -139,6 +139,7 @@ final class ScreenshotTray: NSView {
             ? L10n.t("题图 \(assets.count)/4", "画像 \(assets.count)/4", "Images \(assets.count)/4")
             : L10n.t("题图 \(assets.count)", "画像 \(assets.count)枚", "Images \(assets.count)")
         if status.stringValue != title { status.stringValue = title }
+        status.font = compact ? CaptureStyle.caption : CaptureStyle.status
         nextSlot.isHidden = !cancellable || assets.count >= 4
         let hint: String
         if !notice.isEmpty { hint = notice }
@@ -163,7 +164,7 @@ final class ScreenshotTray: NSView {
         super.draw(dirtyRect)
         if compact {
             NotchPalette.rule.setFill()
-            NSRect(x: 16, y: 0, width: max(0, bounds.width - 32), height: 0.5).fill()
+            NSRect(x: NotchType.cardPadH, y: 0, width: max(0, bounds.width - 2 * NotchType.cardPadH), height: 0.5).fill()
         }
     }
 
@@ -208,16 +209,18 @@ final class ScreenshotTray: NSView {
         // Slots stay fixed through capture, countdown and submission. The flight and
         // preview use the same aspect-fit geometry, including portrait source pages.
         if compact {
-            let inset: CGFloat = 16
+            let inset = NotchType.cardPadH
             let gap: CGFloat = 8
-            let width = min(64, max(24, (bounds.width - 2 * inset - 90 - 3 * gap) / 4))
+            let width = min(CaptureStyle.referenceThumbnail.width, max(24, (bounds.width - 2 * inset - 90 - 3 * gap) / 4))
             for (index, id) in ids.enumerated() {
                 guard let card = cards[id] else { continue }
                 let oldBounds = card.layer?.presentation()?.bounds ?? card.bounds
                 let oldPosition = card.layer?.presentation()?.position ?? card.layer?.position
-                card.frame = NSRect(x: inset + CGFloat(index) * (width + gap), y: 12, width: width, height: 38)
+                card.frame = NSRect(x: inset + CGFloat(index) * (width + gap), y: 9, width: width, height: CaptureStyle.referenceThumbnail.height)
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 3, dy: 3)
                 ordinals[id]?.isHidden = ids.count == 1
+                ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 8, weight: .semibold)
+                ordinals[id]?.frame = NSRect(x: 3, y: 3, width: 12, height: 12)
                 if animateReferenceLayout, let layer = card.layer, let oldPosition {
                     let move = CABasicAnimation(keyPath: "position")
                     move.fromValue = NSValue(point: oldPosition); move.toValue = NSValue(point: layer.position)
@@ -230,17 +233,26 @@ final class ScreenshotTray: NSView {
                 }
             }
             let labelX = inset + CGFloat(ids.count) * (width + gap) + 4
-            status.frame = NSRect(x: labelX, y: 22, width: max(0, bounds.width - labelX - inset), height: 18)
+            status.alignment = .right
+            status.frame = NSRect(x: labelX, y: 15, width: max(0, bounds.width - labelX - inset), height: 18)
             animateReferenceLayout = false
             return
         }
-        for id in ids { cards[id]?.layer?.removeAnimation(forKey: "reference-layout"); ordinals[id]?.isHidden = false }
+        for id in ids {
+            cards[id]?.layer?.removeAnimation(forKey: "reference-layout")
+            ordinals[id]?.isHidden = false
+            ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+            ordinals[id]?.frame = NSRect(x: 5, y: 5, width: 19, height: 15)
+        }
+        status.alignment = .left
+        let inset = NotchType.cardPadH
+        let contentWidth = max(0, bounds.width - inset * 2)
         animateReferenceLayout = false
         let gap = CaptureStyle.cardGap
-        let cardSize = NSSize(width: min(CaptureStyle.cardSize.width, max(0, (bounds.width - 3 * gap) / 4)),
+        let cardSize = NSSize(width: min(CaptureStyle.cardSize.width, max(0, (contentWidth - 3 * gap) / 4)),
                               height: CaptureStyle.cardSize.height)
         func slot(_ index: Int) -> NSRect {
-            NSRect(x: CGFloat(index) * (cardSize.width + gap), y: 30,
+            NSRect(x: inset + CGFloat(index) * (cardSize.width + gap), y: 38,
                    width: cardSize.width, height: cardSize.height)
         }
         if reorderPending { reorderFrames.removeAll(); removeFrames.removeAll() }
@@ -261,12 +273,12 @@ final class ScreenshotTray: NSView {
             }
         }
         nextSlot.frame = slot(min(ids.count, 3))
-        status.frame = NSRect(x: 0, y: 3, width: max(0, bounds.width - (cancel.isHidden ? 0 : 204)), height: 18)
-        cancel.frame = NSRect(x: max(0, bounds.width - 90), y: 0, width: 90, height: 24)
-        submit.frame = NSRect(x: max(0, bounds.width - 190), y: 0, width: 90, height: 24)
-        undo.frame = NSRect(x: max(0, bounds.width - 100), y: 120, width: 100, height: 26)
-        detail.frame = NSRect(x: 0, y: 120, width: max(0, bounds.width - (undo.isHidden ? 0 : 108)), height: 30)
-        progress.frame = NSRect(x: 0, y: 113, width: bounds.width * fraction, height: 2)
+        status.frame = NSRect(x: inset, y: 11, width: max(0, contentWidth - (cancel.isHidden ? 0 : 204)), height: 18)
+        cancel.frame = NSRect(x: max(inset, bounds.width - inset - 90), y: 8, width: 90, height: 24)
+        submit.frame = NSRect(x: max(inset, bounds.width - inset - 190), y: 8, width: 90, height: 24)
+        undo.frame = NSRect(x: max(inset, bounds.width - inset - 100), y: 128, width: 100, height: 26)
+        detail.frame = NSRect(x: inset, y: 128, width: max(0, contentWidth - (undo.isHidden ? 0 : 108)), height: 30)
+        progress.frame = NSRect(x: inset, y: 121, width: contentWidth * fraction, height: 2)
         if reorderPending {
             reorderPending = false
             reorder.set(0)

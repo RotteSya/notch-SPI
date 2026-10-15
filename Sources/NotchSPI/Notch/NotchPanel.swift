@@ -11,6 +11,7 @@ final class NotchPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
+        acceptsMouseMovedEvents = true
         // Above the menu bar so the slab hangs from the notch.
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]

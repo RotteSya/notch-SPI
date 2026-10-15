@@ -3,6 +3,29 @@ import XCTest
 @testable import NotchSPI
 
 final class CaptureExperienceTests: XCTestCase {
+    @MainActor func testManualCollapsePreservesAnswerAndCollectionAndKeepsHistoryEntry() {
+        let controller = NotchController(activateServices: false)
+        defer { controller.prepareForTermination() }
+        let model = controller.model
+        model.status = .idle; model.answer = "FINAL: B"; model.explanation = "Existing explanation"
+        controller.setExpanded(true)
+        controller.collapseByUser()
+        XCTAssertFalse(model.expanded)
+        XCTAssertEqual(model.answer, "FINAL: B")
+        XCTAssertEqual(model.explanation, "Existing explanation")
+        let actions = controller.qaScreenshotMenu().items.compactMap(\.action)
+        XCTAssertTrue(actions.contains(NSSelectorFromString("openRecentQuestions")))
+        XCTAssertFalse(actions.contains(NSSelectorFromString("openExpandedAnswer")))
+        model.screenshotRoundActive = true; model.screenshotRemaining = 2.5
+        controller.setExpanded(true)
+        controller.collapseByUser()
+        XCTAssertFalse(model.expanded)
+        XCTAssertTrue(model.screenshotRoundActive)
+        XCTAssertEqual(model.screenshotRemaining, 2.5)
+        controller.setExpanded(true)
+        XCTAssertTrue(model.expanded)
+    }
+
     @MainActor func testQuickMenuKeepsDirectActionsAndNeverHasEmptySections() {
         let controller = NotchController(activateServices: false)
         defer { controller.prepareForTermination() }
@@ -29,7 +52,7 @@ final class CaptureExperienceTests: XCTestCase {
         model.screenshotRoundActive = true
         XCTAssertTrue(model.hidesAnswer)
         XCTAssertFalse(model.showMaterialStrip)
-        XCTAssertEqual(model.materialAreaHeight, CaptureStyle.trayHeight)
+        XCTAssertEqual(model.materialAreaHeight, CaptureStyle.trayDetailHeight)
         model.screenshotCapturing = true
         XCTAssertFalse(model.captureHeading.isEmpty)
         model.screenshotRoundActive = false

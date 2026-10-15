@@ -62,18 +62,47 @@ final class QuestionMaterialStrip: NSView {
         preview?.onRemove = { [weak self] in self?.onRemove?(id) }
         preview?.present()
     }
+    static func actionTitles(explanation: Bool, personality: Bool, undo: Bool) -> [String] {
+        var titles = [CaptureAction.multiple.title,
+                      personality ? CaptureAction.personality.title : CaptureAction.single.title,
+                      L10n.t("清空题图与答案", "画像と回答を消去", "Clear images and answer")]
+        if undo { titles.insert(L10n.t("撤销删除", "削除を元に戻す", "Undo removal"), at: 0) }
+        if explanation { titles.insert(L10n.t("查看解释", "解説を見る", "Explanation"), at: 0) }
+        return titles
+    }
+
+    /// One geometry calculation serves both panel sizing and visible controls.
+    static func frames(width: CGFloat, assetCount: Int, titles: [String]) -> [NSRect] {
+        let inset = NotchType.cardPadH
+        let available = max(0, width - inset * 2)
+        var frames: [NSRect] = []
+        var x = inset, y: CGFloat = 8, rowHeight: CGFloat = 0
+        let sizes = Array(repeating: NSSize(width: 56, height: 66), count: assetCount)
+            + titles.map { NSSize(width: max(74, ceil(($0 as NSString).size(withAttributes: [.font: CaptureStyle.caption]).width) + 20), height: 26) }
+        for size in sizes {
+            let w = min(size.width, available)
+            if x > inset, x + w > width - inset {
+                x = inset; y += rowHeight + 8; rowHeight = 0
+            }
+            frames.append(NSRect(x: x, y: y, width: w, height: size.height))
+            x += w + 8
+            rowHeight = max(rowHeight, size.height)
+        }
+        return frames
+    }
+
+    static func requiredHeight(width: CGFloat, assetCount: Int, explanation: Bool, personality: Bool, undo: Bool) -> CGFloat {
+        let rects = frames(width: width, assetCount: assetCount,
+                           titles: actionTitles(explanation: explanation, personality: personality, undo: undo))
+        return (rects.map(\.maxY).max() ?? 0) + 8
+    }
+
     override func layout() {
         super.layout()
-        var x: CGFloat = 0
-        var actionY: CGFloat = assets.isEmpty ? 4 : 24
+        let rects = Self.frames(width: bounds.width, assetCount: assets.count,
+                                titles: buttons.dropFirst(assets.count).map(\.title))
         for (index, button) in buttons.enumerated() {
-            let width: CGFloat = index < assets.count ? 56 : max(74, button.intrinsicContentSize.width + 4)
-            if index >= assets.count, x + width > bounds.width, undoAvailable {
-                x = 0; actionY = assets.isEmpty ? actionY + 30 : 74
-            }
-            button.frame = NSRect(x: x, y: index < assets.count ? 2 : actionY,
-                                  width: width, height: index < assets.count ? 66 : 26)
-            x += width + 6
+            button.frame = rects[index]
             if index < removeButtons.count {
                 removeButtons[index].frame = NSRect(x: button.frame.maxX - 20, y: button.frame.minY, width: 20, height: 20)
             }

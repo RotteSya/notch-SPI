@@ -3,6 +3,24 @@ import XCTest
 @testable import NotchSPI
 
 final class MaterialActionAccessibilityTests: XCTestCase {
+    @MainActor func testActionRowsWrapInsideSharedMeasuredHeight() {
+        for width: CGFloat in [320, 440, 560] {
+            for count in [0, 1, 4] {
+                let titles = QuestionMaterialStrip.actionTitles(explanation: true, personality: false, undo: true)
+                let frames = QuestionMaterialStrip.frames(width: width, assetCount: count, titles: titles)
+                let height = QuestionMaterialStrip.requiredHeight(width: width, assetCount: count,
+                    explanation: true, personality: false, undo: true)
+                XCTAssertEqual(frames.count, count + 5)
+                for (index, frame) in frames.enumerated() {
+                    XCTAssertGreaterThanOrEqual(frame.minX, NotchType.cardPadH)
+                    XCTAssertLessThanOrEqual(frame.maxX, width - NotchType.cardPadH)
+                    XCTAssertLessThanOrEqual(frame.maxY, height - 8)
+                    for other in frames.dropFirst(index + 1) { XCTAssertFalse(frame.intersects(other)) }
+                }
+            }
+        }
+    }
+
     @MainActor func testHidingTheLastMaterialReleasesItsFileFromTheCompleteView() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
