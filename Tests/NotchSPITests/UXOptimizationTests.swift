@@ -107,7 +107,7 @@ final class UXOptimizationTests: XCTestCase {
         L10n.setting = .zhHans
         Settings.shared.captureCombo = HotkeyCombo(keyCode: 18, modifiers: UInt32(cmdKey | optionKey), label: "")
         Settings.shared.captureTargetBundleID = "invalid.not.running"; Settings.shared.captureTargetName = "练习应用"
-        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 276))
+        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: NotchOnboardingView.contentHeight(for: .permission, width: 600)))
         view.update(step: .permission, granted: false, denied: true, failed: false)
         view.layoutSubtreeIfNeeded()
         let text = collect(view)

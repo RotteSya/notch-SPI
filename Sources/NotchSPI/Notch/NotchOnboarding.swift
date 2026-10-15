@@ -144,6 +144,7 @@ final class NotchOnboardingView: NSView {
         illustration.phase = step
         note.isHidden = step.showsLiveContent || step == .welcome || step == .practice || step == .capture
         detail.isHidden = false
+        detail.maximumNumberOfLines = step == .permission ? 0 : 3
         targetButton.isHidden = step != .permission
         targetButton.title = t("更改截图目标", "撮影対象を変更", "Change capture target")
         shortcut.isHidden = true
@@ -165,8 +166,7 @@ final class NotchOnboardingView: NSView {
             note.stringValue = t("一次捕获 → 一份答案 → 继续你的学习", "キャプチャ → 答え → 学習を続ける", "Capture → Answer → Keep learning")
         case .permission:
             heading.stringValue = granted ? t("屏幕已连接。", "画面に接続しました。", "Your screen is connected.") : t("先允许读取屏幕上的题。", "画面の問題を読み取る許可を。", "Allow access to your question.")
-            let target = captureTargetLabel
-            detail.stringValue = t("当前捕获目标：\(target)", "キャプチャ対象：\(target)", "Capture target: \(target)") + "\n" + CaptureProcessing.channelNote
+            detail.stringValue = Self.permissionDetailText
             primary.title = granted ? t("继续", "続ける", "Continue") : denied ? t("打开系统设置", "システム設定を開く", "Open System Settings") : t("允许屏幕访问", "画面へのアクセスを許可", "Allow screen access")
             secondary.title = t("暂时跳过", "今はスキップ", "Skip for now")
             note.stringValue = denied && !granted ? t("尚未授权。开启权限后返回；若系统要求，请重启应用。", "未許可です。設定後に戻ってください。必要ならアプリを再起動。", "Not granted yet. Return after enabling access; relaunch if macOS asks.") : t("下一步会在浏览器中打开练习题。", "次にブラウザで練習問題を開きます。", "Next, a practice question opens in your browser.")
@@ -219,18 +219,19 @@ final class NotchOnboardingView: NSView {
     override func layout() {
         super.layout()
         guard let step else { return }
-        let w = bounds.width, inset: CGFloat = 30
+        let w = bounds.width, inset = NotchLayout.contentInsetH + NotchType.cardPadH
+        let contentHeight = Self.contentHeight(for: step, width: w)
         copyPlate.frame = bounds
-        surface.frame = NSRect(x: 12, y: 36 + bodyAdjustment,
-                               width: max(0, w - 24), height: max(0, step.height - 36 - (step.showsLiveContent ? 8 : 0)))
+        surface.frame = NotchLayout.shelfFrame(width: w, top: NotchLayout.headerHeight + bodyAdjustment,
+            height: contentHeight - NotchLayout.headerHeight - (step.showsLiveContent ? 8 : NotchLayout.answerBottomPad))
         eyebrow.frame = .init(x: 44, y: 12, width: 270, height: 18)
         closeButton.frame = .init(x: w - 115, y: 6, width: 96, height: 28)
         heading.frame = .init(x: inset, y: 47, width: w - inset * 2, height: 38)
         // The same target stays under the pointer across every step and the practice handoff.
         primary.frame = .init(x: w - inset - 232, y: 98, width: 232, height: 40)
-        secondary.frame = .init(x: 80, y: 101,
+        secondary.frame = .init(x: 88, y: 101,
                                 width: min(secondary.intrinsicContentSize.width, 220), height: 34)
-        back.frame = .init(x: 18, y: 101, width: 62, height: 34)
+        back.frame = .init(x: inset - 10, y: 101, width: 62, height: 34)
         shortcut.frame = .init(x: 104, y: 112, width: max(0, w - 376), height: 20)
         languages.frame = .init(x: inset, y: 104, width: 115, height: 28)
         detail.frame = .init(x: inset, y: 158, width: w - inset * 2, height: step.showsLiveContent ? 32 : 54)
@@ -241,7 +242,7 @@ final class NotchOnboardingView: NSView {
         if step == .welcome { detail.frame = .init(x: inset, y: 142, width: w - inset * 2, height: 20); detail.font = .systemFont(ofSize: 12) }
         if step == .permission { detail.frame = .init(x: inset, y: 172, width: w - inset * 2, height: 60) }
         if step.showsLiveContent {
-            let inset = NotchLayout.contentInsetH
+            let inset = NotchLayout.contentInsetH + NotchType.cardPadH
             let actionWidth: CGFloat = 148
             heading.frame = .init(x: inset, y: 44, width: max(0, w - inset * 2 - actionWidth - 16), height: 28)
             primary.frame = .init(x: w - inset - actionWidth, y: 41, width: actionWidth, height: 34)
@@ -253,13 +254,13 @@ final class NotchOnboardingView: NSView {
             detail.font = .systemFont(ofSize: 13)
         }
         if step == .permission {
-            detail.frame.size.height = 60
-            note.frame = .init(x: inset, y: 236, width: w - inset * 2, height: 36)
+            detail.frame.size.height = Self.permissionDetailHeight(width: w)
+            note.frame = .init(x: inset, y: detail.frame.maxY + 4, width: w - inset * 2, height: 36)
         }
-        // Keep the guide's original body positions; only adjust a body that would
-        // actually touch an unusually tall camera housing.
+        // Move the body with the shared card top, retaining additional clearance
+        // for an unusually tall camera housing.
         for child in [heading, detail, note, illustration, primary, secondary, back, languages, shortcut, targetButton] {
-            child.frame.origin.y += bodyAdjustment
+            child.frame.origin.y += bodyAdjustment + Self.bodyTopOffset
         }
         eyebrow.frame.origin.y += headerInset
         closeButton.frame.origin.y += headerInset
@@ -276,7 +277,27 @@ final class NotchOnboardingView: NSView {
 
     }
 
-    private var captureTargetLabel: String {
+    private static let bodyTopOffset = NotchLayout.headerHeight - 36
+
+    static func contentHeight(for step: NotchOnboardingStep, width: CGFloat) -> CGFloat {
+        step.height + bodyTopOffset + NotchLayout.answerBottomPad
+            + (step == .permission ? permissionDetailHeight(width: width) - 60 : 0)
+    }
+
+    private static var permissionDetailText: String {
+        let target = captureTargetLabel
+        return L10n.t("当前捕获目标：\(target)", "キャプチャ対象：\(target)", "Capture target: \(target)")
+            + "\n" + CaptureProcessing.channelNote
+    }
+
+    private static func permissionDetailHeight(width: CGFloat) -> CGFloat {
+        let field = NSTextField(wrappingLabelWithString: permissionDetailText)
+        field.font = .systemFont(ofSize: 13)
+        field.maximumNumberOfLines = 0
+        return max(60, ceil(field.sizeThatFits(NSSize(width: max(1, width - (NotchLayout.contentInsetH + NotchType.cardPadH) * 2), height: 10000)).height))
+    }
+
+    private static var captureTargetLabel: String {
         guard let id = Settings.shared.captureTargetBundleID else {
             return L10n.t("整个屏幕", "画面全体", "Entire screen")
         }

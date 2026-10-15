@@ -820,7 +820,7 @@ final class NotchView: NSView {
         // Answer fills below the header; the panel height is sized by the controller, so a long
         // answer scrolls within this fixed region and a short one hugs it.
         let bodyAdjustment = screenLayout?.bodyAdjustment(onboarding: model.onboardingStep != nil) ?? 0
-        let onboardingHeight = (model.onboardingContentHeight ?? 0) + bodyAdjustment
+        let onboardingHeight = (model.onboardingContentHeight(width: size.width) ?? 0) + bodyAdjustment
         onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
         let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight + bodyAdjustment : onboardingHeight
         let actionHeight = model.materialStripHeight(width: max(0, size.width - inset * 2))
@@ -845,8 +845,7 @@ final class NotchView: NSView {
         let intakeSurface = model.showsWaitingSurface || (model.mode == "tutor"
             && model.onboardingStep == nil && model.screenshotRoundActive)
         answerShelf.isHidden = !(shelf || intakeSurface)
-        answerShelf.frame = CGRect(x: inset, y: headerHeight,
-                                  width: w, height: h + trayHeight)
+        answerShelf.frame = NotchLayout.shelfFrame(width: size.width, top: headerHeight, height: h + trayHeight)
         let now = CACurrentMediaTime()
         if shelf != laidOutShelf {
             screenshotTray.layer?.removeAnimation(forKey: "reference-handoff")

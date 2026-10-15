@@ -1869,11 +1869,11 @@ final class NotchController: NSObject {
 
     private func expandedCardHeight() -> CGFloat {
         if let step = model.onboardingStep {
-            guard step.showsLiveContent else { return model.onboardingContentHeight ?? step.height }
+            guard step.showsLiveContent else { return model.onboardingContentHeight(width: screenLayout?.cardWidth ?? expandedWidth) ?? step.height }
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                 presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
-            return min(step.height + model.screenshotTrayHeight + model.materialStripHeight(width: width) + max(50, answerH) + NotchLayout.answerBottomPad,
+            return min((model.onboardingContentHeight(width: screenLayout?.cardWidth ?? expandedWidth) ?? step.height) + model.screenshotTrayHeight + model.materialStripHeight(width: width) + max(50, answerH) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the

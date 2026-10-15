@@ -94,12 +94,12 @@ final class NotchOnboardingTests: XCTestCase {
     @MainActor func testPracticeAndCaptureAreSeparateSizedSteps() {
         let model = TutorModel()
         model.onboardingStep = .practice
-        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.practice.height)
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingView.contentHeight(for: .practice, width: 600))
         model.onboardingStep = .capture
-        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.capture.height)
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingView.contentHeight(for: .capture, width: 600))
         XCTAssertEqual(NotchOnboardingStep.practice.height, NotchOnboardingStep.capture.height)
         model.onboardingStep = .working
-        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingStep.working.height)
+        XCTAssertEqual(model.onboardingContentHeight, NotchOnboardingView.contentHeight(for: .working, width: 600))
         model.onboardingStep = nil
         XCTAssertNil(model.onboardingContentHeight)
     }

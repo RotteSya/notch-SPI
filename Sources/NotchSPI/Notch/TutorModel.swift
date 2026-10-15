@@ -9,9 +9,10 @@ import AppKit
 final class TutorModel: ObservableObject {
     @Published var onboardingStep: NotchOnboardingStep?
     @Published var onboardingPracticeFailed = false
-    var onboardingContentHeight: CGFloat? {
+    var onboardingContentHeight: CGFloat? { onboardingContentHeight(width: 600) }
+    func onboardingContentHeight(width: CGFloat) -> CGFloat? {
         guard let step = onboardingStep else { return nil }
-        return step.height
+        return NotchOnboardingView.contentHeight(for: step, width: width)
     }
     @Published var onboardingPermissionGranted = false
     @Published var onboardingPermissionDenied = false
