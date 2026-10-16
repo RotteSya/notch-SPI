@@ -25,11 +25,12 @@ enum KeychainStore {
     }
 
     #if DEBUG
-    /// Visual-QA escape hatch: with NSPI_QA_EPHEMERAL=1 all secrets live in this in-process
-    /// dictionary only. The real Keychain service is SHARED with the packaged app, so QA runs
-    /// must never read or write the user's actual device token / API keys.
-    private static var ephemeral: [String: String]? =
-        ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" ? [:] : nil
+    /// In-process secrets for the development bundle and for NSPI_QA_EPHEMERAL=1.
+    /// The Keychain service name remains `service` below.
+    private static var ephemeral: [String: String]? = DevelopmentIsolation.ephemeralStorage(
+        bundleID: Bundle.main.bundleIdentifier,
+        environment: ProcessInfo.processInfo.environment
+    )
     private static let ephemeralLock = NSLock()
     #endif
 

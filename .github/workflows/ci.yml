@@ -235,6 +235,7 @@ jobs:
         with:
           node-version: '22.18.0'
       - run: node scripts/repo-health.mjs
+      - run: node --test scripts/test/*.test.mjs
       - name: Swift toolchain
         run: swift --version
       - name: Swift tests (serial, warnings-as-errors)
@@ -243,3 +244,27 @@ jobs:
         run: swift build -c release --arch arm64
         env:
           OFFICIAL_PROVIDER: mock
+
+  governance:
+    name: governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: Repository health and checker tests
+        run: |
+          set -o pipefail
+          mkdir -p output/verification/ci
+          node scripts/repo-health.mjs | tee output/verification/ci/repo-health.log
+          node --test scripts/test/*.test.mjs | tee output/verification/ci/repo-health-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-report
+          path: output/verification
+          if-no-files-found: ignore

@@ -76,11 +76,17 @@ final class Settings {
     /// keep their old behavior (custom key if one is saved, otherwise CLI).
     var serviceMode: String {
         get {
-            if let v = d.string(forKey: "serviceMode"), ServiceMode.all.contains(v) { return v }
-            return ServiceRouting.defaultMode(
-                isExistingInstall: isExistingInstall,
-                hasCustomKey: usesCustomKey(for: cli),
-                cliAllowed: OfficialAPI.cliEnabled
+            DevelopmentIsolation.resolveServiceMode(
+                bundleID: Bundle.main.bundleIdentifier,
+                arguments: CommandLine.arguments,
+                persisted: d.string(forKey: "serviceMode"),
+                fallback: {
+                    ServiceRouting.defaultMode(
+                        isExistingInstall: isExistingInstall,
+                        hasCustomKey: usesCustomKey(for: cli),
+                        cliAllowed: OfficialAPI.cliEnabled
+                    )
+                }
             )
         }
         set { d.set(newValue, forKey: "serviceMode") }

@@ -15,7 +15,7 @@ import { registerRoutes } from './routes.ts';
 
 // Compose the app so it can also be built in-process by tests (no listen). `overrides.provider`
 // is a test-only seam for exercising vendor-failure paths (the real provider is chosen by config).
-export async function buildApp(overrides: { provider?: Provider; objectiveProvider?: Provider; readStripeRefund?: (id:string)=>Promise<RefundSnapshot>; createStripeCheckout?: typeof import('./stripe.ts').createCheckoutSession; readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>; readPurchaseProgress?: (id:string)=>Promise<import('./stripe.ts').CheckoutProgress>; readStripeFinance?:(order:FinanceOrder)=>Promise<FinanceSnapshot> } = {}) {
+export async function buildApp(overrides: { provider?: Provider; objectiveProvider?: Provider; readStripeRefund?: (id:string)=>Promise<RefundSnapshot>; createStripeCheckout?: typeof import('./stripe.ts').createCheckoutSession; readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>; readPurchaseProgress?: (id:string)=>Promise<import('./stripe.ts').CheckoutProgress>; readStripeFinance?:(order:FinanceOrder)=>Promise<FinanceSnapshot>; onRoute?: (route: { method: string | string[]; url: string }) => void } = {}) {
   validateTrialPolicy(config);
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
@@ -60,6 +60,11 @@ export async function buildApp(overrides: { provider?: Provider; objectiveProvid
   // money and never delivering. Loud at boot, and visible in /healthz.
   if (config.paymentProvider === 'stripe' && config.stripeSecretKey !== '' && config.stripeWebhookSecret === '') {
     app.log.error('STRIPE_WEBHOOK_SECRET is empty — purchases will be charged but NEVER credited');
+  }
+  if (overrides.onRoute) {
+    const report = overrides.onRoute;
+    // Collect method and path as routes are registered, before listen.
+    app.addHook('onRoute', (route) => { report({ method: route.method, url: route.url }); });
   }
   registerRoutes(app, {
     config, store, storeKind,
