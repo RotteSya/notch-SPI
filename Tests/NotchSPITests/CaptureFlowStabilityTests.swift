@@ -97,27 +97,27 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
     }
 
-    @MainActor func testRoseKeepsAnimatingAtIdleWithoutRetainingDetachedView() async throws {
-        weak var releasedRose: RoseLoaderView?
+    @MainActor func testGhostKeepsAnimatingAtIdleWithoutRetainingDetachedView() async throws {
+        weak var releasedGhost: GhostIndicatorView?
         autoreleasepool {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 30, height: 30),
                 styleMask: .borderless, backing: .buffered, defer: false)
-            let rose = RoseLoaderView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
-            releasedRose = rose
-            window.contentView = rose
-            XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            let ghost = GhostIndicatorView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+            releasedGhost = ghost
+            window.contentView = ghost
+            XCTAssertEqual(ghost.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             for _ in 0..<50 {
-                rose.busy = true
-                XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-                rose.busy = false
-                XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                ghost.busy = true
+                XCTAssertEqual(ghost.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                ghost.busy = false
+                XCTAssertEqual(ghost.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             }
-            rose.hero = true
-            XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            ghost.hero = true
+            XCTAssertEqual(ghost.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             window.contentView = nil
-            XCTAssertFalse(rose.qaClockActive)
+            XCTAssertFalse(ghost.qaClockActive)
         }
-        try await waitFor { releasedRose == nil }
+        try await waitFor { releasedGhost == nil }
     }
 
     @MainActor func testMaintenanceStopsOnTerminationAndRestartsIfQuitIsCancelled() {

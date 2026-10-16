@@ -482,7 +482,7 @@ private final class SourcePage: OnboardingPage {
 // MARK: - Page 1 · Welcome
 
 private final class WelcomePage: OnboardingPage {
-    private let rose = RoseLoaderView()
+    private let ghost = GhostIndicatorView()
     private let title = onboardingLabel(size: 32, weight: .bold, color: .white)
     private let tagline = onboardingLabel(size: 13.5, weight: .regular, color: NSColor(white: 1, alpha: 0.68))
     private var pills: [LanguagePill] = []
@@ -491,9 +491,9 @@ private final class WelcomePage: OnboardingPage {
         super.init(frame: frameRect)
         let size = OnboardingViewController.pageSize
 
-        rose.hero = true
-        rose.frame = NSRect(x: size.width / 2 - 48, y: 56, width: 96, height: 96)
-        addSubview(rose)
+        ghost.hero = true
+        ghost.frame = NSRect(x: size.width / 2 - 48, y: 56, width: 96, height: 96)
+        addSubview(ghost)
 
         title.frame = NSRect(x: 40, y: 192, width: size.width - 80, height: 42)
         addSubview(title)
@@ -528,7 +528,7 @@ private final class WelcomePage: OnboardingPage {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    private var entranceViews: [NSView] { [rose, title, tagline] + pills }
+    private var entranceViews: [NSView] { [ghost, title, tagline] + pills }
 
     override func pageDidAppear() {
         guard !onboardingReduceMotion() else { return }

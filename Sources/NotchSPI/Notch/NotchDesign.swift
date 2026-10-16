@@ -125,7 +125,7 @@ enum NotchLayout {
         CGRect(x: contentInsetH, y: top, width: max(0, width - contentInsetH * 2), height: max(0, height))
     }
     static let statusInsetV: CGFloat = 12
-    static let headerHeight: CGFloat = 48     // rose + mode + status + controls row (incl. gap below)
+    static let headerHeight: CGFloat = 48     // ghost + mode + status + controls row (incl. gap below)
     static let contentInsetH: CGFloat = 20    // horizontal padding for header & answer
     static let answerBottomPad: CGFloat = 16  // padding under the answer
     static let headerRowCenterY: CGFloat = 23 // vertical center of the header row within the card
@@ -314,7 +314,7 @@ enum NotchType {
             return placeholderLine(mode: p.mode)
         }
         if p.failed {
-            // Error prose is not an answer: quiet secondary ink; the red rose and the amber
+            // Error prose is not an answer: quiet secondary ink; the red ghost and the amber
             // light field already carry the state. Never the answer's bright primary white.
             let para = NSMutableParagraphStyle()
             para.lineSpacing = 3

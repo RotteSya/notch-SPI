@@ -45,8 +45,6 @@ struct NotchOnboardingProgress {
 /// Live answers retain the daily renderer and receive the first content position.
 final class NotchOnboardingView: NSView {
     static let headerRowCenterY: CGFloat = 20
-    // The rose occupies about two thirds of its canvas; match its visible ink to 12pt capitals.
-    static let headerIndicatorSize: CGFloat = 14.5
     var onPrimary: (() -> Void)?
     var onBack: (() -> Void)?
     var onDismiss: (() -> Void)?

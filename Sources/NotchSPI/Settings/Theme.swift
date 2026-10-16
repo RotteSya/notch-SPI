@@ -1,7 +1,7 @@
 import AppKit
 
 /// One curated accent (强调色) — a pair of base + highlight tints that flow through the whole
-/// instrument: the Rose while working, the notch's edge light, buttons, rings, pills.
+/// instrument: the Ghost while working, the notch's edge light, buttons, rings, pills.
 struct AccentTheme: Equatable {
     let id: String
     let accent: NSColor

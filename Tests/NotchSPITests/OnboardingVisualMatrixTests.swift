@@ -90,6 +90,10 @@ final class OnboardingVisualMatrixTests: XCTestCase {
                 model.expanded = true; view.refreshScreenshotTray(); view.qaAdvanceMorph(by: 1)
                 view.layoutSubtreeIfNeeded(); view.onboarding.layoutSubtreeIfNeeded()
                 let guide = view.onboarding
+                let ghost = try XCTUnwrap(view.subviews.compactMap { $0 as? GhostIndicatorView }.first)
+                XCTAssertEqual(ghost.frame.width, 20, accuracy: 0.001)
+                XCTAssertEqual(ghost.frame.minX + GhostIndicatorView.restingLeadingInset,
+                    view.qaPaintedCardFrame.minX + NotchLayout.contentInsetH, accuracy: 0.01)
                 let fields = (guide.subviews + guide.subviews.flatMap(\.subviews)).compactMap { $0 as? NSTextField }.filter { !$0.isHiddenOrHasHiddenAncestor && !$0.stringValue.isEmpty }
                 for field in fields where field.maximumNumberOfLines != 1 {
                     XCTAssertGreaterThanOrEqual(field.frame.height, ceil(field.sizeThatFits(.init(width: field.frame.width, height: 10000)).height), "\(name)/\(scenario): \(field.stringValue)")

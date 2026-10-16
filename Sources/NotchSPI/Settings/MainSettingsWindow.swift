@@ -736,9 +736,9 @@ private final class AppearancePageController: NSViewController, SettingsPage {
             swatches.append(swatch)
             x += 64
         }
-        let accentHint = captionLabel(L10n.t("Rose 指示器、刘海边缘的光、按钮都会跟随这个颜色。",
-                                             "Rose インジケーター、ノッチの光、ボタンがこの色に染まります。",
-                                             "The Rose, the notch's edge light, and every button follow this color."))
+        let accentHint = captionLabel(L10n.t("Ghost 指示器、刘海边缘的光、按钮都会跟随这个颜色。",
+                                             "Ghost インジケーター、ノッチの光、ボタンがこの色に染まります。",
+                                             "The Ghost, the notch's edge light, and every button follow this color."))
         accentHint.frame = NSRect(x: fieldX, y: y + 62, width: 352, height: 36)
         root.addSubview(accentHint)
         y = 254

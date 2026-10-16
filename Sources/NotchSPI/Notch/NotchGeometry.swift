@@ -36,7 +36,7 @@ enum NotchGeometry {
 
     /// Collapsed panel frame. The slab fills the whole panel; its right wall fuses with the
     /// hardware notch's right wall and it extends `sideExtension` points to the **left** into the
-    /// menu bar so the Rose indicator has room beside the cutout.
+    /// menu bar so the Ghost indicator has room beside the cutout.
     static func collapsed(_ m: Metrics, sideExtension: CGFloat) -> CGRect {
         let centerX = m.notchCenterX ?? m.screenFrame.midX                       // physical cutout is display-centered
         let notchRight = pixelAlign(centerX + m.notchWidth / 2, scale: m.scale)

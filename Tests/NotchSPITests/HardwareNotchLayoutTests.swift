@@ -101,7 +101,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
         func check() {
             view.layoutSubtreeIfNeeded()
             guard let cutout = layout.cutout else { return }
-            for child in descendants(view) where child is NSControl || child is NSScrollView || child is RoseLoaderView {
+            for child in descendants(view) where child is NSControl || child is NSScrollView || child is GhostIndicatorView {
                 guard !child.isHiddenOrHasHiddenAncestor else { continue }
                 let rect = panel.convertToScreen(child.convert(child.bounds, to: nil))
                 XCTAssertFalse(rect.intersects(cutout), "\(type(of: child)) overlaps hardware: \(rect)")
@@ -346,6 +346,11 @@ final class HardwareNotchLayoutTests: XCTestCase {
                 view.screenLayout = layout
                 view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
                 view.qaUseManualMorphClock()
+                view.layoutSubtreeIfNeeded()
+                let ghost = try XCTUnwrap(view.subviews.compactMap { $0 as? GhostIndicatorView }.first)
+                XCTAssertEqual(ghost.frame.width, 20, accuracy: 0.001)
+                XCTAssertEqual(ghost.frame.minX + GhostIndicatorView.restingLeadingInset,
+                    view.qaPaintedCardFrame.minX + NotchLayout.contentInsetH, accuracy: 0.01)
                 model.expanded = false; view.refreshScreenshotTray()
                 let duration = step == nil ? NotchPalette.morphDuration : onboardingMotionDuration(0.26)
                 var previousFrame = panel.frame
@@ -354,6 +359,8 @@ final class HardwareNotchLayoutTests: XCTestCase {
                     let t = CGFloat(sample) / 20
                     let progress = NotchMotion.close(t)
                     let frame = panel.frame
+                    XCTAssertEqual(ghost.frame.width, 20, accuracy: 0.001)
+                    XCTAssertEqual(ghost.frame.height, 20, accuracy: 0.001)
                     for (start, end, current) in [(expanded.minX, collapsed.minX, frame.minX),
                                                   (expanded.maxX, collapsed.maxX, frame.maxX)] {
                         // AppKit rounds the displayed NSWindow frame to whole points.
@@ -424,7 +431,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
         func assertSafe(file: StaticString = #filePath, line: UInt = #line) {
             view.layoutSubtreeIfNeeded()
             guard let cutout = layout.cutout else { return }
-            for child in descendants(view) where child is NSControl || child is RoseLoaderView || child is NSScrollView {
+            for child in descendants(view) where child is NSControl || child is GhostIndicatorView || child is NSScrollView {
                 guard !child.isHiddenOrHasHiddenAncestor else { continue }
                 let rect = panel.convertToScreen(child.convert(child.bounds, to: nil))
                 XCTAssertFalse(rect.intersects(cutout), "\(type(of: child)): \(rect) intersects \(cutout)", file: file, line: line)

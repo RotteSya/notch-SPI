@@ -8,8 +8,8 @@ import QuartzCore
 /// are all driven from the same display-link morph (`geoMorph`), so nothing can drift apart the
 /// way a window-server animation and a view tween can. Three ideas carry the design:
 ///
-///  1. **One rose.** The signature indicator never crossfades or duplicates: the same
-///     `RoseLoaderView` glides and rescales between its menu-bar pose and its header pose,
+///  1. **One ghost.** The signature indicator never crossfades or duplicates: the same
+///     `GhostIndicatorView` glides and rescales between its menu-bar pose and its header pose,
 ///     riding the slab's leading edge — a shared-element transition, not two ghosts.
 ///  2. **A content plate.** The expanded header + answer are laid out ONCE at their final size
 ///     and clipped to the slab's path with a layer mask. Mid-morph the slab's edges *reveal*
@@ -98,8 +98,8 @@ final class NotchView: NSView {
     private var followBottom = false
     private var userDetached = false   // the user scrolled up to read; never yank them back down
 
-    /// The one persistent rose (see note 1 above). Floats above the content plate, unmasked.
-    private let rose = RoseLoaderView()
+    /// The one persistent ghost (see note 1 above). Floats above the content plate, unmasked.
+    private let ghost = GhostIndicatorView()
     private let compactCount = NotchView.makeLabel(size: 10, weight: .medium, color: NotchPalette.secondary)
 
     // Expanded content plate (see note 2 above).
@@ -245,7 +245,7 @@ final class NotchView: NSView {
         addSubview(expandedContent)
         expandedContent.alphaValue = 0
 
-        addSubview(rose)
+        addSubview(ghost)
         addSubview(compactCount)   // above the plate; decorative, never intercepts clicks
 
         // The capsule dispatches by the active mode: stop (auto session) / cycle depth (tutor)
@@ -364,9 +364,16 @@ final class NotchView: NSView {
                               trial: model.onboardingTrialState, trialExpiration: model.onboardingTrialExpiration)
         }
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = model.onboardingStep != nil }
-        let tint = roseTint()
+        let tint = ghostTint()
         let busy = model.status == .running || model.status == .streaming
-        rose.color = tint; rose.busy = busy
+        let wasThinking = ghost.busy
+        let thinkingTint = ghost.color
+        ghost.color = tint; ghost.busy = busy
+        let completedAnswer = model.status == .idle && !model.isStatusMessage
+            && !model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && model.answer != L10n.noOutput
+        if wasThinking && !busy && completedAnswer { ghost.acknowledgeCompletion(from: thinkingTint) }
+        if !busy && !completedAnswer { ghost.cancelCompletion() }
         compactCount.stringValue = model.status == .error ? "!" : busy ? "…" : model.screenshots.isEmpty ? "" : "\(model.screenshots.count)"
         compactCount.textColor = model.status == .error ? NotchPalette.error : NotchPalette.secondary
 
@@ -481,9 +488,9 @@ final class NotchView: NSView {
         }
     }
 
-    /// Rose tint by state — white at rest (no "camera-in-use" green dot), accent while working,
-    /// red on error. Mirrors the original SwiftUI `roseColor`.
-    private func roseTint() -> NSColor {
+    /// Ghost tint by state — white at rest (no "camera-in-use" green dot), accent while working,
+    /// red on error.
+    private func ghostTint() -> NSColor {
         if model.screenshotRoundActive { return NotchPalette.accent }
         switch model.status {
         case .running, .streaming: return NotchPalette.accent
@@ -684,23 +691,26 @@ final class NotchView: NSView {
         luma.setSlab(cardRect: card, topRadius: notchLerp(6, 8, gr),
                      bottomRadius: notchLerp(14, 22, gr), depth: p)
 
-        layoutRose(card: card, g: g)
-        compactCount.frame = NSRect(x: card.minX + 39, y: rose.frame.midY - 7, width: 17, height: 15)
+        layoutGhost(card: card, g: g)
+        compactCount.frame = NSRect(x: card.minX + 39, y: ghost.frame.midY - 7, width: 17, height: 15)
         compactCount.alphaValue = 1 - notchRamp(p, 0, 0.35)
         compactCount.isHidden = p >= 0.35
         layoutContentPlate(card: card, p: p)
     }
 
-    /// The rose keeps its leading anchor while settling onto the current header's optical center.
-    private func layoutRose(card: CGRect, g: CGFloat) {
+    /// Fixed-size ghost: preserve the collapsed anchor, then align its visible outline
+    /// with the content card while settling onto the current header's optical center.
+    private func layoutGhost(card: CGRect, g: CGFloat) {
         let t = max(0, min(g, 1.1))
         let barH = collapsedAnchor.height > 0 ? collapsedAnchor.height : bounds.height
         let guiding = model.onboardingStep != nil || closingOnboarding
         let headerCenter = guiding ? NotchOnboardingView.headerRowCenterY : NotchLayout.headerRowCenterY
-        let headerSize: CGFloat = guiding ? NotchOnboardingView.headerIndicatorSize : 16
         let cy = notchLerp(barH / 2, (screenLayout?.headerInset ?? 0) + headerCenter, t)
-        let size = notchLerp(20, headerSize, t)
-        var rect = CGRect(x: card.minX + 24 - size / 2, y: cy - size / 2, width: size, height: size)
+        let size = GhostIndicatorView.notchSize
+        let collapsedX: CGFloat = 24 - size / 2
+        let expandedX = NotchLayout.contentInsetH - GhostIndicatorView.restingLeadingInset
+        let x = card.minX + notchLerp(collapsedX, expandedX, min(t, 1))
+        var rect = CGRect(x: x, y: cy - size / 2, width: size, height: size)
         if let cutout = screenLayout?.cutout, let window {
             let indicatorRight = window.frame.minX + max(rect.maxX, card.minX + 56)
             let indicatorLeft = window.frame.minX + rect.minX
@@ -708,7 +718,7 @@ final class NotchView: NSView {
                 rect.origin.y = max(rect.minY, safeContentTop)
             }
         }
-        rose.frame = rect
+        ghost.frame = rect
     }
 
     private func layoutContentPlate(card: CGRect, p: CGFloat) {
@@ -784,7 +794,7 @@ final class NotchView: NSView {
         collapseButton.frame = CGRect(x: gearX - 32, y: cy - 12, width: 28, height: 24)
         let controlsX = showCollapse ? gearX - 32 : gearX
 
-        var x = inset + 16 + 8   // leave the rose's slot clear (it floats above the plate)
+        var x = inset + 16 + 8   // leave the ghost's slot clear (it floats above the plate)
         // Size the label by asking its cell (NSString measurement misses the cell's own
         // horizontal padding, which clipped "学习辅导" to "学习…" in the header).
         let modeW = ceil(modeLabel.sizeThatFits(

@@ -1984,7 +1984,7 @@ final class NotchController: NSObject {
             func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
             let overlaps = descendants(notchView).filter { view in
                 guard !view.isHiddenOrHasHiddenAncestor,
-                      view is NSControl || view is NSScrollView || view is RoseLoaderView,
+                      view is NSControl || view is NSScrollView || view is GhostIndicatorView,
                       let cutout = nextLayout?.cutout else { return false }
                 return panel.convertToScreen(view.convert(view.bounds, to: nil)).intersects(cutout)
             }.count
@@ -1994,7 +1994,7 @@ final class NotchController: NSObject {
         #endif
     }
 
-    /// The transparent left extension (collapsed) that puts the Rose in the menu bar beside the cutout.
+    /// The transparent left extension (collapsed) that puts the Ghost in the menu bar beside the cutout.
     private let collapsedSideExtension: CGFloat = 60
 
     private func frame(expanded: Bool) -> NSRect {
@@ -2008,7 +2008,7 @@ final class NotchController: NSObject {
                 + layout.bodyAdjustment(onboarding: model.onboardingStep != nil))
         }
         // Collapsed: within the menu-bar height; right wall fused with the notch, extended LEFT so
-        // the rose shows in the visible menu-bar space beside the (non-display) notch cutout.
+        // the ghost shows in the visible menu-bar space beside the (non-display) notch cutout.
         return layout.collapsed(sideExtension: collapsedSideExtension)
     }
 
