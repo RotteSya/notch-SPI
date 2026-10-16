@@ -139,21 +139,32 @@ final class ManualCollapseHoverTests: XCTestCase {
     }
 
     @MainActor func testRealDelayedCollapseIsCancelledByReentry() async throws {
-        let controller = NotchController(activateServices: false)
-        // Freeze only presentation time. The production 450ms dispatch timer runs.
-        controller.qaUseManualHoverAnimation()
-        let compact = controller.qaHoverFrame(expanded: false)
-        let inside = NSPoint(x: compact.midX, y: compact.midY)
-        let outside = NSPoint(x: -10000, y: -10000)
-        controller.qaTrackPointer(inside)
-        controller.qaTrackPointer(outside, allowsExpansion: false)
-        XCTAssertTrue(controller.model.expanded, "Exit retains the existing grace period")
-        controller.qaTrackPointer(inside)
-        try await Task.sleep(nanoseconds: 650_000_000)
-        XCTAssertTrue(controller.model.expanded, "Old deadline cannot close a reentered card")
-        controller.qaTrackPointer(outside, allowsExpansion: false)
-        try await Task.sleep(nanoseconds: 650_000_000)
-        XCTAssertFalse(controller.model.expanded, "A sustained exit must collapse")
+        let previous = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"]
+        defer {
+            if let previous { setenv("NSPI_QA_REDUCE_MOTION", previous, 1) }
+            else { unsetenv("NSPI_QA_REDUCE_MOTION") }
+        }
+        for reduced in ["0", "1"] {
+            setenv("NSPI_QA_REDUCE_MOTION", reduced, 1)
+            let controller = NotchController(activateServices: false)
+            // Control presentation and pointer input, retaining the real 450ms dispatch timer.
+            controller.qaUseManualHoverAnimation()
+            let compact = controller.qaHoverFrame(expanded: false)
+            let inside = NSPoint(x: compact.midX, y: compact.midY)
+            let outside = NSPoint(x: -10000, y: -10000)
+            controller.qaTrackPointer(inside)
+            controller.qaTrackPointer(outside, allowsExpansion: false)
+            XCTAssertTrue(controller.model.expanded, "Exit retains the existing grace period")
+            XCTAssertNotNil(controller.qaPendingCollapse)
+            controller.qaTrackPointer(inside)
+            controller.qaAdvanceHoverAnimation(by: 1)
+            XCTAssertNil(controller.qaPendingCollapse, "Completion must sample the reentered pointer")
+            try await Task.sleep(nanoseconds: 650_000_000)
+            XCTAssertTrue(controller.model.expanded, "Old deadline cannot close a reentered card; Reduce Motion=\(reduced)")
+            controller.qaTrackPointer(outside, allowsExpansion: false)
+            try await Task.sleep(nanoseconds: 650_000_000)
+            XCTAssertFalse(controller.model.expanded, "A sustained exit must collapse; Reduce Motion=\(reduced)")
+        }
     }
 
     @MainActor func testSettledMorphReconcilesExitMissedDuringGrowth() {

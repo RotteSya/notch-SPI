@@ -23,11 +23,20 @@ enum AnswerMath {
         let cache = NSCache<NSString, Formula>(); cache.countLimit = 256; return cache
     }()
     private static var fontsAvailable: Bool {
-        [Bundle.main.resourceURL, Bundle.main.bundleURL, Bundle(for: MTMathUILabel.self).resourceURL]
-            .compactMap { $0 }.contains {
-                Bundle(url: $0.appendingPathComponent("SwiftMath_SwiftMath.bundle"))?
-                    .url(forResource: "mathFonts", withExtension: "bundle") != nil
+        let bundles = [Bundle.main, Bundle(for: MTMathUILabel.self)]
+        let roots = bundles.flatMap { bundle -> [URL] in
+            var roots = [bundle.resourceURL, bundle.bundleURL].compactMap { $0 }
+            // Native SwiftPM puts dependency resources beside the XCTest bundle.
+            // Swift Build and packaged apps instead embed them in Resources.
+            if bundle.bundleURL.pathExtension == "xctest" {
+                roots.append(bundle.bundleURL.deletingLastPathComponent())
             }
+            return roots
+        }
+        return roots.contains {
+            Bundle(url: $0.appendingPathComponent("SwiftMath_SwiftMath.bundle"))?
+                .url(forResource: "mathFonts", withExtension: "bundle") != nil
+        }
     }
     static func formula(_ source: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString? {
         guard fontsAvailable, source.count <= 2048, source.filter({ $0 == "\\" }).count <= 128, let font = attributes[.font] as? NSFont else { return nil }

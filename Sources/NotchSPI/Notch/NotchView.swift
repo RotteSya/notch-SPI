@@ -165,6 +165,12 @@ final class NotchView: NSView {
     private var refreshPending = false
 
     private var reduceMotion: Bool { onboardingReduceMotion() }
+    private var hoverPointerLocation: NSPoint {
+        #if DEBUG
+        if let qaHoverPointerLocation { return qaHoverPointerLocation }
+        #endif
+        return NSEvent.mouseLocation
+    }
 
     #if DEBUG
     var qaReadingOffset: CGFloat { answerScroll.contentView.bounds.origin.y }
@@ -178,6 +184,10 @@ final class NotchView: NSView {
         morph.qaManualTime = 0
         geoMorph.qaManualTime = 0
     }
+
+    // Keep completion-time hover reconciliation on the same input as the test's events.
+    // Reduce Motion completes synchronously even when the animation clock is manual.
+    var qaHoverPointerLocation: NSPoint?
 
     func qaAdvanceMorph(by interval: CFTimeInterval) {
         morph.qaAdvance(by: interval)
@@ -252,9 +262,9 @@ final class NotchView: NSView {
         geoMorph.onChange = { [weak self] g in
             self?.applyMorphFrame(g)
             self?.applyLayout()
-            if g == 1, self?.wasExpanded == true {
-                self?.updateFollow()
-                self?.reconcileHoverAfterMorph(at: NSEvent.mouseLocation)
+            if g == 1, let self, self.wasExpanded {
+                self.updateFollow()
+                self.reconcileHoverAfterMorph(at: self.hoverPointerLocation)
             }
             if g == 0, let self, self.closingOnboarding {
                 // Retire the held composition only once it is fully behind the closed mask.

@@ -55,15 +55,19 @@ final class NotchController: NSObject {
     func qaRefreshScreenshotLayout() { resizeToFit() }
     func qaPinDesignPreview() { pinned = true }
     func qaTrackPointer(_ point: NSPoint, allowsExpansion: Bool = true) {
+        notchView.qaHoverPointerLocation = point
         notchView.trackPointer(at: point, allowsExpansion: allowsExpansion)
     }
     func qaClickCompact() {
         let compact = frame(expanded: false)
-        notchView.expandFromClick(at: NSPoint(x: compact.midX, y: compact.midY))
+        let point = NSPoint(x: compact.midX, y: compact.midY)
+        notchView.qaHoverPointerLocation = point
+        notchView.expandFromClick(at: point)
     }
     func qaHoverFrame(expanded: Bool) -> NSRect { frame(expanded: expanded) }
     var qaPendingCollapse: DispatchWorkItem? { collapseWork }
     func qaUseManualHoverAnimation() { notchView.qaUseManualMorphClock() }
+    func qaAdvanceHoverAnimation(by interval: CFTimeInterval) { notchView.qaAdvanceMorph(by: interval) }
 
     private var qaHoldingMotion = false
     @objc func qaResetMotionReview() {
