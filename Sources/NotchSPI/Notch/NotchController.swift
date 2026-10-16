@@ -1893,6 +1893,9 @@ final class NotchController: NSObject {
                 guard let self else { return }
                 self.registerHotkeys()
                 self.onboardingPracticeNeedsRefresh = self.model.onboardingStep != nil
+                if self.model.onboardingStep != nil, self.model.resultState == .retake {
+                    self.model.statusText = self.objectiveRetakeMessage(self.model.resultReason)
+                }
                 self.model.objectWillChange.send()
                 self.resizeToFit()
             }
@@ -2862,13 +2865,13 @@ final class NotchController: NSObject {
                     } else if composition?.state == .retake {
                         self.model.statusText = self.objectiveRetakeMessage(composition?.result?.reason)
                     }
-                    if ok, !contextImagePaths.isEmpty {
+                    if self.model.onboardingStep == nil, ok, !contextImagePaths.isEmpty {
                         self.model.statusText += " · " + L10n.statusContextAttached
                     }
                     if contextClearedForRun {
                         self.model.statusText += " · " + L10n.statusContextCleared
                     }
-                    if case .official = snapshot.channel, ok,
+                    if self.model.onboardingStep == nil, case .official = snapshot.channel, ok,
                        let balance = OfficialAPI.balanceQuestions {
                         self.model.statusText += " · " + L10n.questionsLeft(balance)
                         if balance <= OfficialAPI.lowQuotaThreshold {
@@ -3039,7 +3042,8 @@ final class NotchController: NSObject {
     }
 
     private func objectiveRetakeMessage(_ reason: ObjectiveResultReason?) -> String {
-        let shortcut = Settings.displayString(Settings.shared.captureCombo)
+        let multiple = model.onboardingStep != nil && model.onboardingMultiple
+        let shortcut = Settings.displayString(multiple ? Settings.shared.contextCombo : Settings.shared.captureCombo)
         switch reason {
         case .cropped:
             return L10n.t("题目被裁切，请按 \(shortcut) 重新截图。", "問題が切れています。\(shortcut) でもう一度キャプチャしてください。", "The question is cropped. Press \(shortcut) to capture it again.")

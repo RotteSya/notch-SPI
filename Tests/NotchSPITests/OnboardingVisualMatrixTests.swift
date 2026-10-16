@@ -15,6 +15,7 @@ final class OnboardingVisualMatrixTests: XCTestCase {
             ("welcome", .welcome, 0), ("permission", .permission, 0), ("permission-denied", .permission, 0),
             ("permission-granted", .permission, 0), ("practice", .practice, 0), ("practice-failed", .practice, 0),
             ("capture", .capture, 0), ("working", .working, 1), ("working-failed", .working, 1),
+            ("single-retake", .working, 1), ("multi-retake", .working, 2),
             ("first-answer", .firstAnswer, 1), ("multiple", .multiple, 0), ("multiple-failed", .multiple, 0),
             ("multi-capture", .multiCapture, 0), ("collecting-one", .collecting, 1), ("collecting-two", .collecting, 2),
             ("collecting-four", .collecting, 4), ("collecting-preview", .collecting, 2), ("collecting-failed", .collecting, 1),
@@ -42,7 +43,7 @@ final class OnboardingVisualMatrixTests: XCTestCase {
                         : scenario == "trial-expired" ? .expired : scenario == "trial-ineligible" ? .ineligible : .available
                     model.onboardingTrialExpiration = "2026-10-19 11:30"
                 }
-                model.onboardingMultiple = [.multiple, .multiCapture, .collecting, .success].contains(step)
+                model.onboardingMultiple = [.multiple, .multiCapture, .collecting, .success].contains(step) || scenario == "multi-retake"
                 model.onboardingPermissionGranted = scenario == "permission-granted"
                 model.onboardingPermissionDenied = scenario == "permission-denied"
                 model.onboardingPracticeFailed = scenario.hasSuffix("failed")
@@ -61,6 +62,11 @@ final class OnboardingVisualMatrixTests: XCTestCase {
                 if scenario == "working-failed" {
                     model.status = .error
                     model.captureFeedback = L10n.t("截图失败。请确认练习窗口仍然打开，再重新截图。", "撮影できませんでした。練習ウィンドウを確認し、撮り直してください。", "Capture failed. Check that the practice window is open, then capture again.")
+                }
+                if scenario.hasSuffix("retake") {
+                    model.status = .idle; model.resultState = .retake; model.resultReason = .missingContext
+                    let key = Settings.displayString(model.onboardingMultiple ? Settings.shared.contextCombo : Settings.shared.captureCombo)
+                    model.statusText = L10n.t("缺少关键上下文，请补全画面后按 \(key) 重试。", "重要な文脈が不足しています。画面を含めて \(key) で再試行してください。", "Critical context is missing. Include it and press \(key) again.")
                 }
                 if scenario == "collecting-failed" { model.screenshotNotice = L10n.t("截图未录入，请重试。", "画像を追加できません。もう一度お試しください。", "Image not added. Please try again.") }
                 for index in 0..<count {

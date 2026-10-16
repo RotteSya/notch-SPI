@@ -3,6 +3,40 @@ import XCTest
 @testable import NotchSPI
 
 final class OnboardingJourneyTests: XCTestCase {
+    @MainActor func testRetakeHintMatchesLessonAndUpdatedShortcutAcrossLanguages() async throws {
+        let language = L10n.setting, single = Settings.shared.captureCombo, multi = Settings.shared.contextCombo
+        let controller = NotchController(activateServices: false)
+        defer {
+            controller.prepareForTermination()
+            L10n.setting = language; Settings.shared.captureCombo = single; Settings.shared.contextCombo = multi
+            HotKeyCenter.shared.unregisterAll()
+        }
+        Settings.shared.captureCombo = .init(keyCode: 49, modifiers: single.modifiers, label: "Space")
+        Settings.shared.contextCombo = .init(keyCode: 124, modifiers: multi.modifiers, label: "→")
+        controller.qaPresentOnboarding(.working)
+        for multiple in [false, true] {
+            controller.model.onboardingMultiple = multiple
+            for reason in [ObjectiveResultReason.cropped, .unreadable, .missingContext] {
+                controller.model.resultState = .retake; controller.model.resultReason = reason
+                for locale in [AppLanguage.zhHans, .ja, .en] {
+                    controller.model.statusText = ""
+                    L10n.setting = locale
+                    let expected = Settings.displayString(multiple ? Settings.shared.contextCombo : Settings.shared.captureCombo)
+                    let wrong = Settings.displayString(multiple ? Settings.shared.captureCombo : Settings.shared.contextCombo)
+                    try await settle { controller.model.statusText.contains(expected) }
+                    XCTAssertFalse(controller.model.statusText.contains(wrong))
+                    XCTAssertEqual(controller.model.displayedAnswer, controller.model.statusText)
+                }
+            }
+        }
+        controller.openSettings(page: .hotkeys)
+        Settings.shared.contextCombo = .init(keyCode: 123, modifiers: multi.modifiers, label: "←")
+        try XCTUnwrap(controller.qaSettingsWindow).onHotkeysChanged?()
+        let rebound = Settings.displayString(Settings.shared.contextCombo)
+        XCTAssertTrue(controller.model.statusText.contains(rebound))
+        try await settle { controller.qaOnboardingShortcut == rebound }
+    }
+
     @MainActor func testTrialUnavailableNeverClaimsAndCanBeSkippedWithoutGrant() {
         let name = "guide-trial-unavailable-\(UUID())"
         let d = UserDefaults(suiteName: name)!

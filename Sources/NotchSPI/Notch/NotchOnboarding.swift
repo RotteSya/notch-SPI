@@ -152,7 +152,7 @@ final class NotchOnboardingView: NSView {
         var note: String = ""
     }
     private static func copy(_ step: NotchOnboardingStep, granted: Bool = false, denied: Bool = false,
-                             failed: Bool = false, count: Int = 0, trial: OnboardingTrialState = .unavailable, trialExpiration: String? = nil) -> Copy {
+                             failed: Bool = false, count: Int = 0, multiple: Bool = false, trial: OnboardingTrialState = .unavailable, trialExpiration: String? = nil) -> Copy {
         let t = L10n.t
         switch step {
         case .welcome:
@@ -184,7 +184,10 @@ final class NotchOnboardingView: NSView {
                 : t("停顿 4 秒自动查题。点题图可预览并暂停倒计时，也可以删除重截。", "4秒後に自動送信。画像を開くとカウントを一時停止でき、削除して撮り直すこともできます。", "A 4-second pause sends the images. Preview an image to pause; remove and recapture if needed."),
                 action: "")
         case .working:
-            return Copy(title: "", body: failed ? t("按上方提示调整，再按下方快捷键重新截图。", "上の案内を確認し、下のショートカットでもう一度撮影してください。", "Follow the message above, then press the shortcut below to capture again.") : t("正在读取题目…", "問題を読み取っています…", "Reading your question…"), action: "")
+            let retry = multiple
+                ? t("请重新截取“材料”和“问题”两页，每页按一次下方快捷键。", "「資料」と「問題」を開き、各ページで下のショートカットを押して撮り直してください。", "Capture Passage and Question again. Press the shortcut below once on each page.")
+                : t("请让题目和选项完整显示，再按下方快捷键重新截图。", "問題と選択肢をすべて表示し、下のショートカットでもう一度撮影してください。", "Show the full question and choices, then press the shortcut below to retry.")
+            return Copy(title: "", body: failed ? retry : t("正在读取题目…", "問題を読み取っています…", "Reading your question…"), action: "")
         case .firstAnswer:
             return Copy(title: "", body: t("成功了！接下来试试多图模式，用于那些题目和选项一张图截不完的情况。", "できました！次は、問題と選択肢が1枚に収まらないときに使う複数画像モードを試してみましょう。", "You did it! Next, try multiple-image mode for questions and choices that don’t fit in a single capture."), action: t("试试多图模式", "複数画像モードを試す", "Try multiple-image mode"))
         case .success:
@@ -221,7 +224,7 @@ final class NotchOnboardingView: NSView {
         self.step = step
         let t = L10n.t
         let copy = Self.copy(step, granted: granted, denied: denied,
-                             failed: step == .practice || step == .multiple ? practiceFailed : failed, count: screenshotCount, trial: trial, trialExpiration: trialExpiration)
+                             failed: step == .practice || step == .multiple ? practiceFailed : failed, count: screenshotCount, multiple: multiple, trial: trial, trialExpiration: trialExpiration)
         heading.stringValue = copy.title; detail.stringValue = copy.body; note.stringValue = copy.note
         primary.title = copy.action
         if step == .collecting, screenshotCount >= 4 {

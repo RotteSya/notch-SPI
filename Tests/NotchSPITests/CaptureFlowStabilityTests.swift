@@ -171,6 +171,27 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
     }
 
+    @MainActor func testGuideCompletionOmitsMultiImageMetadataAndDailyCompletionKeepsIt() async throws {
+        for guiding in [true, false] {
+            try await withController { controller, gate in
+                if guiding {
+                    controller.qaOnboardingPermission = { true }
+                    controller.qaPresentOnboarding(.multiCapture)
+                }
+                for count in 1...2 {
+                    controller.qaPressScreenshot(multiple: true)
+                    try await waitFor { controller.model.screenshots.count == count && !controller.model.screenshotCapturing }
+                }
+                controller.qaSubmitScreenshotRound()
+                try await waitFor { gate.callbacks.count == 1 }
+                gate.finish(0)
+                XCTAssertEqual(controller.model.statusText.contains(L10n.statusContextAttached), !guiding)
+                if guiding { XCTAssertEqual(controller.model.statusText, L10n.statusDone) }
+                XCTAssertTrue(controller.model.answer.contains("FINAL: A"))
+            }
+        }
+    }
+
     @MainActor func testRepeatedSingleShortcutDuringAnswerDoesNotDuplicateAndOldStreamCannotOverwriteNext() async throws {
         try await withController { controller, gate in
             controller.qaPressScreenshot(multiple: false)
