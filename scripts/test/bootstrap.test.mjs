@@ -55,6 +55,19 @@ exit 0
 `);
 fs.chmodSync(path.join(stubDir, 'npm'), 0o755);
 fs.chmodSync(path.join(stubDir, 'swift'), 0o755);
+fs.writeFileSync(path.join(stubDir, 'pgrep'), `#!/bin/bash
+if [[ "\${NSPI_STUB_PGREP_ERROR:-}" == "1" ]]; then exit 2; fi
+if [[ -n "\${NSPI_STUB_RUNNING_CLIENT_PID:-}" ]]; then
+  echo "$NSPI_STUB_RUNNING_CLIENT_PID"
+  exit 0
+fi
+if [[ "\${NSPI_STUB_RUNNING_AFTER_BUILD:-}" == "1" ]] && grep -q 'swift build' "$NSPI_STUB_LOG"; then
+  echo 54321
+  exit 0
+fi
+exit 1
+`);
+fs.chmodSync(path.join(stubDir, 'pgrep'), 0o755);
 
 execFileSync('rsync', [
   '-a',
@@ -196,6 +209,42 @@ describe('bootstrap install recovery', { concurrency: 1 }, () => {
     const dir = scenario();
     assert.equal(fs.existsSync(path.join(dir, 'server/node_modules')), false);
     assertReachedInstall(invoke(dir, []));
+  });
+
+  test('run refuses an existing client before installation without stopping it', () => {
+    const result = invoke(scenario(), ['--run'], { NSPI_STUB_RUNNING_CLIENT_PID: '54321' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /NotchSPI is already running.*54321/);
+    assert.match(result.stderr, /No existing process was stopped/);
+    assert.equal(result.order, '');
+  });
+
+  test('run fails closed when process discovery fails', () => {
+    const result = invoke(scenario(), ['--run'], { NSPI_STUB_PGREP_ERROR: '1' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /could not check existing NotchSPI processes/);
+    assert.equal(result.order, '');
+  });
+
+  test('prepare remains available while another client is running', () => {
+    assertReachedInstall(invoke(scenario(), [], { NSPI_STUB_RUNNING_CLIENT_PID: '54321' }));
+  });
+
+  test('run with no existing client reaches dependency installation', () => {
+    const result = invoke(scenario(), ['--run'], { NSPI_NPM_CI_FAIL: '1' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /npm ci failed: simulated/);
+    assert.equal(result.stderr.includes('already running'), false);
+    assert.equal(result.order.includes('npm-ci '), true);
+  });
+
+  test('run rechecks for a client started during preparation', () => {
+    const result = invoke(scenario(), ['--run'], { NSPI_STUB_RUNNING_AFTER_BUILD: '1' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /NotchSPI is already running.*54321/);
+    assert.equal(result.order.includes('swift build'), true);
+    assert.equal(result.order.includes('dev.sh --smoke'), true);
+    assert.equal(result.stdout.includes('==> Launching isolated development app'), false);
   });
 
   test('a partial install reaches npm ci and the post-install check', () => {

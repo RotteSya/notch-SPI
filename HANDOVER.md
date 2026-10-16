@@ -29,7 +29,7 @@ QA：Plus 每日 600 次预览、完整答案窗口、离线设计样例。入�
 
 成功时，loopback 的 `/healthz` 为 mock、sqlite、stub。脚本接着打开 bundle `com.rottesya.notchspi.dev`，传入 `http://127.0.0.1:<端口>` 和官方通道。该开发包在读取凭证、账户、设置和网络之前使用进程内临时凭证；本次启动传入的官方通道用于这一进程。直接打开该 App 时，进程提示通过 `./scripts/bootstrap.sh --run` 启动，并在服务初始化前退出。退出应用后，脚本只停止它启动的服务。正式 App、`./scripts/run-local.sh` 和 `./scripts/design-qa.sh` 按各自入口运行。该包使用独立偏好和 ad-hoc 签名。
 
-准备会联网安装两个 npm 锁文件并编译调试客户端。运行不需要模型密钥、生产数据库或 Developer ID。端口被占用时退出并显示端口，不结束占用进程。安装前的脚本测试只使用自带样例。工作区的 `node_modules` 在 `npm ci` 之后、`./scripts/bootstrap.sh --check` 和 `./scripts/verify.sh` 里核对。`npm ci` 失败时保留安装错误并停止后续构建。
+准备会联网安装两个 npm 锁文件并编译调试客户端。运行不需要模型密钥、生产数据库或 Developer ID。已有 NotchSPI（含正式包、QA 包或开发包）运行时，`--run` 在准备前及启动前拒绝继续并显示 PID；先从该 App 菜单退出再重试，避免两个实例响应同一全局快捷键。脚本不会关闭现有 App，默认准备和 `--check` 仍可运行。端口被占用时退出并显示端口，不结束占用进程。安装前的脚本测试只使用自带样例。工作区的 `node_modules` 在 `npm ci` 之后、`./scripts/bootstrap.sh --check` 和 `./scripts/verify.sh` 里核对。`npm ci` 失败时保留安装错误并停止后续构建。
 
 `./scripts/bootstrap.sh --check` 只核对工具链和锁文件，不安装、不启动。已有账户的本机运行用 `./scripts/run-local.sh`。只起服务用 `./scripts/dev.sh --server-only`，无界面检查用 `./scripts/dev.sh --smoke`。引导样例用 `./scripts/onboarding-qa.sh --mock`，离线界面样例用 `./scripts/design-qa.sh`。
 

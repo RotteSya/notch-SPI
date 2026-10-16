@@ -63,6 +63,21 @@ port_busy() {
   fi
 }
 
+require_no_running_client() {
+  need_cmd pgrep "pgrep ships with macOS and is required to detect another NotchSPI instance"
+  local pids status
+  if pids="$(pgrep -x NotchSPI)"; then
+    fail "NotchSPI is already running (PID: $(echo "$pids" | tr '\n' ' ')). Quit the existing app, then retry --run; shared global shortcuts can otherwise trigger both apps. No existing process was stopped."
+  else
+    status=$?
+    [[ "$status" -eq 1 ]] || fail "could not check existing NotchSPI processes (pgrep exit $status)"
+  fi
+}
+
+if [[ "$MODE" == "run" && "$(uname -s)" == "Darwin" ]]; then
+  require_no_running_client
+fi
+
 if [[ "$MODE" != "check" ]]; then
   need_cmd node "Install Node.js from https://nodejs.org (the minimum is server/package.json engines.node). This script will not install it."
   echo "==> Repository health"
@@ -170,6 +185,8 @@ if [[ "$MODE" != "run" ]]; then
   exit 0
 fi
 
+# Installation and compilation take time; an app may have started since preflight.
+require_no_running_client
 echo "==> Launching isolated development app"
 DEV_OUTPUT="$REPO_ROOT/output/dev"
 DEV_APP="$DEV_OUTPUT/NotchSPI Dev.app"
