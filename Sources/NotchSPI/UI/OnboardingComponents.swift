@@ -48,7 +48,11 @@ final class GlowButton: NSControl {
         }
     }
     var onClick: (() -> Void)?
+    var shortcut: String? { didSet { needsDisplay = true; invalidateIntrinsicContentSize() } }
     var ignoresRepeatedClicks = false
+    /// Confined to the in-notch guide; existing account and settings actions retain their style.
+    var onboardingChrome = false { didSet { needsDisplay = true } }
+    var showsForwardArrow = false { didSet { needsDisplay = true; invalidateIntrinsicContentSize() } }
 
     private var hovering = false {
         didSet { if hovering != oldValue { needsDisplay = true } }
@@ -73,7 +77,7 @@ final class GlowButton: NSControl {
 
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { style == .confirm ? .staticText : .button }
-    override func accessibilityLabel() -> String? { title }
+    override func accessibilityLabel() -> String? { shortcut.map { title + " · " + $0 } ?? title }
     override func isAccessibilityEnabled() -> Bool { isEnabled }
     override func accessibilityPerformPress() -> Bool {
         guard isEnabled, isActionable, !isHiddenOrHasHiddenAncestor else { return false }
@@ -98,12 +102,16 @@ final class GlowButton: NSControl {
     /// `.confirm` is state, not a control — no pointer, no press, no glow.
     private var isActionable: Bool { style != .confirm && isEnabled }
 
-    private var titleFont: NSFont { .systemFont(ofSize: 13.5, weight: style == .primary ? .semibold : .medium) }
+    private var titleFont: NSFont { font ?? .systemFont(ofSize: 13.5, weight: style == .primary ? .semibold : .medium) }
 
+    private var shortcutFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
+    private var shortcutWidth: CGFloat {
+        shortcut.map { ceil(($0 as NSString).size(withAttributes: [.font: shortcutFont]).width) + 30 } ?? (showsForwardArrow ? 25 : 0)
+    }
     override var intrinsicContentSize: NSSize {
         let s = (title as NSString).size(withAttributes: [.font: titleFont])
         let hPad: CGFloat = style == .ghost ? 10 : 22
-        return NSSize(width: ceil(s.width) + hPad * 2, height: 34)
+        return NSSize(width: ceil(s.width) + hPad * 2 + shortcutWidth, height: 34)
     }
 
     override func resetCursorRects() {
@@ -156,7 +164,8 @@ final class GlowButton: NSControl {
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
         let r = b.insetBy(dx: 1, dy: 1)
-        let capsule = NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2)
+        let radius = onboardingChrome ? min(11, r.height / 2) : r.height / 2
+        let capsule = NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
         let textColor: NSColor
 
         switch style {
@@ -168,6 +177,10 @@ final class GlowButton: NSControl {
                 : NotchPalette.accent
             (isEnabled ? fill : NSColor(white: 1, alpha: 0.07)).setFill()
             capsule.fill()
+            if onboardingChrome && isEnabled {
+                NSColor(white: 1, alpha: hovering ? 0.32 : 0.2).setStroke()
+                capsule.lineWidth = 0.5; capsule.stroke()
+            }
             textColor = isEnabled ? NSColor(srgbRed: 0.04, green: 0.05, blue: 0.10, alpha: 1) : NotchPalette.secondary
         case .secondary:
             NSColor(white: 1, alpha: hovering ? 0.12 : 0.06).setFill()
@@ -175,7 +188,7 @@ final class GlowButton: NSControl {
             capsule.lineWidth = 1
             NSColor(white: 1, alpha: hovering ? 0.35 : 0.22).setStroke()
             capsule.stroke()
-            textColor = NSColor(white: 1, alpha: 0.92)
+            textColor = NSColor(white: 1, alpha: isEnabled ? 0.92 : 0.4)
         case .ghost:
             textColor = NSColor(white: 1, alpha: hovering ? 0.85 : 0.55)
         case .confirm:
@@ -191,7 +204,25 @@ final class GlowButton: NSControl {
         let attrs: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: textColor]
         let ts = (title as NSString).size(withAttributes: attrs)
         (title as NSString).draw(
-            at: NSPoint(x: b.midX - ts.width / 2, y: b.midY - ts.height / 2), withAttributes: attrs)
+            at: NSPoint(x: b.midX - (ts.width + shortcutWidth) / 2, y: b.midY - ts.height / 2), withAttributes: attrs)
+        if let shortcut {
+            let start = b.midX + (ts.width - shortcutWidth) / 2 + 15
+            let divider = NSBezierPath()
+            divider.move(to: NSPoint(x: start, y: b.midY - 8))
+            divider.line(to: NSPoint(x: start, y: b.midY + 8))
+            textColor.withAlphaComponent(0.22).setStroke(); divider.lineWidth = 1; divider.stroke()
+            let keyAttrs: [NSAttributedString.Key: Any] = [.font: shortcutFont, .foregroundColor: textColor.withAlphaComponent(0.8)]
+            let keySize = (shortcut as NSString).size(withAttributes: keyAttrs)
+            (shortcut as NSString).draw(at: NSPoint(x: start + 15, y: b.midY - keySize.height / 2), withAttributes: keyAttrs)
+        } else if showsForwardArrow {
+            let x = b.midX + (ts.width - shortcutWidth) / 2 + 15
+            let arrow = NSBezierPath()
+            arrow.move(to: NSPoint(x: x, y: b.midY)); arrow.line(to: NSPoint(x: x + 9, y: b.midY))
+            arrow.move(to: NSPoint(x: x + 5, y: b.midY - 3.5))
+            arrow.line(to: NSPoint(x: x + 9, y: b.midY)); arrow.line(to: NSPoint(x: x + 5, y: b.midY + 3.5))
+            arrow.lineWidth = 1.25; arrow.lineCapStyle = .round; arrow.lineJoinStyle = .round
+            textColor.withAlphaComponent(0.75).setStroke(); arrow.stroke()
+        }
         if window?.firstResponder === self {
             NSColor.keyboardFocusIndicatorColor.setStroke()
             capsule.lineWidth = 2

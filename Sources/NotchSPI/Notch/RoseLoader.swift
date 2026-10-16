@@ -12,8 +12,7 @@ final class RoseLoaderView: NSView {
     /// of light instead of a dim gray glyph. Defaults off — the notch's quiet loader is unchanged.
     var hero: Bool = false { didSet { needsDisplay = true; if hero != oldValue { updateClock() } } }
 
-    /// Animate active work and the welcome illustration. Ordinary idle stays on one
-    /// still frame rather than redrawing a persistent menu-bar ornament all day.
+    /// Idle keeps the original rotating, breathing trail at 24fps; active work uses 60fps.
     var busy: Bool = false { didSet { if busy != oldValue { updateClock(); needsDisplay = true } } }
 
     // config (from the original)
@@ -56,7 +55,7 @@ final class RoseLoaderView: NSView {
     }
 
     private func updateClock() {
-        guard window != nil, (busy || hero), !reduceMotion else {
+        guard window != nil, !reduceMotion else {
             stopLink()
             needsDisplay = true
             return
@@ -100,7 +99,7 @@ final class RoseLoaderView: NSView {
         let sz = bounds.size
         guard sz.width > 1, sz.height > 1 else { return }
         // Reduce Motion: render one static, pleasing pose instead of animating.
-        let timeMs = reduceMotion || (!busy && !hero) ? 1500.0 : CACurrentMediaTime() * 1000
+        let timeMs = reduceMotion ? 1500.0 : CACurrentMediaTime() * 1000
 
         let scale = min(sz.width, sz.height) / 100
         let pulseAngle = (timeMs.truncatingRemainder(dividingBy: pulseDurationMs)) / pulseDurationMs * 2 * .pi

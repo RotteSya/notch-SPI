@@ -23,6 +23,7 @@ export function settlementSnapshot(capture:CaptureRecord,quota:AccountSnapshot) 
     questions_charged:capture.settlementStatus==='held'?null:capture.settlementStatus==='settled'?1:0,
     usable_result:capture.usableResult,balance_questions:quota.balanceQuestions,held_questions:quota.heldQuestions,
     balance_version:quota.balanceVersion,
+    ...(quota.freeTrial ? {free_trial: quota.freeTrial} : {}),
     account_totals:{questions:quota.totalQuestions,input_tokens:quota.totalInputTokens,output_tokens:quota.totalOutputTokens},
     can_retry:capture.operation==='solve' && capture.settlementStatus==='released'
       && ['retake','no_result','failed','canceled'].includes(capture.terminalState),

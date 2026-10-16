@@ -94,9 +94,9 @@ enum OfficialAPI {
         static func connected(to environment: AccountEnvironment, expectedAccount: CaptureAccount? = nil) -> Self {
             let state = environment.state
             let owner = expectedAccount ?? state.account
-            let receive: @MainActor (Int, String?, OfficialAccountTotals?) -> Void = { balance, version, totals in
+            let receive: @MainActor (Int, String?, OfficialAccountTotals?, FreeTrialSnapshot?) -> Void = { balance, version, totals, trial in
                 guard let owner else { return }
-                state.applyBalance(balance, version: version, totals: totals, account: owner)
+                state.applyBalance(balance, version: version, totals: totals, account: owner, freeTrial: trial)
                 // An older server's per-call usage cannot tell whether an account refresh
                 // already included this capture. Resolve its lifetime counters by account GET.
                 if totals == nil, state.matches(owner) {
@@ -107,9 +107,9 @@ enum OfficialAPI {
                 guard let owner, state.matches(owner) else { return nil }
                 return owner
             }, receiveUsage: { value in
-                receive(value.balanceQuestions, value.balanceVersion, value.accountTotals)
+                receive(value.balanceQuestions, value.balanceVersion, value.accountTotals, value.freeTrial)
             }, receiveSettlement: { status in
-                receive(status.balanceQuestions, status.balanceVersion, status.accountTotals)
+                receive(status.balanceQuestions, status.balanceVersion, status.accountTotals, status.freeTrial)
             }, rejectCredential: {
                 if let owner { state.rejectCredential(for: owner) }
             })

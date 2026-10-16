@@ -134,7 +134,7 @@ export class MemoryStore implements Store {
       onboarded: false,
       hotkeyPresses: 0,
     });
-    this.billing.register(this.devices.get(hashToken(token))!, input.policyVersion ?? 'legacy', input.trialQuestions);
+    this.billing.register(this.devices.get(hashToken(token))!, input.policyVersion ?? 'legacy', input.trialQuestions, input.freeTrialEligible);
     if (key !== undefined) this.registrationKeys.set(key, tokenHash);
     return { token, balanceQuestions: input.trialQuestions, id };
   }

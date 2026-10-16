@@ -982,6 +982,8 @@ private final class AccountPageController: NSViewController, SettingsPage {
     private let packsButton = NSPopUpButton()
     private let startButton = NSButton()
     private let quotaLabel = captionLabel("", size: 12)
+    private let quotaNote = captionLabel("")
+    private var legacyQuotaNote = ""
     private var packIDs: [String] = []
     private var busy = false
     private let recovery = PurchaseRecoveryStore()
@@ -1072,12 +1074,13 @@ private final class AccountPageController: NSViewController, SettingsPage {
         copyCodeButton.frame = NSRect(x: 416, y: 554, width: 172, height: 24)
         root.addSubview(copyCodeButton)
 
-        let note = captionLabel(L10n.t(
+        legacyQuotaNote = L10n.t(
             "首次联网自动获得一次性免费额度，无需注册。免费与付费题数用于同一官方服务；先用免费额度，成功获得可用答案扣 1 题，失败不扣。当前额度不设到期时间；付费题包一次性购买，不自动续费。",
             "初回接続で無料枠を自動付与。登録不要。同じ公式サービスで無料枠から消費し、利用可能な回答につき1問、失敗は消費なし。現在の残高に期限なし。パックは一回払い・自動更新なし。",
-            "One free grant on first connection; no sign-up. Both balances use the official service. Free questions are used first; one usable answer costs one question, failures cost none. Credits currently have no expiry. Packs are one-time purchases, with no auto-renewal."))
-        note.frame = NSRect(x: 52, y: 462, width: 536, height: 64)
-        root.addSubview(note)
+            "One free grant on first connection; no sign-up. Both balances use the official service. Free questions are used first; one usable answer costs one question, failures cost none. Credits currently have no expiry. Packs are one-time purchases, with no auto-renewal.")
+        quotaNote.stringValue = legacyQuotaNote
+        quotaNote.frame = NSRect(x: 52, y: 462, width: 536, height: 64)
+        root.addSubview(quotaNote)
 
         quotaLabel.frame = NSRect(x: 52, y: 436, width: 536, height: 22)
         root.addSubview(quotaLabel)
@@ -1155,7 +1158,10 @@ private final class AccountPageController: NSViewController, SettingsPage {
         deviceLabel.stringValue = registered
             ? L10n.t("设备 ID：", "デバイスID：", "Device ID: ") + OfficialAPI.truncatedToken(OfficialAPI.deviceToken ?? "")
             : L10n.t("尚未领取免费额度。", "まだ無料枠を受け取っていません。", "Free questions not claimed yet.")
-        claimButton.isHidden = registered
+        let trial = registered && !rejected ? OfficialAPI.freeTrial : nil
+        claimButton.isHidden = registered && trial?.status != .eligible
+        claimButton.title = trial?.status == .eligible ? L10n.t("领取 3 天免费体验", "3日間の無料体験を始める", "Claim 3-day free trial") : L10n.t("领取免费额度", "無料枠を受け取る", "Claim free questions")
+        claimButton.isEnabled = !busy
         resetButton.isHidden = !rejected
         copyCodeButton.isHidden = !registered
         // A rejected credential can't be spent or topped up until it's reset or re-accepted.
@@ -1190,6 +1196,18 @@ private final class AccountPageController: NSViewController, SettingsPage {
             quotaLabel.stringValue = L10n.t("首次已获 \(initial) 题", "初回付与 \(initial) 問", "Initial grant: \(initial)")
             if let free = breakdown?["trial"], let paid = breakdown?["paid"] {
                 quotaLabel.stringValue += L10n.t(" · 免费剩余 \(free) · 付费剩余 \(paid)", " · 無料残高 \(free) · 購入残高 \(paid)", " · Free left: \(free) · Paid left: \(paid)")
+            }
+        }
+        quotaNote.stringValue = legacyQuotaNote
+        if let trial {
+            if trial.status == .active {
+                quotaLabel.stringValue = L10n.t("今日免费剩余 \(trial.dailyRemaining)/400 次", "本日の無料枠：残り\(trial.dailyRemaining)/400回", "Free solves today: \(trial.dailyRemaining)/400")
+                    + (trial.expirationLabel.map { L10n.t(" · 至 ", " · 期限 ", " · Until ") + $0 } ?? "")
+            } else if trial.status == .expired {
+                quotaLabel.stringValue = L10n.t("3 天免费体验已结束", "3日間の無料体験は終了しました", "Your 3-day free trial has ended")
+            }
+            if trial.status != .ineligible {
+                quotaNote.stringValue = L10n.t("免费体验从领取起持续 72 小时，每天 400 次，北京时间 00:00 重置，不累计。成功解答计 1 次，失败不计。免费额度用完或体验到期后可继续使用已购题数，题包不自动续费。", "無料体験は開始から72時間。毎日400回、北京時間00:00にリセット、繰り越しなし。成功した回答のみ1回と数えます。無料枠の終了後は購入済み残高を利用でき、パックは自動更新されません。", "The trial lasts 72 hours from claiming, with 400 solves per Beijing day and no rollover. Successful answers count once; failures don’t. Purchased credits remain available after the daily limit or trial ends. Packs don’t auto-renew.")
             }
         }
         // Surface the rejection without clobbering a transient status message already on screen.
@@ -1315,10 +1333,21 @@ private final class AccountPageController: NSViewController, SettingsPage {
 
     @objc private func claimTapped() {
         guard !busy else { return }
+        let trialAccount = OfficialAPI.freeTrial?.status == .eligible ? OfficialAPI.accountState.account : nil
         busy = true; claimButton.isEnabled = false
         statusLabel.stringValue = L10n.t("正在核对免费额度…", "無料枠を確認中…", "Checking free questions…")
         Task { @MainActor in
             defer { busy = false; claimButton.isEnabled = true; reload() }
+            if let trialAccount {
+                switch await OfficialAPI.claimFreeTrial(expectedAccount: trialAccount) {
+                case .success(let trial):
+                    statusLabel.stringValue = trial.status == .active
+                        ? L10n.t("3 天免费体验已开启。", "3日間の無料体験が始まりました。", "Your 3-day free trial is active.")
+                        : L10n.t("免费体验已结束。", "無料体験は終了しました。", "Your free trial has ended.")
+                case .failure(let error): statusLabel.stringValue = error.message
+                }
+                return
+            }
             switch await OfficialAPI.registerIfNeeded() {
             case .success:
                 if case .failure(let error) = await OfficialAPI.refreshAccount() { statusLabel.stringValue = error.message; return }

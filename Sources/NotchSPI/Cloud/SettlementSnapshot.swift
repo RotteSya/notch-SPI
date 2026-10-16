@@ -26,6 +26,7 @@ struct SettlementSnapshot: Decodable, Equatable {
     let canRetry: Bool
     let canRecover: Bool
     var accountTotals: OfficialAccountTotals? = nil
+    var freeTrial: FreeTrialSnapshot? = nil
 
     enum CodingKeys: String, CodingKey {
         case operation
@@ -34,9 +35,11 @@ struct SettlementSnapshot: Decodable, Equatable {
         case balanceQuestions = "balance_questions", heldQuestions = "held_questions", balanceVersion = "balance_version"
         case canRetry = "can_retry", canRecover = "can_recover"
         case accountTotals = "account_totals"
+        case freeTrial = "free_trial"
     }
     var isTerminal: Bool {
         guard balanceQuestions >= 0, heldQuestions >= 0,
+              freeTrial?.isValid != false,
               BalanceVersion.canonical(balanceVersion) != nil,
               accountTotals?.isValid != false else { return false }
         switch settlementStatus {

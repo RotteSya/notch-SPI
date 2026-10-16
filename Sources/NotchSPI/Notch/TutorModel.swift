@@ -9,6 +9,9 @@ import AppKit
 final class TutorModel: ObservableObject {
     @Published var onboardingStep: NotchOnboardingStep?
     @Published var onboardingPracticeFailed = false
+    @Published var onboardingMultiple = false
+    @Published var onboardingTrialState: OnboardingTrialState = .unavailable
+    @Published var onboardingTrialExpiration: String?
     var onboardingContentHeight: CGFloat? { onboardingContentHeight(width: 600) }
     func onboardingContentHeight(width: CGFloat) -> CGFloat? {
         guard let step = onboardingStep else { return nil }

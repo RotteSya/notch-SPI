@@ -3,17 +3,19 @@ import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecov
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
 import { randomUUID } from 'node:crypto';
+import {FREE_TRIAL_POLICY, trialWindow, trialSnapshot} from './free-trial.ts';
 import { reportCapture, type ReportCapture, type ReportAttempt, type ReportLot } from './reporting.ts';
 
 export interface MemoryQuotaDevice {
   id: number; balanceQuestions: number; totalQuestions: number; totalInputTokens: number;
   totalOutputTokens: number; updatedAt: string; cliEnabled: boolean;
 }
-interface Lot extends RefundLot { kind: LotKind; sourceRef?: string; id:string;granted:number;createdAt:string;revocations:Array<{at:string;delta:number}> }
+interface Lot extends RefundLot { kind: LotKind; sourceRef?: string; expiresAt?: string; id:string;granted:number;createdAt:string;revocations:Array<{at:string;delta:number}> }
 function newLot(kind:LotKind,remaining:number,sourceRef?:string):Lot {
   return {kind,remaining,held:0,revoked:0,frozen:false,target:0,id:randomUUID(),granted:remaining,createdAt:new Date().toISOString(),revocations:[],...(sourceRef?{sourceRef}:{})};
 }
 interface State {
+  freeTrial?: {activatedAt: string | null; expiresAt: string | null};
   version: bigint; policy: string; initial: number | null; lots: Lot[];
   captures: Map<string, { record: CaptureRecord; lot: Lot; legacy: boolean }>;
   attempts: Map<string, Attempt>;
@@ -28,10 +30,11 @@ export class MemoryBilling implements BillingStore {
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
     usage: (event: StoredUsageMetric & { createdAt: string }) => void) { this.lookup = lookup; this.usage = usage; }
-  register(d: MemoryQuotaDevice, policy: string, grant: number): void {
+  register(d: MemoryQuotaDevice, policy: string, grant: number, freeTrialEligible = false): void {
     this.devices.set(d.id,d);
     this.states.set(d.id, { version: 1n, policy, initial: grant,
-      lots: [newLot('trial',grant)], captures: new Map(), attempts: new Map() });
+      ...(freeTrialEligible ? {freeTrial: {activatedAt: null, expiresAt: null}} : {}),
+      lots: [newLot('trial',grant,'initial_grant')], captures: new Map(), attempts: new Map() });
   }
   private state(d: MemoryQuotaDevice): State {
     this.devices.set(d.id,d);
@@ -44,6 +47,8 @@ export class MemoryBilling implements BillingStore {
     return state;
   }
   private snapshot(d: MemoryQuotaDevice): QuotaSnapshot {
+    const now = Date.now();
+    this.syncFreeTrial(d, now);
     const state = this.state(d);
     const result: QuotaSnapshot = { balanceQuestions: d.balanceQuestions, balanceVersion: String(state.version),
       heldQuestions: 0, policyVersion: state.policy, initialGrantQuestions: state.initial,
@@ -51,7 +56,39 @@ export class MemoryBilling implements BillingStore {
     for (const lot of state.lots) {
       result.heldQuestions += lot.held; result.quotaBreakdown[lot.kind] += lot.frozen?0:lot.remaining-lot.held;
     }
+    if (state.freeTrial) {
+      const trial = state.freeTrial;
+      result.freeTrial = trialSnapshot(true, trial.activatedAt, trial.expiresAt,
+        state.lots.find(l => l.sourceRef === 'trial_daily:' + trialWindow(now).key), now);
+    }
     return result;
+  }
+  private syncFreeTrial(d: MemoryQuotaDevice, clock = Date.now()): void {
+    const state = this.state(d), now = new Date(clock).toISOString();
+    for (const lot of state.lots) if (lot.expiresAt && lot.expiresAt <= now && lot.target !== lot.granted) {
+      const change = applyLotPolicy(lot, false, lot.granted);
+      if (change.revokedDelta) lot.revocations.push({at: now, delta: change.revokedDelta});
+      d.balanceQuestions += change.availableDelta; state.version++; d.updatedAt = now;
+    }
+    const trial = state.freeTrial;
+    if (!trial?.activatedAt || !trial.expiresAt || trial.activatedAt > now || trial.expiresAt <= now) return;
+    const window = trialWindow(clock), source = 'trial_daily:' + window.key;
+    if (state.lots.some(l => l.sourceRef === source)) return;
+    const lot = newLot('trial', FREE_TRIAL_POLICY.dailyLimit, source);
+    lot.expiresAt = window.end < trial.expiresAt ? window.end : trial.expiresAt;
+    state.lots.push(lot); d.balanceQuestions += lot.granted; state.version++; d.updatedAt = now;
+  }
+  async claimFreeTrial(token: string): Promise<AccountSnapshot | null> {
+    const d = this.lookup(token); if (!d) return null;
+    const state = this.state(d), trial = state.freeTrial;
+    if (trial && !trial.activatedAt) {
+      const now = Date.now();
+      trial.activatedAt = new Date(now).toISOString();
+      trial.expiresAt = new Date(now + FREE_TRIAL_POLICY.durationHours * 3_600_000).toISOString();
+      // Replace the remaining onboarding grant, preserving paid/goodwill and held requests.
+      for (const lot of state.lots) if (lot.sourceRef === 'initial_grant') lot.expiresAt = trial.activatedAt;
+    }
+    return this.accountFor(d);
   }
   async quota(token: string): Promise<QuotaSnapshot | null> { const d=this.lookup(token); return d ? this.snapshot(d) : null; }
   async accountSnapshot(token: string): Promise<AccountSnapshot | null> {
@@ -104,6 +141,7 @@ export class MemoryBilling implements BillingStore {
   }
   private beginCapture(input: BeginCapture, beforeCommit?: () => void): BeginResult {
     const d = this.lookup(input.token); if (!d) return { ok: false, reason: 'unknown_token' };
+    this.syncFreeTrial(d);
     const state = this.state(d), previous = state.captures.get(input.captureId);
     if (previous) return duplicateCapture(previous.record,input);
     if (input.exclusive && [...state.captures.values()].some(c => c.record.settlementStatus === 'held')) return { ok: false, reason: 'device_busy' };

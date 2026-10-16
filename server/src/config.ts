@@ -103,6 +103,7 @@ export const config = {
   trialQuestions: envInt('TRIAL_QUESTIONS', 30),
   trialMinQuestions: envInt('TRIAL_MIN_QUESTIONS', 30),
   trialMaxQuestions: envInt('TRIAL_MAX_QUESTIONS', 30),
+  freeTrialEnabled: envStr('FREE_TRIAL_ENABLED', '0') === '1',
   requireDurableStorage: envStr('REQUIRE_DURABLE_STORAGE', '0') === '1' || envStr('NODE_ENV', '') === 'production',
   requestHmacKeysJSON: envStr('REQUEST_HMAC_KEYS_JSON', '{}'),
   requestHmacKeyVersion: envStr('REQUEST_HMAC_KEY_VERSION', 'v1'),

@@ -1,10 +1,12 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import type { FreeTrialSnapshot } from './free-trial.ts';
 
 export const FIXED_TRIAL_POLICY = { version: 'fixed30-2026-09-06', questions: 30 } as const;
 export type SettlementState = 'held' | 'settled' | 'released';
 export type TerminalState = 'pending' | 'usable' | 'retake' | 'no_result' | 'failed' | 'canceled';
 export type LotKind = 'trial' | 'paid' | 'goodwill' | 'legacy_unknown';
 export interface QuotaSnapshot {
+  freeTrial?: FreeTrialSnapshot;
   balanceQuestions: number; heldQuestions: number; balanceVersion: string;
   policyVersion: string; initialGrantQuestions: number | null;
   quotaBreakdown: Record<LotKind, number>;
@@ -78,6 +80,7 @@ export function assertAttemptBinding(input: BeginCapture, attempt: NewAttempt): 
   if (attempt.captureId !== input.captureId || attempt.purpose !== purpose) throw new Error('Attempt/capture binding mismatch');
 }
 export interface BillingStore {
+  claimFreeTrial(token: string): Promise<AccountSnapshot | null>;
   quota(token: string): Promise<QuotaSnapshot | null>;
   accountSnapshot(token: string): Promise<AccountSnapshot | null>;
   begin(input: BeginCapture): Promise<BeginResult>;
@@ -98,6 +101,7 @@ export interface BillingStore {
   rateLimit(scope: string, limit: number, windowMs: number, now?: number): Promise<boolean>;
 }
 export interface RegistrationInput {
+  freeTrialEligible?: boolean;
   platform: string; appVersion: string; trialQuestions: number; policyVersion?: string;
   token?: string; registrationKeyHash?: string; registrationKeyVersion?: string;
 }

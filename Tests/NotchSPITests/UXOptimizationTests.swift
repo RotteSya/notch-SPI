@@ -113,13 +113,14 @@ final class UXOptimizationTests: XCTestCase {
         let text = collect(view)
         XCTAssertTrue(text.contains("练习应用")); XCTAssertTrue(text.contains("未运行")); XCTAssertTrue(text.contains("题图"))
         let fields = descendants(view).compactMap { $0 as? NSTextField }
-        let scope = try XCTUnwrap(fields.first { $0.stringValue.contains("当前捕获目标") })
-        let recovery = try XCTUnwrap(fields.first { $0.stringValue.contains("尚未授权") })
+        let scope = try XCTUnwrap(fields.first { $0.stringValue.contains("截图目标") })
+        let recovery = try XCTUnwrap(fields.first { $0.stringValue.contains("在系统设置中允许") })
         XCTAssertFalse(scope.frame.intersects(recovery.frame), "Permission scope and recovery must remain readable")
         XCTAssertLessThanOrEqual(recovery.frame.maxY, view.bounds.maxY)
         XCTAssertTrue(view.subviews.contains { ($0 as? GlowButton)?.title == "更改截图目标" && !$0.isHidden })
         view.update(step: .capture, granted: true, denied: false, failed: false)
-        XCTAssertTrue(view.primary.title.contains(Settings.displayString(Settings.shared.captureCombo)))
+        XCTAssertTrue(view.primary.isHidden)
+        XCTAssertEqual(view.shortcutPrompt.displayString, Settings.displayString(Settings.shared.captureCombo))
     }
     @MainActor private func collect(_ view: NSView) -> String {
         (view as? NSTextField)?.stringValue ?? view.subviews.map { collect($0) }.joined(separator: "\n")

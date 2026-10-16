@@ -6,6 +6,7 @@ enum OfficialAccountFailure: Error { case credentialUnavailable, missingCredenti
 
 /// Strictly decoded before any credential, balance, permission or usage mirror changes.
 struct OfficialAccountResponse: Decodable {
+    var freeTrial: FreeTrialSnapshot? = nil
     var initialGrant: Int? = nil
     var quotaBreakdown: [String: Int]? = nil
     let deviceToken: String?
@@ -16,6 +17,7 @@ struct OfficialAccountResponse: Decodable {
     let totalInputTokens: Int?
     let totalOutputTokens: Int?
     enum CodingKeys: String, CodingKey {
+        case freeTrial = "free_trial"
         case initialGrant = "initial_grant", quotaBreakdown = "quota_breakdown"
         case deviceToken = "device_token", balanceQuestions = "balance_questions", balanceVersion = "balance_version"
         case cliEnabled = "cli_enabled", totalQuestions = "total_questions"
@@ -23,6 +25,7 @@ struct OfficialAccountResponse: Decodable {
     }
     func validate(registration: Bool) throws {
         guard balanceQuestions >= 0, initialGrant == nil || initialGrant! >= 0,
+              freeTrial?.isValid != false,
               quotaBreakdown == nil || quotaBreakdown!.values.allSatisfy({ $0 >= 0 }),
               [totalQuestions, totalInputTokens, totalOutputTokens].allSatisfy({ $0 == nil || $0! >= 0 }),
               balanceVersion == nil || BalanceVersion.canonical(balanceVersion!) != nil else {
@@ -62,7 +65,7 @@ final class OfficialAccountState: @unchecked Sendable {
     private var refreshSequence: UInt64 = 0
     private var appliedRefreshSequence: UInt64 = 0
     private static let mirrorKeys = ["balanceQuestions", "balanceVersion", "cliEnabled", "credentialRejected",
-                                     "totalQuestions", "totalInputTokens", "totalOutputTokens", "initialGrant", "quotaBreakdown"]
+                                     "totalQuestions", "totalInputTokens", "totalOutputTokens", "initialGrant", "quotaBreakdown", "freeTrial"]
 
     init(defaults: UserDefaults = .standard, secrets: KeychainStore.Access = .live,
          baseURL: @escaping () -> String = { OfficialAPI.baseURL }, onChange: @escaping () -> Void = {}) {
@@ -256,6 +259,7 @@ final class OfficialAccountState: @unchecked Sendable {
         return version.map { BalanceVersion.accepts(incoming: $0, current: current) } ?? (current == nil)
     }
     private func applyResponseLocked(_ response: OfficialAccountResponse) {
+        defaults.set(response.freeTrial.flatMap { try? JSONEncoder().encode($0) }, forKey: "official.freeTrial")
         defaults.set(false, forKey: "official.credentialRejected")
         defaults.set(response.balanceQuestions, forKey: "official.balanceQuestions")
         if let grant = response.initialGrant { defaults.set(grant, forKey: "official.initialGrant") }
@@ -275,12 +279,14 @@ final class OfficialAccountState: @unchecked Sendable {
 
     @discardableResult
     func applyBalance(_ balance: Int, version: String?, totals: OfficialAccountTotals? = nil,
-                      account: OfficialAPI.CaptureAccount? = nil) -> Bool {
+                      account: OfficialAPI.CaptureAccount? = nil, freeTrial: FreeTrialSnapshot? = nil) -> Bool {
         locked {
             let current = identityLocked()
             guard account == nil || account == current, balance >= 0, acceptsBalanceLocked(version),
+                  freeTrial?.isValid != false,
                   totals == nil || (totals!.isValid && version != nil) else { return false }
             defaults.removeObject(forKey: "official.quotaBreakdown")
+            defaults.set(freeTrial.flatMap { try? JSONEncoder().encode($0) }, forKey: "official.freeTrial")
             defaults.set(balance, forKey: "official.balanceQuestions")
             if let version { defaults.set(version, forKey: "official.balanceVersion") }
             if let totals {

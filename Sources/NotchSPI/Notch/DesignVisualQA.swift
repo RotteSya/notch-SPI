@@ -1,7 +1,8 @@
 #if DEBUG
 import AppKit
 
-/// Offline visual fixtures. No service activation, hotkeys, account, or capture requests.
+/// Offline visual fixtures. No service activation, account, or real capture requests.
+/// The guide walkthrough registers real global hotkeys with fixture capture/answer providers.
 /// Requires the ephemeral vault and lives in its own QA application bundle.
 @MainActor
 enum DesignVisualQA {
@@ -15,8 +16,41 @@ enum DesignVisualQA {
         controller.qaScreenshotCapture = { .failure(.captureFailed) }
         controller.qaScreenshotSubmit = { _, _ in }
         controller.qaOpenPracticePage = { _ in false }
+        controller.model.onboardingTrialState = .available
+        controller.qaOnboardingClaimTrial = {
+            try? await Task.sleep(for: .milliseconds(650))
+            return !Task.isCancelled
+        }
         controller.qaPinDesignPreview()
         controller.show()
+        if scenario == "guide-walkthrough" {
+            controller.qaEnableOnboardingHotkeys()
+            controller.qaOpenPracticePage = { NSWorkspace.shared.open($0) }
+            controller.qaScreenshotCapture = {
+                let image = NSImage(size: NSSize(width: 640, height: 360))
+                image.lockFocus()
+                NSColor(white: 0.96, alpha: 1).setFill()
+                NSRect(x: 0, y: 0, width: 640, height: 360).fill()
+                ("OFFLINE PRACTICE\n120 km / 2 h" as NSString).draw(in: NSRect(x: 32, y: 80, width: 576, height: 240), withAttributes: [.font: NSFont.systemFont(ofSize: 28), .foregroundColor: NSColor.black])
+                image.unlockFocus()
+                let data = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("guide-offline-\(UUID()).png")
+                try? data.write(to: url)
+                return .success(.init(path: url.path, blank: false, targetFingerprint: "offline-practice"))
+            }
+            controller.qaScreenshotSubmit = { [weak controller] _, _ in
+                guard let controller else { return }
+                controller.model.status = .running
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak controller] in
+                    guard let controller, controller.model.onboardingStep == .working else { return }
+                    controller.model.answer = "FINAL: B. 60 km/h"
+                    controller.model.status = .idle
+                    controller.qaFinishOnboardingCapture(success: true)
+                }
+            }
+            controller.qaPresentOnboarding(.welcome)
+            return controller
+        }
         if scenario == "month-pass" {
             controller.model.answer = ""
             controller.model.status = .ready
@@ -59,7 +93,7 @@ enum DesignVisualQA {
         model.status = .idle
         model.answer = "FINAL: B. 60 km/h"
         let collectionCount = scenario.hasPrefix("collecting-") ? Int(scenario.suffix(1)) : nil
-        let count = collectionCount ?? (["expanded-answer", "history", "multiple", "collecting", "mixed"].contains(scenario) ? 4 : 1)
+        let count = collectionCount ?? (["expanded-answer", "history", "multiple", "collecting", "mixed"].contains(scenario) ? 4 : scenario == "success" ? 2 : 1)
         for index in 0..<count {
             let size = scenario == "mixed" && index == 1 ? NSSize(width: 400, height: 700)
                 : scenario == "mixed" && index == 2 ? NSSize(width: 1100, height: 300) : NSSize(width: 640, height: 400)
@@ -161,6 +195,9 @@ enum DesignVisualQA {
             model.screenshots = []; model.screenshotImages = [:]
             model.answer = ""; model.status = .ready; model.statusText = L10n.statusReady
         case "success": controller.qaPresentOnboarding(.success)
+        case "trial":
+            model.answer = ""; model.screenshots = []; model.screenshotImages = [:]
+            controller.qaPresentOnboarding(.trial)
         case "welcome": controller.qaPresentOnboarding(.welcome)
         case "permission": controller.qaOnboardingPermission = { false }; controller.qaPresentOnboarding(.permission)
         case "working":

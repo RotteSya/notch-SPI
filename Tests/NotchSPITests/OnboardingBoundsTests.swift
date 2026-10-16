@@ -32,18 +32,26 @@ final class OnboardingBoundsTests: XCTestCase {
             }
             view.update(step: .capture, granted: true, denied: false, failed: false)
             view.layoutSubtreeIfNeeded()
-            XCTAssertGreaterThanOrEqual(view.primary.frame.width, view.primary.intrinsicContentSize.width)
-            XCTAssertTrue(view.primary.title.contains(Settings.displayString(Settings.shared.captureCombo)))
+            XCTAssertTrue(view.primary.isHidden)
+            XCTAssertEqual(view.shortcutPrompt.displayString, Settings.displayString(Settings.shared.captureCombo))
+            XCTAssertTrue(view.shortcutPrompt.accessibilityLabel()?.contains(Settings.displayString(Settings.shared.captureCombo)) == true)
+            XCTAssertTrue(view.bounds.contains(view.shortcutPrompt.frame))
+            XCTAssertNil(view.shortcutPrompt.hitTest(.zero))
         }
     }
 
     @MainActor func testGuideUsesDailyCardMarginsAndMaterial() throws {
-        for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
+        for step in NotchOnboardingStep.allCases {
             let height = NotchOnboardingView.contentHeight(for: step, width: 600)
             let view = NotchOnboardingView(frame: NSRect(x: 0, y: 0, width: 600, height: height))
             view.update(step: step, granted: false, denied: true, failed: true)
             view.layoutSubtreeIfNeeded()
             let surface = try XCTUnwrap(view.subviews.first { $0 is AnswerShelfView })
+            if step.showsLiveContent {
+                XCTAssertTrue(surface.isHidden)
+                XCTAssertGreaterThanOrEqual(view.primary.frame.minY, NotchLayout.headerHeight)
+                continue
+            }
             XCTAssertEqual(surface.frame, NotchLayout.shelfFrame(width: 600, top: NotchLayout.headerHeight,
                 height: height - NotchLayout.headerHeight - (step.showsLiveContent ? 8 : NotchLayout.answerBottomPad)))
             XCTAssertEqual(surface.layer?.cornerRadius, 18)
@@ -59,7 +67,7 @@ final class OnboardingBoundsTests: XCTestCase {
         defer { L10n.setting = old }
         for language in [AppLanguage.zhHans, .ja, .en] {
             L10n.setting = language
-            for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
+            for step in NotchOnboardingStep.allCases {
                 for failure in [false, true] {
                     let view = NotchOnboardingView(frame: NSRect(x: 0, y: 0, width: 600, height: NotchOnboardingView.contentHeight(for: step, width: 600)))
                     view.update(step: step, granted: !failure, denied: failure, failed: failure, practiceFailed: failure)

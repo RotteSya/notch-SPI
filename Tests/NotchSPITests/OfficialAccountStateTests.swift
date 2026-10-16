@@ -43,6 +43,76 @@ private final class AccountFixture {
 
 @MainActor
 final class OfficialAccountStateTests: XCTestCase {
+    private func trialBody(balance: Int = 400, version: String = "9", dailyLimit: Int = 400) -> Data {
+        var account = try! JSONSerialization.jsonObject(with: body(balance: balance, version: version)) as! [String: Any]
+        account["free_trial"] = ["status": "active", "policy_version": "trial3d400-2026-10-16", "daily_limit": dailyLimit,
+            "activated_at": "2026-10-16T03:00:00.000Z", "expires_at": "2026-10-19T03:00:00.000Z",
+            "resets_at": "2026-10-16T16:00:00.000Z", "daily_used": 0, "daily_held": 0,
+            "daily_remaining": 400, "server_time": "2026-10-16T03:00:00.000Z"] as [String: Any]
+        return try! JSONSerialization.data(withJSONObject: account)
+    }
+
+    func testTrialClaimAcceptsOnlyValidatedServerReceiptAndPreservesOriginalExpiryOnRetry() async throws {
+        let f = AccountFixture(); defer { f.close() }
+        var calls = 0
+        let server = try await peer(f) { request, reply in
+            XCTAssertEqual(request.path, "/v1/free-trial/claim")
+            XCTAssertEqual(request.headers["authorization"], "Bearer dev_account_original_123456")
+            calls += 1
+            reply.respond(type: "application/json", body: self.trialBody())
+        }
+        defer { server.stop() }
+        f.seed()
+        let first = try await OfficialAPI.claimFreeTrial(environment: f.environment).get()
+        let again = try await OfficialAPI.claimFreeTrial(environment: f.environment).get()
+        XCTAssertEqual(first, again)
+        XCTAssertEqual(first.expiresAt, "2026-10-19T03:00:00.000Z")
+        XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 400)
+        XCTAssertEqual(calls, 2)
+        XCTAssertNotNil(f.state.value("freeTrial"))
+    }
+
+    func testTrialClaimRejectsLegacyGrantAndMalformedLimitsWithoutChangingAccount() async throws {
+        for response in [body(balance: 30, version: "9"), trialBody(dailyLimit: 401)] {
+            let f = AccountFixture(); defer { f.close() }
+            let server = try await peer(f) { _, reply in reply.respond(type: "application/json", body: response) }
+            defer { server.stop() }
+            f.seed()
+            assertFailure(await OfficialAPI.claimFreeTrial(environment: f.environment))
+            XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 80)
+            XCTAssertNil(f.state.value("freeTrial"))
+            XCTAssertEqual(f.state.token, "dev_account_original_123456")
+        }
+    }
+
+    func testTrialClaimLateResponseCannotGrantToAReplacementAccount() async throws {
+        let f = AccountFixture(); defer { f.close() }
+        let entered = expectation(description: "trial claim started")
+        var pending: CaptureHTTPReply?
+        let server = try await peer(f) { _, reply in pending = reply; entered.fulfill() }
+        defer { server.stop() }
+        f.seed()
+        let task = Task { await OfficialAPI.claimFreeTrial(environment: f.environment) }
+        await fulfillment(of: [entered], timeout: 3)
+        f.seed("dev_replacement_trial_123456", balance: 700, version: "70")
+        pending?.respond(type: "application/json", body: trialBody())
+        assertFailure(await task.value)
+        XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 700)
+        XCTAssertNil(f.state.value("freeTrial"))
+    }
+
+    func testTrialReceiptRemainsBoundToBalanceVersionAndClearsOnCredentialChange() throws {
+        let f = AccountFixture(); defer { f.close() }
+        f.seed()
+        let account = try JSONDecoder().decode(OfficialAccountResponse.self, from: trialBody())
+        try f.state.acceptRefresh(account, ticket: f.state.prepareRefresh())
+        let receipt = try XCTUnwrap(account.freeTrial)
+        XCTAssertFalse(f.state.applyBalance(999, version: "1", freeTrial: receipt))
+        XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 400)
+        f.seed("dev_replaced_trial_123456", balance: 12)
+        XCTAssertNil(f.state.value("freeTrial"))
+    }
+
     func testRegistrationInstallsConfigurationAfterCredentialCommitWithoutConfigRequest() async throws {
         let f = AccountFixture(); defer { f.close() }
         let token = "dev_registration_config_123456"

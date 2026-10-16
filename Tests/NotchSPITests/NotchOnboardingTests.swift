@@ -31,12 +31,12 @@ final class NotchOnboardingTests: XCTestCase {
         let surface = try XCTUnwrap(view.subviews.first { $0 is AnswerShelfView })
         XCTAssertNil(surface.hitTest(NSPoint(x: 20, y: 20)))
         for _ in 0..<8 {
-            for step in [NotchOnboardingStep.permission, .welcome, .working, .success] {
+            for step in NotchOnboardingStep.allCases {
                 view.update(step: step, granted: false, denied: true, failed: true)
                 view.layoutSubtreeIfNeeded()
                 XCTAssertEqual(view.subviews.count, count)
                 XCTAssertFalse(view.subviews.contains { $0 is NSImageView })
-                XCTAssertTrue(view.primary.isEnabled)
+                XCTAssertEqual(view.primary.isEnabled, !view.primary.isHidden && step != .trial)
             }
         }
         try await Task.sleep(nanoseconds: 400_000_000)
@@ -58,16 +58,17 @@ final class NotchOnboardingTests: XCTestCase {
         let language = L10n.setting
         defer { L10n.setting = language }
         let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 420))
-        var anchors: [Bool: NSRect] = [:]
+        var anchors: [NotchOnboardingStep: NSRect] = [:]
         for locale in [AppLanguage.zhHans, .ja, .en] {
             L10n.setting = locale
             for step in [NotchOnboardingStep.welcome, .permission, .practice, .capture, .working, .success] {
                 view.update(step: step, granted: true, denied: false, failed: false)
                 view.layoutSubtreeIfNeeded()
-                if let anchor = anchors[step.showsLiveContent] { XCTAssertEqual(view.primary.frame, anchor) }
-                else { anchors[step.showsLiveContent] = view.primary.frame }
+                // The action stays on the same trailing axis; localized copy determines its width.
+                if let anchor = anchors[step] { XCTAssertEqual(view.primary.frame.maxX, anchor.maxX) }
+                else { anchors[step] = view.primary.frame }
                 XCTAssertGreaterThanOrEqual(view.primary.frame.width, view.primary.intrinsicContentSize.width)
-                XCTAssertFalse(view.primary.isHidden)
+                XCTAssertEqual(view.primary.isHidden, step == .working || step == .capture)
             }
         }
     }
@@ -190,11 +191,15 @@ final class NotchOnboardingTests: XCTestCase {
     func testInterruptedCaptureRestoresInstructionsAndCompletionPersists() {
         let d = defaults()
         let progress = NotchOnboardingProgress(defaults: d)
-        for step in [NotchOnboardingStep.working, .success] {
+        for step in [NotchOnboardingStep.working] {
             progress.save(step)
             XCTAssertEqual(NotchOnboardingProgress(defaults: d).resumeStep, .capture)
             XCTAssertFalse(progress.isComplete)
         }
+        progress.save(.success, multiple: true)
+        XCTAssertEqual(NotchOnboardingProgress(defaults: d).resumeStep, .trial)
+        progress.dismiss()
+        XCTAssertFalse(progress.isComplete)
         progress.complete()
         XCTAssertTrue(progress.isComplete)
         XCTAssertFalse(progress.shouldPresent)
@@ -216,13 +221,14 @@ final class NotchOnboardingTests: XCTestCase {
         let savedMode = Settings.shared.mode
         defer { controller.prepareForTermination(); Settings.shared.mode = savedMode }
         controller.qaOnboardingPermission = { false }
+        controller.qaOpenPracticePage = { _ in true }
         controller.qaPresentOnboarding(.welcome)
         controller.qaAdvanceOnboarding()
-        XCTAssertEqual(controller.model.onboardingStep, .permission)
+        XCTAssertEqual(controller.model.onboardingStep, .capture)
         controller.qaBackOnboarding()
         XCTAssertEqual(controller.model.onboardingStep, .welcome)
         controller.qaPresentOnboarding(.capture)
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         XCTAssertEqual(controller.model.onboardingStep, .permission)
         controller.qaBackOnboarding()
         XCTAssertEqual(controller.model.onboardingStep, .capture)
@@ -230,22 +236,19 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))
     }
 
-    @MainActor func testExistingPermissionOpensPracticeBeforeCaptureAndBacktracksInOrder() {
+    @MainActor func testWelcomeOpensPracticeDirectlyAndNeverCapturesAutomatically() {
         let controller = NotchController(activateServices: false, onboardingDefaults: defaults())
         defer { controller.prepareForTermination() }
         controller.qaOnboardingPermission = { true }
-        controller.qaOpenPracticePage = { _ in true }
+        var opens = 0
+        controller.qaOpenPracticePage = { _ in opens += 1; return true }
         controller.qaPresentOnboarding(.welcome)
         controller.qaAdvanceOnboarding()
-        XCTAssertEqual(controller.model.onboardingStep, .practice)
+        XCTAssertEqual(controller.model.onboardingStep, .capture)
         XCTAssertFalse(controller.model.screenshotCapturing)
+        XCTAssertEqual(opens, 1)
         controller.qaBackOnboarding()
         XCTAssertEqual(controller.model.onboardingStep, .welcome)
-        controller.qaAdvanceOnboarding()
-        controller.qaAdvanceOnboarding()
-        XCTAssertEqual(controller.model.onboardingStep, .capture)
-        controller.qaBackOnboarding()
-        XCTAssertEqual(controller.model.onboardingStep, .practice)
     }
 
     @MainActor func testPracticeFailureStaysAtPracticeAndRetryAdvancesToCapture() {
@@ -263,7 +266,7 @@ final class NotchOnboardingTests: XCTestCase {
         XCTAssertEqual(controller.model.onboardingStep, .capture)
         XCTAssertEqual(opens, 2)
         controller.qaBackOnboarding()
-        XCTAssertEqual(controller.model.onboardingStep, .practice)
+        XCTAssertEqual(controller.model.onboardingStep, .welcome)
         XCTAssertEqual(opens, 2)
     }
 
@@ -317,10 +320,10 @@ final class NotchOnboardingTests: XCTestCase {
             return await withCheckedContinuation { pending = $0 }
         }
         controller.qaPresentOnboarding(.capture)
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         for _ in 0..<50 where pending == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(pending)
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         XCTAssertEqual(calls, 1)
         XCTAssertEqual(controller.model.onboardingStep, .working)
         controller.qaDismissOnboarding()
@@ -340,23 +343,25 @@ final class NotchOnboardingTests: XCTestCase {
         var calls = 0
         controller.qaScreenshotCapture = { calls += 1; return .failure(.captureFailed) }
         controller.qaPresentOnboarding(.capture)
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(controller.model.status, .error)
         XCTAssertEqual(controller.model.onboardingStep, .working)
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(calls, 2)
         controller.qaFinishOnboardingCapture(success: true)
-        XCTAssertEqual(controller.model.onboardingStep, .success)
+        XCTAssertEqual(controller.model.onboardingStep, .firstAnswer)
+        XCTAssertFalse(d.bool(forKey: "onboardingDone"))
+        controller.qaOpenPracticePage = { _ in true }
         controller.qaAdvanceOnboarding()
-        XCTAssertNil(controller.model.onboardingStep)
-        XCTAssertFalse(controller.model.expanded)
-        XCTAssertTrue(d.bool(forKey: "onboardingDone"))
+        XCTAssertEqual(controller.model.onboardingStep, .multiCapture)
+        XCTAssertTrue(controller.model.onboardingMultiple)
+        XCTAssertFalse(d.bool(forKey: "onboardingDone"))
     }
 
-    @MainActor func testCompletionAndSuccessDismissalClearPracticeAndReopenIdle() throws {
+    @MainActor func testCompletionAndClaimedDismissalClearPracticeAndReopenIdle() async throws {
         for dismiss in [false, true] {
             let d = defaults()
             let controller = NotchController(activateServices: false, onboardingDefaults: d)
@@ -374,6 +379,16 @@ final class NotchOnboardingTests: XCTestCase {
             model.explanation = "Practice explanation"; model.explanationAvailable = true
             model.recoveryAvailable = true
             model.captureFeedback = "practice"; model.materials = [asset]
+            controller.model.onboardingTrialState = .available
+            controller.qaOnboardingClaimTrial = { true }
+            controller.qaAdvanceOnboarding()
+            XCTAssertEqual(model.onboardingStep, .trial)
+            XCTAssertFalse(d.bool(forKey: "onboardingDone"))
+            XCTAssertTrue(model.answer.isEmpty)
+            XCTAssertTrue(model.screenshots.isEmpty)
+            controller.qaAdvanceOnboarding()
+            for _ in 0..<50 where model.onboardingTrialState == .claiming { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(model.onboardingTrialState, .claimed)
             if dismiss { controller.qaDismissOnboarding() } else { controller.qaAdvanceOnboarding() }
             XCTAssertTrue(d.bool(forKey: "onboardingDone"))
             XCTAssertNil(model.onboardingStep); XCTAssertFalse(model.expanded)
@@ -397,7 +412,7 @@ final class NotchOnboardingTests: XCTestCase {
         var pending: CheckedContinuation<Result<ScreenCapture.Shot, CaptureError>, Never>?
         controller.qaScreenshotCapture = { await withCheckedContinuation { pending = $0 } }
         controller.qaPresentOnboarding(.capture)
-        controller.qaAdvanceOnboarding()
+        controller.qaPressScreenshot(multiple: false)
         for _ in 0..<50 where pending == nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(pending)
         controller.qaCancelScreenshotRound()

@@ -349,7 +349,9 @@ final class NotchView: NSView {
                               denied: model.onboardingPermissionDenied,
                               failed: !model.screenshotCapturing && model.status != .running && model.status != .streaming
                                 && (model.status == .error || !model.captureFeedback.isEmpty || model.resultState == .retake),
-                              practiceFailed: model.onboardingPracticeFailed)
+                              practiceFailed: model.onboardingPracticeFailed, screenshotCount: model.screenshots.count,
+                              capturing: model.screenshotCapturing, previewing: model.screenshotPreviewing, multiple: model.onboardingMultiple,
+                              trial: model.onboardingTrialState, trialExpiration: model.onboardingTrialExpiration)
         }
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = model.onboardingStep != nil }
         let tint = roseTint()
@@ -679,13 +681,15 @@ final class NotchView: NSView {
         layoutContentPlate(card: card, p: p)
     }
 
-    /// The rose's two poses share a center-x of 24pt from the card's left edge, so the morph is a
-    /// glide along the leading edge plus a gentle 20→16pt rescale and a 1.5pt vertical settle.
+    /// The rose keeps its leading anchor while settling onto the current header's optical center.
     private func layoutRose(card: CGRect, g: CGFloat) {
         let t = max(0, min(g, 1.1))
         let barH = collapsedAnchor.height > 0 ? collapsedAnchor.height : bounds.height
-        let cy = notchLerp(barH / 2, (screenLayout?.headerInset ?? 0) + NotchLayout.headerRowCenterY, t)
-        let size = notchLerp(20, 16, t)
+        let guiding = model.onboardingStep != nil || closingOnboarding
+        let headerCenter = guiding ? NotchOnboardingView.headerRowCenterY : NotchLayout.headerRowCenterY
+        let headerSize: CGFloat = guiding ? NotchOnboardingView.headerIndicatorSize : 16
+        let cy = notchLerp(barH / 2, (screenLayout?.headerInset ?? 0) + headerCenter, t)
+        let size = notchLerp(20, headerSize, t)
         var rect = CGRect(x: card.minX + 24 - size / 2, y: cy - size / 2, width: size, height: size)
         if let cutout = screenLayout?.cutout, let window {
             let indicatorRight = window.frame.minX + max(rect.maxX, card.minX + 56)
@@ -705,7 +709,12 @@ final class NotchView: NSView {
             lastPlateSize = plateSize
             layoutPlate(plateSize)
         }
-        expandedContent.frame = CGRect(origin: card.origin, size: plateSize)
+        let followsGuideHeight = model.onboardingStep != nil && wasExpanded && !geoMorph.isAnimating && !closingOnboarding
+        // Keep ancestor hit regions around the moving footer while shrinking. The text and
+        // answer still use their destination layout; only event bounds follow the visible slab.
+        expandedContent.frame = CGRect(origin: card.origin,
+            size: CGSize(width: plateSize.width, height: followsGuideHeight ? max(plateSize.height, card.height) : plateSize.height))
+        if followsGuideHeight { onboarding.frame.size.height = card.height }
         // Body typography stays at its final size. Only the top groups track the two
         // currently visible wings, so even an interrupted morph cannot sweep text
         // through the physical camera housing.
@@ -719,6 +728,7 @@ final class NotchView: NSView {
         onboarding.configureTopLayout(cutout: screenLayout?.usesHeaderWings == true ? cutout : nil,
             availableWidth: liveWidth, headerInset: screenLayout?.headerInset ?? 0,
             bodyAdjustment: screenLayout?.bodyAdjustment(onboarding: true) ?? 0)
+        onboarding.followPresentationHeight(followsGuideHeight ? card.height : nil)
 
         // Staging: the slab leads, the content follows — in by ~half the morph on the way out of
         // the notch, and gone in the first exhale of a collapse.
@@ -821,13 +831,15 @@ final class NotchView: NSView {
         // answer scrolls within this fixed region and a short one hugs it.
         let bodyAdjustment = screenLayout?.bodyAdjustment(onboarding: model.onboardingStep != nil) ?? 0
         let onboardingHeight = (model.onboardingContentHeight(width: size.width) ?? 0) + bodyAdjustment
-        onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: onboardingHeight)
-        let headerHeight = model.onboardingStep == nil ? NotchLayout.headerHeight + bodyAdjustment : onboardingHeight
+        let liveGuide = model.onboardingStep?.showsLiveContent == true
+        let footerHeight = model.onboardingStep.map { $0.showsLiveContent ? NotchOnboardingView.footerHeight(for: $0) : 0 } ?? 0
+        onboarding.frame = CGRect(x: 0, y: 0, width: size.width, height: liveGuide ? size.height : onboardingHeight)
+        let headerHeight = model.onboardingStep == nil || liveGuide ? NotchLayout.headerHeight + bodyAdjustment : onboardingHeight
         let actionHeight = model.materialStripHeight(width: max(0, size.width - inset * 2))
         let stripHeight = model.screenshotTrayHeight + actionHeight
         let trayHeight = model.screenshotTrayHeight
         let w = max(0, size.width - inset * 2)
-        let h = max(0, size.height - headerHeight - stripHeight - NotchLayout.answerBottomPad)
+        let h = max(0, size.height - headerHeight - stripHeight - NotchLayout.answerBottomPad - footerHeight)
         let shelf = model.usesContentShelf
         let oldTrayFrame = screenshotTray.frame
         // Before the first compositor commit there is no presentation layer yet.
@@ -843,7 +855,7 @@ final class NotchView: NSView {
             y: shelf ? headerHeight + h : headerHeight,
             width: w, height: trayHeight)
         let intakeSurface = model.showsWaitingSurface || (model.mode == "tutor"
-            && model.onboardingStep == nil && model.screenshotRoundActive)
+            && (model.onboardingStep == nil || liveGuide) && model.screenshotRoundActive)
         answerShelf.isHidden = !(shelf || intakeSurface)
         answerShelf.frame = NotchLayout.shelfFrame(width: size.width, top: headerHeight, height: h + trayHeight)
         let now = CACurrentMediaTime()

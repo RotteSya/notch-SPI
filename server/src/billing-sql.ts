@@ -3,6 +3,7 @@ import { hashToken, newToken, type RegisteredDevice } from './db.ts';
 import { applyRefundLot } from './payment-ledger-sql.ts';
 import {checkpointQuota} from './quota-migration.ts';
 import {QUOTA_MIGRATION_SCHEMA} from './quota-migration-schema.ts';
+import {FREE_TRIAL_POLICY, trialWindow, trialSnapshot, type FreeTrialSnapshot} from './free-trial.ts';
 import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type CreditInput, type FinishCapture, type QuotaSnapshot,
   type RegistrationInput } from './billing.ts';
@@ -16,6 +17,10 @@ export type RunTransaction = <T>(transaction: Transaction<T>, options?: {readOnl
 export function* query(sql: string, ...args: Statement['args']): Transaction<Row[]> { return yield { sql, args }; }
 
 export const BILLING_SCHEMA = `
+CREATE TABLE IF NOT EXISTS free_trials (
+ device_id BIGINT PRIMARY KEY REFERENCES devices(id), activated_at TEXT, expires_at TEXT,
+ CHECK((activated_at IS NULL AND expires_at IS NULL) OR (activated_at IS NOT NULL AND expires_at>activated_at))
+);
 CREATE TABLE IF NOT EXISTS quota_lots (
  lot_id TEXT PRIMARY KEY, device_id BIGINT NOT NULL REFERENCES devices(id), kind TEXT NOT NULL,
  granted BIGINT NOT NULL CHECK(granted>=0), remaining BIGINT NOT NULL CHECK(remaining>=0),
@@ -103,11 +108,13 @@ export function* opening(d: Row): Transaction<void> {
 }
 function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
   yield* opening(d);
+  const trial = yield* syncFreeTrial(d);
   const lots = yield* query('SELECT kind,remaining,held,refund_frozen FROM quota_lots WHERE device_id=?', Number(d.id));
   const quota: QuotaSnapshot = { balanceQuestions: Number(d.balance_questions), heldQuestions: 0,
     balanceVersion: String(d.balance_version), policyVersion: String(d.quota_policy_version),
     initialGrantQuestions: d.initial_grant_questions === null ? null : Number(d.initial_grant_questions),
-    quotaBreakdown: { trial: 0, paid: 0, goodwill: 0, legacy_unknown: 0 } };
+    quotaBreakdown: { trial: 0, paid: 0, goodwill: 0, legacy_unknown: 0 },
+    ...(trial ? {freeTrial: trial} : {}) };
   for (const lot of lots) {
     quota.heldQuestions += Number(lot.held);
     quota.quotaBreakdown[lot.kind as keyof QuotaSnapshot['quotaBreakdown']] += Number(lot.refund_frozen)===1 ? 0 : Number(lot.remaining) - Number(lot.held);
@@ -116,6 +123,32 @@ function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
     throw new Error('Quota ledger balance mismatch');
   }
   return quota;
+}
+
+/** Caller holds the device lock; daily grant, expiration and balance version commit together. */
+function* syncFreeTrial(d: Row): Transaction<FreeTrialSnapshot | null> {
+  const id = Number(d.id), now = new Date().toISOString();
+  const trial = (yield* query('SELECT * FROM free_trials WHERE device_id=?', id))[0];
+  if (!trial) return null;
+  const expired = yield* query('SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND trial_expires_at<=? AND refund_target<>granted', id, now);
+  for (const lot of expired) yield* applyRefundLot(String(lot.lot_id), false, Number(lot.granted), 'trial-expiry');
+  const activatedAt = trial.activated_at === null ? null : String(trial.activated_at);
+  const expiresAt = trial.expires_at === null ? null : String(trial.expires_at);
+  const window = trialWindow(Date.parse(now)), source = 'trial_daily:' + window.key;
+  if (activatedAt && expiresAt && activatedAt <= now && now < expiresAt) {
+    const lot = randomUUID(), expires = window.end < expiresAt ? window.end : expiresAt;
+    const inserted = yield* query(`INSERT INTO quota_lots
+      (lot_id,device_id,kind,granted,remaining,source_ref,created_at,trial_expires_at)
+      VALUES (?,?,'trial',?,?,?,?,?) ON CONFLICT(device_id,source_ref) DO NOTHING RETURNING lot_id`,
+      lot, id, FREE_TRIAL_POLICY.dailyLimit, FREE_TRIAL_POLICY.dailyLimit, source, now, expires);
+    if (inserted.length) {
+      yield* query('UPDATE devices SET balance_questions=balance_questions+?,balance_version=balance_version+1,updated_at=? WHERE id=?', FREE_TRIAL_POLICY.dailyLimit, now, id);
+      yield* ledger(id, lot, 'grant', FREE_TRIAL_POLICY.dailyLimit, 0, source);
+    }
+  }
+  Object.assign(d, (yield* query('SELECT * FROM devices WHERE id=?', id))[0]!);
+  const lot = (yield* query('SELECT remaining,held FROM quota_lots WHERE device_id=? AND source_ref=?', id, source))[0];
+  return trialSnapshot(true, activatedAt, expiresAt, lot ? {remaining: Number(lot.remaining), held: Number(lot.held)} : undefined, Date.parse(now));
 }
 function* accountFor(d: Row): Transaction<AccountSnapshot> {
   // Device counters and quota lots share the caller's transaction and device lock.
@@ -162,6 +195,7 @@ export class SQLBilling implements BillingStore {
         throw new Error('Registration identity conflict');
       }
       if (inserted.length) {
+        if (input.freeTrialEligible) yield* query('INSERT INTO free_trials (device_id) VALUES (?)', Number(d.id));
         const lot = randomUUID();
         yield* query(`INSERT INTO quota_lots (lot_id,device_id,kind,granted,remaining,source_ref,created_at)
           VALUES (?,?,?,?,?,?,?)`, lot, Number(d.id), 'trial', input.trialQuestions, input.trialQuestions, 'initial_grant', now);
@@ -174,6 +208,17 @@ export class SQLBilling implements BillingStore {
   quota(token: string): Promise<QuotaSnapshot | null> {
     return this.run((function* (): Transaction<QuotaSnapshot | null> {
       const d = yield* device(token); return d ? yield* quotaFor(d) : null;
+    })());
+  }
+  claimFreeTrial(token: string): Promise<AccountSnapshot | null> {
+    return this.run((function* (): Transaction<AccountSnapshot | null> {
+      const d = yield* device(token); if (!d) return null;
+      const id = Number(d.id), now = Date.now();
+      const started = new Date(now).toISOString();
+      const expires = new Date(now + FREE_TRIAL_POLICY.durationHours * 3_600_000).toISOString();
+      const claimed = yield* query('UPDATE free_trials SET activated_at=?,expires_at=? WHERE device_id=? AND activated_at IS NULL RETURNING device_id', started, expires, id);
+      if (claimed.length) yield* query("UPDATE quota_lots SET trial_expires_at=? WHERE device_id=? AND source_ref='initial_grant'", started, id);
+      return yield* accountFor(d);
     })());
   }
   accountSnapshot(token: string): Promise<AccountSnapshot | null> {
@@ -412,6 +457,7 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
   const d = yield* device(input.token);
   if (!d) return { ok: false, reason: 'unknown_token' };
   yield* opening(d);
+  yield* syncFreeTrial(d);
   const existing = yield* readCapture(d, input.captureId);
   if (existing) return duplicateCapture(existing, input);
   if (input.exclusive) {

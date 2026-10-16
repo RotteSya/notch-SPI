@@ -123,6 +123,38 @@ control 厂商被选中但密钥缺失时响应 503，`ok=false` 并附带 `prov
 
 显式重置失败时不继续重新领取。购买交接响应携带仅本地存在的账户绑定，返回时及设置页真正打开浏览器前分别核验；该绑定不进入 HTTP 响应或遥测。Keychain 状态判断依据 Apple 的 [SecItemCopyMatching](https://developer.apple.com/documentation/security/secitemcopymatching(_:_:)) 和 [errSecInteractionNotAllowed](https://developer.apple.com/documentation/security/errsecinteractionnotallowed) 定义；没有把不可读取解释为项目不存在。
 
+## POST /v1/free-trial/claim — 领取新用户三天体验
+
+Bearer 设备鉴权，无额外请求参数。返回与 `GET /v1/account` 相同的完整账户快照，`Cache-Control: no-store`。同一设备只可领取一次，重试返回原激活时间与到期时间，不延长、不重复加额度。并发领取、额度入账及 `balance_version` 在同一设备锁和事务内提交。每设备每分钟最多 30 次领取请求。
+
+`FREE_TRIAL_ENABLED=1` 时新注册的设备获得领取资格；此前注册的设备不补授资格。开关默认关闭，关闭时拒绝新领取（503 `trial_unavailable`），但已激活的权益继续结算，重复领取仍返回原回执。无资格为 403 `trial_ineligible`，无效凭据为 401 `invalid_token`。客户端不得用本地引导完成状态授予权益。
+
+账户、领取响应及 SSE usage / capture status 结算快照可带 `free_trial`：
+
+```json
+{
+  "status": "active",
+  "policy_version": "trial3d400-2026-10-16",
+  "daily_limit": 400,
+  "activated_at": "2026-10-16T03:00:00.000Z",
+  "expires_at": "2026-10-19T03:00:00.000Z",
+  "resets_at": "2026-10-16T16:00:00.000Z",
+  "daily_used": 1,
+  "daily_held": 0,
+  "daily_remaining": 399,
+  "server_time": "2026-10-16T03:01:00.000Z"
+}
+```
+
+- `status` 为 `eligible / active / expired / ineligible`；未领取的日期字段为 null，非 active 时每日计数为 0、`resets_at` 为 null。旧服务可省略字段；开关关闭时账户接口也省略未领取资格。客户端显示暂未开放，不把旧 30 题响应当成三天体验。
+- 从首次领取起严格 72 小时，以服务端时间判定；每天北京时间 00:00 重置至 400 次，不累计。首尾自然日可能不足 24 小时。`daily_used + daily_held + daily_remaining = 400`（active）；持有先占额度，成功才消耗，失败释放。
+- low/high/max、单图、多图、自动及性格测试共用每日额度。已有协议内解释、恢复和幂等重试不额外扣次。360 次开始提醒；达到 400 次后可使用已购题数，余额不足则显示恢复时间。
+- 引导练习仍使用首次一次性 30 题；领取时撤回该赠送的未用部分，换成当日 400 次。已购、人工赠送及历史余额原样保留，试用优先于付费。跳过领取不改变已有余额。
+- 每日额度使用独立到期 lot。跨日或 72 小时到期撤销未用额度，旧持有失败释放不流入新日；到期前已准入的请求仍按既有请求租约结算。资格/激活时间与 lot 到期信息持久化，重启不重置。
+- `free_trial` 与余额版本一起应用，服务地址、设备或身份 generation 改变后拒绝迟到回执。字段畸形或不符合政策不得覆盖已知账户。客户端用服务端回执显示到期日，不能靠本机时钟延长。
+
+部署须先扩展数据库及全部服务实例，再开启开关，最后发布客户端。关闭开关仅停止新资格与新领取。存在有效试用或未结算持有时，不得回滚到不认识到期 lot 的旧服务；保留新增表和列，采用前向修复。2026-10-16 已部署生产并开启 `FREE_TRIAL_ENABLED=1`，生产回执与 400 次上限验证见 [上线记录](free-trial-400-release-2026-10-16.md)。
+
 ## GET /v1/client-config — 稳定分桶配置
 
 Bearer 鉴权。客户端启动与热键预热异步刷新，缓存 24 小时；失败使用 `control` 基础配置。服务端以

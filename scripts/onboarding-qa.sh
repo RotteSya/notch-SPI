@@ -54,7 +54,7 @@ PLIST
 # Local ad-hoc signing seals the assembled bundle; never use the release signing identity.
 codesign --force --sign - --timestamp=none "$QA_APP"
 codesign --verify --strict "$QA_APP"
-PORT="$QA_PORT" ./scripts/dev.sh --server-only > "$QA_OUTPUT/server.log" 2>&1 &
+PORT="$QA_PORT" ./scripts/dev.sh --server-only --free-trial > "$QA_OUTPUT/server.log" 2>&1 &
 QA_SERVER_PID=$!
 QA_READY=0
 for _ in {1..50}; do

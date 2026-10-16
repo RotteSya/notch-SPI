@@ -97,7 +97,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
     }
 
-    @MainActor func testIdleRoseStopsClockAndWorkRestartsItWithoutRetainingDetachedView() async throws {
+    @MainActor func testRoseKeepsAnimatingAtIdleWithoutRetainingDetachedView() async throws {
         weak var releasedRose: RoseLoaderView?
         autoreleasepool {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 30, height: 30),
@@ -105,12 +105,12 @@ final class CaptureFlowStabilityTests: XCTestCase {
             let rose = RoseLoaderView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
             releasedRose = rose
             window.contentView = rose
-            XCTAssertFalse(rose.qaClockActive)
+            XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             for _ in 0..<50 {
                 rose.busy = true
                 XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
                 rose.busy = false
-                XCTAssertFalse(rose.qaClockActive)
+                XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             }
             rose.hero = true
             XCTAssertEqual(rose.qaClockActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)

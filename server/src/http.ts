@@ -5,7 +5,7 @@ import type { FastifyReply } from 'fastify';
 // for clients that don't know the code). Thrown anywhere in a handler and translated to this
 // shape by the error hook in routes.ts.
 
-export type ErrorCode =
+export type ErrorCode = 'trial_unavailable' | 'trial_ineligible'
   | 'insufficient_quota' // 402 — question balance is used up
   | 'invalid_token'      // 401 — unknown/expired device token
   | 'bad_request'        // 400 — malformed input
@@ -64,6 +64,7 @@ export type StreamEvent =
       operation?: 'solve' | 'explain' | 'recover';
       terminal_state?: 'usable' | 'retake' | 'no_result' | 'failed' | 'canceled';
       balance_version?: string;
+      free_trial?: import('./free-trial.ts').FreeTrialSnapshot;
       account_totals?: { questions: number; input_tokens: number; output_tokens: number };
       held_questions?: number;
       can_retry?: boolean;

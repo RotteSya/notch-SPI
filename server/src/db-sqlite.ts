@@ -163,6 +163,7 @@ export class SqliteStore implements Store {
     this.ensureColumn('devices', 'registration_key_version', "TEXT");
     this.ensureColumn('product_events', 'extensions', 'TEXT');
     this.db.exec(BILLING_SCHEMA);
+    this.ensureColumn('quota_lots','trial_expires_at','TEXT');
     this.ensureColumn('quota_lots','refund_frozen','INTEGER NOT NULL DEFAULT 0 CHECK(refund_frozen IN (0,1))');
     this.ensureColumn('quota_lots','refund_revoked','BIGINT NOT NULL DEFAULT 0 CHECK(refund_revoked>=0)');
     this.ensureColumn('quota_lots','refund_target','BIGINT NOT NULL DEFAULT 0 CHECK(refund_target>=0)');

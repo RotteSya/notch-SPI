@@ -133,6 +133,7 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS registration_key_hash TEXT;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS registration_key_version TEXT;
 ALTER TABLE product_events ADD COLUMN IF NOT EXISTS extensions TEXT;
 ${BILLING_SCHEMA}
+ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS trial_expires_at TEXT;
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS refund_frozen INTEGER NOT NULL DEFAULT 0 CHECK(refund_frozen IN (0,1));
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS refund_revoked BIGINT NOT NULL DEFAULT 0 CHECK(refund_revoked>=0);
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS refund_target BIGINT NOT NULL DEFAULT 0 CHECK(refund_target>=0);

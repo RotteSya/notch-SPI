@@ -60,7 +60,7 @@ function* refunds(order:PaidOrderInput): Transaction<RefundSnapshot[]> {
   return rows.map(row => JSON.parse(String(row.metadata)) as RefundSnapshot);
 }
 
-export function* applyRefundLot(lotId: string, frozen?: boolean, target?: number): Transaction<void> {
+export function* applyRefundLot(lotId: string, frozen?: boolean, target?: number, reason = 'refund-policy'): Transaction<void> {
   const row = (yield* query('SELECT * FROM quota_lots WHERE lot_id=?',lotId))[0]!;
   const before: RefundLot = { remaining:Number(row.remaining),held:Number(row.held),revoked:Number(row.refund_revoked),
     frozen:Number(row.refund_frozen)===1,target:Number(row.refund_target) };
@@ -71,7 +71,7 @@ export function* applyRefundLot(lotId: string, frozen?: boolean, target?: number
   yield* query('UPDATE quota_lots SET remaining=?,refund_revoked=?,refund_frozen=?,refund_target=? WHERE lot_id=?',
     after.remaining,after.revoked,after.frozen?1:0,after.target,lotId);
   yield* query('UPDATE devices SET balance_questions=balance_questions+?,balance_version=balance_version+1,updated_at=? WHERE id=?',change.availableDelta,now,Number(row.device_id));
-  yield* ledger(Number(row.device_id),lotId,change.revokedDelta>0?'revoke':change.revokedDelta<0?'credit':after.frozen?'hold':'release',change.availableDelta,0,'refund-policy:'+id);
+  yield* ledger(Number(row.device_id),lotId,change.revokedDelta>0?'revoke':change.revokedDelta<0?'credit':after.frozen?'hold':'release',change.availableDelta,0,reason+':'+id);
   yield* query('INSERT INTO payment_quota_changes(change_id,lot_id,before_state,after_state,created_at) VALUES(?,?,?,?,?)',id,lotId,JSON.stringify(before),JSON.stringify(after),now);
 }
 function* refreshOrder(row: Row, snapshots: RefundSnapshot[]): Transaction<PaymentOrder> {

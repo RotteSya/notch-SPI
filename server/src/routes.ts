@@ -1,4 +1,6 @@
 import { CaptureService } from './capture-service.ts';
+import {trialSnapshot} from './free-trial.ts';
+import type {AccountSnapshot} from './billing.ts';
 import { aggregateCohorts, aggregateEconomics, parseReportQuery, reportTime, decimal, ReportLimitError, type ReportExpense } from './reporting.ts';
 import { archivePayload, assembleReport, assertReportRetained, parseArchiveCursor, ReportExpiredError } from './report-archive.ts';
 import {parseQualitySubmission,parseQualityList,qualityWithdrawal,QualityValidationError,QualityConflictError} from './quality.ts';
@@ -322,7 +324,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     const platform = str(body.platform, 'unknown').slice(0, 32);
     const appVersion = str(body.app_version, 'unknown').slice(0, 32);
-    const device = await store.registerDevice({ platform, appVersion, trialQuestions, policyVersion: config.quotaPolicyVersion, ...registration });
+    const device = await store.registerDevice({ platform, appVersion, trialQuestions, policyVersion: config.quotaPolicyVersion,
+      freeTrialEligible: config.freeTrialEnabled, ...registration });
     // Every registration hands out a free grant that costs real model spend, so leave a trail:
     // the device row id plus the caller's IP is what tells a client-side credential bug (one IP,
     // one app version, repeated) apart from deliberate free-quota farming. No token is logged —
@@ -341,21 +344,42 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     });
   });
 
+  function accountWire(account: AccountSnapshot) {
+    return {
+      balance_version: account.balanceVersion, held_questions: account.heldQuestions,
+      initial_grant: account.initialGrantQuestions, policy_version: account.policyVersion, quota_breakdown: account.quotaBreakdown,
+      balance_questions: account.balanceQuestions, total_questions: account.totalQuestions,
+      total_input_tokens: account.totalInputTokens, total_output_tokens: account.totalOutputTokens,
+      cli_enabled: account.cliEnabled,
+      ...(account.freeTrial && (config.freeTrialEnabled || account.freeTrial.activated_at) ? {free_trial: account.freeTrial}
+        : config.freeTrialEnabled ? {free_trial: trialSnapshot(false, null, null)} : {}),
+    };
+  }
+
+  // POST is idempotent by authenticated device, including retries after a lost response.
+  app.post('/v1/free-trial/claim', async (req, reply) => {
+    const {token} = await requireAccount(req, store);
+    if (!await store.billing.rateLimit('trial-claim:' + captureService.keys.digest('trial-device', token), 30, 60_000)) {
+      throw new ApiError(429, '领取过于频繁，请稍后再试', 'rate_limited');
+    }
+    const before = await store.billing.accountSnapshot(token);
+    if (!before) throw new ApiError(401, '设备令牌无效', 'invalid_token');
+    // Turning off new claims must not revoke a grant or hide a committed receipt.
+    if (before.freeTrial?.activated_at) return reply.header('Cache-Control', 'no-store').send(accountWire(before));
+    if (!config.freeTrialEnabled) throw new ApiError(503, '免费体验暂未开放', 'trial_unavailable');
+    if (before.freeTrial?.status !== 'eligible') throw new ApiError(403, '当前账户不符合新用户体验资格', 'trial_ineligible');
+    const account = await store.billing.claimFreeTrial(token);
+    if (!account) throw new ApiError(401, '设备令牌无效', 'invalid_token');
+    return reply.header('Cache-Control', 'no-store').send(accountWire(account));
+  });
+
   // GET /v1/account — question balance + lifetime usage + per-device feature switches. Auth.
   app.get('/v1/account', async (req, reply) => {
     const { token } = await requireAccount(req, store);
     await store.billing.reap();
     const account = await store.billing.accountSnapshot(token);
     if (!account) throw new ApiError(401, '设备令牌无效');
-    return reply.header('Cache-Control', 'no-store').send({
-      balance_version: account.balanceVersion, held_questions: account.heldQuestions,
-      initial_grant: account.initialGrantQuestions, policy_version: account.policyVersion, quota_breakdown: account.quotaBreakdown,
-      balance_questions: account.balanceQuestions,
-      total_questions: account.totalQuestions,
-      total_input_tokens: account.totalInputTokens,
-      total_output_tokens: account.totalOutputTokens,
-      cli_enabled: account.cliEnabled,
-    });
+    return reply.header('Cache-Control', 'no-store').send(accountWire(account));
   });
 
   app.get('/v1/client-config', async (req, reply) => {

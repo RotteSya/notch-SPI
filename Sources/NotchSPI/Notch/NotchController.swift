@@ -36,7 +36,10 @@ final class NotchController: NSObject {
     func qaRemoveScreenshot(_ id: UUID) { removeScreenshot(id) }
     func qaUndoScreenshot() { undoScreenshotRemoval() }
     func qaSubmitScreenshotRound() { submitScreenshotRoundNow() }
-    func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple) }
+    func qaPressScreenshot(mode: String = "tutor", multiple: Bool) { screenshotTapped(mode: mode, multiple: multiple, fromHotkey: true) }
+    func qaEnableOnboardingHotkeys() { registerHotkeys() }
+    var qaSettingsWindow: MainSettingsWindowController? { settingsController }
+    var qaOnboardingShortcut: String { notchView.onboarding.shortcutPrompt.displayString }
     func qaCancelScreenshotRound() { cancelRoundByUser() }
     func qaScreenshotMenu() -> NSMenu { buildQuickMenu() }
     @objc func qaShowQuickMenu() {
@@ -123,13 +126,16 @@ final class NotchController: NSObject {
     private var autoLockedBundleID: String?
     private var autoPaused = false // edge-transition tracking for the DEBUG log only
     private var settingsController: MainSettingsWindowController?
+    private var onboardingPracticeNeedsRefresh = false
     private let recentQuestions: RecentQuestionStore
     private var recentQuestionsWindow: RecentQuestionsWindowController?
     private var expandedAnswerWindow: ExpandedAnswerWindowController?
     private let onboardingProgress: NotchOnboardingProgress
     private var onboardingAttempt = false
-    private var onboardingPermissionReturnStep: NotchOnboardingStep = .practice
+    private var onboardingPermissionReturnStep: NotchOnboardingStep = .capture
     private var onboardingPermissionTimer: Timer?
+    private var onboardingTrialTask: Task<Void, Never>?
+    private var onboardingTrialAccount: OfficialAPI.CaptureAccount?
     private var observers: [NSObjectProtocol] = []
     private var observedPersonalityScope: PersonalitySessionScope?
     private var currentCaptureID: UUID?
@@ -320,7 +326,7 @@ final class NotchController: NSObject {
         }
     }
 
-    deinit { screenRefreshWork?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
+    deinit { screenRefreshWork?.cancel(); onboardingTrialTask?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
 
     /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
     /// reads the key of the active third-party provider.
@@ -350,6 +356,10 @@ final class NotchController: NSObject {
             else if model.status == .idle, !model.answer.isEmpty { model.statusText = L10n.statusDone }
             else { model.statusText = model.status == .error ? L10n.statusError : L10n.statusReady }
         }
+        if model.onboardingStep != nil, settingsController?.window?.isVisible == true {
+            onboardingPracticeNeedsRefresh = true
+        }
+        resizeToFit()
     }
 
     private func refreshAppearance() {
@@ -370,6 +380,10 @@ final class NotchController: NSObject {
         var force = false
         #if DEBUG
         force = CommandLine.arguments.contains("--qa-onboarding")
+        if CommandLine.arguments.contains("--qa-trial"), ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" {
+            presentOnboarding(.trial)
+            return
+        }
         #endif
         guard onboardingProgress.shouldPresent || force else { return }
         presentOnboarding(force ? .welcome : onboardingProgress.resumeStep)
@@ -386,12 +400,15 @@ final class NotchController: NSObject {
         guard model.onboardingStep != nil, panel.isKeyWindow else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.model.onboardingStep != nil, self.panel.isKeyWindow,
-                  self.notchView.onboarding.primary.isEnabled else { return }
+                  !self.notchView.onboarding.primary.isHidden, self.notchView.onboarding.primary.isEnabled else { return }
             self.panel.makeFirstResponder(self.notchView.onboarding.primary)
         }
     }
 
     private func presentOnboarding(_ step: NotchOnboardingStep) {
+        if model.onboardingStep != step {
+            model.onboardingMultiple = [.multiple, .multiCapture, .collecting, .success].contains(step)
+        }
         cancelPendingCollapse()
         visible = true; panel.orderFrontRegardless()
         panel.onboardingActive = true
@@ -402,7 +419,8 @@ final class NotchController: NSObject {
         // Focus after that refresh so re-entry can accept Return/Escape without a mouse click.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.model.onboardingStep != nil else { return }
-            self.panel.makeFirstResponder(self.notchView.onboarding.primary)
+            let guide = self.notchView.onboarding
+            self.panel.makeFirstResponder(guide.primary.isHidden ? guide : guide.primary)
         }
         onboardingPermissionTimer?.invalidate()
         onboardingPermissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -422,15 +440,17 @@ final class NotchController: NSObject {
         model.onboardingStep = step
         model.onboardingPracticeFailed = false
         model.onboardingPermissionGranted = onboardingHasAccess
-        onboardingProgress.save(step)
+        onboardingProgress.save(step, multiple: model.onboardingMultiple)
         cancelPendingCollapse()
         setExpanded(true)
         resizeToFit()
+        if step == .trial { loadOnboardingTrial() }
     }
 
     #if DEBUG
     var qaOnboardingPermission: (() -> Bool)?
     var qaOpenPracticePage: ((URL) -> Bool)?
+    var qaOnboardingClaimTrial: (() async -> Bool)?
     func qaOnboardingSecondary() { onboardingSecondary() }
     func qaPresentOnboarding(_ step: NotchOnboardingStep) { presentOnboarding(step) }
     func qaAdvanceOnboarding() { advanceOnboarding() }
@@ -459,8 +479,8 @@ final class NotchController: NSObject {
     private func advanceOnboarding() {
         switch model.onboardingStep {
         case .welcome:
-            onboardingPermissionReturnStep = .practice
-            setOnboardingStep(onboardingHasAccess ? .practice : .permission)
+            model.onboardingMultiple = false
+            openOnboardingPractice()
         case .permission:
             if onboardingHasAccess { setOnboardingStep(onboardingPermissionReturnStep) }
             else if model.onboardingPermissionDenied {
@@ -473,39 +493,59 @@ final class NotchController: NSObject {
                 if granted { notchView.screenshotLanded() }
             }
         case .practice: openOnboardingPractice()
-        case .capture: screenshotTapped(mode: "tutor", multiple: false)
-        case .working:
-            guard !running, intakeTask == nil else { return }
-            screenshotTapped(mode: "tutor", multiple: false)
-        case .success: finishNotchOnboarding(collapse: true)
+        case .firstAnswer:
+            invalidateQuestionContext(clearAnswer: true)
+            model.onboardingMultiple = true
+            openOnboardingPractice(multiple: true)
+        case .multiple:
+            model.onboardingMultiple = true
+            openOnboardingPractice(multiple: true)
+        case .capture, .multiCapture, .collecting, .working:
+            // The lesson only advances through the registered global shortcut and capture result.
+            break
+        case .success:
+            invalidateQuestionContext(clearAnswer: true)
+            model.answerLatency = nil
+            setOnboardingStep(.trial)
+        case .trial: claimOnboardingTrial()
         case nil: break
         }
     }
 
     private func backOnboarding() {
-        if model.onboardingStep == .permission {
-            setOnboardingStep(onboardingPermissionReturnStep == .capture ? .capture : .welcome)
-        }
-        else if model.onboardingStep == .practice {
-            onboardingPermissionReturnStep = .practice
-            setOnboardingStep(onboardingHasAccess ? .welcome : .permission)
-        }
-        else if model.onboardingStep == .capture { setOnboardingStep(.practice) }
-        else if model.onboardingStep == .working, !running, intakeTask == nil {
+        guard !running, intakeTask == nil else { return }
+        switch model.onboardingStep {
+        case .permission: setOnboardingStep(onboardingPermissionReturnStep)
+        case .practice, .capture: setOnboardingStep(.welcome)
+        case .multiCapture: setOnboardingStep(.multiple)
+        case .multiple:
+            model.onboardingMultiple = false
+            setOnboardingStep(.welcome)
+        case .working:
             cancelScreenshotRound()
-            setOnboardingStep(.capture)
+            setOnboardingStep(model.onboardingMultiple ? .multiple : .capture)
+        default: break
         }
     }
 
     private func dismissOnboarding() {
-        if model.onboardingStep == .success { finishNotchOnboarding(collapse: true); return }
+        if model.onboardingStep == .trial && model.onboardingTrialState == .claimed {
+            finishNotchOnboarding(collapse: true)
+            return
+        }
         onboardingProgress.dismiss()
+        // A tutorial collection must not auto-submit after the user leaves the guide.
+        if model.onboardingStep == .collecting { cancelScreenshotRound() }
+        if model.onboardingStep == .success {
+            invalidateQuestionContext(clearAnswer: true)
+            model.answerLatency = nil
+        }
         endOnboardingPresentation()
         if !running && intakeTask == nil { setExpanded(false) }
     }
 
     private func finishNotchOnboarding(collapse: Bool) {
-        guard model.onboardingStep == .success else { return }
+        guard model.onboardingStep == .trial else { return }
         onboardingProgress.complete()
         // Preserve the closing morph, then discard the practice session so reopening
         // the notch starts from the normal idle state rather than the tutorial answer.
@@ -519,6 +559,9 @@ final class NotchController: NSObject {
     }
 
     private func endOnboardingPresentation() {
+        onboardingTrialTask?.cancel(); onboardingTrialTask = nil
+        onboardingTrialAccount = nil
+        if model.onboardingTrialState == .claiming { model.onboardingTrialState = .available }
         onboardingAttempt = false
         onboardingPermissionTimer?.invalidate(); onboardingPermissionTimer = nil
         model.onboardingStep = nil
@@ -526,38 +569,114 @@ final class NotchController: NSObject {
         resizeToFit()
     }
 
+    private func claimOnboardingTrial() {
+        if [.claimed, .expired, .ineligible].contains(model.onboardingTrialState) { finishNotchOnboarding(collapse: true); return }
+        guard model.onboardingTrialState == .available || model.onboardingTrialState == .failed else { return }
+        #if DEBUG
+        if let claim = qaOnboardingClaimTrial, !activatesServices {
+            model.onboardingTrialState = .claiming
+            onboardingTrialTask = Task { [weak self] in
+                let claimed = await claim()
+                guard !Task.isCancelled, let self, self.model.onboardingStep == .trial else { return }
+                self.onboardingTrialTask = nil
+                self.model.onboardingTrialState = claimed ? .claimed : .failed
+                self.resizeToFit()
+                self.restoreOnboardingControlFocus()
+            }
+            return
+        }
+        #endif
+        guard activatesServices else { model.onboardingTrialState = .unavailable; return }
+        guard let account = onboardingTrialAccount, OfficialAPI.accountState.matches(account) else {
+            loadOnboardingTrial(); return
+        }
+        model.onboardingTrialState = .claiming
+        onboardingTrialTask = Task { [weak self] in
+            let result = await OfficialAPI.claimFreeTrial(expectedAccount: account)
+            guard !Task.isCancelled, let self, self.model.onboardingStep == .trial else { return }
+            self.onboardingTrialTask = nil
+            switch result {
+            case .success(let trial): self.presentTrialReceipt(trial)
+            case .failure(let error):
+                self.model.onboardingTrialState = error.code == "trial_unavailable" ? .unavailable
+                    : error.code == "trial_ineligible" ? .ineligible : .failed
+            }
+            self.resizeToFit(); self.restoreOnboardingControlFocus()
+        }
+    }
+
+    private func loadOnboardingTrial() {
+        guard activatesServices else { return }
+        onboardingTrialTask?.cancel()
+        model.onboardingTrialState = .loading
+        model.onboardingTrialExpiration = nil
+        onboardingTrialAccount = nil
+        onboardingTrialTask = Task { [weak self] in
+            let registration = await OfficialAPI.registerIfNeeded()
+            guard !Task.isCancelled, let self, self.model.onboardingStep == .trial else { return }
+            guard case .success = registration, let account = OfficialAPI.accountState.account else {
+                self.model.onboardingTrialState = .failed; self.onboardingTrialTask = nil; return
+            }
+            self.onboardingTrialAccount = account
+            let refreshed = await OfficialAPI.refreshAccount(expectedAccount: account)
+            guard !Task.isCancelled, self.model.onboardingStep == .trial else { return }
+            self.onboardingTrialTask = nil
+            if case .success = refreshed, OfficialAPI.accountState.matches(account) { self.presentTrialReceipt(OfficialAPI.freeTrial) }
+            else { self.model.onboardingTrialState = .failed }
+            self.resizeToFit(); self.restoreOnboardingControlFocus()
+        }
+    }
+
+    private func presentTrialReceipt(_ trial: FreeTrialSnapshot?) {
+        model.onboardingTrialExpiration = trial?.expirationLabel
+        switch trial?.status {
+        case .eligible: model.onboardingTrialState = .available
+        case .active: model.onboardingTrialState = .claimed
+        case .expired: model.onboardingTrialState = .expired
+        case .ineligible: model.onboardingTrialState = .ineligible
+        case nil: model.onboardingTrialState = .unavailable
+        }
+    }
+
     private func onboardingSecondary() {
         switch model.onboardingStep {
-        case .permission: setOnboardingStep(onboardingPermissionReturnStep)
-        case .working: openSettings(page: .general)
+        case .permission: dismissOnboarding()
+        case .trial:
+            guard ![.loading, .claiming].contains(model.onboardingTrialState) else { return }
+            finishNotchOnboarding(collapse: true)
+        case .capture, .multiCapture, .collecting, .working: openSettings(page: .hotkeys)
         default: break
         }
     }
 
-    private func openOnboardingPractice() {
-        // The app's windows are excluded from capture. A local page in the user's browser is
-        // real capturable material, with no prefilled answer or special model path.
-        let html = """
-        <!doctype html><html lang="en"><meta charset="utf-8"><title>NotchSPI · Practice</title>
-        <style>body{margin:0;background:#f0f1ee;color:#202922;font:20px -apple-system,sans-serif}main{max-width:680px;margin:270px auto 64px;padding:48px;background:white;border-radius:24px}small{font-size:12px;letter-spacing:3px;color:#677369}h1{font-size:34px;letter-spacing:-1px}p{line-height:1.7}.answers{padding:24px;background:#f5f6f3;border-radius:12px;font-size:23px}footer{font-size:14px;color:#647168;line-height:1.7;margin-top:32px}</style>
-        <main><small>NOTCHSPI / PRACTICE 01</small><h1>A question. One shortcut.</h1>
-        <p>A train travels 120 km in 2 hours.<br>What is its average speed?</p>
-        <div class="answers">A. 40 km/h &nbsp; B. 60 km/h &nbsp; C. 80 km/h</div>
-        <footer>\(Settings.displayString(Settings.shared.captureCombo)) · Capture this question.<br>Your answer appears at the top of your screen.</footer></main></html>
-        """
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("NotchSPI-Practice.html")
+    private func launchOnboardingPractice(multiple: Bool) -> Bool {
         do {
-            try html.write(to: file, atomically: true, encoding: .utf8)
-            let opened: Bool
+            let file = try OnboardingPractice.write(multiple: multiple)
             #if DEBUG
-            opened = qaOpenPracticePage?(file) ?? NSWorkspace.shared.open(file)
-            #else
-            opened = NSWorkspace.shared.open(file)
+            if let open = qaOpenPracticePage { return open(file) }
             #endif
-            guard opened else { throw CocoaError(.fileReadUnknown) }
-            setOnboardingStep(.capture)
-        } catch {
+            return NSWorkspace.shared.open(file)
+        } catch { return false }
+    }
+
+    private func openOnboardingPractice(multiple: Bool = false) {
+        if launchOnboardingPractice(multiple: multiple) {
+            onboardingPracticeNeedsRefresh = false
+            setOnboardingStep(multiple ? .multiCapture : .capture)
+        } else {
+            setOnboardingStep(multiple ? .multiple : .practice)
             model.onboardingPracticeFailed = true
+            resizeToFit()
+        }
+    }
+
+    private func refreshOnboardingPracticeAfterSettings() {
+        guard onboardingPracticeNeedsRefresh, model.onboardingStep != nil else { return }
+        onboardingPracticeNeedsRefresh = false
+        // Reopen the local practice with the saved binding when settings closes, preserving
+        // the current lesson and any collected images. Never launch a capture here.
+        if !launchOnboardingPractice(multiple: model.onboardingMultiple) {
+            model.captureFeedback = L10n.t("练习页未能重新打开，请返回后重试。", "練習を開けませんでした。戻ってもう一度お試しください。", "Practice could not reopen. Go back and try again.")
             resizeToFit()
         }
     }
@@ -566,7 +685,7 @@ final class NotchController: NSObject {
         guard onboardingAttempt, model.onboardingStep == .working else { return }
         onboardingAttempt = false
         if success {
-            setOnboardingStep(.success)
+            setOnboardingStep(model.onboardingMultiple && model.screenshots.count >= 2 ? .success : .firstAnswer)
             notchView.screenshotLanded()
         } else if model.status != .error && model.resultState != .retake {
             model.captureFeedback = L10n.t("未收到可用回答，请检查连接后重新捕获。", "有効な回答がありません。接続を確認して再度キャプチャしてください。", "No usable answer arrived. Check your connection and capture again.")
@@ -774,18 +893,18 @@ final class NotchController: NSObject {
         HotKeyCenter.shared.register(role: .capture, keyCode: cap.keyCode, modifiers: cap.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            self.screenshotTapped(mode: "tutor", multiple: false)
+            self.screenshotTapped(mode: "tutor", multiple: false, fromHotkey: true)
         }
         // Legacy default collisions are migrated before registration. Every role has one entry.
         HotKeyCenter.shared.register(role: .personality, keyCode: persona.keyCode, modifiers: persona.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            self.screenshotTapped(mode: "personality", multiple: false)
+            self.screenshotTapped(mode: "personality", multiple: false, fromHotkey: true)
         }
         HotKeyCenter.shared.register(role: .context, keyCode: ctx.keyCode, modifiers: ctx.modifiers) { [weak self] in
             guard let self else { return }
             if self.autoEngine.isActive { self.stopAutoSession(.captureHotkey) }
-            self.screenshotTapped(mode: "tutor", multiple: true)
+            self.screenshotTapped(mode: "tutor", multiple: true, fromHotkey: true)
         }
         HotKeyCenter.shared.register(role: .toggle, keyCode: tog.keyCode, modifiers: tog.modifiers) { [weak self] in
             self?.toggleVisibility()
@@ -1383,6 +1502,7 @@ final class NotchController: NSObject {
     }
 
     func prepareForTermination() {
+        onboardingTrialTask?.cancel(); onboardingTrialTask = nil
         materialTimer?.invalidate(); materialTimer = nil
         screenRefreshWork?.cancel(); screenRefreshWork = nil
         onboardingPermissionTimer?.invalidate(); onboardingPermissionTimer = nil
@@ -1430,6 +1550,10 @@ final class NotchController: NSObject {
         // Keeping them would mask the completed answer shelf after a fifth key press.
         intakeNotice = ""
         model.screenshotNotice = ""
+        if model.onboardingStep == .collecting {
+            onboardingAttempt = true
+            setOnboardingStep(.working)
+        }
         let latency = intakeLatency
         intakeLatency = nil
         #if DEBUG
@@ -1456,7 +1580,9 @@ final class NotchController: NSObject {
         model.screenshotCapturing = false; model.screenshotPreviewing = false; model.screenshotNotice = ""; model.captureFeedback = ""
         if onboardingAttempt {
             onboardingAttempt = false
-            if model.onboardingStep == .working, !terminating { setOnboardingStep(.capture) }
+            if model.onboardingStep == .working || model.onboardingStep == .collecting, !terminating {
+                setOnboardingStep(model.onboardingMultiple ? .multiple : .capture)
+            }
         }
         resizeToFit()
     }
@@ -1549,7 +1675,11 @@ final class NotchController: NSObject {
         } else { updateScreenshotRound() }
     }
 
-    private func screenshotTapped(mode: String, multiple: Bool) {
+    private func screenshotTapped(mode: String, multiple: Bool, fromHotkey: Bool = false) {
+        // In the guide, clicks (including settings/menu actions) must never substitute for
+        // learning the actual global shortcut. The regular product keeps its existing routes.
+        guard model.onboardingStep == nil || fromHotkey else { return }
+        if model.onboardingStep != nil, settingsController?.window?.isKeyWindow == true { return }
         let triggeredAt = screenshotNow
         guard !terminating else { return }
         synchronizeMaterialScope()
@@ -1561,9 +1691,12 @@ final class NotchController: NSObject {
             return
         }
         if model.onboardingStep != nil {
-            guard mode == "tutor", !multiple else { return }
+            guard mode == "tutor", !running,
+                  [.capture, .multiCapture, .collecting, .working].contains(model.onboardingStep!),
+                  multiple == model.onboardingMultiple else { return }
             if !onboardingHasAccess {
-                onboardingPermissionReturnStep = .capture
+                onboardingPermissionReturnStep = multiple ? .multiCapture : .capture
+                if multiple { cancelScreenshotRound() }
                 setOnboardingStep(.permission)
                 return
             }
@@ -1603,7 +1736,7 @@ final class NotchController: NSObject {
         model.captureFeedback = ""; model.screenshotNotice = ""; model.screenshotCapturing = true
         if model.onboardingStep != nil {
             onboardingAttempt = true
-            setOnboardingStep(.working)
+            setOnboardingStep(multiple ? .collecting : .working)
             // ScreenCapture excludes the panel independently of keyboard focus. Keep
             // the guide's key window so Tab/Escape still work while the request runs.
         }
@@ -1752,7 +1885,17 @@ final class NotchController: NSObject {
                 c?.window?.orderOut(nil)
                 self?.screenshotTapped(mode: "tutor", multiple: false)
             }
-            c.onHotkeysChanged = { [weak self] in self?.registerHotkeys() }
+            c.onHotkeysChanged = { [weak self] in
+                guard let self else { return }
+                self.registerHotkeys()
+                self.onboardingPracticeNeedsRefresh = self.model.onboardingStep != nil
+                self.model.objectWillChange.send()
+                self.resizeToFit()
+            }
+            observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                object: c.window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshOnboardingPracticeAfterSettings() }
+            })
             c.onAnythingChanged = { [weak self] in
                 self?.refreshCLILabel()
                 self?.refreshModeLabels()
@@ -1873,7 +2016,7 @@ final class NotchController: NSObject {
             let width = (screenLayout?.cardWidth ?? expandedWidth) - NotchLayout.contentInsetH * 2
             let answerH = model.hidesAnswer ? 0 : NotchType.answerHeight(model.displayedAnswer,
                 presentation: NotchType.presentation(for: model), width: width, inShelf: model.usesContentShelf)
-            return min((model.onboardingContentHeight(width: screenLayout?.cardWidth ?? expandedWidth) ?? step.height) + model.screenshotTrayHeight + model.materialStripHeight(width: width) + max(50, answerH) + NotchLayout.answerBottomPad,
+            return min((model.onboardingContentHeight(width: screenLayout?.cardWidth ?? expandedWidth) ?? step.height) + model.screenshotTrayHeight + model.materialStripHeight(width: width) + (model.hidesAnswer ? 0 : max(50, answerH)) + NotchLayout.answerBottomPad,
                        min(600, (screen?.visibleFrame.height ?? 720) - 40))
         }
         // Measure the SAME string the view renders, with the SAME typography (NotchType), so the
@@ -2424,13 +2567,18 @@ final class NotchController: NSObject {
             // 不读取任何账户或额度状态（见 QuotaGate.preflight 的第一行守卫）。
             if case .official = snapshot.channel {
                 guard self.accepts(snapshot, generation: generation) else { return }
+                // A cached exhausted daily bucket must not block tomorrow's replenishment.
+                if OfficialAPI.freeTrial != nil, (OfficialAPI.balanceQuestions ?? 0) <= 0 {
+                    await OfficialAPI.refreshAccount(expectedAccount: snapshot.binding.officialAccount)
+                    guard self.accepts(snapshot, generation: generation) else { return }
+                }
                 let verdict = QuotaGate.preflight(
                     channel: snapshot.channel,
                     hasDeviceToken: snapshot.binding.officialAccount != nil,
                     balanceQuestions: OfficialAPI.balanceQuestions
                 )
                 if case .deny(let reason) = verdict {
-                    self.finishError(reason)
+                    self.finishError(OfficialAPI.freeTrial?.exhaustedNotice ?? reason)
                     self.openSettings(page: .account)
                     return
                 }
@@ -2726,6 +2874,9 @@ final class NotchController: NSObject {
                 }
                 // A plausible FINAL line is not evidence of successful delivery. Keep partial
                 // text for inspection, but never expose it as a completed answer or explanation.
+                if case .official = snapshot.channel, ok, let notice = OfficialAPI.freeTrial?.dailyNotice {
+                    self.model.statusText += " · " + notice
+                }
                 if !ok {
                     let failure = String(stderr.suffix(600)).trimmingCharacters(in: .whitespacesAndNewlines)
                     self.model.status = .error

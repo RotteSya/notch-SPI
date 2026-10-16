@@ -11,6 +11,7 @@ struct OfficialUsageReceipt: Decodable, Equatable {
     let operation: String?
     var accountTotals: OfficialAccountTotals? = nil
     var explanationAvailable: Bool? = nil
+    var freeTrial: FreeTrialSnapshot? = nil
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens", outputTokens = "output_tokens"
@@ -19,6 +20,7 @@ struct OfficialUsageReceipt: Decodable, Equatable {
         case balanceVersion = "balance_version", operation
         case accountTotals = "account_totals"
         case explanationAvailable = "explanation_available"
+        case freeTrial = "free_trial"
     }
 }
 
@@ -121,6 +123,7 @@ struct OfficialStreamDecoder {
             guard let value = try? decoder.decode(OfficialUsageReceipt.self, from: data),
                   value.inputTokens >= 0, value.outputTokens >= 0, (0...1).contains(value.questionsCharged),
                   value.balanceQuestions >= 0, value.captureID == nil || value.captureID == captureID,
+                  value.freeTrial?.isValid != false,
                   value.operation == nil || value.operation == operation,
                   value.balanceVersion == nil || value.balanceVersion.flatMap(BalanceVersion.canonical) != nil,
                   value.accountTotals == nil || (value.accountTotals!.isValid && value.balanceVersion != nil),

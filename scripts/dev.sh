@@ -7,17 +7,19 @@ cd "$REPO_ROOT"
 
 SERVER_ONLY=0
 SMOKE=0
+TRIAL=0
 for arg in "$@"; do
   case "$arg" in
     --server-only) SERVER_ONLY=1 ;;
     --smoke) SERVER_ONLY=1; SMOKE=1 ;;
+    --free-trial) TRIAL=1 ;;
     -h|--help)
-      echo "Usage: $0 [--server-only|--smoke]"
+      echo "Usage: $0 [--server-only|--smoke] [--free-trial]"
       exit 0
       ;;
     *)
       echo "dev: unknown argument: $arg" >&2
-      echo "Usage: $0 [--server-only|--smoke]" >&2
+      echo "Usage: $0 [--server-only|--smoke] [--free-trial]" >&2
       exit 1
       ;;
   esac
@@ -64,6 +66,7 @@ echo "==> Starting official server at $BASE_URL"
     OFFICIAL_PROVIDER="mock" \
     PAYMENT_PROVIDER="stub" \
     ALLOW_STUB_TOPUP="1" \
+    FREE_TRIAL_ENABLED="$TRIAL" \
     LOG_LEVEL="$LOG_LEVEL" \
     node src/index.ts
 ) >"$SERVER_LOG" 2>&1 &
