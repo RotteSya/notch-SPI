@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "recorded_date": "2026-10-17",
+  "source_commit": "d7571384c7de6d9a137028a77bb4ee2b59f9c260",
+  "bootstrap": {
+    "commit": "d7571384c7de6d9a137028a77bb4ee2b59f9c260",
+    "project_caches_absent_before": true,
+    "global_caches": "existing machine caches retained",
+    "health": {
+      "ok": true,
+      "provider": "mock",
+      "objective_provider": "mock",
+      "objective_provider_active": false,
+      "db": "sqlite",
+      "payments": "stub",
+      "webhook": "n/a"
+    },
+    "launch_seconds": 75.73,
+    "app_process_observed": true,
+    "controlled_exit": 143,
+    "server_cleaned_up": true,
+    "tracked_changes": ""
+  },
+  "local_verification": {
+    "run_id": "20261016T172320Z-8895",
+    "exit_code": 0,
+    "steps": [
+      {
+        "name": "repo-health",
+        "status": "passed",
+        "duration_ms": 631,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "repo-health-tests",
+        "status": "passed",
+        "duration_ms": 28308,
+        "exit_code": 0,
+        "test_count": 46,
+        "skip_reason": ""
+      },
+      {
+        "name": "server-typecheck",
+        "status": "passed",
+        "duration_ms": 3434,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "scheduler-typecheck",
+        "status": "passed",
+        "duration_ms": 11697,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "isolated-smoke",
+        "status": "passed",
+        "duration_ms": 630,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "dependency-lock",
+        "status": "passed",
+        "duration_ms": 314,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "server-tests",
+        "status": "passed",
+        "duration_ms": 23714,
+        "exit_code": 0,
+        "test_count": 672,
+        "skip_reason": ""
+      },
+      {
+        "name": "scheduler-tests",
+        "status": "passed",
+        "duration_ms": 1407,
+        "exit_code": 0,
+        "test_count": 17,
+        "skip_reason": ""
+      },
+      {
+        "name": "scheduler-build",
+        "status": "passed",
+        "duration_ms": 3263,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "swift-tests",
+        "status": "passed",
+        "duration_ms": 117848,
+        "exit_code": 0,
+        "test_count": 544,
+        "skip_reason": ""
+      },
+      {
+        "name": "release-arm64",
+        "status": "passed",
+        "duration_ms": 65859,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "client-resources",
+        "status": "passed",
+        "duration_ms": 1196,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "immutable-evidence",
+        "status": "passed",
+        "duration_ms": 225,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "route-inventory",
+        "status": "passed",
+        "duration_ms": 1373,
+        "exit_code": 0,
+        "test_count": 13,
+        "skip_reason": ""
+      },
+      {
+        "name": "whitespace",
+        "status": "passed",
+        "duration_ms": 114,
+        "exit_code": 0,
+        "test_count": null,
+        "skip_reason": ""
+      },
+      {
+        "name": "postgres",
+        "status": "skipped",
+        "duration_ms": 0,
+        "exit_code": null,
+        "test_count": null,
+        "skip_reason": "TEST_POSTGRES_URL is unset; Postgres 16/17 run in CI"
+      },
+      {
+        "name": "hardware",
+        "status": "blocked",
+        "duration_ms": 0,
+        "exit_code": null,
+        "test_count": null,
+        "skip_reason": "Physical hotkey, screen recording permission, notch hardware, and hover are outside this command"
+      },
+      {
+        "name": "signing",
+        "status": "skipped",
+        "duration_ms": 0,
+        "exit_code": null,
+        "test_count": null,
+        "skip_reason": "This command builds the arm64 Release binary and does not sign or notarize"
+      }
+    ]
+  },
+  "ci": {
+    "url": "https://github.com/RotteSya/notch-SPI/actions/runs/38939005331",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "Cloudflare scheduler",
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 22.18.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 24.20.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "macOS",
+        "conclusion": "success"
+      },
+      {
+        "name": "Postgres 16 / Node 24.20.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 24 / AL2023 native resources",
+        "conclusion": "success"
+      },
+      {
+        "name": "governance",
+        "conclusion": "success"
+      },
+      {
+        "name": "Postgres 16 / Node 22.18.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Postgres 17 / Node 24.20.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Postgres 17 / Node 22.18.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Node 24 / Vercel Linux function bundle",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "manual": {
+    "welcome_and_guide": "passed via UI automation",
+    "menu_exit": "passed via UI automation; parent exited 0",
+    "physical_hotkey_permissions_and_displays": "pending operator feedback"
+  }
+}

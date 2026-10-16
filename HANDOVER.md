@@ -3,9 +3,9 @@
 - `role`: 本仓库的工程交接入口。
 - `repo_root_resolution`: 包含本文件、`Package.swift` 与 `VERSION.env` 的目录。用 `git rev-parse --show-toplevel` 确认。
 - `conflict_policy`: 代码和测试表示当前行为。本文件指出事实所在的文件，不复制配置值和接口字段。专项文档不另写启动步骤。
-- `last_verified_commit`: `b89630b33ea70ef541b4031a82fb512812987d67`
+- `last_verified_commit`: `d7571384c7de6d9a137028a77bb4ee2b59f9c260`
 
-NotchSPI 是 Apple Silicon 上的 macOS 学习助手。热键或菜单截取题目，经官方服务、自定义 API Key 或本机 CLI 流式展示讲解，合格的成功结果进入本机最近查题。三条通道都是现有功能。源码版本以 `VERSION.env` 为准。已发布客户端和生产服务各自记录版本；本文件的审计基线没有重新核对线上部署。
+NotchSPI 是 Apple Silicon 上的 macOS 学习助手。热键或菜单截取题目，经官方服务、自定义 API Key 或本机 CLI 流式展示讲解，合格的成功结果进入本机最近查题。三条通道都是现有功能。源码版本以 `VERSION.env` 为准。已发布客户端和生产服务各自记录版本；本次交接验收没有重新核对线上部署。
 
 ## 1. 阅读规则与当前边界
 
@@ -95,9 +95,9 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 
 ## 7. 尚未验证的事项
 
-- 本文件的 `last_verified_commit` 是审计基线。交接改动的命令结果见最新一次 `output/verification`。
-- 全新依赖安装的耗时取决于网络和 Xcode。缓存命中不能代替首次准备。
-- 本机默认没有 Postgres 矩阵、AL2023 打包和 Vercel 函数包。这些在 CI。
+- `last_verified_commit` 指向被测源码提交，之后的文档证据更新不改变该源码。结果与交付 PR 见 [docs/handover-acceptance.md](docs/handover-acceptance.md)。
+- 已验证无项目构建目录和 node_modules 的 GitHub 克隆；全局下载缓存仍保留。完全无缓存或新机器的准备耗时取决于网络和工具链。
+- Postgres 矩阵、AL2023 打包和 Vercel 函数包的验证结果见交付 PR 的 CI；本机验证不替代这些平台。
 - 物理全局快捷键、屏幕录制允许、拒绝与返回、带刘海与外接屏、真实悬停，需要人在机器前验收。
 - 线上部署版本、真实付款和付费模型效果未在本次重新核对。
 - `scripts/run-objective-diagnostic.mjs` 直接调用供应商，不经过评测预算模块。见 [docs/prototypes.md](docs/prototypes.md)。
