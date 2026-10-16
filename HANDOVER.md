@@ -3,7 +3,7 @@
 - `role`: 本仓库的工程交接入口。
 - `repo_root_resolution`: 包含本文件、`Package.swift` 与 `VERSION.env` 的目录。用 `git rev-parse --show-toplevel` 确认。
 - `conflict_policy`: 代码和测试表示当前行为。本文件指出事实所在的文件，不复制配置值和接口字段。专项文档不另写启动步骤。
-- `last_verified_commit`: `d7571384c7de6d9a137028a77bb4ee2b59f9c260`
+- `last_verified_commit`: `00975d2de609bb2515059e4214de2b9d1e3aa19b`
 
 NotchSPI 是 Apple Silicon 上的 macOS 学习助手。热键或菜单截取题目，经官方服务、自定义 API Key 或本机 CLI 流式展示讲解，合格的成功结果进入本机最近查题。三条通道都是现有功能。源码版本以 `VERSION.env` 为准。已发布客户端和生产服务各自记录版本；本次交接验收没有重新核对线上部署。
 
