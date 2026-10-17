@@ -374,7 +374,7 @@ final class NotchView: NSView {
             && model.answer != L10n.noOutput
         if wasThinking && !busy && completedAnswer { ghost.acknowledgeCompletion(from: thinkingTint) }
         if !busy && !completedAnswer { ghost.cancelCompletion() }
-        compactCount.stringValue = model.status == .error ? "!" : busy ? "…" : model.screenshots.isEmpty ? "" : "\(model.screenshots.count)"
+        compactCount.stringValue = model.status == .error ? "!" : busy ? "…" : ""
         compactCount.textColor = model.status == .error ? NotchPalette.error : NotchPalette.secondary
 
         luma.setState(model.status)
