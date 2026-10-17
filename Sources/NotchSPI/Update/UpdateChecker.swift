@@ -1,21 +1,31 @@
 import AppKit
 
-/// Lightweight "check for updates" against our own service.
-///
-/// NotchSPI ships as a notarized `NotchSPI.dmg`. `GET /update` reports the newest published
-/// version as `{ version, tag, notes }` and `GET /dl` streams that DMG — both served by the
-/// official service, which reads the release storage server-side. Keeping both behind our own
-/// origin means no part of the app links a user out to where the code is hosted. It also stays a
-/// plain JSON GET: no Sparkle, no appcast, no EdDSA keys, no extra dependency.
-///
-/// We compare the reported version to the running app's `CFBundleShortVersionString` and, if
-/// newer, offer to open the download.
+/// Checks release metadata; accepted updates download, validate and install in-app.
 enum UpdateChecker {
+    /// Explicit loopback-only acceptance server, supplied on this launch only. Keeping it
+    /// separate from official.baseURL prevents upgrade QA from changing account ownership.
+    static func acceptanceBase(arguments: [String]) -> URL? {
+        guard let index = arguments.firstIndex(of: "--update-test-base-url"), index + 1 < arguments.count,
+              let url = URL(string: arguments[index + 1]), url.scheme == "http",
+              url.host == "127.0.0.1", url.port != nil, url.user == nil, url.password == nil,
+              url.query == nil, url.fragment == nil, url.path.isEmpty || url.path == "/" else { return nil }
+        return url
+    }
+    private static var updateBase: String {
+        acceptanceBase(arguments: CommandLine.arguments)?.absoluteString ?? OfficialAPI.baseURL
+    }
+    static func permitsDownload(_ url: URL) -> Bool {
+        if url.scheme == "https" { return true }
+        guard let local = acceptanceBase(arguments: CommandLine.arguments) else { return false }
+        return url.scheme == "http" && url.host == local.host && url.port == local.port
+            && url.user == nil && url.password == nil
+    }
+
     /// Both endpoints resolve against the configured base, so an `official.baseURL` override
     /// (staging / self-hosted) moves the update check with it.
-    private static var latestURL: URL { OfficialAPI.endpointURL(base: OfficialAPI.baseURL, path: "update") }
-    /// Where "前往下载" goes — streams the DMG straight from the service.
-    static var downloadURL: URL { OfficialAPI.endpointURL(base: OfficialAPI.baseURL, path: "dl") }
+    private static var latestURL: URL { OfficialAPI.endpointURL(base: updateBase, path: "update") }
+    /// Official DMG stream used by the in-app installer.
+    static var downloadURL: URL { OfficialAPI.endpointURL(base: updateBase, path: "dl") }
     /// Fallback when the check itself fails: the product site, which carries the download button.
     /// A page degrades better than a binary stream when the network is already misbehaving.
     static var sitePage: URL { URL(string: OfficialAPI.baseURL) ?? downloadURL }
@@ -77,7 +87,7 @@ enum UpdateChecker {
 
     /// Gear-menu "检查更新…": always reports back (up to date / update / error).
     static func checkForUpdatesManually() {
-        guard !inFlight else { return }
+        guard !inFlight, !InAppUpdater.shared.isRunning else { return }
         inFlight = true
         check { result in
             inFlight = false
@@ -92,7 +102,7 @@ enum UpdateChecker {
     /// Silent launch check: runs at most once per day and only shows UI when an update is available
     /// and that version hasn't been skipped. Failures are swallowed (the menu item is always there).
     static func autoCheckIfDue() {
-        guard !inFlight else { return }
+        guard !inFlight, !InAppUpdater.shared.isRunning else { return }
         let now = Date().timeIntervalSince1970
         let last = UserDefaults.standard.double(forKey: lastCheckKey)
         if last > 0, now - last < autoCheckInterval { return }
@@ -188,17 +198,17 @@ enum UpdateChecker {
         if let appLogo { alert.icon = appLogo }
         alert.alertStyle = .informational
         alert.messageText = L10n.t("发现新版本 NotchSPI \(r.version)", "新しいバージョン NotchSPI \(r.version)", "NotchSPI \(r.version) is available")
-        var info = L10n.t("当前版本 \(currentVersion)，最新版本 \(r.version)。是否立即下载更新？", "現在 \(currentVersion)、最新 \(r.version)。今すぐダウンロードしますか？", "You have \(currentVersion); the latest is \(r.version). Download it now?")
+        var info = L10n.t("当前版本 \(currentVersion)，最新版本 \(r.version)。下载完成后将自动安装并重启。是否立即更新？", "現在 \(currentVersion)、最新 \(r.version)。ダウンロード後に自動でインストールして再起動します。今すぐ更新しますか？", "You have \(currentVersion); the latest is \(r.version). The app will install and restart automatically after downloading. Update now?")
         let notes = r.notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notes.isEmpty { info += "\n\n" + L10n.t("更新内容：", "更新内容：", "What is new:") + "\n\(notes)" }
         alert.informativeText = String(info.prefix(800))
-        alert.addButton(withTitle: L10n.t("前往下载", "ダウンロード", "Download"))      // .alertFirstButtonReturn
+        alert.addButton(withTitle: L10n.t("立即更新", "今すぐ更新", "Update Now"))      // .alertFirstButtonReturn
         alert.addButton(withTitle: L10n.t("稍后", "あとで", "Later"))           // .alertSecondButtonReturn
         if !manual { alert.addButton(withTitle: L10n.t("跳过此版本", "このバージョンをスキップ", "Skip This Version")) } // .alertThirdButtonReturn
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            NSWorkspace.shared.open(downloadURL)
+            InAppUpdater.shared.start(r)
         case .alertThirdButtonReturn:
             UserDefaults.standard.set(r.version, forKey: skipVersionKey)
         default:

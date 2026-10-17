@@ -41,3 +41,13 @@ Release 构建排除本应用窗口的软件截图。DEBUG 只有显式 QA 开�
 新安装默认官方服务。自定义 Key 与本机 CLI 仍是产品通道。隔离开发包使用独立 bundle、空偏好、`-official.baseURL` 和 `NSPI_QA_EPHEMERAL=1`，从而走 loopback 上的 official mock。
 
 账户、重试、401 和流恢复：`OfficialAccountStateTests`、`OfficialCaptureRunTests`、`OfficialStreamTransportTests`。
+
+## 应用内更新
+
+`UpdateChecker` 继续通过 `/update` 检测版本；用户点击「立即更新」后由 `InAppUpdater` 从 `/dl` 下载，窗口显示已下载大小及已知总大小的进度。下载完成后自动验证、安装并重启，无需打开浏览器或手动退出。更新期间重复检查不会发起第二次下载。
+
+安装仅支持可写目录中的已安装 `.app`，拒绝磁盘映像、App Translocation 和未打包运行。更新候选必须是同一正式 bundle ID、符合当前应用的签名身份要求、通过系统安全评估，且版本高于当前版本、不低于检测到的版本。正式更新下载只使用 HTTPS，重定向也不能降级。验收可通过本次启动参数 `--update-test-base-url http://127.0.0.1:<port>` 指定回环测试源，仅接受显式 IPv4 回环地址和端口，HTTP 重定向不得离开该源；签名和版本校验保持相同。该参数不写入偏好，不改变账户服务，重启后恢复正式更新源。未签名开发包不能用于真实更新验收。
+
+新版先复制到安装目录同卷的私有暂存目录并校验，再通过主 RunLoop 请求应用正常退出，沿用记录落盘和临时截图清理。退出请求不得直接嵌套在主 DispatchQueue 回调里，以免 AppKit 的 terminateLater 事件循环阻塞 MainActor 清理任务。独立安装进程最多等待退出 60 秒；退出被拒绝时保留旧版并报错。替换或启动命令失败时回退旧应用；失败暂存目录保留用于恢复。启动命令成功不等同于新版运行健康检查。成功后清理暂存目录。账户与设置目录不参与替换。
+
+发布前仍需用两个 Developer ID 签名、公证的版本实测下载、安装、重启和系统权限保留。已有浏览器下载逻辑的旧版必须先安装一次支持本流程的客户端。此改动不发布服务端或安装包。
