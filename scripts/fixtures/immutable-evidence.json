@@ -1,0 +1,73 @@
+{
+  "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+  "files": [
+    {
+      "path": "objective-eval-output/2026-08-30T17-03-15.896Z-attestation.json",
+      "sha256": "1bd18ba0be8124b74ca35510cf95ecf074cddf775c737b1e40fbfe4ab35ed7ff"
+    },
+    {
+      "path": "objective-eval-output/2026-08-30T17-03-15.896Z-summary.json",
+      "sha256": "326ec208e9f03c642b688754113fbbaf7d262d05f8c780d35117aeee293dea2a"
+    },
+    {
+      "path": "objective-eval-output/2026-08-30T17-03-15.896Z-summary.md",
+      "sha256": "e9c9322773e6174bf15c535e15560d3f20ec36ec2d5a6cb777e986da679e3ac2"
+    },
+    {
+      "path": "objective-eval-output/2026-08-30T17-03-15.896Z.jsonl",
+      "sha256": "9a215ca1ddca55e03c0a0f06b0bc752bcc6aa48fde7c2ed3db1206f9ce58872c"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z-summary.json",
+      "sha256": "faf07dc1bafe4863c19680a6917070c5091bad4cba6cb2d768318344e9dc42ae"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z-summary.md",
+      "sha256": "d634f3a5538bfd7603888ef9a79a3570771e0f47c7a2cf33ca36cd09015faebd"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z-thinking-diagnostic.md",
+      "sha256": "5a79bca46d2f5c0984d8c4a660bebd640f7cae36f2852a8fefeb165ced24da14"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z.jsonl",
+      "sha256": "890ef0ce6232208e698b4061e0d7cba67a12dba14c6ca9b3f447bf5f2476f03b"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-06-26.590Z-legacy-summary.json",
+      "sha256": "fa02ff7dc1038fed4fe92a84ada719a44a6543ca6abc99f29620a61a63be6ad8"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-06-26.590Z-legacy-summary.md",
+      "sha256": "3dc34cd52e661bea9dc968801740f58427f61726257e70fd2c6c399d11b7fc84"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-06-26.590Z-legacy.jsonl",
+      "sha256": "a1a1c7400932cd2aa91de45eec596bf618046155336cecff5f48e33fcd2ba1d0"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-20-54.674Z-summary.json",
+      "sha256": "101a5f84e5513c7c36e75a8122cb9dad7642476f6b673e91b0b879c7c263e53c"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-20-54.674Z-summary.md",
+      "sha256": "f29e4b8158f7b68bc5c0150b360dd0a5da6150456d852975f47b43a37d2820a6"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-20-54.674Z.jsonl",
+      "sha256": "6b32fe45eee0eced666ab5bc86bf6453954ec2d8ed0dc1eea000a83542dc7547"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-25-50.386Z-r5-vs-legacy-attestation.json",
+      "sha256": "edf924ad37a3be0736fedd2d39c6ad85e215d3753e325e6b3220c1d647354ad5"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-25-50.386Z-r5-vs-legacy-comparison.json",
+      "sha256": "4b9e22521dfb848f322033c0c50206f976039a76e78a423f161063d159028444"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-25-50.386Z-r5-vs-legacy-comparison.md",
+      "sha256": "e638712082c65c1f2939182225ce539a90e1c55b0b5b7cb9d091e6b39fd6fde6"
+    }
+  ]
+}

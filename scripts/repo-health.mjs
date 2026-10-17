@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 // Drift guards for version, docs, env, and generated artifacts. Node stdlib only.
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  checkDocumentLinks,
+  checkGovernance,
+  checkPortableDocs,
+  checkTrackedSymlinks,
+  forbiddenTrackedReason,
+  governedPaths,
+  indexedPaths,
+} from './lib/repo-health-lib.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
@@ -40,18 +48,6 @@ const walk = (rel, pred) => {
   }
   return out;
 };
-
-const git = (args) => {
-  try {
-    return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
-  } catch (err) {
-    const stderr = err.stderr ? String(err.stderr) : err.message;
-    fail(`git ${args.join(' ')} failed: ${stderr}`);
-    return '';
-  }
-};
-
-const tracked = () => git(['ls-files']).split('\n').filter(Boolean);
 
 // --- VERSION.env -----------------------------------------------------------------
 
@@ -118,9 +114,23 @@ if (exists('server/package.json')) {
 }
 
 if (nodeMinimum !== null) {
-  for (const file of ['README.md', 'HANDOVER.md', 'scripts/bootstrap.sh']) {
-    if (!exists(file) || !read(file).includes(nodeMinimum)) {
-      fail(`${file} must name the Node minimum from server/package.json (${nodeMinimum})`);
+  if (exists('scheduler/package.json')) {
+    try {
+      const schedulerPkg = JSON.parse(read('scheduler/package.json'));
+      if (schedulerPkg.engines?.node !== `>=${nodeMinimum}`) {
+        fail('scheduler/package.json engines.node must match server/package.json');
+      }
+    } catch (err) {
+      fail(`scheduler/package.json is not valid JSON: ${err.message}`);
+    }
+  }
+  if (exists('scripts/bootstrap.sh')) {
+    const boot = read('scripts/bootstrap.sh');
+    if (!boot.includes('server/package.json') || !boot.includes('scheduler/package.json')) {
+      fail('scripts/bootstrap.sh must read the Node minimum from server/package.json and compare scheduler/package.json');
+    }
+    if (/version_ge "\$node_ver" "[0-9]/.test(boot)) {
+      fail('scripts/bootstrap.sh must not hardcode the Node minimum');
     }
   }
   if (exists('.github/workflows/ci.yml')
@@ -195,63 +205,20 @@ if (exists('Sources/NotchSPI/Update/UpdateChecker.swift')) {
   }
 }
 
-// --- Markdown relative links -----------------------------------------------------
+// --- Markdown links, symlinks, and portable paths --------------------------------
+// Governed inputs are the Git index plus unignored new files. Ignored local
+// evidence and build trees are not walked.
 
-const mdFiles = [
-  ...new Set([
-    ...tracked().filter((f) => f.endsWith('.md') && exists(f)),
-    ...walk('.', (_rel, name) => name.endsWith('.md')),
-  ]),
-];
-const linkRe = /\[[^\]]*]\(([^)]+)\)/g;
-for (const file of mdFiles) {
-  const text = read(file);
-  let m;
-  while ((m = linkRe.exec(text))) {
-    let target = m[1].trim().split(/\s+/)[0];
-    if (!target || target.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
-    target = target.split('#')[0];
-    if (!target) continue;
-    const resolved = path.normalize(path.join(path.dirname(path.join(REPO_ROOT, file)), target));
-    if (!resolved.startsWith(REPO_ROOT)) {
-      fail(`${file}: link escapes repo: ${m[1]}`);
-      continue;
-    }
-    if (!fs.existsSync(resolved)) {
-      fail(`${file}: broken relative link ${m[1]}`);
-    }
-  }
+let governed = [];
+try {
+  governed = governedPaths(REPO_ROOT);
+} catch (err) {
+  fail(`git ls-files failed: ${err.message}`);
 }
-
-// --- Path assumptions in docs that must stay portable ----------------------------
-
-const portableDocs = ['README.md'];
-if (exists('HANDOVER.md')) portableDocs.push('HANDOVER.md');
-if (exists('AGENTS.md')) portableDocs.push('AGENTS.md');
-if (exists('HANDOVER.md') && exists('CLAUDE.md')) portableDocs.push('CLAUDE.md');
-const machinePath = /\/Users\/|~\/Developer\/|\/native\//;
-for (const file of portableDocs) {
-  if (!exists(file)) continue;
-  const text = read(file);
-  if (machinePath.test(text)) {
-    fail(`${file} contains a machine-local or nested-native path assumption`);
-  }
-}
-
-// --- AI pointer files ------------------------------------------------------------
-
-const pointerCheck = (file) => {
-  if (!exists(file)) return;
-  if (!exists('HANDOVER.md')) return;
-  const lines = read(file).split(/\n/);
-  const nonempty = lines.filter((l) => l.trim() !== '');
-  if (nonempty.length > 5) fail(`${file} must stay a short pointer (≤ 5 non-empty lines)`);
-  const text = read(file);
-  if (!text.includes('HANDOVER.md')) fail(`${file} must point at HANDOVER.md`);
-};
-
-pointerCheck('AGENTS.md');
-pointerCheck('CLAUDE.md');
+for (const message of checkDocumentLinks(REPO_ROOT, governed)) fail(message);
+for (const message of checkTrackedSymlinks(REPO_ROOT, governed)) fail(message);
+for (const message of checkPortableDocs(REPO_ROOT, governed)) fail(message);
+for (const message of checkGovernance(REPO_ROOT)) fail(message);
 
 // --- Env var parity --------------------------------------------------------------
 
@@ -296,64 +263,19 @@ for (const name of exampleVars) {
   if (!usedEnv.has(name)) fail(`server/.env.example lists ${name} which is not read by server source`);
 }
 
-// --- official-api.md paths match routes and cover every client endpoint ---------
-
-if (exists('docs/official-api.md') && exists('server/src/routes.ts')) {
-  const api = read('docs/official-api.md');
-  const routes = read('server/src/routes.ts');
-  const heading = /^(?:#{1,6})\s+(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s]+)/gm;
-  let m;
-  const documentedPaths = new Set();
-  while ((m = heading.exec(api))) {
-    const method = m[1];
-    documentedPaths.add(m[2].split('?')[0].replace(/\\/g, ''));
-    const literal = m[2].split('?')[0].replace(/<[^>]+>/g, '');
-    const lookup = literal.replace(/\/$/, '');
-    const routeNeedle = lookup.replace(/\\/g, '');
-    if (!routes.includes(`'${routeNeedle}`) && !routes.includes(`"${routeNeedle}`) && !routes.includes(`\`${routeNeedle}`)) {
-      // /topup is registered as '/topup'; /v1/devices as '/v1/devices'
-      const base = routeNeedle.split('/:')[0];
-      if (!routes.includes(`'${base}`) && !routes.includes(`"${base}`)) {
-        fail(`docs/official-api.md documents ${method} ${m[2]} which is not in server/src/routes.ts`);
-      }
-    }
-  }
-
-  const clientSources = [
-    'Sources/NotchSPI/Cloud/OfficialAPI.swift',
-    'Sources/NotchSPI/Update/UpdateChecker.swift',
-  ];
-  const endpoint = /endpointURL\([^)]*path:\s*"([^"]+)"\)/g;
-  for (const file of clientSources) {
-    if (!exists(file)) continue;
-    const source = read(file);
-    while ((m = endpoint.exec(source))) {
-      const clientPath = `/${m[1].replace(/^\/+/, '')}`;
-      if (!documentedPaths.has(clientPath)) {
-        fail(`${file} calls ${clientPath}, but docs/official-api.md has no endpoint heading for it`);
-      }
-    }
-  }
-}
-
 // --- Tracked generated artifacts -------------------------------------------------
+// Read the index directly so a tracked generated file is still reported when
+// .gitignore would hide it from a working-tree walk.
 
-const trackedFiles = tracked();
-const forbidden = [
-  /^\.build\//,
-  /\/node_modules\//,
-  /^server\/node_modules\//,
-  /^dist\//,
-  /^dist-qa\//,
-  /^\.eval-results\//,
-  /^server\/data\//,
-  /^server\/\.env$/,
-  /\.db(-wal|-shm)?$/,
-];
+let trackedFiles = [];
+try {
+  trackedFiles = indexedPaths(REPO_ROOT);
+} catch (err) {
+  fail(`git ls-files failed: ${err.message}`);
+}
 for (const file of trackedFiles) {
-  if (forbidden.some((re) => re.test(file))) {
-    fail(`generated or secret path is tracked: ${file}`);
-  }
+  const reason = forbiddenTrackedReason(file);
+  if (reason) fail(reason);
 }
 
 // --- Eval output stays under .eval-results/ --------------------------------------

@@ -1,11 +1,32 @@
 import AppKit
+import Darwin
 
 #if DEBUG
-// A double-clicked design fixture must stay isolated even without shell arguments.
-// Set the vault switch before any singleton or application delegate is initialized.
-if Bundle.main.bundleIdentifier == "com.rottesya.notchspi.design-qa" {
+// Set the vault switch before any singleton or ProcessInfo snapshot is initialized.
+let launchBundle = Bundle.main.bundleIdentifier
+if launchBundle == "com.rottesya.notchspi.design-qa" {
     setenv("NSPI_QA_EPHEMERAL", "1", 1)
     setenv("NSPI_VISUAL_QA", "1", 1)
+}
+if launchBundle == DevelopmentIsolation.devBundleID {
+    setenv("NSPI_QA_EPHEMERAL", "1", 1)
+}
+if let message = DevelopmentIsolation.refusal(
+    bundleID: launchBundle,
+    arguments: CommandLine.arguments
+) {
+    fputs(message + "\n", stderr)
+    fflush(stderr)
+    if getenv("TERM") == nil && isatty(STDERR_FILENO) == 0 {
+        let prompt = NSApplication.shared
+        prompt.setActivationPolicy(.accessory)
+        let alert = NSAlert()
+        alert.messageText = "启动开发包"
+        alert.informativeText = message
+        alert.addButton(withTitle: "退出")
+        alert.runModal()
+    }
+    exit(1)
 }
 #endif
 

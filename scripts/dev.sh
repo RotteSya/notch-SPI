@@ -53,6 +53,15 @@ if [[ ! -d "$REPO_ROOT/server/node_modules" ]]; then
   exit 1
 fi
 
+if ! command -v lsof >/dev/null 2>&1; then
+  echo "dev: missing \`lsof\`. It ships with macOS and is required to detect a busy port." >&2
+  exit 1
+fi
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "dev: port $PORT is already in use; the existing listener was left running" >&2
+  exit 1
+fi
+
 echo "==> Starting official server at $BASE_URL"
 (
   cd "$REPO_ROOT/server"

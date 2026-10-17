@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Standalone loopback server: no app initialization, environment secrets, DB or Stripe.
 import {createServer} from 'node:http';
-import {renderMonthPassPreview,MONTH_PASS_PREVIEW_CSP} from '../server/src/purchase-page.ts';
+import {renderMonthPassPreview,MONTH_PASS_PREVIEW_CSP} from '../server/src/month-pass-page.ts';
 const server=createServer((req,res)=>{
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{'Allow':'GET, HEAD'});res.end();return;}
   const url=new URL(req.url,'http://127.0.0.1:43069');

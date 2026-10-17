@@ -120,13 +120,16 @@ enum OfficialAPI {
 
     /// Production endpoint of the official service. Overridable via the "official.baseURL"
     /// default for staging/self-hosted deployments (no UI; `defaults write` only).
+    /// The development bundle reads the current launch argument instead of this default.
     static let defaultBaseURL = "https://notchspi-api.vercel.app"
 
     static var baseURL: String {
-        var v = (UserDefaults.standard.string(forKey: "official.baseURL") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        while v.hasSuffix("/") { v = String(v.dropLast()) } // avoid "https://host//v1/…"
-        return v.isEmpty ? defaultBaseURL : v
+        DevelopmentIsolation.resolvedServiceAddress(
+            bundleID: Bundle.main.bundleIdentifier,
+            arguments: CommandLine.arguments,
+            persisted: UserDefaults.standard.string(forKey: "official.baseURL") ?? "",
+            production: defaultBaseURL
+        )
     }
 
     /// Posted whenever quota / usage / registration state changes, so open panels refresh.
@@ -242,12 +245,16 @@ enum OfficialAPI {
 
     /// Resolved endpoint under the configured base. Never force-unwraps user input: a
     /// hand-typed `official.baseURL` override that doesn't parse falls back to the production
-    /// default instead of crashing. Path components are appended WITHOUT a leading slash so a
-    /// path-bearing base ("https://host/api") is preserved.
+    /// default instead of crashing. The development bundle stays on its loopback address.
+    /// Path components are appended WITHOUT a leading slash so a path-bearing base
+    /// ("https://host/api") is preserved.
     static func endpointURL(base: String, path: String) -> URL {
-        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        let url = URL(string: base) ?? URL(string: defaultBaseURL)! // default is a compile-time constant
-        return url.appendingPathComponent(clean)
+        DevelopmentIsolation.endpoint(
+            bundleID: Bundle.main.bundleIdentifier,
+            base: base,
+            path: path,
+            production: defaultBaseURL
+        )
     }
 
     /// The web top-up page for this device. Appends to the base URL's path (same as the API

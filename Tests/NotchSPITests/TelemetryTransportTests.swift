@@ -54,15 +54,18 @@ private final class TelemetryFixtureProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let (data, delay) = Self.state.respond(request)
-        DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
+        let client = client
+        let url = request.url
+        // The global queue does not run this short delay once the suite has filled it.
+        // Main is the queue the rest of the test is already waiting on.
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [self] in
             self.lock.lock(); let stopped = self.stopped; self.lock.unlock()
-            guard !stopped, let url = self.request.url,
+            guard !stopped, let url,
                   let response = HTTPURLResponse(url: url, statusCode: url.path == "/v1/events/batch" ? 202 : 200,
                                                  httpVersion: nil, headerFields: ["Content-Type": "application/json"]) else { return }
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: data)
-            self.client?.urlProtocolDidFinishLoading(self)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
         }
     }
     override func stopLoading() { lock.lock(); stopped = true; lock.unlock() }

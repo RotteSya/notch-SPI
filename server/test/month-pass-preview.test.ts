@@ -2,8 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {renderMonthPassPreview,MONTH_PASS_PREVIEW_CSP} from '../src/purchase-page.ts';
-import {MONTH_PASS_PREVIEW} from '../src/month-pass-page.ts';
+import {renderMonthPassPreview,MONTH_PASS_PREVIEW_CSP,MONTH_PASS_PREVIEW} from '../src/month-pass-page.ts';
 import {parsePacks,DEFAULT_PACKS_JSON} from '../src/pricing.ts';
 
 test('month pass preview cannot execute a payment or reach network services',()=>{
@@ -20,6 +19,11 @@ test('month pass preview cannot execute a payment or reach network services',()=
     assert.ok(MONTH_PASS_PREVIEW_CSP.includes(createHash('sha256').update(script).digest('base64')));
     assert.match(html,/<section class="success" id="success" hidden>/);
   }
+});
+
+test('the purchase page module does not depend on the month-pass preview',()=>{
+  const source=readFileSync(new URL('../src/purchase-page.ts',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/month-pass-page|renderMonthPassPreview|MONTH_PASS_PREVIEW_CSP/);
 });
 
 test('preview catalog matches client contract and does not change live packs',()=>{

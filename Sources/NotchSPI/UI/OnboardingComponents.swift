@@ -32,7 +32,7 @@ func onboardingMotionDuration(_ seconds: TimeInterval) -> TimeInterval {
 
 // MARK: - Primary / secondary capsule button
 
-/// A capsule action button on the dark aurora field. `.primary` is a flat accent fill that
+/// Capsule action used by the notch guide and settings. `.primary` is a flat accent fill that
 /// brightens a step on hover; `.secondary` is a hairline glass outline; `.ghost` is bare text;
 /// `.confirm` is a quiet green state chip (a settled fact, not a call to action — it doesn't
 /// react, so it never fakes an affordance). No halos: elevation comes from color and motion.
@@ -257,121 +257,6 @@ final class GlowButton: NSControl {
     }
 }
 
-// MARK: - Language pill (welcome page)
-
-/// One selectable language pill. The page owns the exclusive-selection behavior; picking one
-/// gives a small contented pop so the choice lands as a gesture, not a repaint.
-final class LanguagePill: NSControl {
-    let language: AppLanguage
-    var isChosen = false {
-        didSet {
-            needsDisplay = true
-            if isChosen, !oldValue { pop() }
-            if isChosen != oldValue { NSAccessibility.post(element: self, notification: .valueChanged) }
-        }
-    }
-    var onPick: ((AppLanguage) -> Void)?
-
-    private var hovering = false { didSet { needsDisplay = true } }
-    private var trackingAreaRef: NSTrackingArea?
-
-    init(language: AppLanguage) {
-        self.language = language
-        super.init(frame: .zero)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var acceptsFirstResponder: Bool { isEnabled }
-    override func isAccessibilityElement() -> Bool { true }
-    override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
-    override func accessibilityLabel() -> String? { language.pickerLabel }
-    override func accessibilityValue() -> Any? { isChosen ? 1 : 0 }
-    override func isAccessibilityEnabled() -> Bool { isEnabled }
-    override func accessibilityPerformPress() -> Bool {
-        guard isEnabled, !isHiddenOrHasHiddenAncestor else { return false }
-        onPick?(language)
-        return true
-    }
-    override func keyDown(with event: NSEvent) {
-        if [UInt16(36), 49, 76].contains(event.keyCode) { _ = accessibilityPerformPress() }
-        else { super.keyDown(with: event) }
-    }
-    override func becomeFirstResponder() -> Bool { needsDisplay = true; return super.becomeFirstResponder() }
-    override func resignFirstResponder() -> Bool { needsDisplay = true; return super.resignFirstResponder() }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-
-    override var intrinsicContentSize: NSSize {
-        let s = (language.pickerLabel as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12.5, weight: .medium)])
-        return NSSize(width: ceil(s.width) + 30, height: 28)
-    }
-
-    private func pop() {
-        guard !onboardingReduceMotion(), let layer else { return }
-        let c = CGPoint(x: bounds.midX, y: bounds.midY)
-        var up = CATransform3DIdentity
-        up = CATransform3DTranslate(up, c.x, c.y, 0)
-        up = CATransform3DScale(up, 1.06, 1.06, 1)
-        up = CATransform3DTranslate(up, -c.x, -c.y, 0)
-        let k = CAKeyframeAnimation(keyPath: "transform")
-        k.values = [NSValue(caTransform3D: CATransform3DIdentity),
-                    NSValue(caTransform3D: up),
-                    NSValue(caTransform3D: CATransform3DIdentity)]
-        k.keyTimes = [0, 0.4, 1]
-        k.duration = 0.32
-        k.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeInEaseOut)]
-        layer.add(k, forKey: "pop")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let r = bounds.insetBy(dx: 1, dy: 1)
-        let capsule = NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2)
-        if isChosen {
-            NotchPalette.accent.withAlphaComponent(0.22).setFill()
-            capsule.fill()
-            capsule.lineWidth = 1
-            NotchPalette.accentHi.withAlphaComponent(0.8).setStroke()
-            capsule.stroke()
-        } else {
-            NSColor(white: 1, alpha: hovering ? 0.10 : 0.05).setFill()
-            capsule.fill()
-            capsule.lineWidth = 1
-            NSColor(white: 1, alpha: 0.14).setStroke()
-            capsule.stroke()
-        }
-        let color = isChosen ? NotchPalette.accentHi : NSColor(white: 1, alpha: 0.8)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12.5, weight: .medium), .foregroundColor: color,
-        ]
-        let ts = (language.pickerLabel as NSString).size(withAttributes: attrs)
-        (language.pickerLabel as NSString).draw(
-            at: NSPoint(x: bounds.midX - ts.width / 2, y: bounds.midY - ts.height / 2), withAttributes: attrs)
-        if window?.firstResponder === self {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 13, yRadius: 13)
-            ring.lineWidth = 2
-            ring.stroke()
-        }
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let t = trackingAreaRef { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                               owner: self, userInfo: nil)
-        addTrackingArea(t)
-        trackingAreaRef = t
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { _ = accessibilityPerformPress() }
-    }
-}
-
 // MARK: - Keycap chip
 
 /// A hotkey rendered as physical keycaps (one cap per symbol) in the product's own material:
@@ -454,76 +339,5 @@ final class KeycapChipView: NSView {
         }
         if !label.isEmpty { out.append(label) }
         return out
-    }
-}
-
-// MARK: - Step dots
-
-/// The onboarding progress indicator. Each dot is its own CALayer; changing `current` morphs
-/// the lozenge fluidly from one station to the next (width, position, and tint all glide on a
-/// gentle overshoot curve) instead of teleporting.
-final class StepDotsView: NSView {
-    var count: Int = 5 { didSet { if count != oldValue { rebuildLayers() } } }
-    var current: Int = 0 { didSet { if current != oldValue { applyLayout(animated: !onboardingReduceMotion()) } } }
-
-    private var dotLayers: [CALayer] = []
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        rebuildLayers()
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: CGFloat(count - 1) * 16 + 22, height: 6)
-    }
-
-    private func frames() -> [CGRect] {
-        var x: CGFloat = 0
-        var out: [CGRect] = []
-        for i in 0..<count {
-            let w: CGFloat = i == current ? 22 : 6
-            out.append(CGRect(x: x, y: bounds.midY - 3, width: w, height: 6))
-            x += w + 10
-        }
-        return out
-    }
-
-    private func rebuildLayers() {
-        guard let host = layer else { return }
-        dotLayers.forEach { $0.removeFromSuperlayer() }
-        dotLayers = (0..<count).map { _ in
-            let l = CALayer()
-            l.cornerRadius = 3
-            host.addSublayer(l)
-            return l
-        }
-        applyLayout(animated: false)
-    }
-
-    override func layout() {
-        super.layout()
-        applyLayout(animated: false)
-    }
-
-    private func applyLayout(animated: Bool) {
-        let fs = frames()
-        guard fs.count == dotLayers.count else { return }
-        CATransaction.begin()
-        if animated {
-            CATransaction.setAnimationDuration(0.40)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.22, 1.12, 0.30, 1))
-        } else {
-            CATransaction.setDisableActions(true)
-        }
-        for (i, l) in dotLayers.enumerated() {
-            l.frame = fs[i]
-            l.backgroundColor = (i == current ? NotchPalette.accentHi : NSColor(white: 1, alpha: 0.22)).cgColor
-        }
-        CATransaction.commit()
     }
 }

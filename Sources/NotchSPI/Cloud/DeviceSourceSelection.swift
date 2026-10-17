@@ -21,8 +21,7 @@ enum DeviceSourceGroup: String, Codable, CaseIterable {
 final class DeviceSourceSelection {
     static let shared: DeviceSourceSelection = {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["NSPI_QA_GIFT"] != nil ||
-            ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" {
+        if ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1" {
             return DeviceSourceSelection(scheduleAutomatically: false, persistEnabled: false)
         }
         #endif

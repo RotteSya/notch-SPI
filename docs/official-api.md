@@ -5,6 +5,73 @@
 客户端实现：`Sources/NotchSPI/Cloud/`。服务端路由：`server/src/routes.ts`。
 默认基址为 `OfficialAPI.defaultBaseURL`，可用 `official.baseURL`（`defaults write` 或启动参数）覆盖。
 
+## 路由清单
+
+下面的表是已注册路由的 `method + path`。`public`、`client`、`internal`、`admin`、`compat` 都在表内；正文标题解释其中已写明的契约，路径相同并不代替 SSE、额度回执和错误行为测试。
+
+<!-- route-inventory: start -->
+| audience | method | path |
+| --- | --- | --- |
+| public | GET | / |
+| public | GET | /healthz |
+| public | GET | /spi |
+| public | GET | /reading-practice |
+| public | GET | /dl |
+| public | GET | /update |
+| public | GET | /stats |
+| public | GET | /purchase |
+| public | GET | /purchase/complete |
+| public | POST | /purchase/checkout |
+| public | POST | /webhooks/stripe |
+| client | POST | /v1/devices |
+| client | POST | /v1/free-trial/claim |
+| client | GET | /v1/account |
+| client | GET | /v1/client-config |
+| client | POST | /v1/events/batch |
+| client | GET | /v1/device-observation |
+| client | POST | /v1/device-observation |
+| client | POST | /v1/captures |
+| client | GET | /v1/captures/:id/status |
+| client | POST | /v1/captures/:id/explanation |
+| client | POST | /v1/captures/:id/recovery |
+| client | GET | /v1/support |
+| client | POST | /v1/purchase-sessions |
+| client | GET | /v1/purchase-sessions/:purchaseId |
+| client | POST | /v1/device-source |
+| internal | GET | /api/internal/reap |
+| admin | GET | /admin |
+| admin | GET | /admin/metrics |
+| admin | GET | /admin/reports |
+| admin | GET | /admin/cohorts |
+| admin | GET | /admin/economics |
+| admin | GET | /admin/reports/data |
+| admin | POST | /admin/reports/archive |
+| admin | GET | /admin/reports/archives |
+| admin | GET | /admin/reports/archives/:id |
+| admin | POST | /admin/quality |
+| admin | GET | /admin/quality |
+| admin | GET | /admin/quality/reports |
+| admin | GET | /admin/quality/:id |
+| admin | POST | /admin/quality/:id/withdraw |
+| admin | POST | /admin/devices/internal |
+| admin | POST | /admin/economics/expense-allocation |
+| admin | POST | /admin/grant |
+| admin | GET | /admin/activity |
+| admin | POST | /admin/cli |
+| admin | POST | /admin/reservations/recover |
+| admin | GET | /admin/payments/finance |
+| admin | POST | /admin/payments/finance/reconcile |
+| admin | GET | /admin/payments |
+| admin | GET | /admin/payments/checkouts |
+| admin | GET | /admin/payments/checkouts/:reference |
+| admin | POST | /admin/payments/checkouts/:reference/recheck |
+| admin | POST | /admin/payments/checkouts/:reference/decision |
+| admin | POST | /admin/payments/refund-decision |
+| compat | GET | /topup |
+| compat | POST | /topup/checkout |
+| compat | POST | /topup/stub-complete |
+<!-- route-inventory: end -->
+
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。
 新设备注册一次性获得固定 30 题；服务端响应中的 `balance_questions` 是唯一准数，旧设备余额不会被重置。
 金钱只出现在充值：题包价格字段 `amount_cents`
@@ -18,9 +85,7 @@ DeepSeek 视觉候选通过独立 treatment slot 配置：
 `DEEPSEEK_BASE_URL=https://api.deepseek.com`。密钥只通过 `DEEPSEEK_API_KEY` 注入运行环境。
 未携带 `result_protocol` 的旧客户端和 control 流量继续走 `OFFICIAL_PROVIDER`；携带
 `objective_v1` 的请求才走 treatment slot。普通 DeepSeek 文本模型不接受截图，不能用于该通道。
-该候选的 Objective r5 自动绝对/相对闸门已通过，并由所有者通过独立 attestation 签署；归档见
-评测 Runbook。生产灰度仍按内部、5%、25%、100% 闸门逐档授权。Anthropic 与 OpenAI 继续保留
-为兼容路径。
+该候选的 Objective r5 自动绝对/相对闸门已通过，并由所有者通过独立 attestation 签署。放量、停止与回滚见 [评测 Runbook 第 4 节](../Tests/Fixtures/objective-v1/RUNBOOK.md)。Anthropic 与 OpenAI 继续保留为兼容路径。
 
 ### 用户思考程度
 
@@ -153,7 +218,7 @@ Bearer 设备鉴权，无额外请求参数。返回与 `GET /v1/account` 相同
 - 每日额度使用独立到期 lot。跨日或 72 小时到期撤销未用额度，旧持有失败释放不流入新日；到期前已准入的请求仍按既有请求租约结算。资格/激活时间与 lot 到期信息持久化，重启不重置。
 - `free_trial` 与余额版本一起应用，服务地址、设备或身份 generation 改变后拒绝迟到回执。字段畸形或不符合政策不得覆盖已知账户。客户端用服务端回执显示到期日，不能靠本机时钟延长。
 
-部署须先扩展数据库及全部服务实例，再开启开关，最后发布客户端。关闭开关仅停止新资格与新领取。存在有效试用或未结算持有时，不得回滚到不认识到期 lot 的旧服务；保留新增表和列，采用前向修复。2026-10-16 已部署生产并开启 `FREE_TRIAL_ENABLED=1`，生产回执与 400 次上限验证见 [上线记录](free-trial-400-release-2026-10-16.md)。
+部署须先扩展数据库及全部服务实例，再开启开关，最后发布客户端。关闭开关仅停止新资格与新领取。存在有效试用或未结算持有时，不得回滚到不认识到期 lot 的旧服务；保留新增表和列，采用前向修复。2026-10-16 的生产开启记录留在 Git 历史，索引见 [docs/history/index.json](history/index.json)。本次交接未重新核对线上开关。
 
 ## GET /v1/client-config — 稳定分桶配置
 
@@ -827,4 +892,4 @@ cohort 收入归属，不能将没有已记账订单解读成没有收款。
 
 `SCREEN_QUERY_BRIEF_CALCULATION` 缺省为 `0`。设为 `1` 时，协商 `screen_query_v1` 的主查题与恢复提示词要求最多三行简短计算/条件核对，再输出原 `FINAL` 和 `NSPI_RESULT_V1`；选择与排序只输出标签。它不改变 HTTP/SSE、usage、计费、解释或原 legacy 提示词，客户端请求字段不能覆盖开关。更改该策略或模型思考强度必须同时更新 `CLIENT_CONFIG_REVISION`，不同 revision 的父请求仍按既有规则拒绝恢复/解释。
 
-这是默认关闭的评测候选。初版出现缺正文和多题范围判断退化；当前 r2 先判断范围与可读性，再生成计算摘要。有限风险与原图回归通过，但真实窗口截图的排序题有两次数值读取错误，跨题型正确且≤2000ms仅2/9，正常钥匙串与生产公网仍未验收，不能据此启用生产。详见 [实测与边界](capture-latency-2026-10-04.md)。
+这是默认关闭的评测候选。初版出现缺正文和多题范围判断退化；当时的 r2 先判断范围与可读性，再生成计算摘要。有限样本里仍有排序题数值读取错误，正常钥匙串与生产公网当时未验收。实测记录留在 Git 历史，索引见 [docs/history/index.json](history/index.json)。

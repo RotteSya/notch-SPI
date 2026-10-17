@@ -9,8 +9,8 @@
 
 ## 2. 正式评测
 
-付费前先执行 `node scripts/evaluation-preflight.mjs`。2026-09-06 本轮累计预算为 100 元人民币，
-其授权、题库查找结果和成本上界字段见 [评测准备记录](../../../docs/evaluation-readiness.md)。
+付费前先执行 `node scripts/evaluation-preflight.mjs`。整轮预算以
+[evaluation-budget.json](../../../docs/evaluation-budget.json) 为准。
 Objective 与 legacy runner 共用 `.eval-results/budget-ledger.sqlite3`，不得删除账本重置额度。
 两入口均要求 `NSPI_EVAL_COST_BOUND` 指向已核验币种、价格及候选 token 限制的有效上界文件；
 没有这些证据时不进行付费调用。该检查不替代题集授权或独立质量复核。
@@ -94,15 +94,17 @@ node scripts/compare-objective-evals.mjs
 比较器验证模型、各自提交中的完整 fixture 集和 240 行记录，再执行准确率、Token 与 p95 阈值；
 复核者只签署生成的比较结果。
 
-## 4. 灰度与回滚
+## 4. 放量、停止与回滚
 
-> 2026-09-11用户已调整本次2.12的放量要求：[小用户量发布流程](../../../docs/small-user-release-2026-09-11.md)替代下述四档72小时/200次前提。必要模型、财务、兼容性及回退验证保留。下述原流程保留供历史记录复现。
+当前放量、停止与回滚以本节为准。2026-09-11 的小用户量调整留在基线提交的 `docs/small-user-release-2026-09-11.md`，索引见 [docs/history/index.json](../../../docs/history/index.json)。那次调整只覆盖当时的小用户量发布，不是此后每一次发布的既成授权。
 
-所有者在完整验证和正式评测通过后按 `内部 → 5% → 25% → 100%` 推进。每档观察至少 72 小时，
-且 treatment 捕获至少 200。协议无效率需 `<3%`，相对成功率下降 `<2pp`，p95 增幅 `≤10%`，
-Token 增幅 `≤8%`，重复扣费、负余额、机器行泄露、白名单外事件必须均为 0。
+### 当前适用
 
-生产灰度期间 Provider 必须分 slot，避免 control 被实验模型污染：
+第 3 节的质量阈值继续适用。同模型比较、资金与数据完整性、兼容迁移和签名公证也继续适用。
+
+一次发布在内部验收和上述条件通过后，由所有者决定是否向用户开放已验证的构建，开放之后按真实使用观察。固定四档等待和固定样本数已废止，不是本节的放行条件。
+
+生产流量的 Provider 按 slot 分开：
 
 ```text
 OFFICIAL_PROVIDER=anthropic
@@ -111,15 +113,20 @@ OBJECTIVE_RESULT_V1_MODEL=deepseek-v4-flash-vision-exp
 OBJECTIVE_RESULT_V1_BPS=0
 ```
 
-`DEEPSEEK_API_KEY` 只存于服务端秘密环境。BPS 调到 5% 后，仅携带 `objective_v1` 的 treatment
-请求走 DeepSeek；未携带协议的 control 与旧客户端始终走 Anthropic。到 100% 时旧客户端仍保留
-control 兼容路径，不能仅因新客户端已全量就删除。
+`DEEPSEEK_API_KEY` 只存于服务端秘密环境。BPS 大于 0 时，仅携带 `objective_v1` 的 treatment 请求走 DeepSeek；未携带协议的 control 与旧客户端走 `OFFICIAL_PROVIDER`。旧客户端保留 control 兼容路径。
 
-出现重复扣费、负余额、机器行泄露、白名单外事件，或协议无效率连续 30 分钟 `>5%`、相对成功率
-下降 `>5pp` 时，所有者立即设置：
+出现重复扣费、负余额、机器行泄露、白名单外事件，或协议无效率连续 30 分钟 `>5%`、相对成功率下降 `>5pp` 时，所有者立即设置：
 
 ```text
 OBJECTIVE_RESULT_V1_BPS=0
 ```
 
-客户端继续保留双解析，以安全完成在途或由 24 小时缓存配置启动的 V1 请求。
+客户端继续保留双解析，以完成在途或由 24 小时缓存配置启动的 V1 请求。
+
+### 已废止的历史流程
+
+下列四档条件来自 Objective V1 Runbook 原第 4 节，已被 2026-09-11 的小用户量调整替代。它不是当前放行条件。
+
+所有者曾按 `内部 → 5% → 25% → 100%` 推进。每档观察至少 72 小时，且 treatment 捕获至少 200。当时同时要求协议无效率 `<3%`，相对成功率下降 `<2pp`，p95 增幅 `≤10%`，Token 增幅 `≤8%`。
+
+质量阈值仍以第 3 节为准。停止与回滚以上文「当前适用」为准。

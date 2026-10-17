@@ -1,0 +1,611 @@
+[
+  {
+    "path_at_baseline": "design-qa.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/answer-failure-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/answer-reading-consistency-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/answer-recovery-2026-10-11.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/capture-experience-alignment.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/capture-flow-stability-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/capture-latency-2026-10-04.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/capture-status-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/capture-timeout-recovery-2026-09-11.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/cheaper-model-feasibility-2026-09-10.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/complex-answer-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/continuous-reading-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/corpus-curation-2026-09-10.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/deepseek-thinking-candidate-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/direct-target-capture.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/display-transitions-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/evaluation-readiness.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/evaluation-settlement-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/expanded-answer.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/prototypes.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/free-trial-400-release-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/official-api.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/full-regression-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/ghost-indicator-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/hardware-notch-layout-2026-10-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/idle-residency-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/independent-corpus-review-2026-09-10.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/local-question-bank.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/math-reading-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/mixed-thinking-candidate-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/month-pass-local-preview-2026-10-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/prototypes.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/neon-restore-rehearsal-2026-09-08.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quota-migration.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/notch-answer-design-2026-09-30.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/notch-onboarding-2026-09-29.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/notch-onboarding-polish-2026-09-29.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/notch-onboarding-research-2026-09-29.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/notch-safe-area-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/public-corpus-acquisition-2026-09-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/purchase-experience-2026-10-03.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/official-api.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/recent-questions.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-2.13-2026-09-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-2.14-2026-10-03.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-2.15-2026-10-03.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-2.16-2026-10-04.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-2.17-2026-10-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-completed-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-cutover-2026-09-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-execution-2026-09-11.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-progress-2026-09-06.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-progress-2026-09-08.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-progress-2026-09-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-progress-2026-09-10.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/release-progress-2026-09-11.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "HANDOVER.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/screenshot-flight-2026-10-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/screenshot-shortcut-flow.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/site-carousel-2026-10-09.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/official-api.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/site-redesign-2026-10-03.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/official-api.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/small-user-release-2026-09-11.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "Tests/Fixtures/objective-v1/RUNBOOK.md",
+    "reason": "2026-09-11 小用户量调整已废止四档固定等待。当前放量、停止与回滚在 Runbook 第 4 节；原文留在该提交。"
+  },
+  {
+    "path_at_baseline": "docs/stripe-charge-identifiers.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/official-api.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/subscription-daily-limit-preview-2026-10-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/prototypes.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/subscription-fair-use-preview-2026-10-13.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/prototypes.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/upgrade-2.17-to-3.0-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/compatibility.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-adaptive-polish-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-answer-shelf-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-chain-acceptance-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-collapse-control-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-collapse-hover-fix-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-hover-flow-audit-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-hover-regression-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-information-hierarchy-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-intake-motion-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-keycap-clipping-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-menu-appearance-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-notch-interior-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-notch-states-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-bounds-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-card-consistency-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-craft-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-journey-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-refinement-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-shortcuts-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-trial-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-onboarding-typography-2026-10-16.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-reader-windows-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-reading-motion-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-settings-menu-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-state-bounds-2026-10-15.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "docs/v3-status-shelf-2026-10-14.md",
+    "baseline_commit": "b89630b33ea70ef541b4031a82fb512812987d67",
+    "status": "historical",
+    "replacement": "docs/client-behavior.md",
+    "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  }
+]

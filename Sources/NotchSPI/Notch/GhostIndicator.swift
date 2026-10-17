@@ -168,7 +168,7 @@ final class GhostIndicatorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let side = min(bounds.width, bounds.height)
+        let side = Double(min(bounds.width, bounds.height))
         guard side > 1 else { return }
         var bodyColor = color
         if let time = completionTime, let previous = completionTint {
@@ -190,7 +190,7 @@ final class GhostIndicatorView: NSView {
         let cache = renderState
         // Original rose's visible ink occupied ~2/3 of its frame. Ghost's native
         // 66×70.5 outline at 0.94 scale preserves that optical size in all four slots.
-        let box = side * Self.bodyScale
+        let box = side * Double(Self.bodyScale)
         let thinking = reduceMotion ? (busy ? 1.0 : 0.0) : thinkingBlend
         let phase = reduceMotion ? 0 : thinkingTime * 2 * .pi / 1.05
         let completed = completionWeight
@@ -224,7 +224,7 @@ final class GhostIndicatorView: NSView {
         let renderer = ImageRenderer(content: canvas)
         renderer.scale = config.scale
         context.saveGState()
-        context.translateBy(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2)
+        context.translateBy(x: (Double(bounds.width) - side) / 2, y: (Double(bounds.height) - side) / 2)
         renderer.render { _, render in render(context) }
         context.restoreGState()
     }
