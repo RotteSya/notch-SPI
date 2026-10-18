@@ -101,3 +101,7 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 - 物理全局快捷键、屏幕录制允许、拒绝与返回、带刘海与外接屏、真实悬停，需要人在机器前验收。
 - 线上部署版本、真实付款和付费模型效果未在本次重新核对。
 - `scripts/run-objective-diagnostic.mjs` 直接调用供应商，不经过评测预算模块。见 [docs/prototypes.md](docs/prototypes.md)。
+
+### 自动连答扩展上限（2026-10-19）
+
+新增 100 题、无限（中英日）；autoMaxQuestions 的 -1 表示无限，未设置仍默认 20。无限仅取消题数停止条件，进度显示 n/∞，手动停止、额度/凭证、失败和空闲停止保持有效。

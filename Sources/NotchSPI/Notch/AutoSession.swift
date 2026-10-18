@@ -101,10 +101,19 @@ final class AutoSessionEngine {
         self.now = now
     }
 
-    /// 0 (UserDefaults "unset") → default 20; anything else clamped to 1…50.
+    /// -1 means no question cap; 0 (unset) keeps the default of 20.
+    nonisolated static let unlimitedQuestions = -1
+
+    var progressText: String {
+        let limit = config.maxQuestions == Self.unlimitedQuestions ? "∞" : String(config.maxQuestions)
+        return "\(questionsAsked)/\(limit)"
+    }
+
+    /// Finite caps are clamped to 1…100.
     nonisolated static func clampMaxQuestions(_ n: Int) -> Int {
+        if n == unlimitedQuestions { return n }
         guard n != 0 else { return 20 }
-        return min(max(n, 1), 50)
+        return min(max(n, 1), 100)
     }
 
     func start(config: Config) {
@@ -121,7 +130,7 @@ final class AutoSessionEngine {
     func noteRunSucceeded(balanceQuestions: Int?, credentialRejected: Bool) -> TickOutcome {
         guard state != .inactive else { return .none }
         questionsAsked += 1
-        if questionsAsked >= config.maxQuestions {
+        if config.maxQuestions != Self.unlimitedQuestions, questionsAsked >= config.maxQuestions {
             return stopped(.questionCap(config.maxQuestions))
         }
         if credentialRejected || balanceQuestions.map({ $0 <= 0 }) == true {

@@ -31,6 +31,48 @@ final class AutoSessionTests: XCTestCase {
         return engine
     }
 
+    func testHundredQuestionCapAndUnlimitedSession() {
+        for cap in [100, AutoSessionEngine.unlimitedQuestions] {
+            let engine = AutoSessionEngine()
+            engine.start(config: .init(maxQuestions: cap))
+            for count in 1...150 {
+                let outcome = engine.noteRunSucceeded(balanceQuestions: nil, credentialRejected: false)
+                if cap == 100 && count == 100 {
+                    XCTAssertEqual(outcome, .stop(.questionCap(100)))
+                    XCTAssertEqual(engine.progressText, "100/100")
+                    break
+                }
+                XCTAssertEqual(outcome, .none)
+                XCTAssertEqual(engine.tick(hash: grid(100)), .none)
+                XCTAssertEqual(engine.tick(hash: grid(200)), .none)
+                XCTAssertEqual(engine.tick(hash: grid(200)), .none)
+                XCTAssertEqual(engine.tick(hash: grid(200)), .trigger)
+            }
+            if cap == AutoSessionEngine.unlimitedQuestions {
+                XCTAssertEqual(engine.progressText, "150/∞")
+                engine.stop(reason: .stopButton)
+                XCTAssertFalse(engine.isActive)
+            }
+        }
+    }
+
+    func testUnlimitedStillStopsForQuotaFailureAndIdle() {
+        let engine = AutoSessionEngine()
+        for rejected in [false, true] {
+            engine.start(config: .init(maxQuestions: AutoSessionEngine.unlimitedQuestions))
+            XCTAssertEqual(engine.noteRunSucceeded(balanceQuestions: rejected ? nil : 0,
+                                                   credentialRejected: rejected), .stop(.quotaExhausted))
+        }
+        engine.start(config: .init(maxQuestions: AutoSessionEngine.unlimitedQuestions))
+        XCTAssertEqual(engine.noteRunFailed(), .stop(.runFailed))
+        let clock = Clock()
+        let watching = watchingEngine(clock: clock, maxQuestions: AutoSessionEngine.unlimitedQuestions)
+        clock.advance(901)
+        XCTAssertEqual(watching.tickPaused(), .stop(.idleTimeout))
+        XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(-1), -1)
+        XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(100), 100)
+    }
+
     // MARK: ScreenHasher
 
     func testIdenticalGridsHaveZeroDifferenceAndAreNotChanged() {
@@ -241,6 +283,6 @@ final class AutoSessionTests: XCTestCase {
         XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(1), 1)
         XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(20), 20)
         XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(50), 50)
-        XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(999), 50)
+        XCTAssertEqual(AutoSessionEngine.clampMaxQuestions(999), 100)
     }
 }

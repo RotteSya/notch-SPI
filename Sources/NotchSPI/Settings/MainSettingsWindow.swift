@@ -468,7 +468,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     private let loginCaption = captionLabel("")
     private let telemetryCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
 
-    private static let autoCapChoices = [5, 10, 20, 30, 50]
+    private static let autoCapChoices = [5, 10, 20, 30, 50, 100, AutoSessionEngine.unlimitedQuestions]
 
     private let contentWidth: CGFloat = 536
 
@@ -524,7 +524,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         addRow(root, y: y, label: L10n.t("自动连答上限", "自動連続回答の上限", "Auto session cap"),
                control: autoCapPopup, controlWidth: 280)
         for cap in Self.autoCapChoices {
-            autoCapPopup.addItem(withTitle: L10n.questions(cap))
+            autoCapPopup.addItem(withTitle: cap == AutoSessionEngine.unlimitedQuestions ? L10n.t("无限", "無制限", "Unlimited") : L10n.questions(cap))
             autoCapPopup.lastItem?.representedObject = cap
         }
         autoCapPopup.selectItem(

@@ -3,6 +3,27 @@ import XCTest
 @testable import NotchSPI
 
 final class SettingsNavigationAccessibilityTests: XCTestCase {
+    @MainActor func testExtendedAutoCapsPersistAcrossPageRecreation() throws {
+        let previous = Settings.shared.autoModeMaxQuestions
+        defer { Settings.shared.autoModeMaxQuestions = previous }
+        for cap in [100, AutoSessionEngine.unlimitedQuestions] {
+            Settings.shared.autoModeMaxQuestions = cap
+            let controller = MainSettingsWindowController()
+            controller.open(page: .general)
+            let page = try XCTUnwrap(controller.qaVisiblePage)
+            let popup = try XCTUnwrap(descendants(page).compactMap { $0 as? NSPopUpButton }.first {
+                $0.itemArray.contains { ($0.representedObject as? Int) == AutoSessionEngine.unlimitedQuestions }
+            })
+            XCTAssertEqual(popup.selectedItem?.representedObject as? Int, cap)
+            XCTAssertEqual(popup.itemArray.compactMap { $0.representedObject as? Int }, [5, 10, 20, 30, 50, 100, -1])
+            controller.show(page: .account)
+            controller.show(page: .general)
+            XCTAssertEqual(popup.selectedItem?.representedObject as? Int, cap)
+            controller.close()
+            XCTAssertEqual(Settings.shared.autoModeMaxQuestions, cap)
+        }
+    }
+
     @MainActor func testRapidPageReversalKeepsOneLivePageAndPreservesWindowPosition() async throws {
         let controller = MainSettingsWindowController()
         defer { controller.close() }

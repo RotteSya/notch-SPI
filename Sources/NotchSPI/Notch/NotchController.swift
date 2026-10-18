@@ -2226,7 +2226,7 @@ final class NotchController: NSObject {
         autoPaused = false
         autoEngine.start(config: .init(maxQuestions: Settings.shared.autoModeMaxQuestions))
         model.autoActive = true
-        model.autoProgress = "0/\(autoEngine.config.maxQuestions)"
+        model.autoProgress = autoEngine.progressText
         recordTelemetry(name: "auto_session_started", captureID: nil, trigger: "auto")
         #if DEBUG
         print("[NotchSPI] auto: locked to \(autoLockedBundleID ?? "none")")
@@ -2263,7 +2263,7 @@ final class NotchController: NSObject {
         case .stop(let reason):
             stopAutoSession(reason)
         default:
-            model.autoProgress = "\(autoEngine.questionsAsked)/\(autoEngine.config.maxQuestions)"
+            model.autoProgress = autoEngine.progressText
             model.statusText += " · " + L10n.statusAutoWatching
             #if DEBUG
             print("[NotchSPI] auto: watching (\(model.autoProgress))")
