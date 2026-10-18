@@ -70,10 +70,13 @@ final class InAppUpdaterTests: XCTestCase {
             try fm.createDirectory(at: candidate, withIntermediateDirectories: true)
             try Data("new".utf8).write(to: candidate.appendingPathComponent("marker"))
         }
+        let launcher = root.appendingPathComponent("launch-stub")
+        try "#!/bin/sh\nif [ \"$1\" = \"-W\" ]; then printf ready > \"$6\"; fi\nexit 0\n".write(to: launcher, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: launcher.path)
         // Replace only OS lifecycle commands; the production filesystem transaction runs verbatim.
         let script = InAppUpdater.installerScript
-            .replacingOccurrences(of: "/bin/kill", with: "/usr/bin/false")
-            .replacingOccurrences(of: "/usr/bin/open", with: launchSucceeds ? "/usr/bin/true" : "/usr/bin/false")
+            .replacingOccurrences(of: "while /bin/kill -0 \"$parent\"", with: "while /usr/bin/false")
+            .replacingOccurrences(of: "/usr/bin/open", with: launchSucceeds ? "\"" + launcher.path + "\"" : "/usr/bin/false")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", script, "test-updater", "0", destination.path, staging.path]

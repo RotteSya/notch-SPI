@@ -84,7 +84,7 @@ final class MonthPassAccountPage: NSViewController, SettingsPage {
         disclosure.setAccessibilityValue(expanded ? "expanded" : "collapsed")
         content.addSubview(disclosure)
         if expanded {
-            label(L10n.t("每天 600 次成功求解", "1日600回の解答", "600 successful solves per day"), y: 394, bold: true)
+            label(L10n.t("每天 400 次成功求解", "1日400回の解答", "400 successful solves per day"), y: 394, bold: true)
             label(L10n.t("low / high / max 共用；解释、失败及系统重试不额外计次。\n北京时间每日 00:00 重置，不累计。", "low / high / max 共通。解説・失敗・自動再試行は追加消費なし。\n北京時間の毎日00:00にリセット。繰り越しなし。", "Shared by low / high / max. Explanations, failures and automatic retries add no extra count.\nResets daily at 00:00 Beijing time; no rollover."), y: 426, height: 44, size: 11, secondary: true)
             if let expiresAt = snapshot.expiresAt {
                 label(L10n.t("到期时间：", "終了時刻：", "Expires: ") + snapshot.dateLabel(expiresAt, includeTime: true) + L10n.t("（本地时间）", "（現地時間）", " (local time)"), y: 473, height: 20, size: 11, secondary: true)

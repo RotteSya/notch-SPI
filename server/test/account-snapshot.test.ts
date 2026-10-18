@@ -64,7 +64,7 @@ for (const [name, make] of implementations) {
       const response = await app.inject({url: '/v1/account', headers: {authorization: `Bearer ${token}`}});
       assert.equal(response.statusCode, 200);
       assert.equal(response.headers['cache-control'], 'no-store');
-      assert.deepEqual(response.json(), {initial_grant: 30, balance_version: '3', held_questions: 0, policy_version: 'legacy',
+      assert.deepEqual(response.json(), {allowance_sources: {trial:29,plus:0,purchased:0,other:0}, spending_policy_supported:true, initial_grant: 30, balance_version: '3', held_questions: 0, policy_version: 'legacy',
         quota_breakdown: {trial: 29, paid: 0, goodwill: 0, legacy_unknown: 0}, balance_questions: 29,
         total_questions: 1, total_input_tokens: 11, total_output_tokens: 7, cli_enabled: true});
     } finally { await app.close(); await store.close(); }
@@ -207,7 +207,7 @@ test('sqlite: an unclassified legacy account keeps its counters and exact versio
     const first = await store.billing.accountSnapshot(token);
     assert.ok(first);
     assert.deepEqual(first, {balanceQuestions: 125, heldQuestions: 0, balanceVersion: '9007199254740993',
-      policyVersion: 'legacy', initialGrantQuestions: null, quotaBreakdown: {trial: 0, paid: 0, goodwill: 0, legacy_unknown: 125},
+      policyVersion: 'legacy', initialGrantQuestions: null, allowanceSources: {trial:0,plus:0,purchased:0,other:125}, quotaBreakdown: {trial: 0, paid: 0, goodwill: 0, legacy_unknown: 125},
       totalQuestions: 13, totalInputTokens: 1000, totalOutputTokens: 400, cliEnabled: true} satisfies AccountSnapshot);
     await store.close(); store = new SqliteStore(path);
     assert.deepEqual(await store.billing.accountSnapshot(token), first);

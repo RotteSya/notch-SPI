@@ -169,6 +169,7 @@ export const config = {
   // activates the Stripe provider automatically — prefer a RESTRICTED key (rk_…) with only
   // Checkout Sessions write and Refunds read permission. STRIPE_WEBHOOK_SECRET (whsec_…)
   // verifies paid checkout and refund notifications before durable reconciliation.
+  plusEnabled: envStr('PLUS_ENABLED', '0') === '1',
   stripeSecretKey: envStr('STRIPE_SECRET_KEY', ''),
   stripeWebhookSecret: envStr('STRIPE_WEBHOOK_SECRET', ''),
 

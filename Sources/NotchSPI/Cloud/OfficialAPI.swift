@@ -187,6 +187,7 @@ enum OfficialAPI {
     /// own message. Known classes carry a way out with zero jargon.
     static func localizedMessage(code: String?, fallback: String) -> String {
         switch code {
+        case "paid_credits_disabled": return L10n.t("每日额度已用完，题包自动使用已关闭。可等待重置，或在「账户与订阅」中开启。", "毎日の枠を使い切りました。パックの自動利用はオフです。", "Daily allowance is exhausted and pack spending is off. Wait for reset or enable it in Account & plan.")
         case "budget_exceeded":
             return L10n.t("服务端今日预算已用完，本次未扣题。你的剩余题数不受影响，请联系支持恢复服务。",
                           "本日のサービス予算に達しました。今回は質問数を消費していません。サポートにお問い合わせください。",
@@ -385,7 +386,7 @@ enum OfficialAPI {
         baseURL: String, deviceToken: String,
         prompt: CapturePrompt, imagesBase64: [String],
         resultProtocol: String? = nil, captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil,
-        reasoningEffort: String? = nil
+        reasoningEffort: String? = nil, allowPurchasedCredits: Bool = true
     ) -> URLRequest {
         var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
         req.httpMethod = "POST"
@@ -400,6 +401,7 @@ enum OfficialAPI {
             "image_media_type": "image/jpeg",
             "stream": true,
         ]
+        if !allowPurchasedCredits { payload["allow_purchased_credits"] = false }
         if let reasoningEffort { payload["reasoning_effort"] = reasoningEffort }
         if imagesBase64.count > 1 { payload["images_base64"] = imagesBase64 }
         if let resultProtocol { payload["result_protocol"] = resultProtocol }
@@ -503,6 +505,23 @@ enum OfficialAPI {
         } catch { return .failure(accountError(error)) }
     }
 
+    static func restoreAccount(code: String, environment: AccountEnvironment = .live) async -> Result<Void, OfficialAPIError> {
+        let token = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (16...512).contains(token.utf8.count), token.utf8.allSatisfy({ (33...126).contains($0) }) else {
+            return .failure(.init(message: L10n.t("恢复码格式不正确。", "復元コードが無効です。", "Invalid recovery code.")))
+        }
+        let ticket = environment.state.prepareRecovery()
+        let base = ticket.baseURL
+        do {
+            let (status, data) = try await readAccountHTTP(makeAccountRequest(baseURL: base, deviceToken: token), session: environment.session)
+            guard status == 200 else { return .failure(.init(message: localizedErrorBody(data, statusCode: status))) }
+            let response = try JSONDecoder().decode(OfficialAccountResponse.self, from: data)
+            try Task.checkCancellation()
+            try environment.state.restoreVerifiedCredential(token, response: response, ticket: ticket)
+            return .success(())
+        } catch { return .failure(accountError(error)) }
+    }
+
     private static func accountError(_ error: Error) -> OfficialAPIError {
         switch error {
         case OfficialAccountFailure.credentialUnavailable:
@@ -571,6 +590,11 @@ enum OfficialAPI {
         let token = account.token, base = account.baseURL
         let id = captureID ?? UUID()
         let operation = auxiliary?.operation ?? "solve"
+        let allowPurchased = Settings.shared.allowPurchasedCredits
+        if !allowPurchased && operation == "solve" && accountState.value("spendingPolicySupported") as? Bool != true {
+            DispatchQueue.main.async { onDone(false, L10n.t("当前服务尚未确认题包保护支持。请刷新账户后重试；本次未发起求解。", "パック保護を確認できません。アカウントを更新してください。", "Pack protection is not confirmed by this service. Refresh your account before trying again.")) }
+            return nil
+        }
         return Task.detached(priority: .userInitiated) {
             guard await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else {
                 await MainActor.run { onDone(false, cannotConnectMessage) }; return
@@ -590,7 +614,7 @@ enum OfficialAPI {
             }
             var request = makeCaptureRequest(baseURL: base, deviceToken: token, prompt: prompt,
                                              imagesBase64: imagesBase64, resultProtocol: resultProtocol,
-                                             captureID: id, screenQuery: screenQuery, reasoningEffort: reasoningEffort)
+                                             captureID: id, screenQuery: screenQuery, reasoningEffort: reasoningEffort, allowPurchasedCredits: allowPurchased)
             if let auxiliary, let data = request.httpBody,
                var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let route = auxiliary.operation == "explain" ? "explanation" : "recovery"

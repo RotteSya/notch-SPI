@@ -7,6 +7,7 @@ export type TerminalState = 'pending' | 'usable' | 'retake' | 'no_result' | 'fai
 export type LotKind = 'trial' | 'paid' | 'goodwill' | 'legacy_unknown';
 export interface QuotaSnapshot {
   freeTrial?: FreeTrialSnapshot;
+  allowanceSources?: {trial: number; plus: number; purchased: number; other: number};
   balanceQuestions: number; heldQuestions: number; balanceVersion: string;
   policyVersion: string; initialGrantQuestions: number | null;
   quotaBreakdown: Record<LotKind, number>;
@@ -50,9 +51,10 @@ export interface BeginCapture {
   profileId?: string; profileVersion?: string; promptVersion?: string; resultProtocol?: string;
   responseContract?: string; configRevision?: string; leaseMs?: number;
   exclusive?: boolean; legacy?: boolean;
+  allowPurchasedCredits?: boolean;
 }
 export type BeginResult = { ok: true; capture: CaptureRecord; quota: QuotaSnapshot } |
-  { ok: false; reason: 'unknown_token' | 'insufficient_quota' | 'idempotency_conflict' |
+  { ok: false; reason: 'unknown_token' | 'insufficient_quota' | 'paid_credits_disabled' | 'idempotency_conflict' |
     'capture_in_progress' | 'capture_already_finalized' | 'device_busy' | 'service_maintenance'; capture?: CaptureRecord };
 export interface FinishCapture {
   token: string; captureId?: string; charge: boolean; terminalState: Exclude<TerminalState, 'pending'>;

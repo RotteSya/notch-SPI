@@ -6,6 +6,8 @@ enum OfficialAccountFailure: Error { case credentialUnavailable, missingCredenti
 
 /// Strictly decoded before any credential, balance, permission or usage mirror changes.
 struct OfficialAccountResponse: Decodable {
+    var allowanceSources: [String: Int]? = nil
+    var spendingPolicySupported: Bool? = nil
     var freeTrial: FreeTrialSnapshot? = nil
     var initialGrant: Int? = nil
     var quotaBreakdown: [String: Int]? = nil
@@ -17,6 +19,7 @@ struct OfficialAccountResponse: Decodable {
     let totalInputTokens: Int?
     let totalOutputTokens: Int?
     enum CodingKeys: String, CodingKey {
+        case allowanceSources = "allowance_sources", spendingPolicySupported = "spending_policy_supported"
         case freeTrial = "free_trial"
         case initialGrant = "initial_grant", quotaBreakdown = "quota_breakdown"
         case deviceToken = "device_token", balanceQuestions = "balance_questions", balanceVersion = "balance_version"
@@ -26,6 +29,7 @@ struct OfficialAccountResponse: Decodable {
     func validate(registration: Bool) throws {
         guard balanceQuestions >= 0, initialGrant == nil || initialGrant! >= 0,
               freeTrial?.isValid != false,
+              allowanceSources == nil || (Set(allowanceSources!.keys) == Set(["trial", "plus", "purchased", "other"]) && allowanceSources!.values.allSatisfy { $0 >= 0 } && allowanceSources!.values.reduce(0.0, { $0 + Double($1) }) == Double(balanceQuestions)),
               quotaBreakdown == nil || quotaBreakdown!.values.allSatisfy({ $0 >= 0 }),
               [totalQuestions, totalInputTokens, totalOutputTokens].allSatisfy({ $0 == nil || $0! >= 0 }),
               balanceVersion == nil || BalanceVersion.canonical(balanceVersion!) != nil else {
@@ -65,7 +69,7 @@ final class OfficialAccountState: @unchecked Sendable {
     private var refreshSequence: UInt64 = 0
     private var appliedRefreshSequence: UInt64 = 0
     private static let mirrorKeys = ["balanceQuestions", "balanceVersion", "cliEnabled", "credentialRejected",
-                                     "totalQuestions", "totalInputTokens", "totalOutputTokens", "initialGrant", "quotaBreakdown", "freeTrial"]
+                                     "totalQuestions", "totalInputTokens", "totalOutputTokens", "initialGrant", "quotaBreakdown", "freeTrial", "allowanceSources", "spendingPolicySupported"]
 
     init(defaults: UserDefaults = .standard, secrets: KeychainStore.Access = .live,
          baseURL: @escaping () -> String = { OfficialAPI.baseURL }, onChange: @escaping () -> Void = {}) {
@@ -168,6 +172,31 @@ final class OfficialAccountState: @unchecked Sendable {
         }
     }
 
+    struct RecoveryTicket {
+        let baseURL: String
+        let generation: UInt64
+        let account: OfficialAPI.CaptureAccount?
+    }
+    func prepareRecovery() -> RecoveryTicket {
+        locked { let account = identityLocked(); return .init(baseURL: observeBaseLocked(), generation: generation, account: account) }
+    }
+
+    /// A verified recovery never destroys the old credential before the new one is saved.
+    func restoreVerifiedCredential(_ token: String, response: OfficialAccountResponse, ticket: RecoveryTicket) throws {
+        try response.validate(registration: false)
+        guard (16...512).contains(token.utf8.count), token.utf8.allSatisfy({ (33...126).contains($0) }) else { throw OfficialAccountFailure.invalidResponse }
+        try locked {
+            guard observeBaseLocked() == ticket.baseURL, identityLocked() == ticket.account, generation == ticket.generation else { throw OfficialAccountFailure.changed }
+            guard secrets.write(token, "official.deviceToken") else { throw OfficialAccountFailure.credentialUnavailable }
+            defaults.removeObject(forKey: "official.deviceToken")
+            _ = secrets.write(nil, "official.registrationAttempt")
+            generation &+= 1; currentBinding = nil
+            defaults.removeObject(forKey: "official.accountBinding")
+            clearMirrorLocked(); _ = identityLocked()
+            applyResponseLocked(response)
+        }
+    }
+
     func prepareRegistration() throws -> RegistrationPreparation {
         try locked {
             let base = observeBaseLocked()
@@ -259,6 +288,8 @@ final class OfficialAccountState: @unchecked Sendable {
         return version.map { BalanceVersion.accepts(incoming: $0, current: current) } ?? (current == nil)
     }
     private func applyResponseLocked(_ response: OfficialAccountResponse) {
+        defaults.set(response.allowanceSources, forKey: "official.allowanceSources")
+        defaults.set(response.spendingPolicySupported == true, forKey: "official.spendingPolicySupported")
         defaults.set(response.freeTrial.flatMap { try? JSONEncoder().encode($0) }, forKey: "official.freeTrial")
         defaults.set(false, forKey: "official.credentialRejected")
         defaults.set(response.balanceQuestions, forKey: "official.balanceQuestions")
@@ -286,6 +317,7 @@ final class OfficialAccountState: @unchecked Sendable {
                   freeTrial?.isValid != false,
                   totals == nil || (totals!.isValid && version != nil) else { return false }
             defaults.removeObject(forKey: "official.quotaBreakdown")
+            defaults.removeObject(forKey: "official.allowanceSources")
             defaults.set(freeTrial.flatMap { try? JSONEncoder().encode($0) }, forKey: "official.freeTrial")
             defaults.set(balance, forKey: "official.balanceQuestions")
             if let version { defaults.set(version, forKey: "official.balanceVersion") }

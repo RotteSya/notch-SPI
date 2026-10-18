@@ -24,7 +24,12 @@ test('trial HTTP contract authenticates, preserves old users and returns one dur
     const token = await register();
     const before = (await app.inject({url: '/v1/account', headers: headers(token)})).json();
     assert.equal(before.free_trial.status, 'eligible');
-    assert.equal(before.balance_questions, 30);
+    assert.equal(before.balance_questions, 0);
+    assert.equal(before.initial_grant, 0);
+    assert.equal(before.allowance_sources.trial, 0);
+    assert.equal(before.policy_version, 'trial3d400-2026-10-16');
+    const configResponse = (await app.inject({url: '/v1/client-config', headers: headers(token)})).json();
+    assert.equal(configResponse.screen_query.trial_policy.initial_grant, 0);
     trialConfig.freeTrialEnabled = false;
     assert.equal((await app.inject({url: '/v1/account', headers: headers(token)})).json().free_trial, undefined);
     trialConfig.freeTrialEnabled = true;

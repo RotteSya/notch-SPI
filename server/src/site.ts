@@ -1,3 +1,4 @@
+import {PLUS} from './plus.ts';
 import type { QuestionPack } from './pricing.ts';
 import { designCopy, siteCSS } from './site-design.ts';
 import { demoScript } from './site-demo.ts';
@@ -67,7 +68,7 @@ const S = {
     "faqs": [
       {
         "q": "截图会被保存吗？",
-        "a": "默认服务端不保存图片和答案正文。新题组材料在本机最多保留 15 分钟；你主动导出的反馈文件会保留到自行删除。"
+        "a": "默认服务端不保存图片和答案正文。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
       },
       {
         "q": "答题失败会扣题吗？",
@@ -112,7 +113,7 @@ const S = {
     "faqs": [
       {
         "q": "スクリーンショットは保存されますか？",
-        "a": "通常のサーバー処理では画像や回答本文を保存しません。新しい材料グループは本機で最大 15 分保持。自分で書き出したフィードバックは自分で削除するまで残ります。"
+        "a": "サーバーは通常、画像・回答を保存しません。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
       },
       {
         "q": "回答に失敗したら？",
@@ -157,7 +158,7 @@ const S = {
     "faqs": [
       {
         "q": "Are my screenshots stored?",
-        "a": "The server does not store images or answer text by default. New question groups keep local material for up to 15 minutes. Feedback files you export remain until you delete them."
+        "a": "The server does not store images or answers by default. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
       },
       {
         "q": "What if an answer fails?",
@@ -277,6 +278,12 @@ export function renderLandingPage(input: SiteInput): string {
   }).join('');
   const privacy=s.privacyBody.map(p=>`<p>${e(p.replaceAll('{{AI_PROVIDER}}',providerName))}</p>`).join('');
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');
+  const plusCopy = {
+    zh: {title:'NotchSPI Plus',period:'每月自动续费',benefit:'每日 400 次成功求解，解释与失败不额外扣次。北京时间 00:00 重置，不累计。',cancel:'可随时取消自动续费，已付款周期内仍可使用。题包仍可单独购买。',buy:'App 设置 → 账户与订阅',trial:'新设备可自行选择领取 72 小时免费体验，每日 400 次。引导可选择稍后领取，之后在设置 → 账户与订阅领取。领取时替换初始赠送的未用部分，已购余额保留。免费体验与 Plus 独立计额，先用免费体验，再用 Plus，最后用题包。'},
+    ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日400回の解答。解説・失敗は追加消費なし。北京時間00:00リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。問題パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72時間・毎日400回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
+    en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Question packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
+  }[input.lang];
+  const plusCard = `<article class="feature" style="margin-top:28px"><h3>${plusCopy.title} · ${formatMoney(PLUS.priceCents,PLUS.currency)} CNY / ${input.lang==='zh'?'月':input.lang==='ja'?'月':'month'}</h3><p>${plusCopy.period} · ${plusCopy.benefit}</p><p>${plusCopy.cancel}</p><p>${plusCopy.buy}</p><p>${plusCopy.trial}</p></article>`;
   const faqItems=s.faqs.map(f=>`<details><summary>${e(f.q)}</summary><p>${e(f.a)}</p></details>`).join('');
   const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
@@ -306,7 +313,7 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <article class="feature"><div class="multi-visual" aria-hidden="true">${d.multiLabels.map((t,i)=>`<div class="mini-page"><b>0${i+1}</b><div class="mini-lines"></div><span>${t}</span></div>`).join('')}</div><h3>${d.multiTitle}</h3><p>${d.multiBody}</p></article>
 <article class="feature"><div class="app-photo"><img src="${idleScreenshot}" alt="${e(d.actual)}" width="644" height="202" loading="lazy" decoding="async"><small>${d.actual}</small></div><h3>${d.quietTitle}</h3><p>${d.quietBody}</p></article></div></section></div>
 <section id="pricing" class="pricing-band section" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><p class="eyebrow">${d.priceEyebrow}</p><h2 id="pricing-title">${lines(d.priceTitle)}</h2><p>${d.priceIntro}</p></div>
-<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.questions(input.trialQuestions)}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free(input.trialQuestions)}</p>${download('secondary')}</article>${packCards}</div>
+${plusCard}<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.questions(input.trialQuestions)}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free(input.trialQuestions)}</p>${download('secondary')}</article>${packCards}</div>
 <div class="price-notes"><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p></div><div class="purchase" id="purchase"><div><h3>${d.purchaseTitle}</h3><p>${d.purchaseBody}</p></div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></div></section>
 <div class="wrap"><section id="faq" class="section faq-section" aria-labelledby="faq-title"><div><p class="eyebrow">FAQ</p><h2 id="faq-title">${d.faqTitle}</h2></div><div class="faq">${faqItems}</div></section>
 <section class="closing">${rose}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free(input.trialQuestions)}<br>${d.requirements}</p></section>

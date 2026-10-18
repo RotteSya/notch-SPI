@@ -1,3 +1,6 @@
+import {PLUS_SCHEMA} from './plus-schema.ts';
+import {plusRow} from './plus-sql.ts';
+import {PLUS,plusActive} from './plus.ts';
 import { randomUUID } from 'node:crypto';
 import { hashToken, newToken, type RegisteredDevice } from './db.ts';
 import { applyRefundLot } from './payment-ledger-sql.ts';
@@ -84,6 +87,7 @@ CREATE TABLE IF NOT EXISTS attempt_budget_holds (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_key ON devices(registration_key_hash);
 ${QUOTA_MIGRATION_SCHEMA}
+${PLUS_SCHEMA}
 `;
 
 export function* ledger(device: number, lot: string, event: string, available: number, held: number,
@@ -109,13 +113,17 @@ export function* opening(d: Row): Transaction<void> {
 function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
   yield* opening(d);
   const trial = yield* syncFreeTrial(d);
-  const lots = yield* query('SELECT kind,remaining,held,refund_frozen FROM quota_lots WHERE device_id=?', Number(d.id));
+  yield* syncPlus(d);
+  const lots = yield* query('SELECT kind,source_ref,remaining,held,refund_frozen FROM quota_lots WHERE device_id=?', Number(d.id));
   const quota: QuotaSnapshot = { balanceQuestions: Number(d.balance_questions), heldQuestions: 0,
     balanceVersion: String(d.balance_version), policyVersion: String(d.quota_policy_version),
     initialGrantQuestions: d.initial_grant_questions === null ? null : Number(d.initial_grant_questions),
     quotaBreakdown: { trial: 0, paid: 0, goodwill: 0, legacy_unknown: 0 },
     ...(trial ? {freeTrial: trial} : {}) };
+  quota.allowanceSources = {trial:0,plus:0,purchased:0,other:0};
   for (const lot of lots) {
+    const key = String(lot.source_ref).startsWith('plus_daily:') ? 'plus' : lot.kind === 'trial' ? 'trial' : lot.kind === 'paid' ? 'purchased' : 'other';
+    quota.allowanceSources[key] += Number(lot.refund_frozen)===1 ? 0 : Number(lot.remaining)-Number(lot.held);
     quota.heldQuestions += Number(lot.held);
     quota.quotaBreakdown[lot.kind as keyof QuotaSnapshot['quotaBreakdown']] += Number(lot.refund_frozen)===1 ? 0 : Number(lot.remaining) - Number(lot.held);
   }
@@ -125,13 +133,40 @@ function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
   return quota;
 }
 
+/** Daily Plus lots use the existing expiry/release ledger, including in-flight reservations. */
+function* syncPlus(d: Row): Transaction<void> {
+  const id=Number(d.id), now=new Date().toISOString();
+  const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',id))[0];
+  const plan=row?plusRow(row):null;
+  if (!plusActive(plan)) {
+    const lots=yield* query("SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND source_ref LIKE 'plus_daily:%' AND refund_target<>granted",id);
+    for(const lot of lots) yield* applyRefundLot(String(lot.lot_id),false,Number(lot.granted),'plus-expiry');
+  } else {
+    const window=trialWindow(), source='plus_daily:'+window.key, lot=randomUUID();
+    const expires=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+    const inserted=yield* query(`INSERT INTO quota_lots(lot_id,device_id,kind,granted,remaining,source_ref,created_at,trial_expires_at)
+      VALUES(?,?,'paid',?,?,?,?,?) ON CONFLICT(device_id,source_ref) DO NOTHING RETURNING lot_id`,lot,id,PLUS.dailyLimit,PLUS.dailyLimit,source,now,expires);
+    if(!inserted.length) {
+      const existing=(yield* query('SELECT lot_id FROM quota_lots WHERE device_id=? AND source_ref=?',id,source))[0]!;
+      yield* query('UPDATE quota_lots SET trial_expires_at=? WHERE lot_id=?',expires,String(existing.lot_id));
+      yield* applyRefundLot(String(existing.lot_id),false,0,'plus-renewal');
+    }
+    if(inserted.length) {
+      yield* query('UPDATE devices SET balance_questions=balance_questions+?,balance_version=balance_version+1,updated_at=? WHERE id=?',PLUS.dailyLimit,now,id);
+      yield* ledger(id,lot,'grant',PLUS.dailyLimit,0,source);
+    }
+  }
+  Object.assign(d,(yield* query('SELECT * FROM devices WHERE id=?',id))[0]!);
+}
+
 /** Caller holds the device lock; daily grant, expiration and balance version commit together. */
 function* syncFreeTrial(d: Row): Transaction<FreeTrialSnapshot | null> {
   const id = Number(d.id), now = new Date().toISOString();
   const trial = (yield* query('SELECT * FROM free_trials WHERE device_id=?', id))[0];
-  if (!trial) return null;
+
   const expired = yield* query('SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND trial_expires_at<=? AND refund_target<>granted', id, now);
   for (const lot of expired) yield* applyRefundLot(String(lot.lot_id), false, Number(lot.granted), 'trial-expiry');
+  if (!trial) { Object.assign(d, (yield* query('SELECT * FROM devices WHERE id=?', id))[0]!); return null; }
   const activatedAt = trial.activated_at === null ? null : String(trial.activated_at);
   const expiresAt = trial.expires_at === null ? null : String(trial.expires_at);
   const window = trialWindow(Date.parse(now)), source = 'trial_daily:' + window.key;
@@ -458,6 +493,7 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
   if (!d) return { ok: false, reason: 'unknown_token' };
   yield* opening(d);
   yield* syncFreeTrial(d);
+  yield* syncPlus(d);
   const existing = yield* readCapture(d, input.captureId);
   if (existing) return duplicateCapture(existing, input);
   if (input.exclusive) {
@@ -490,8 +526,9 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
   }
   if (Number(d.balance_questions) < 1) return { ok: false, reason: 'insufficient_quota' };
   const lot = (yield* query(`SELECT lot_id FROM quota_lots WHERE device_id=? AND remaining>held AND refund_frozen=0
-    ORDER BY CASE kind WHEN 'trial' THEN 0 WHEN 'legacy_unknown' THEN 1 WHEN 'goodwill' THEN 2 ELSE 3 END,created_at,lot_id LIMIT 1`, Number(d.id)))[0];
-  if (!lot) throw new Error('Quota source unavailable');
+    AND (?=1 OR kind<>'paid' OR source_ref LIKE 'plus_daily:%')
+    ORDER BY CASE WHEN kind='trial' THEN 0 WHEN source_ref LIKE 'plus_daily:%' THEN 1 WHEN kind='legacy_unknown' THEN 2 WHEN kind='goodwill' THEN 3 ELSE 4 END,created_at,lot_id LIMIT 1`, Number(d.id), input.allowPurchasedCredits === false ? 0 : 1))[0];
+  if (!lot) return {ok:false,reason:'paid_credits_disabled'};
   const capture = newCapture(input), reservation = randomUUID();
   yield* query(`INSERT INTO capture_requests
     (request_id,device_id,client_capture_id,request_hmac,metadata,state,legacy,lease_expires_at,created_at)

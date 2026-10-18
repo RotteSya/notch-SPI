@@ -122,3 +122,20 @@ test('legacy reliability metrics never attribute another device cost to a reused
   assert.equal(report.variants.find(v=>v.variant==='control')?.estimated_cost_micros.total,80);
   assert.equal(report.variants.find(v=>v.variant==='objective_v1')?.estimated_cost_micros.total,900);
 });
+
+test('Plus daily grants never inflate permanent pack liabilities or imply complete contribution',()=>{
+  const f=facts();
+  f.lots.push({id:'pack',deviceId:1,kind:'paid',granted:'10',remaining:'5',held:'0',revoked:'0',createdAt:registered,sourceRef:'cs_pack'},
+    {id:'plus',deviceId:1,kind:'paid',granted:'400',remaining:'350',held:'2',revoked:'0',createdAt:registered,sourceRef:'plus_daily:2026-01-01'});
+  f.orders.push({reference:'cs_pack',deviceId:1,paymentIntentId:'pi_pack',chargeId:null,amountMinor:'1000',currency:'CNY',paidAt:at(1),recordedAt:at(1)});
+  f.adjustments.push({reference:'fee',orderReference:'cs_pack',type:'fee',amountMinor:'0',currency:'CNY',status:'applied',effectiveAt:at(1),recordedAt:at(1)});
+  f.expenses.push({reference:'service',kind:'service',currency:'CNY',amountMicros:'0',cohortFrom:registered,cohortTo:at(1),coverageThrough:at(50),recordedAt:at(1)});
+  const report=aggregateEconomics(f,query());
+  assert.equal(report.paid_questions.remaining,'5');assert.equal(report.paid_questions.observed_granted,'10');
+  assert.equal(report.currencies[0]!.cash_minor.confirmed,'1000');
+  assert.equal(report.currencies[0]!.contribution_before_paid_liability_micros,null);
+  assert.equal(report.plus_coverage.contribution_blocked,true);
+  assert.equal(aggregateCohorts(f,query()).payment_scope,'one_time_packs_only_plus_excluded');
+  f.lots.pop();
+  assert.notEqual(aggregateEconomics(f,query()).currencies[0]!.contribution_before_paid_liability_micros,null);
+});

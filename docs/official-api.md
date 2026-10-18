@@ -25,6 +25,10 @@
 | public | POST | /webhooks/stripe |
 | client | POST | /v1/devices |
 | client | POST | /v1/free-trial/claim |
+| client | GET | /v1/plus |
+| client | POST | /v1/plus/checkout |
+| client | POST | /v1/plus/cancel |
+| client | POST | /v1/plus/portal |
 | client | GET | /v1/account |
 | client | GET | /v1/client-config |
 | client | POST | /v1/events/batch |
@@ -141,7 +145,7 @@ control 厂商被选中但密钥缺失时响应 503，`ok=false` 并附带 `prov
 
 ## POST /v1/devices — 匿名设备注册
 
-无需认证。首次注册一次性赠送 30 题。同一 `registration_attempt_id` 的重试返回同一设备/令牌且不重复发放；未携带该字段的旧客户端保留原注册语义，不能宣称任意重复 POST 都幂等。
+无需认证。`FREE_TRIAL_ENABLED=1` 时首次注册余额为 0，`trial_policy.initial_grant=0`，版本为 `trial3d400-2026-10-16`，需主动领取 3 天体验；旧部署关闭开关时保留原 30 题赠送。同一 `registration_attempt_id` 的重试返回同一设备/令牌且不重复发放；未携带该字段的旧客户端保留原注册语义，不能宣称任意重复 POST 都幂等。
 按客户端 IP 限流（`DEVICE_REG_PER_HOUR`），超限 `429 rate_limited`。
 
 当前客户端只有在 Keychain 明确返回 item-not-found、且无旧明文设备令牌时才准备注册。读取失败、锁定/ACL 错误、无效存储值均要求重试，不能当作新设备。先在原 `official.registrationAttempt` 项保存 256-bit 随机值的 43 字符 base64url 编码，并核验读回，再发送 `registration_attempt_id`。响应丢失或 token 写入失败保留同一重试值；正式令牌核验保存后才移除重试项。注册在途的账户重置、凭证替换或服务变化会使响应失效，不覆盖后来账户。
@@ -214,7 +218,7 @@ Bearer 设备鉴权，无额外请求参数。返回与 `GET /v1/account` 相同
 - `status` 为 `eligible / active / expired / ineligible`；未领取的日期字段为 null，非 active 时每日计数为 0、`resets_at` 为 null。旧服务可省略字段；开关关闭时账户接口也省略未领取资格。客户端显示暂未开放，不把旧 30 题响应当成三天体验。
 - 从首次领取起严格 72 小时，以服务端时间判定；每天北京时间 00:00 重置至 400 次，不累计。首尾自然日可能不足 24 小时。`daily_used + daily_held + daily_remaining = 400`（active）；持有先占额度，成功才消耗，失败释放。
 - low/high/max、单图、多图、自动及性格测试共用每日额度。已有协议内解释、恢复和幂等重试不额外扣次。360 次开始提醒；达到 400 次后可使用已购题数，余额不足则显示恢复时间。
-- 引导练习仍使用首次一次性 30 题；领取时撤回该赠送的未用部分，换成当日 400 次。已购、人工赠送及历史余额原样保留，试用优先于付费。跳过领取不改变已有余额。
+- 启用体验的新设备不再获得首次 30 题。历史设备领取时撤回旧赠送的未用部分，换成当日 400 次。已购、人工赠送及历史余额原样保留，试用优先于付费。跳过领取不改变已有余额。
 - 每日额度使用独立到期 lot。跨日或 72 小时到期撤销未用额度，旧持有失败释放不流入新日；到期前已准入的请求仍按既有请求租约结算。资格/激活时间与 lot 到期信息持久化，重启不重置。
 - `free_trial` 与余额版本一起应用，服务地址、设备或身份 generation 改变后拒绝迟到回执。字段畸形或不符合政策不得覆盖已知账户。客户端用服务端回执显示到期日，不能靠本机时钟延长。
 
@@ -511,7 +515,7 @@ queue_pending、client_restart、storage_failure、event_rejected、sequence_gap
 
 ## GET /admin/cohorts 与 GET /admin/economics
 
-管理员鉴权、no-store；只返回聚合数据、`definition_version=cohort-economics-v3`、完整 query
+管理员鉴权、no-store；只返回聚合数据、`definition_version=cohort-economics-v4`、完整 query
 和 revision SHA-256，不返回 bearer、请求 HMAC 或内容。revision 标识输入事实与定义，不代表已归档。
 
 共同参数为 cohort_from/to、as_of、可选 source、policy_version。使用 UTC ISO 时间或 UTC 日期
@@ -893,3 +897,42 @@ cohort 收入归属，不能将没有已记账订单解读成没有收款。
 `SCREEN_QUERY_BRIEF_CALCULATION` 缺省为 `0`。设为 `1` 时，协商 `screen_query_v1` 的主查题与恢复提示词要求最多三行简短计算/条件核对，再输出原 `FINAL` 和 `NSPI_RESULT_V1`；选择与排序只输出标签。它不改变 HTTP/SSE、usage、计费、解释或原 legacy 提示词，客户端请求字段不能覆盖开关。更改该策略或模型思考强度必须同时更新 `CLIENT_CONFIG_REVISION`，不同 revision 的父请求仍按既有规则拒绝恢复/解释。
 
 这是默认关闭的评测候选。初版出现缺正文和多题范围判断退化；当时的 r2 先判断范围与可读性，再生成计算摘要。有限样本里仍有排序题数值读取错误，正常钥匙串与生产公网当时未验收。实测记录留在 Git 历史，索引见 [docs/history/index.json](history/index.json)。
+
+## GET /v1/plus — Plus 账户状态
+
+Bearer 设备鉴权，no-store。首次获取先核对已知 Stripe Checkout/Subscription，再按设备锁结算每日额度；上游暂时不可用时返回已确认权益并标记 `sync_failed=true`，不延长付费期。
+
+字段：`available`、`status`（inactive/pending/active/expired）、`billing_status`、`price_cents=6900`、`currency=CNY`、`daily_limit=400`、`paid_until`、`cancel_at_period_end`、`daily_used`、`daily_held`、`daily_remaining`、`resets_at`、`can_manage`、`sync_failed`、`server_time`。时间为 UTC ISO8601；客户端按本地时间展示到期。
+
+## POST /v1/plus/checkout — 创建或恢复月订阅付款
+
+Bearer 鉴权，无需客户端提供价格、额度或客户 ID。返回 `{url}`，仅 Stripe HTTPS Checkout 地址。按设备持久化同一购买意图并使用 Stripe 幂等键；已有未终结订阅返回 409 `plus_exists`，不能绕过原欠费订阅重复开通。已知 Checkout 失效后可建立新意图；不确定的创建超过 23 小时则停止再次创建，需人工核对，不冒险重复收费。
+
+`PLUS_ENABLED=1` 且 Stripe 与 webhook 已配置才接受新购买。此开关不停止已有订阅管理或权益结算。订阅使用每月 CNY 69.00（以 Stripe 月度账单周期为准），每日 400 次。价格固定、无优惠码，不启用自动税；税务设置须在正式启用前核对。
+
+## POST /v1/plus/cancel — 取消自动续费
+
+Bearer 鉴权，只操作该设备绑定的订阅，设置 `cancel_at_period_end=true`，核对后返回 Plus 状态。保留已付款周期，客户端须明确确认。不能用此接口为其他设备取消。
+
+## POST /v1/plus/portal — 管理账单与支付方式
+
+Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，不接收客户端 customer ID。Stripe Dashboard 须先启用 Customer Portal；正式配置应只允许管理支付方式、账单与期末取消，不开放任意价格切换或数量修改。
+
+### Plus 付款与额度不变量
+
+- 使用签名 webhook：checkout.session.completed、checkout.session.async_payment_succeeded、checkout.session.expired、customer.subscription.created/updated/deleted/paused/resumed、invoice.paid/payment_failed/payment_action_required/voided。续费只凭 Stripe 读取到的真实 paid invoice、正确订阅/价格/币种/周期授予权益；返回页面不能开通权益。
+- 每次核对先获取 generation，再读取 Stripe，只有当前 generation 可提交。重复或乱序事件不能重复发每日额度、把旧订阅绑定到新意图或延长未付款周期。
+- Plus 按北京时间自然日生成唯一 `plus_daily:YYYY-MM-DD` 额度 lot，沿用现有预扣、结算和到期回收。低/高/最高思考强度共享 400 次；失败释放原预扣，跨日失败不增加新日额度；解释和系统恢复沿用已有不额外扣次规则。
+- 免费体验与 Plus 是独立权益，不因购买 Plus 自动领取或缩短未领取资格。若同时有效，先免费体验、再 Plus、最后使用普通题包；官网和 App 明确说明。两种每日额度均不累积。
+- 取消续费保留已付款期，续费失败不延长；到期仍可使用一次性已购题包并回看历史。Stripe 立即终止/暂停会停止 Plus 日额度。
+- `plus_subscriptions` 与 `plus_paid_invoices` 为新增表，迁移不删除旧余额或改变旧支付表。旧客户端仍可读取总额度，Plus 界面需要 3.0。已上线后不得回滚到不认识 Plus 到期日额度的旧后端。
+- Stripe 退款与取消是不同动作；退款按现有支持流程核对并在 Stripe 管理是否终止订阅。一次性题包的退款折算规则不应用于 Plus。现有题包财务报表不合并 Plus 订阅收入，Plus 已确认周期在 `plus_paid_invoices`；正式发布验收须核对账单与收入统计口径。
+
+3.0 报表范围：`payment_scope=one_time_packs_only_plus_excluded`。P28、试用后付款与现金数据只含一次性题包；Plus 每日 lot 从永久题包负债中排除。`plus_coverage` 显示被排除的每日 lot 数及贡献暂停状态；该批次存在 Plus lot 时贡献金额返回 null，不能把尚未纳入的订阅流水视为零。
+
+
+### 设置账户来源快照与题包保护
+
+账户响应新增 `allowance_sources`（`trial`、`plus`、`purchased`、`other` 四个非负整数，互斥且总和等于余额总量）与 `spending_policy_supported: true`。`plus` 指当前可用的 Plus 每日额度；`purchased` 排除 Plus 日额度。客户端不得把来源值重复加到总量。
+
+解题请求可传 `allow_purchased_credits`（布尔值，缺省为 true）。false 时，服务端扣费事务只选免费、Plus 日额度及其他非题包额度；仅剩已购题包时返回 HTTP 402 / `paid_credits_disabled`，不冻结题包。该选择参与请求 HMAC，默认 true 保持旧请求兼容。发布客户端前需同步发布此能力的服务端；本次仅本机验证，未发布。

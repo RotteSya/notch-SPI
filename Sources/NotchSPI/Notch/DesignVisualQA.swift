@@ -59,10 +59,10 @@ enum DesignVisualQA {
             controller.openSettings(page: .account)
             return controller
         }
-        if scenario == "settings" {
+        if scenario == "settings" || scenario == "settings-local" {
             controller.setExpanded(true)
             controller.qaRefreshScreenshotLayout()
-            controller.openSettings(page: .general)
+            controller.openSettings(page: scenario == "settings-local" ? .account : .general)
             let menu = NSMenu(title: "界面验收")
             for (title, action) in [
                 ("打开刘海菜单", #selector(NotchController.qaShowQuickMenu)),

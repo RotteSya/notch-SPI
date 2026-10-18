@@ -53,6 +53,7 @@ export const REPORT_SCRIPT=String.raw`
     const c=report.cohort;
     $('counts').textContent='注册 '+c.registered+' 台 · 成熟 '+c.mature_registered+' 台 · 未成熟 '+c.immature_registered+' 台 · 内部排除 '+c.internally_excluded+' 台';
     const maturity=$('maturity');maturity.replaceChildren();
+    node('p','付款口径：P28、试用后付款与收款金额仅含一次性题包，不含 Plus。不能用作全产品付费率或总收入。',maturity).className='muted';
     table(maturity,['通道','R28 成熟','完整观察','部分观察','未知','共享关闭','未成熟','已过 7 天等待期'],c.channels.map(row=>{
       const r=row.repeat28,b=r.coverage;return [channels[row.channel],b.mature_total,b.observed_complete,b.partial,b.unknown,b.telemetry_disabled,r.immature,r.frozen.denominator];}));
     node('p','R28 从首次成功起计 28 天；首次成功之前也须有完整覆盖。未知和共享关闭不计作流失。已过等待期的子集仍需保存快照供长期复核。',maturity).className='muted';
@@ -69,6 +70,8 @@ export const REPORT_SCRIPT=String.raw`
       row.repeat28.coverage.mature_total-row.repeat28.coverage.observed_complete])));
     node('p','来源与政策筛选注册设备；profile 与通道只筛选客户端 solve 结果。P28 在各通道行重复展示同一设备批次，不能跨行相加。未知来源保留在分母。',comparison).className='muted';
     const economic=$('economic');economic.replaceChildren();const e=report.economics;
+    node('p','Plus 收款、退款、手续费及净收入需单独核对 Stripe 发票与余额交易。Plus 每日额度不属于永久题包；成本含该批次全部官方调用。',economic).className='muted';
+    if(e.plus_coverage?.contribution_blocked)node('p','本批次包含 Plus 使用记录，但未纳入 Plus 财务流水，贡献计算暂停。',economic).className='muted';
     node('p','经济口径：'+windowText(e.query)+'；'+e.registered+' 个注册设备、'+e.client_usable_official_deliveries+' 次客户端可用官方 solve。profile 与通道筛选不裁剪成本或财务分母。',economic).className='muted';
     if(e.finance_reconciliation){const f=e.finance_reconciliation;node('h3','支付资源核对覆盖',economic);
       table(economic,['已读取资源的订单 / 全部订单','新通知待重核','退款账本待同步','拒付结果未明确'],[[f.with_resource_snapshot+' / '+f.orders,f.pending_new_notices,f.refund_ledger_mismatch,f.unknown_dispute_outcomes]]);

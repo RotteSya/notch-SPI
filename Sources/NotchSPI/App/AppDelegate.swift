@@ -4,11 +4,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: NotchController?
     private var terminationPending = false
     private var accountRequestedBeforeLaunch = false
+    private var plusRequestedBeforeLaunch = false
     #if DEBUG
     private var qaRegionPicker: QuestionRegionPicker?
     #endif
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        if urls.contains(where: { $0.scheme == "notchspi" && $0.host == "plus" }) {
+            if let controller { controller.openSettings(page: .plus) }
+            else { plusRequestedBeforeLaunch = true }
+            return
+        }
         if urls.contains(where: { $0.scheme == "notchspi" && $0.host == "account" }) {
             if let controller { controller.openSettings(page: .account) }
             else { accountRequestedBeforeLaunch = true }
@@ -53,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if accountRequestedBeforeLaunch {
             accountRequestedBeforeLaunch = false
             controller.openSettings(page: .account)
+        }
+
+        if plusRequestedBeforeLaunch {
+            plusRequestedBeforeLaunch = false
+            controller.openSettings(page: .plus)
         }
 
         // First-launch onboarding expands inside the notch; existing installs
@@ -142,6 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         #endif
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            InAppUpdater.acknowledgeLaunch()
+        }
 
         // Quietly ask the service for a newer release (≤ once/day; only surfaces if one exists).
         // Delayed so the notch UI settles first and the alert never races app launch.

@@ -10,7 +10,7 @@ import {groupUnallocatedReceipts,summarizeUnallocatedReceipts,type ReportReceipt
 import type {FinanceRevision} from './payment-finance.ts';
 import {reportFinance} from './reporting-finance.ts';
 
-export const REPORT_DEFINITION='cohort-economics-v3';
+export const REPORT_DEFINITION='cohort-economics-v4';
 export const DAY=86_400_000;
 export type ReportChannel='official'|'custom_key'|'cli'|'mixed';
 export interface ReportQuery {
@@ -257,7 +257,7 @@ export function aggregateCohorts(facts:ReportingFacts,q:ReportQuery){
     if((ordersByDevice.get(d.id)??[]).some(o=>o.paidAt>=ended&&o.paidAt<=q.asOf&&o.recordedAt<=q.asOf&&(netFor(o).net??0n)>0n))paidAfterExhaustion++;
   }
   observedSeconds.sort((a,b)=>a-b);
-  return {definition_version:REPORT_DEFINITION,query:queryWire(q),revision:revision(facts,q),identity:'device_not_person',
+  return {definition_version:REPORT_DEFINITION,query:queryWire(q),revision:revision(facts,q),identity:'device_not_person',payment_scope:'one_time_packs_only_plus_excluded',
     registered:devices.length,mature_registered:mature.length,immature_registered:devices.length-mature.length,
     internally_excluded:cohortDevices(facts,q,true).filter(d=>d.isInternal).length,conflicting_completions_excluded:conflicts,
     dimensions_note:'source and policy select registrations; profile and channel select client solve outcomes only',channels:rows,
@@ -289,7 +289,8 @@ export function aggregateEconomics(facts:ReportingFacts,q:ReportQuery){
   const currencies=new Set([...orders.map(o=>o.currency),...attempts.map(a=>a.currency),...facts.expenses.map(e=>e.currency),
     ...[...financial.values()].flatMap(f=>f?.totals.fees.map(f=>f.currency)??[]),
     ...unresolvedReceipts.filter(r=>r.device_id!==null&&r.currency!==null).map(r=>r.currency!)]);
-  const paidLots=lots.filter(l=>l.kind==='paid'),legacy=lots.filter(l=>l.kind==='legacy_unknown');
+  const plusLots=lots.filter(l=>l.kind==='paid'&&l.sourceRef.startsWith('plus_daily:'));
+  const paidLots=lots.filter(l=>l.kind==='paid'&&!l.sourceRef.startsWith('plus_daily:')),legacy=lots.filter(l=>l.kind==='legacy_unknown');
   const sum=(rows:ReportLot[],key:'remaining'|'granted'|'held'|'revoked')=>rows.reduce((s,l)=>s+BigInt(l[key]),0n);
   const remaining=sum(paidLots,'remaining'),maturePaid=paidLots.filter(l=>Date.parse(l.createdAt)+28*DAY<=Date.parse(q.asOf));
   const matureGrant=sum(maturePaid,'granted'),matureUsed=matureGrant-sum(maturePaid,'remaining')-sum(maturePaid,'revoked');
@@ -322,7 +323,7 @@ export function aggregateEconomics(facts:ReportingFacts,q:ReportQuery){
     };
     const service=allocated('service'),acquisition=allocated('acquisition');
     const minorScale=currency==='JPY'?1_000_000n:['USD','CNY'].includes(currency)?10_000n:null;
-    const beforeLiability=net===null||minorScale===null||total===null||service===null||feeIncomplete||pendingReceipts.length?null:
+    const beforeLiability=plusLots.length>0||net===null||minorScale===null||total===null||service===null||feeIncomplete||pendingReceipts.length?null:
       net*minorScale-total-feesKnown*minorScale-service;
     // Liabilities are question obligations. Show each model-cost currency component separately;
     // never add JPY cash to USD inference or infer cash minor-unit scales from display symbols.
@@ -355,6 +356,8 @@ export function aggregateEconomics(facts:ReportingFacts,q:ReportQuery){
       contribution_definition:'(net_cash - all_attempt_costs - payment_fees - allocated_service_expenses - paid_liability) / registered_devices; refund subtracted once'};
   });
   return {definition_version:REPORT_DEFINITION,query:queryWire(q),revision:revision(facts,q),registered:devices.length,client_usable_official_deliveries:delivery.length,
+    payment_scope:'one_time_packs_only_plus_excluded',
+    plus_coverage:{daily_lots_excluded:plusLots.length,cash_included:false,contribution_blocked:plusLots.length>0},
     currencies:rows,exchange_rates:[],currency_policy:'separate_currencies_no_implicit_conversion',
     unallocated_receipts:{...unallocated,received_from:q.cohortFrom,received_through:q.asOf},
     finance_reconciliation:{orders:orders.length,with_resource_snapshot:[...financial.values()].filter(Boolean).length,

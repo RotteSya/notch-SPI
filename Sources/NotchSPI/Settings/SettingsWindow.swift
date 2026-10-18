@@ -60,7 +60,8 @@ final class HotkeyRecorderControl: NSControl {
         self.combo = combo
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = 9
+        focusRingType = .none
+        layer?.cornerRadius = 5
         recordingRing.cornerRadius = 9
         recordingRing.borderWidth = 1.5
         recordingRing.opacity = 0
@@ -108,22 +109,7 @@ final class HotkeyRecorderControl: NSControl {
     // MARK: Recording chrome (pulsing accent ring)
 
     private func updateRecordingChrome() {
-        recordingRing.borderColor = NotchPalette.accent.cgColor
-        recordingRing.removeAnimation(forKey: "pulse")
-        guard isRecording else {
-            recordingRing.opacity = 0
-            return
-        }
-        recordingRing.opacity = 1
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 1.0
-        pulse.toValue = 0.35
-        pulse.duration = 0.7
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        recordingRing.add(pulse, forKey: "pulse")
+        recordingRing.removeAllAnimations(); recordingRing.opacity = 0
     }
 
     // MARK: Drawing
@@ -133,86 +119,25 @@ final class HotkeyRecorderControl: NSControl {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let b = bounds
-
-        // Hover / recording backdrop: a quiet chip so the click target reads as one control.
-        if hovering || isRecording {
-            let chip = NSBezierPath(roundedRect: b, xRadius: 9, yRadius: 9)
-            NSColor.labelColor.withAlphaComponent(isRecording ? 0.045 : 0.06).setFill()
-            chip.fill()
+        let surface = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5)
+        NSColor.labelColor.withAlphaComponent(hovering ? 0.065 : 0.025).setFill(); surface.fill()
+        (isConflicted ? NSColor.systemRed : NSColor.separatorColor).setStroke(); surface.lineWidth = 0.5; surface.stroke()
+        let text = (isRecording ? promptText : KeycapChipView.caps(from: combo).joined(separator: "  ")) as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: isRecording ? promptFont : NSFont.monospacedSystemFont(ofSize: 13, weight: .medium), .foregroundColor: isConflicted ? NSColor.systemRed : NSColor.labelColor]
+        let size = text.size(withAttributes: attrs)
+        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attrs)
+        if window?.firstResponder === self || isRecording {
+            NSColor.keyboardFocusIndicatorColor.setStroke(); surface.lineWidth = 2; surface.stroke()
         }
-
-        if isRecording {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: promptFont, .foregroundColor: NSColor.secondaryLabelColor,
-            ]
-            let s = (promptText as NSString).size(withAttributes: attrs)
-            (promptText as NSString).draw(
-                at: NSPoint(x: b.midX - s.width / 2, y: b.midY - s.height / 2), withAttributes: attrs)
-            return
-        }
-
-        let keys = KeycapChipView.caps(from: combo)
-        let widths = capWidths(keys)
-        let total = widths.reduce(0, +) + gap * CGFloat(max(0, keys.count - 1))
-        var x = b.maxX - 10 - total
-        let dark = isDarkAppearance
-        let radius = capSize * 0.24
-
-        for (i, key) in keys.enumerated() {
-            let w = widths[i]
-            let r = NSRect(x: x, y: b.midY - capSize / 2, width: w, height: capSize)
-            let path = NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius)
-
-            // Seat shadow below the cap, then a top-lit face, an upper highlight, a hairline rim.
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: -1.5), blur: 3,
-                          color: NSColor.black.withAlphaComponent(dark ? 0.45 : 0.18).cgColor)
-            (dark ? NSColor(srgbRed: 0.10, green: 0.12, blue: 0.22, alpha: 1)
-                  : NSColor(white: 0.99, alpha: 1)).setFill()
-            path.fill()
-            ctx.restoreGState()
-
-            if dark {
-                NSGradient(starting: NSColor(srgbRed: 0.21, green: 0.24, blue: 0.40, alpha: 1),
-                           ending: NSColor(srgbRed: 0.11, green: 0.13, blue: 0.25, alpha: 1))?
-                    .draw(in: path, angle: -90)
-            } else {
-                NSGradient(starting: NSColor(white: 1.0, alpha: 1),
-                           ending: NSColor(white: 0.93, alpha: 1))?
-                    .draw(in: path, angle: -90)
-            }
-            if isConflicted {
-                NSColor.systemRed.withAlphaComponent(dark ? 0.16 : 0.10).setFill()
-                path.fill()
-            }
-
-            ctx.saveGState()
-            path.addClip()
-            let hi = notchGradient([
-                (NSColor(white: 1, alpha: dark ? 0.20 : 0.85), 0),
-                (NSColor(white: 1, alpha: 0.0), 1),
-            ])
-            ctx.drawLinearGradient(hi, start: CGPoint(x: r.midX, y: r.maxY),
-                                   end: CGPoint(x: r.midX, y: r.maxY - capSize * 0.45), options: [])
-            ctx.restoreGState()
-
-            path.lineWidth = 1
-            (isConflicted
-                ? NSColor.systemRed.withAlphaComponent(0.55)
-                : (dark ? NSColor(white: 1, alpha: 0.17) : NSColor(white: 0, alpha: 0.14))).setStroke()
-            path.stroke()
-
-            let labelColor: NSColor = isConflicted
-                ? .systemRed
-                : (dark ? NSColor(white: 1, alpha: 0.95) : NSColor(white: 0.13, alpha: 1))
-            let attrs: [NSAttributedString.Key: Any] = [.font: capFont, .foregroundColor: labelColor]
-            let ts = (key as NSString).size(withAttributes: attrs)
-            (key as NSString).draw(
-                at: NSPoint(x: r.midX - ts.width / 2, y: r.midY - ts.height / 2), withAttributes: attrs)
-            x += w + gap
-        }
+    }
+    override func accessibilityValue() -> Any? { isRecording ? promptText : KeycapChipView.caps(from: combo).joined(separator: " ") }
+    override var acceptsFirstResponder: Bool { isEnabled }
+    override var canBecomeKeyView: Bool { isEnabled && !isHiddenOrHasHiddenAncestor }
+    override func becomeFirstResponder() -> Bool { needsDisplay = true; return super.becomeFirstResponder() }
+    override func resignFirstResponder() -> Bool { needsDisplay = true; return super.resignFirstResponder() }
+    override func keyDown(with event: NSEvent) {
+        if [UInt16(36), 49, 76].contains(event.keyCode) { _ = accessibilityPerformPress() }
+        else { super.keyDown(with: event) }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -234,10 +159,12 @@ final class HotkeyRecorderControl: NSControl {
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
     override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)), !isRecording { onBeginRecord?() }
+        if bounds.contains(convert(event.locationInWindow, from: nil)), !isRecording { _ = accessibilityPerformPress() }
     }
 
     override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        window?.makeFirstResponder(self)
         if !isRecording { onBeginRecord?() }
         return true
     }
@@ -263,7 +190,7 @@ final class HotkeySettingsViewController: NSViewController {
     private let personalityControl = HotkeyRecorderControl(combo: Settings.shared.personalityCombo)
     private let toggleControl = HotkeyRecorderControl(combo: Settings.shared.toggleCombo)
     private let autoControl = HotkeyRecorderControl(combo: Settings.shared.autoModeCombo)
-    private let rowYs: [CGFloat] = [16, 96, 176, 276, 328]
+    private let rowYs: [CGFloat] = [38, 116, 194, 312, 356]
     private let hint = HotkeySettingsViewController.makeLabel(
         "", size: 11, weight: .regular, color: .secondaryLabelColor)
     private var conflictObserver: Any?
@@ -271,12 +198,8 @@ final class HotkeySettingsViewController: NSViewController {
     override func loadView() {
         let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 568, height: 488))
 
-        let captureCard = SettingsCardView(frame: NSRect(x: 0, y: 0, width: 568, height: 256))
-        captureCard.separators = [88, 168]
-        root.addSubview(captureCard)
-        let utilityCard = SettingsCardView(frame: NSRect(x: 0, y: 268, width: 568, height: 104))
-        utilityCard.separators = [52]
-        root.addSubview(utilityCard)
+        root.addSubview(SettingsSectionRule(number: "01", title: L10n.t("捕获", "キャプチャ", "Capture"), frame: NSRect(x: 0, y: 0, width: 568, height: 28)))
+        root.addSubview(SettingsSectionRule(number: "02", title: L10n.t("会话控制", "セッション操作", "Session controls"), frame: NSRect(x: 0, y: 274, width: 568, height: 28)))
         let rows: [(String, HotkeyRecorderControl, String)] = [
             (CaptureAction.single.title, captureControl, "capture"),
             (CaptureAction.multiple.title, contextControl, "context"),
@@ -288,12 +211,12 @@ final class HotkeySettingsViewController: NSViewController {
         ]
         for (i, (title, control, which)) in rows.enumerated() {
             let label = Self.makeLabel(title, size: 13, weight: i < 3 ? .semibold : .regular, color: .labelColor)
-            label.frame = NSRect(x: 16, y: rowYs[i] + 8, width: 340, height: 18)
+            label.frame = NSRect(x: 0, y: rowYs[i] + 8, width: 350, height: 18)
             if i < 3 {
                 let detail = NSTextField(wrappingLabelWithString: CaptureAction.allCases[i].detail)
                 detail.font = CaptureStyle.caption
                 detail.textColor = .secondaryLabelColor
-                detail.frame = NSRect(x: 16, y: rowYs[i] + 32, width: 350, height: 38)
+                detail.frame = NSRect(x: 0, y: rowYs[i] + 32, width: 350, height: 38)
                 root.addSubview(detail)
             }
             root.addSubview(label)
@@ -305,12 +228,15 @@ final class HotkeySettingsViewController: NSViewController {
         let rule = NSTextField(wrappingLabelWithString: CaptureAction.countdownRule)
         rule.font = CaptureStyle.caption
         rule.textColor = .secondaryLabelColor
-        rule.frame = NSRect(x: 16, y: 390, width: 536, height: 42)
+        rule.frame = NSRect(x: 0, y: 402, width: 568, height: 42)
         root.addSubview(rule)
-        hint.frame = NSRect(x: 16, y: 444, width: 536, height: 44)
+        hint.frame = NSRect(x: 0, y: 448, width: 568, height: 44)
         hint.maximumNumberOfLines = 3
         hint.lineBreakMode = .byWordWrapping
         root.addSubview(hint)
+
+        settingsGroupSurface(in: root, frame: NSRect(x: -16, y: 28, width: 600, height: 238), separators: [82, 160])
+        settingsGroupSurface(in: root, frame: NSRect(x: -16, y: 302, width: 600, height: 92), separators: [46])
 
         // A combo another app already owns is dead silently — repaint the moment that verdict
         // changes (re-registration happens whenever any combo is edited).
@@ -370,6 +296,12 @@ final class HotkeySettingsViewController: NSViewController {
         }
     }
 
+    func cancelRecording() {
+        recording = nil; stop(); if isViewLoaded { updateControls() }
+    }
+
+    override func viewDidDisappear() { super.viewDidDisappear(); cancelRecording() }
+
     private func stop() {
         if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
     }
@@ -389,7 +321,7 @@ final class HotkeySettingsViewController: NSViewController {
             control.isRecording = recording == role.rawValue
             // Keycap rows are content-sized and right-aligned; re-seat after every state change.
             let w = control.intrinsicContentSize.width
-            control.frame = NSRect(x: 552 - w, y: y, width: w, height: 34)
+            control.frame = NSRect(x: 568 - w, y: y, width: w, height: 34)
         }
         hint.stringValue = taken.isEmpty
             ? L10n.t("点击右侧键帽，然后按下新的组合键（需包含 ⌘/⇧/⌥/⌃ 至少一个）。",
@@ -435,11 +367,36 @@ private final class HairlineCardScrollView: NSScrollView {
 }
 
 private func cardBox(frame: NSRect) -> NSView {
-    SettingsCardView(frame: frame)
+    SettingsEditorSurface(frame: frame)
 }
 
 /// One persona row: an accent presence dot marks the active persona (the one captures follow),
 /// replacing the old "✓ " text prefix.
+private final class PersonaSelectionRow: NSTableRowView {
+    private var hovering = false { didSet { needsDisplay = true } }
+    private var tracking: NSTrackingArea?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        tracking = area; addTrackingArea(area)
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func drawBackground(in dirtyRect: NSRect) {
+        if hovering && !isSelected {
+            NSColor.labelColor.withAlphaComponent(0.04).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5).fill()
+        }
+    }
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5)
+        NSColor.labelColor.withAlphaComponent(0.08).setFill(); shape.fill()
+        NSColor.labelColor.withAlphaComponent(0.3).setStroke(); shape.lineWidth = 0.5; shape.stroke()
+    }
+}
+
 private final class PersonaCellView: NSTableCellView {
     private let dot = NSView()
     private let name = NSTextField(labelWithString: "")
@@ -489,13 +446,16 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
 
     private let table = NSTableView()
     private let listScroll = HairlineCardScrollView()
-    private let addButton = NSButton()
-    private let deleteButton = NSButton()
+    private let addButton = SettingsActionButton()
+    private let deleteButton = SettingsActionButton()
 
-    private let nameField = NSTextField()
+    private let nameField = SettingsTextField()
     private let descTextView = NSTextView()
     private let descScroll = HairlineCardScrollView()
-    private let setActiveButton = NSButton()
+    private let setActiveButton = SettingsActionButton()
+    private let emptyCreate = SettingsActionButton()
+    private let emptyIcon = NSImageView()
+    private var libraryViews: [NSView] = []
     private let emptyHint = NSTextField(labelWithString: "")
     private var editorViews: [NSView] = []   // hidden together when nothing is selected
 
@@ -505,36 +465,44 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 640, height: 504))
 
         let listCaption = Self.makeLabel(L10n.t("人物像资料库", "人物像ライブラリ", "Persona library"), size: 11, weight: .regular, color: .secondaryLabelColor)
-        listCaption.frame = NSRect(x: 36, y: 16, width: 176, height: 16)
-        root.addSubview(listCaption)
+        listCaption.frame = NSRect(x: 36, y: 0, width: 176, height: 28)
+        let libraryRule = SettingsSectionRule(number: "01", title: L10n.t("资料库", "ライブラリ", "Library"), frame: listCaption.frame)
+        root.addSubview(libraryRule)
         // Left: list + add/delete.
         configureList()
         listScroll.frame = NSRect(x: 36, y: 36, width: 176, height: 358)
-        root.addSubview(cardBox(frame: listScroll.frame))
+        let listCard = cardBox(frame: listScroll.frame)
+        root.addSubview(listCard)
         listScroll.wantsLayer = true
-        listScroll.layer?.cornerRadius = 18
+        listScroll.layer?.cornerRadius = 5
         listScroll.layer?.masksToBounds = true
         root.addSubview(listScroll)
 
         configureBarButton(addButton, title: "＋", action: #selector(addPersona))
-        addButton.frame = NSRect(x: 36, y: 404, width: 30, height: 24)
+        addButton.frame = NSRect(x: 36, y: 404, width: 34, height: 30)
         addButton.toolTip = L10n.t("新建人物像", "人物像を新規作成", "New persona")
+        addButton.setAccessibilityLabel(addButton.toolTip)
         root.addSubview(addButton)
 
         configureBarButton(deleteButton, title: "－", action: #selector(deletePersona))
-        deleteButton.frame = NSRect(x: 68, y: 404, width: 30, height: 24)
+        deleteButton.frame = NSRect(x: 78, y: 404, width: 34, height: 30)
         deleteButton.toolTip = L10n.t("删除所选人物像", "選択した人物像を削除", "Delete selected persona")
+        deleteButton.setAccessibilityLabel(deleteButton.toolTip)
         root.addSubview(deleteButton)
+        let librarySurface = settingsGroupSurface(in: root, frame: NSRect(x: 20, y: 28, width: 198, height: 418))
+        libraryViews = [libraryRule, librarySurface, listCard, listScroll, addButton, deleteButton]
 
         // Right: editor for the selected persona (the two cards carry the split; no divider).
         let nameCaption = Self.makeLabel(L10n.t("名称", "名前", "Name"), size: 11, weight: .regular, color: .secondaryLabelColor)
-        nameCaption.frame = NSRect(x: 236, y: 16, width: 368, height: 16)
-        root.addSubview(nameCaption)
+        nameCaption.frame = NSRect(x: 236, y: 0, width: 368, height: 28)
+        let editorRule = SettingsSectionRule(number: "02", title: L10n.t("编辑人物像", "人物像を編集", "Edit persona"), frame: nameCaption.frame)
+        root.addSubview(editorRule)
 
-        nameField.frame = NSRect(x: 236, y: 36, width: 368, height: 24)
-        nameField.placeholderString = L10n.t("例如：A社 求める人物像", "例：A社 求める人物像", "e.g. Company A ideal candidate")
+        nameField.frame = NSRect(x: 236, y: 36, width: 368, height: 32)
+        nameField.placeholderString = L10n.t("例如：A 公司理想候选人", "例：A社 求める人物像", "e.g. Company A ideal candidate")
         nameField.font = .systemFont(ofSize: 13)
         nameField.bezelStyle = .roundedBezel
+        nameField.setAccessibilityLabel(L10n.t("名称", "名前", "Name"))
         nameField.delegate = self
         root.addSubview(nameField)
 
@@ -555,31 +523,51 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         root.addSubview(descScroll)
 
         setActiveButton.title = L10n.t("设为当前人物像", "この人物像を使用", "Use this persona")
+        setActiveButton.prominent = true
         setActiveButton.bezelStyle = .rounded
         setActiveButton.target = self
         setActiveButton.action = #selector(setActiveTapped)
-        setActiveButton.frame = NSRect(x: 236, y: 404, width: 200, height: 28)
+        setActiveButton.frame = NSRect(x: 236, y: 404, width: 200, height: 32)
         root.addSubview(setActiveButton)
 
         let example = Self.makeLabel(
-            L10n.t("例：", "例：", "e.g. ") + "●創意と挑戦心を持ち、主体的に行動できる方 ●変化を常とし、外的変化へ柔軟に適応できる方 ●チームワークを重要視し、協調性を発揮できる方",
-            size: 10.5, weight: .regular, color: .tertiaryLabelColor)
+            L10n.t("例如：主动思考并勇于尝试，灵活适应变化，重视团队协作与清晰沟通。",
+                   "例：創意と挑戦心を持ち主体的に行動する。変化に柔軟に適応し、チームワークと明確な意思疎通を大切にする。",
+                   "For example: Take initiative, explore new ideas, adapt to change, and value teamwork and clear communication."),
+            size: 10.5, weight: .regular, color: .secondaryLabelColor)
         example.frame = NSRect(x: 236, y: 448, width: 368, height: 52)
         example.maximumNumberOfLines = 3
         example.lineBreakMode = .byWordWrapping
         root.addSubview(example)
 
-        editorViews = [nameCaption, nameField, descCaption, descCard, descScroll, setActiveButton, example]
+        // Match the 16pt content inset of the library and other grouped panels.
+        for child in [nameField, descCaption, descCard, descScroll, setActiveButton, example] as [NSView] {
+            child.frame.origin.x += 10
+            child.frame.size.width -= 10
+        }
+        let editorSurface = settingsGroupSurface(in: root, frame: NSRect(x: 230, y: 28, width: 390, height: 476))
+        editorViews = [editorRule, editorSurface, nameField, descCaption, descCard, descScroll, setActiveButton, example]
 
-        emptyHint.stringValue = L10n.t("还没有人物像。\n点击左下「＋」新建一个。",
-                                       "人物像がまだありません。\n左下の「＋」で作成できます。",
-                                       "No personas yet.\nCreate one with + below.")
-        emptyHint.font = .systemFont(ofSize: 12.5)
+        emptyHint.stringValue = L10n.t("创建你的第一个人物像\n为性格测试保存一份可反复使用的作答偏好。",
+                                       "最初の人物像を作成\n性格テストで使う回答の方針を保存できます。",
+                                       "Create your first persona\nSave a reusable profile for personality questions.")
+        emptyHint.font = .systemFont(ofSize: 14)
         emptyHint.textColor = .secondaryLabelColor
         emptyHint.alignment = .center
         emptyHint.maximumNumberOfLines = 2
-        emptyHint.frame = NSRect(x: 236, y: 190, width: 368, height: 44)
+        emptyHint.frame = NSRect(x: 36, y: 174, width: 568, height: 54)
         root.addSubview(emptyHint)
+        emptyIcon.image = NSImage(systemSymbolName: "person.text.rectangle", accessibilityDescription: nil)
+        emptyIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 32, weight: .light)
+        emptyIcon.contentTintColor = .secondaryLabelColor
+        emptyIcon.frame = NSRect(x: 296, y: 112, width: 48, height: 44)
+        root.addSubview(emptyIcon)
+        emptyCreate.title = L10n.t("新建人物像", "人物像を作成", "Create persona")
+        emptyCreate.font = .systemFont(ofSize: 13, weight: .medium)
+        emptyCreate.prominent = true
+        emptyCreate.target = self; emptyCreate.action = #selector(addPersona)
+        emptyCreate.frame = NSRect(x: 220, y: 246, width: 200, height: 34)
+        root.addSubview(emptyCreate)
 
         view = root
 
@@ -603,7 +591,10 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         table.allowsMultipleSelection = false
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle // single column fills the width
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
-        col.width = 192
+        table.frame = NSRect(x: 0, y: 0, width: 176, height: 358)
+        table.autoresizingMask = [.width]
+        col.width = 144
+        col.resizingMask = .autoresizingMask
         table.addTableColumn(col)
         table.dataSource = self
         table.delegate = self
@@ -611,6 +602,8 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         table.doubleAction = #selector(setActiveTapped)
         listScroll.documentView = table
     }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { PersonaSelectionRow() }
 
     func numberOfRows(in tableView: NSTableView) -> Int { store.all.count }
 
@@ -652,6 +645,7 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         descTextView.minSize = .zero
         descTextView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         descTextView.autoresizingMask = [.width]
+        descTextView.setAccessibilityLabel(L10n.t("人物像描述", "人物像の説明", "Persona description"))
         descTextView.delegate = self
         descScroll.documentView = descTextView
     }
@@ -663,6 +657,9 @@ final class PersonaManagerViewController: NSViewController, NSTableViewDataSourc
         let hasSelection = persona != nil
         editorViews.forEach { $0.isHidden = !hasSelection }
         emptyHint.isHidden = hasSelection
+        emptyCreate.isHidden = hasSelection
+        emptyIcon.isHidden = hasSelection
+        libraryViews.forEach { $0.isHidden = store.all.isEmpty }
         nameField.stringValue = persona?.name ?? ""
         descTextView.string = persona?.text ?? ""
         updateActiveButton()

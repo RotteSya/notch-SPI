@@ -18,7 +18,11 @@ export function renderPurchase(session:StoredPurchaseSession,secret:string,name?
   const data={session:secret,processing:s.processing,network:s.network,error:s.error,expired:s.expired,changed:s.changed};
   return shell(lang,s.title,`<h1>${s.title}</h1>${name?`<p>${escapeHtml(name)}</p>`:''}<p>${session.questions} ${s.questions}</p><p>${escapeHtml(formatMoney(session.amountCents,session.currency))} ${escapeHtml(session.currency)}</p><p>${terms[lang]}</p><button id="buy" ${Object.entries(data).map(([key,value])=>'data-'+key+'="'+escapeHtml(value)+'"').join(' ')}>${s.buy}</button><p id="status" role="status" aria-live="polite"></p><p class="muted">${s.security}</p>`,true);
 }
-export function renderPurchaseComplete(language:string,canceled:boolean):string {
+export function renderPurchaseComplete(language:string,canceled:boolean,plus=false):string {
   const lang=normalizeLang(language),s=strings[lang];
-  return shell(lang,s.complete,`<h1>${s.complete}</h1><p>${s.notice}</p>${canceled?'<p class="muted">'+s.cancel+'</p>':''}<p><a href="notchspi://account">${returnLabel[lang]}</a></p><p class="muted">${lang==='zh'?'若 App 未打开，请手动打开「账户与额度」查询原订单。':lang==='ja'?'開かない場合はアプリのアカウント画面で元の注文を確認してください。':'If the app does not open, open Account manually and check the original order.'}</p>`);
+  if(plus) {
+    const notice={zh:'请返回设置 → 账户与订阅 刷新订阅状态。返回本页不代表已付款或已开通权益。未完成付款可在账户与订阅页继续原付款。',ja:'設定 → アカウントとプラン で契約状態を更新してください。このページへの移動だけでは支払いや利用開始は確定しません。未完了の決済は アカウントとプラン画面で再開できます。',en:'Open Settings → Account & plan and refresh your subscription. Returning here does not confirm payment or activation. Resume an unfinished payment from the Account & plan page.'};
+    return shell(lang,'NotchSPI Plus',`<h1>NotchSPI Plus</h1><p>${notice[lang]}</p><p><a href="notchspi://plus">${returnLabel[lang]}</a></p>`);
+  }
+  return shell(lang,s.complete,`<h1>${s.complete}</h1><p>${s.notice}</p>${canceled?'<p class="muted">'+s.cancel+'</p>':''}<p><a href="notchspi://account">${returnLabel[lang]}</a></p><p class="muted">${lang==='zh'?'若 App 未打开，请手动打开「账户与订阅」查询原订单。':lang==='ja'?'開かない場合はアプリのアカウント画面で元の注文を確認してください。':'If the app does not open, open Account manually and check the original order.'}</p>`);
 }

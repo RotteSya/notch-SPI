@@ -138,6 +138,7 @@ test('Cloud and update callers stay inside the inventory', () => {
     'GET /v1/captures/:id/status',
     'GET /v1/client-config',
     'GET /v1/device-observation',
+    'GET /v1/plus',
     'GET /v1/purchase-sessions/:purchaseId',
     'POST /v1/captures',
     'POST /v1/captures/:id/explanation',
@@ -147,6 +148,9 @@ test('Cloud and update callers stay inside the inventory', () => {
     'POST /v1/devices',
     'POST /v1/events/batch',
     'POST /v1/free-trial/claim',
+    'POST /v1/plus/cancel',
+    'POST /v1/plus/checkout',
+    'POST /v1/plus/portal',
     'POST /v1/purchase-sessions',
   ]);
 });

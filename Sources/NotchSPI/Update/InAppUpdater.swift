@@ -12,9 +12,12 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
     private let status = NSTextField(wrappingLabelWithString: "")
     private let progress = NSProgressIndicator()
     private var expectedVersion = ""
+    private let cancelButton = NSButton()
+    private var preparing = false
 
     func start(_ release: UpdateChecker.Release) {
         if isRunning { window?.makeKeyAndOrderFront(nil); return }
+        preparing = false
         expectedVersion = release.version
         isRunning = true
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 160),
@@ -29,6 +32,12 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
         progress.maxValue = 1
         panel.contentView?.addSubview(status)
         panel.contentView?.addSubview(progress)
+        cancelButton.title = L10n.cancel
+        cancelButton.bezelStyle = .rounded
+        cancelButton.frame = NSRect(x: 316, y: 8, width: 100, height: 30)
+        cancelButton.target = self; cancelButton.action = #selector(cancelDownload)
+        cancelButton.isEnabled = true
+        panel.contentView?.addSubview(cancelButton)
         window = panel
         panel.center()
         panel.makeKeyAndOrderFront(nil)
@@ -66,12 +75,19 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
         let received = ByteCountFormatter.string(fromByteCount: totalBytesWritten, countStyle: .file)
         let total = totalBytesExpectedToWrite > 0 ? ByteCountFormatter.string(fromByteCount: totalBytesExpectedToWrite, countStyle: .file) : ""
         DispatchQueue.main.async {
+            guard self.session === session else { return }
             self.show(L10n.t("正在下载更新", "更新をダウンロード中", "Downloading update") + " · " + received + (total.isEmpty ? "" : " / " + total),
                       fraction: totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : nil)
         }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        let accepted = DispatchQueue.main.sync { () -> Bool in
+            guard self.session === session, self.isRunning else { return false }
+            self.preparing = true; self.cancelButton.isEnabled = false
+            return true
+        }
+        guard accepted else { return }
         do {
             guard (downloadTask.response as? HTTPURLResponse)?.statusCode == 200 else { throw UpdateError.invalidDownload }
             DispatchQueue.main.async { self.show(L10n.t("正在验证并准备安装…", "検証してインストールを準備中…", "Verifying and preparing installation…")) }
@@ -95,7 +111,31 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         session.finishTasksAndInvalidate()
-        if let error { DispatchQueue.main.async { self.fail(error) } }
+        if let error { DispatchQueue.main.async {
+            guard self.session === session else { return }
+            self.fail(error)
+        } }
+    }
+
+    @objc func cancelDownload() {
+        guard isRunning, !preparing else { return }
+        let active = session
+        session = nil; download = nil; isRunning = false
+        active?.invalidateAndCancel()
+        progress.stopAnimation(nil)
+        window?.close(); window = nil
+    }
+
+    /// A new app acknowledges startup only after its normal controller and event loop are alive.
+    static func acknowledgeLaunch(arguments: [String] = CommandLine.arguments) {
+        guard let index = arguments.firstIndex(of: "--update-ready-file"), index + 1 < arguments.count else { return }
+        let ready = URL(fileURLWithPath: arguments[index + 1]).standardizedFileURL
+        let staging = ready.deletingLastPathComponent()
+        guard ready.lastPathComponent == "ready", staging.lastPathComponent.hasPrefix(".NotchSPI-update-"),
+              UUID(uuidString: String(staging.lastPathComponent.dropFirst(".NotchSPI-update-".count))) != nil,
+              staging.deletingLastPathComponent() == Bundle.main.bundleURL.deletingLastPathComponent().standardizedFileURL,
+              staging.resolvingSymlinksInPath() == staging else { return }
+        try? Data("ready".utf8).write(to: ready, options: .atomic)
     }
 
     private func fail(_ error: Error) {
@@ -208,12 +248,23 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
         /usr/bin/open "$destination"
         exit 1
     fi
-    if ! /usr/bin/open "$destination"; then
-        /bin/mv "$destination" "$staging/failed.app"
-        /bin/mv "$staging/previous.app" "$destination"
-        /usr/bin/open "$destination"
-        exit 1
-    fi
+    /usr/bin/open -W -n "$destination" --args --update-ready-file "$staging/ready" &
+    launcher="$!"
+    count=0
+    while [ ! -f "$staging/ready" ]; do
+        if ! /bin/kill -0 "$launcher" 2>/dev/null; then
+            if [ -f "$staging/ready" ]; then break; fi
+            wait "$launcher" 2>/dev/null
+            /bin/mv "$destination" "$staging/failed.app"
+            /bin/mv "$staging/previous.app" "$destination"
+            /usr/bin/open "$destination"
+            exit 1
+        fi
+        count=$((count + 1))
+        # A still-running but unresponsive app is not overwritten. Retain its backup for recovery.
+        if [ "$count" -ge 60 ]; then exit 76; fi
+        /bin/sleep 1
+    done
     /bin/rm -rf "$staging"
     """#
 

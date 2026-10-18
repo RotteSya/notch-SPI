@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+const base='http://127.0.0.1:43081';
+const health=await (await fetch(base+'/healthz')).json();assert.equal(health.provider,'mock');assert.equal(health.db,'sqlite');assert.equal(health.payments,'stripe');
+const status=await(await fetch(base+'/_sandbox/status')).json();assert.equal(status.account,'acct_1URPe9DRrnCxrM32');
+const html=await(await fetch(base+'/purchase/complete?product=plus')).text();assert.ok(html.includes('notchspi-sandbox://plus'));assert.ok(!html.includes('href="notchspi://'));
+const reg=await(await fetch(base+'/v1/devices',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platform:'native-sandbox-preflight',app_version:'3.0'})})).json();
+const token=reg.device_token??reg.token;assert.ok(token,'Registration token missing');
+const headers={authorization:'Bearer '+token};const plus=await(await fetch(base+'/v1/plus',{headers})).json();assert.equal(plus.available,true);assert.equal(plus.price_cents,6900);assert.equal(plus.daily_limit,400);
+const result=await fetch(base+'/v1/plus/checkout',{method:'POST',headers});const checkout=await result.json();assert.equal(result.status,200);assert.equal(new URL(checkout.url).hostname,'checkout.stripe.com');assert.ok(checkout.url.includes('cs_test_'));
+await fs.writeFile('output/plus-native-sandbox/preflight.json',JSON.stringify({health,sandbox_account:status.account,return_scheme:'notchspi-sandbox',price_cents:plus.price_cents,daily_limit:plus.daily_limit,checkout_test_session_created:true,user_app_account_untouched:true,passed:true},null,2)+'\n');console.log('Sandbox preflight passed: mock backend, isolated return scheme, Plus 69/400 and real test Checkout.');

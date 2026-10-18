@@ -1,3 +1,4 @@
+import {PLUS,plusActive,type PlusRecord} from './plus.ts';
 import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
@@ -29,7 +30,14 @@ export class MemoryBilling implements BillingStore {
   private lookup: (token: string) => MemoryQuotaDevice | undefined;
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
-    usage: (event: StoredUsageMetric & { createdAt: string }) => void) { this.lookup = lookup; this.usage = usage; }
+    usage: (event: StoredUsageMetric & { createdAt: string }) => void,
+    plus: (id:number)=>PlusRecord|null = () => null) { this.lookup = lookup; this.usage = usage; this.plus=plus; }
+  private plus: (id:number)=>PlusRecord|null;
+  plusUsage(token:string,source:string) {
+    const d=this.lookup(token); if(!d)return null;
+    const lot=this.state(d).lots.find(l=>l.sourceRef===source);
+    return lot?{remaining:lot.remaining,held:lot.held,granted:lot.granted}:null;
+  }
   register(d: MemoryQuotaDevice, policy: string, grant: number, freeTrialEligible = false): void {
     this.devices.set(d.id,d);
     this.states.set(d.id, { version: 1n, policy, initial: grant,
@@ -56,6 +64,11 @@ export class MemoryBilling implements BillingStore {
     for (const lot of state.lots) {
       result.heldQuestions += lot.held; result.quotaBreakdown[lot.kind] += lot.frozen?0:lot.remaining-lot.held;
     }
+    result.allowanceSources = {trial:0,plus:0,purchased:0,other:0};
+    for (const lot of state.lots) {
+      const key = lot.sourceRef?.startsWith('plus_daily:') ? 'plus' : lot.kind === 'trial' ? 'trial' : lot.kind === 'paid' ? 'purchased' : 'other';
+      result.allowanceSources[key] += lot.frozen ? 0 : lot.remaining-lot.held;
+    }
     if (state.freeTrial) {
       const trial = state.freeTrial;
       result.freeTrial = trialSnapshot(true, trial.activatedAt, trial.expiresAt,
@@ -69,6 +82,21 @@ export class MemoryBilling implements BillingStore {
       const change = applyLotPolicy(lot, false, lot.granted);
       if (change.revokedDelta) lot.revocations.push({at: now, delta: change.revokedDelta});
       d.balanceQuestions += change.availableDelta; state.version++; d.updatedAt = now;
+    }
+    const plan=this.plus(d.id);
+    if(plusActive(plan,clock)) {
+      const window=trialWindow(clock),source='plus_daily:'+window.key;
+      if(!state.lots.some(l=>l.sourceRef===source)) {
+        const lot=newLot('paid',PLUS.dailyLimit,source);
+        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        state.lots.push(lot);d.balanceQuestions+=lot.granted;state.version++;d.updatedAt=now;
+      } else {
+        const lot=state.lots.find(l=>l.sourceRef===source)!;
+        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        if(lot.target!==0){const change=applyLotPolicy(lot,false,0);d.balanceQuestions+=change.availableDelta;state.version++;d.updatedAt=now;}
+      }
+    } else for(const lot of state.lots.filter(l=>l.sourceRef?.startsWith('plus_daily:')&&l.target!==l.granted)) {
+      const change=applyLotPolicy(lot,false,lot.granted);d.balanceQuestions+=change.availableDelta;state.version++;d.updatedAt=now;
     }
     const trial = state.freeTrial;
     if (!trial?.activatedAt || !trial.expiresAt || trial.activatedAt > now || trial.expiresAt <= now) return;
@@ -165,8 +193,10 @@ export class MemoryBilling implements BillingStore {
     }
     if (d.balanceQuestions < 1) return { ok: false, reason: 'insufficient_quota' };
     const priority: LotKind[] = ['trial','legacy_unknown','goodwill','paid'];
-    const lot = priority.flatMap(kind => state.lots.filter(l => l.kind===kind && !l.frozen && l.remaining>l.held))[0];
-    if (!lot) throw new Error('Quota source unavailable');
+    const available = state.lots.filter(l => !l.frozen && l.remaining>l.held && (input.allowPurchasedCredits !== false || l.kind !== 'paid' || l.sourceRef?.startsWith('plus_daily:')));
+    const rank = (l:Lot) => l.kind==='trial'?0:l.sourceRef?.startsWith('plus_daily:')?1:priority.indexOf(l.kind)+2;
+    const lot = available.sort((a,b)=>rank(a)-rank(b))[0];
+    if (!lot) return {ok:false,reason:'paid_credits_disabled'};
     beforeCommit?.();
     const record = newCapture(input);
     state.captures.set(record.captureId,{record,lot,legacy:input.legacy??false});

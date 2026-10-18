@@ -4,8 +4,8 @@ import Foundation
 struct MonthPassSnapshot: Equatable {
     static let priceCNY = 69
     static let durationDays = 30
-    static let dailySolveLimit = 600
-    static let dailyWarningThreshold = 540
+    static let dailySolveLimit = 400
+    static let dailyWarningThreshold = 360
 
     let activatedAt: Date?
     let expiresAt: Date?
@@ -42,7 +42,7 @@ struct MonthPassSnapshot: Equatable {
         case .nearLimit:
             return L10n.t("今日还可求解 \(remaining) 次 · 北京时间次日 00:00 重置", "本日はあと\(remaining)回 · 北京時間の翌日00:00にリセット", "\(remaining) solves left today · resets at 00:00 Beijing time")
         case .exhausted:
-            return L10n.t("今日已达 600 次 · 北京时间次日 00:00 重置，已有内容仍可查看", "本日の600回に到達 · 北京時間の翌日00:00にリセット。保存済み内容は閲覧できます", "Daily limit reached · resets at 00:00 Beijing time. Saved content stays available.")
+            return L10n.t("今日已达 400 次 · 北京时间次日 00:00 重置，已有内容仍可查看", "本日の400回に到達 · 北京時間の翌日00:00にリセット。保存済み内容は閲覧できます", "Daily limit reached · resets at 00:00 Beijing time. Saved content stays available.")
         }
     }
 
@@ -89,7 +89,7 @@ enum MonthPassPreview {
         let start = now.addingTimeInterval(-5 * 86_400)
         return .init(activatedAt: index == 1 ? nil : start,
                      expiresAt: index == 1 ? nil : index == 2 ? now.addingTimeInterval(-86_400) : start.addingTimeInterval(30 * 86_400),
-                     dailySolvesUsed: index == 3 ? 540 : index == 4 ? 600 : 126,
+                     dailySolvesUsed: index == 3 ? 360 : index == 4 ? 400 : 126,
                      usageRecordedAt: now)
     }
 }

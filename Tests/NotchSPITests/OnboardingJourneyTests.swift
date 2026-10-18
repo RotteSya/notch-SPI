@@ -54,6 +54,22 @@ final class OnboardingJourneyTests: XCTestCase {
         XCTAssertEqual(controller.model.onboardingTrialState, .unavailable)
     }
 
+    @MainActor func testClaimLaterCompletesGuideWithoutConsumingEligibilityOrCallingServer() {
+        let name = "guide-claim-later-\(UUID())"
+        let d = UserDefaults(suiteName: name)!
+        let controller = NotchController(activateServices: false, onboardingDefaults: d)
+        defer { controller.prepareForTermination(); d.removePersistentDomain(forName: name) }
+        var claims = 0
+        controller.qaOnboardingClaimTrial = { claims += 1; return true }
+        controller.model.onboardingTrialState = .available
+        controller.qaPresentOnboarding(.trial)
+        controller.qaOnboardingSecondary()
+        XCTAssertTrue(d.bool(forKey: "onboardingDone"))
+        XCTAssertNil(controller.model.onboardingStep)
+        XCTAssertEqual(claims, 0)
+        XCTAssertEqual(controller.model.onboardingTrialState, .available)
+    }
+
     @MainActor func testTrialClaimIsSingleFlightCanRetryAndRejectsLateCompletionAfterLeaving() async throws {
         let name = "guide-trial-claim-\(UUID())"
         let d = UserDefaults(suiteName: name)!

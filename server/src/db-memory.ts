@@ -1,3 +1,4 @@
+import {MemoryPlus} from './plus-memory.ts';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MemoryBilling } from './billing-memory.ts';
 import { MemoryPaymentLedger } from './payment-ledger-memory.ts';
@@ -53,7 +54,8 @@ export class MemoryStore implements Store {
   private purchaseCreatedAt = new Map<string,string>();
   private nextId = 1;
   readonly finance = new MemoryPaymentFinance(()=>this.payments.financeOrders());
-  readonly billing = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event));
+  readonly plus: MemoryPlus = new MemoryPlus(token => this.devices.get(hashToken(token))?.id ?? null, (token,source) => this.billing.plusUsage(token,source));
+  readonly billing: MemoryBilling = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event), id => this.plus.records.get(id) ?? null);
   readonly observations = new MemoryObservationStore(token=>this.devices.get(hashToken(token))?.id??null,this.productEvents);
   readonly reporting = new MemoryReportingStore(q=>{
     const devices=[...this.devices.values()].filter(d=>d.createdAt>=q.cohortFrom&&d.createdAt<q.cohortTo);

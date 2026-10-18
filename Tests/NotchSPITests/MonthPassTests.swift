@@ -27,11 +27,11 @@ final class MonthPassTests: XCTestCase {
 extension MonthPassTests {
     func testReminderAndLimitBoundariesPreserveActiveSubscription() {
         let now = ISO8601DateFormatter().date(from: "2026-10-13T15:59:59Z")!
-        for (used, status) in [(539, MonthPassSnapshot.DailyStatus.normal), (540, .nearLimit), (599, .nearLimit), (600, .exhausted), (601, .exhausted)] {
+        for (used, status) in [(359, MonthPassSnapshot.DailyStatus.normal), (360, .nearLimit), (399, .nearLimit), (400, .exhausted), (401, .exhausted)] {
             let pass = MonthPassSnapshot(activatedAt: now, expiresAt: now.addingTimeInterval(86400), dailySolvesUsed: used, usageRecordedAt: now)
             XCTAssertEqual(pass.dailyStatus(at: now), status)
             XCTAssertEqual(pass.state(at: now), .active)
-            XCTAssertEqual(pass.dailyNotice(at: now) == nil, used < 540)
+            XCTAssertEqual(pass.dailyNotice(at: now) == nil, used < 360)
             XCTAssertEqual(pass.nextReset(at: now), now.addingTimeInterval(1))
             XCTAssertEqual(pass.usedToday(at: now.addingTimeInterval(1)), 0)
             XCTAssertEqual(pass.dailyStatus(at: now.addingTimeInterval(1)), .normal)
@@ -41,7 +41,7 @@ extension MonthPassTests {
 
     func testExpirySuppressesDailyWarning() {
         let now = Date()
-        let pass = MonthPassSnapshot(activatedAt: now.addingTimeInterval(-86400), expiresAt: now, dailySolvesUsed: 600, usageRecordedAt: now)
+        let pass = MonthPassSnapshot(activatedAt: now.addingTimeInterval(-86400), expiresAt: now, dailySolvesUsed: 400, usageRecordedAt: now)
         XCTAssertEqual(pass.state(at: now), .expired)
         XCTAssertNil(pass.dailyNotice(at: now))
     }

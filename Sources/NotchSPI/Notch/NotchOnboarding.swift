@@ -204,7 +204,7 @@ final class NotchOnboardingView: NSView {
                     action: t("开始使用", "使い始める", "Start using NotchSPI"))
             }
             return Copy(title: t("领取 3 天免费体验。", "3日間の無料体験をどうぞ。", "Enjoy 3 days on us."),
-                body: t("每位新用户都可以免费体验 3 天，从领取时开始计算。", "初めてご利用の方は、受け取り時から3日間無料でお試しいただけます。", "Every new user gets a 3-day free trial, starting when you claim it."),
+                body: t("新用户可自行选择领取时间，领取后开始 72 小时体验。稍后可在设置 → 账户与订阅领取。", "開始時期は自由です。受け取りから72時間。あとで設定のアカウント画面から受け取れます。", "Choose when to start your 72-hour trial. Claim later in Settings → Account & plan."),
                 action: trial == .loading ? t("正在检查…", "確認中…", "Checking…")
                     : trial == .claiming ? t("正在领取…", "受け取り中…", "Claiming…")
                     : trial == .failed ? t("重新领取", "もう一度試す", "Try again")
@@ -252,7 +252,7 @@ final class NotchOnboardingView: NSView {
         Self.applyBodyStyle(to: note)
         back.title = t("返回", "戻る", "Back")
         back.isHidden = ![.permission, .practice, .capture, .multiple, .multiCapture].contains(step) && !(step == .working && failed)
-        secondary.title = step == .trial ? t("暂不领取", "今はスキップ", "Skip for now") : t("修改快捷键", "ショートカット設定", "Change shortcut")
+        secondary.title = step == .trial ? t("稍后领取", "あとで受け取る", "Claim later") : t("修改快捷键", "ショートカット設定", "Change shortcut")
         secondary.isHidden = step == .trial ? [.loading, .claiming, .claimed, .expired, .ineligible].contains(trial) : !captureStep || capturing || previewing
         closeButton.title = step == .trial && trial == .claimed ? t("完成", "完了", "Finish") : t("稍后继续", "あとで", "Later")
         closeButton.toolTip = step == .trial && trial == .claimed ? t("完成引导", "ガイドを完了", "Finish setup") : t("收起引导 · 可在刘海菜单中继续", "閉じる・ノッチメニューで再開", "Close · resume from the notch menu")

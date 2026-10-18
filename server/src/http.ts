@@ -5,7 +5,7 @@ import type { FastifyReply } from 'fastify';
 // for clients that don't know the code). Thrown anywhere in a handler and translated to this
 // shape by the error hook in routes.ts.
 
-export type ErrorCode = 'trial_unavailable' | 'trial_ineligible'
+export type ErrorCode = 'paid_credits_disabled' | 'plus_unavailable' | 'plus_pending' | 'plus_exists' | 'trial_unavailable' | 'trial_ineligible'
   | 'insufficient_quota' // 402 — question balance is used up
   | 'invalid_token'      // 401 — unknown/expired device token
   | 'bad_request'        // 400 — malformed input

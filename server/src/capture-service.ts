@@ -90,8 +90,8 @@ export class CaptureService {
       if(!hold.ok) {
         const code=hold.reason;
         if(code==='service_maintenance') reply.header('Retry-After','60');
-        throw new ApiError(code==='service_maintenance'?503:code==='unknown_token'?401:code==='insufficient_quota'?402:code==='device_busy'?429:409,
-          '请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
+        throw new ApiError(code==='service_maintenance'?503:code==='unknown_token'?401:(code==='insufficient_quota'||code==='paid_credits_disabled')?402:code==='device_busy'?429:409,
+          code==='paid_credits_disabled'?'每日额度已用完，题包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
       }
       owned=hold.capture;
       if(!abort.signal.aborted)await run(hold.capture,hold.quota,admission);
@@ -133,6 +133,8 @@ export class CaptureService {
     const {token}=await requireAccount(req,store);
     if(abort.signal.aborted)return;
     const body=(req.body??{}) as Record<string,unknown>;
+    if(body.allow_purchased_credits!==undefined && typeof body.allow_purchased_credits!=='boolean') throw new ApiError(400,'allow_purchased_credits 必须是布尔值');
+    const allowPurchasedCredits=body.allow_purchased_credits!==false;
     const reasoningEffort=requestReasoningEffort(body.reasoning_effort);
     const protocol=body.result_protocol===undefined?null:text(body.result_protocol);
     if(protocol!==null&&protocol!=='objective_v1') throw new ApiError(400,'result_protocol 无效');
@@ -180,14 +182,14 @@ export class CaptureService {
     const previous=await store.billing.capture(token,captureId);
     const keyVersion=previous?.keyVersion??this.keys.current;
     const inputHmac=this.keys.digest('capture-input',JSON.stringify({digests,scope,profileId,profileVersion,promptVersion,language:body.ui_language??null}),keyVersion);
-    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
+    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(!allowPurchasedCredits?{allowPurchasedCredits:false}:{}),...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
     // Duplicates are answered from metadata even when the remaining balance is zero.
     if(previous) {
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
       reply.code(409).send({error:{code,message:'请查询原请求状态'},status_path:`/v1/captures/${captureId}/status`,
         ...(code==='idempotency_conflict'?{}:{settlement:this.currentSnapshot(previous,(await store.billing.accountSnapshot(token))!)})}); return;
     }
-    await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion,parentCaptureId:parent,
+    await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion,allowPurchasedCredits,parentCaptureId:parent,
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
         configRevision:config.clientConfigRevision,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},

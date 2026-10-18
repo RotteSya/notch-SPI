@@ -92,18 +92,18 @@ enum QuotaGate {
 
         guard hasDeviceToken else {
             return .deny(L10n.t(
-                "服务还没准备好（首次使用需要联网领取免费额度）。请检查网络后再试一次，或打开设置 →「账户与额度」手动领取。",
-                "サービスの準備がまだ完了していません(初回はネット接続で無料枠を受け取ります)。接続を確認して再試行するか、設定→「アカウントと残高」から受け取ってください。",
-                "The service isn't ready yet (first use needs a network connection to claim your free questions). Check your connection and try again, or claim them in Settings → Account."))
+                "官方账户尚未连接。请检查网络后重试，或打开设置 →「账户与订阅」刷新账户。",
+                "公式アカウントに未接続です。接続を確認して再試行するか、設定→「アカウントとプラン」で更新してください。",
+                "Your official account is not connected. Check your connection and retry, or refresh in Settings → Account & plan."))
         }
         // A known non-positive quota is stopped client-side for a friendly message;
         // an unknown quota is allowed through — the server is the source of truth
         // and will answer 402 if the account really is empty.
         if let balance = balanceQuestions, balance <= 0 {
             return .deny(L10n.t(
-                "免费额度已用完。充值题数后即可继续使用。",
-                "無料枠を使い切りました。質問数をチャージすると続けられます。",
-                "You're out of questions. Top up to keep going."))
+                "当前没有可用额度。请在设置 →「账户与订阅」查看体验、每日额度和题包。",
+                "現在利用できる枠がありません。設定→「アカウントとプラン」で体験・毎日の枠・パックをご確認ください。",
+                "No allowance is available right now. Check your trial, daily allowances, and packs in Settings → Account & plan."))
         }
         return .allow
     }

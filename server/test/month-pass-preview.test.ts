@@ -27,16 +27,16 @@ test('the purchase page module does not depend on the month-pass preview',()=>{
 });
 
 test('preview catalog matches client contract and does not change live packs',()=>{
-  assert.deepEqual(MONTH_PASS_PREVIEW,{currency:'CNY',amountMinor:6900,days:30,dailySolves:600,warningAt:540,resetTimeZone:'Asia/Shanghai'});
+  assert.deepEqual(MONTH_PASS_PREVIEW,{currency:'CNY',amountMinor:6900,days:30,dailySolves:400,warningAt:360,resetTimeZone:'Asia/Shanghai'});
   const swift=readFileSync(new URL('../../Sources/NotchSPI/Cloud/MonthPass.swift',import.meta.url),'utf8');
-  for(const [name,value]of Object.entries({priceCNY:69,durationDays:30,dailySolveLimit:600,dailyWarningThreshold:540}))assert.ok(swift.includes(`static let ${name} = ${value}`));
+  for(const [name,value]of Object.entries({priceCNY:69,durationDays:30,dailySolveLimit:400,dailyWarningThreshold:360}))assert.ok(swift.includes(`static let ${name} = ${value}`));
   assert.deepEqual(parsePacks(DEFAULT_PACKS_JSON).map(p=>p.amountCents),[300,800,2200]);
   assert.match(renderMonthPassPreview('invalid'),/<html lang="zh">/);
 });
 
  test('preview discloses daily allowance and reset without unlimited claims',()=>{
   const html=renderMonthPassPreview('zh');
-  assert.match(html,/每天 600 次成功求解/);
+  assert.match(html,/每天 400 次成功求解/);
   assert.match(html,/北京时间每日零点重置，不累计/);
   assert.doesNotMatch(html,/不设固定题数上限/);
   assert.match(html,/暂时限制使用或要求验证/);

@@ -1,3 +1,4 @@
+import {SQLPlus} from './plus-sql.ts';
 import {SQLPurchaseSessions} from './purchase-session-sql.ts';
 import {SQLQuotaMigration} from './quota-migration.ts';
 import { randomUUID } from 'node:crypto';
@@ -124,6 +125,7 @@ interface DeviceRow {
 
 export class SqliteStore implements Store {
   private db: DatabaseSync;
+  readonly plus = new SQLPlus(transaction => this.runBilling(transaction));
   readonly billing = new SQLBilling(transaction => this.runBilling(transaction));
   readonly quotaMigration = new SQLQuotaMigration(transaction => this.runBilling(transaction, true));
   readonly payments = new SQLPaymentLedger(transaction => this.runBilling(transaction));

@@ -206,6 +206,7 @@ export interface Store {
   readonly reporting: import('./reporting.ts').ReportingStore;
   readonly observations: import('./observation.ts').ObservationStore;
   readonly payments: import('./payment-ledger.ts').PaymentLedger;
+  readonly plus: import('./plus.ts').PlusStore;
   readonly billing: BillingStore;
   registerDevice(input: RegistrationInput): Promise<RegisteredDevice>;
 

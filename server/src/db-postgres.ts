@@ -1,3 +1,4 @@
+import {SQLPlus} from './plus-sql.ts';
 import {SQLPurchaseSessions} from './purchase-session-sql.ts';
 import {SQLQuotaMigration} from './quota-migration.ts';
 import { randomUUID } from 'node:crypto';
@@ -222,6 +223,7 @@ export function resolvePostgresSSL(input: {
 
 export class PostgresStore implements Store {
   private pool: pg.Pool;
+  readonly plus = new SQLPlus(transaction => this.runBilling(transaction));
   readonly billing = new SQLBilling(transaction => this.runBilling(transaction));
   readonly quotaMigration = new SQLQuotaMigration(transaction => this.runBilling(transaction, true));
   readonly payments = new SQLPaymentLedger(transaction => this.runBilling(transaction));

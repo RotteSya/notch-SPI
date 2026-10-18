@@ -43,6 +43,28 @@ private final class AccountFixture {
 
 @MainActor
 final class OfficialAccountStateTests: XCTestCase {
+    func testRecoveryVerifiesBeforeReplacingAndDoesNotMergeBalances() async throws {
+        let f = AccountFixture(); defer { f.close() }
+        let server = try await peer(f) { request, reply in
+            XCTAssertEqual(request.headers["authorization"], "Bearer dev_recovered_account_123456")
+            reply.respond(type: "application/json", body: self.body(balance: 42, version: "1"))
+        }
+        defer { server.stop() }; f.seed()
+        try await OfficialAPI.restoreAccount(code: "dev_recovered_account_123456", environment: f.environment).get()
+        XCTAssertEqual(f.state.token, "dev_recovered_account_123456")
+        XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 42)
+    }
+
+    func testRecoveryRejectsInvalidResponseAndLateAccountSwitch() throws {
+        let f = AccountFixture(); defer { f.close() }; f.seed()
+        let ticket = f.state.prepareRecovery()
+        let response = try JSONDecoder().decode(OfficialAccountResponse.self, from: body(balance: 20, version: "1"))
+        f.seed("dev_other_account_123456")
+        XCTAssertThrowsError(try f.state.restoreVerifiedCredential("dev_recovered_account_123456", response: response, ticket: ticket))
+        XCTAssertEqual(f.state.token, "dev_other_account_123456")
+        XCTAssertEqual(f.state.value("balanceQuestions") as? Int, 80)
+    }
+
     private func trialBody(balance: Int = 400, version: String = "9", dailyLimit: Int = 400) -> Data {
         var account = try! JSONSerialization.jsonObject(with: body(balance: balance, version: version)) as! [String: Any]
         account["free_trial"] = ["status": "active", "policy_version": "trial3d400-2026-10-16", "daily_limit": dailyLimit,

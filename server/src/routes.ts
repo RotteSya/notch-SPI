@@ -1,5 +1,6 @@
+import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
-import {trialSnapshot} from './free-trial.ts';
+import {trialSnapshot, FREE_TRIAL_POLICY} from './free-trial.ts';
 import type {AccountSnapshot} from './billing.ts';
 import { aggregateCohorts, aggregateEconomics, parseReportQuery, reportTime, decimal, ReportLimitError, type ReportExpense } from './reporting.ts';
 import { archivePayload, assembleReport, assertReportRetained, parseArchiveCursor, ReportExpiredError } from './report-archive.ts';
@@ -35,6 +36,7 @@ import { validateEvent, paymentReportWire, type PaymentEvent, type RefundSnapsho
 import { parseObservationPreference, parseObservationCoverage, type ObservationState, type ObservationCoverage } from './observation.ts';
 
 export interface AppContext {
+  plusStripe?: import('./plus-stripe.ts').PlusStripe;
   config: Config;
   store: Store;
   storeKind: StoreKind;
@@ -107,6 +109,8 @@ function adminTokenMatches(provided: string, expected: string): boolean {
 }
 
 export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
+  const plus = plusService(ctx);
+  plus.register(app);
   const {
     config, store, storeKind,
     provider, providerDegraded, objectiveProviderDegraded,
@@ -293,7 +297,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
         : { variant: 'control', protocol: null, prompt_variant: 'legacy' },
       screen_query: { capabilities: config.screenQueryEnabled ? ['screen_query_v1', 'capture_status'] : ['capture_status'],
         support_revision: SCREEN_QUERY_VERSION, enabled_profiles: config.enabledSupportProfiles.split(',').filter(Boolean), limits: { max_images: 4, max_targets: 1, material_ttl_seconds: 900 },
-        trial_policy: { version: config.quotaPolicyVersion, initial_grant: config.trialQuestions } },
+        trial_policy: { version: config.freeTrialEnabled ? FREE_TRIAL_POLICY.version : config.quotaPolicyVersion, initial_grant: config.freeTrialEnabled ? 0 : config.trialQuestions } },
       payments: { purchase_recovery: true, purchase_sessions: stripeLive, catalog_version: config.catalogVersion, currency: config.currency,
         packs: stripeLive ? config.packs.map(pack => ({ id: pack.id, names: packNames(config.packs,pack.id), questions: pack.questions, amount_minor: pack.amountCents })) : [] },
       telemetry: { enabled: config.telemetryEnabled, max_batch_size: 50, max_queue_age_days: 7 },
@@ -307,7 +311,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       throw new ApiError(429, '注册过于频繁，请稍后再试', 'rate_limited');
     }
     const body = (req.body ?? {}) as DeviceBody;
-    const trialQuestions = config.trialQuestions;
+    const trialQuestions = config.freeTrialEnabled ? 0 : config.trialQuestions;
     let registration = {};
     if (body.registration_attempt_id !== undefined) {
       const attempt = str(body.registration_attempt_id);
@@ -324,7 +328,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     const platform = str(body.platform, 'unknown').slice(0, 32);
     const appVersion = str(body.app_version, 'unknown').slice(0, 32);
-    const device = await store.registerDevice({ platform, appVersion, trialQuestions, policyVersion: config.quotaPolicyVersion,
+    const device = await store.registerDevice({ platform, appVersion, trialQuestions, policyVersion: config.freeTrialEnabled ? FREE_TRIAL_POLICY.version : config.quotaPolicyVersion,
       freeTrialEligible: config.freeTrialEnabled, ...registration });
     // Every registration hands out a free grant that costs real model spend, so leave a trail:
     // the device row id plus the caller's IP is what tells a client-side credential bug (one IP,
@@ -346,6 +350,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   function accountWire(account: AccountSnapshot) {
     return {
+      allowance_sources: account.allowanceSources, spending_policy_supported: true,
       balance_version: account.balanceVersion, held_questions: account.heldQuestions,
       initial_grant: account.initialGrantQuestions, policy_version: account.policyVersion, quota_breakdown: account.quotaBreakdown,
       balance_questions: account.balanceQuestions, total_questions: account.totalQuestions,
@@ -506,9 +511,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/purchase/complete',async(req,reply)=>{
     if(!stripeLive)throw new ApiError(404,'未启用');
-    const query=(req.query??{}) as {lang?:unknown;canceled?:unknown};
+    const query=(req.query??{}) as {lang?:unknown;canceled?:unknown;product?:unknown};
     return reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('Content-Security-Policy',PURCHASE_CSP)
-      .header('X-Content-Type-Options','nosniff').type('text/html; charset=utf-8').send(renderPurchaseComplete(str(query.lang),query.canceled==='1'));
+      .header('X-Content-Type-Options','nosniff').type('text/html; charset=utf-8').send(renderPurchaseComplete(str(query.lang),query.canceled==='1',query.product==='plus'));
   });
 
   app.post('/purchase/checkout', {bodyLimit:4096}, async (req, reply) => {
@@ -673,6 +678,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const receipt:PaymentEvent={id:str(event.id),type:str(event.type),resourceId:str(object?.id),createdAt,
       payloadHash:createHash('sha256').update(rawBody).digest('hex')};
     try { validateEvent(receipt); } catch { throw new ApiError(400,'支付事件格式无效'); }
+    try { if(await plus.webhook(event.type,object))return reply.send({received:true}); }
+    catch { throw new ApiError(503,'Plus webhook reconciliation pending','upstream_error'); }
     if(/^(?:checkout\.session\.(?:completed|async_payment_succeeded)|refund\.(?:created|updated|failed)|charge\.(?:succeeded|updated|refunded|refund\.updated|dispute\.(?:created|updated|closed|funds_withdrawn|funds_reinstated)))$/.test(event.type)){
       const financialObject=object as unknown as Record<string,unknown>;
       const resources=[receipt.resourceId,stripeReference(financialObject?.payment_intent),stripeReference(financialObject?.charge)].filter((id):id is string=>id!==null);

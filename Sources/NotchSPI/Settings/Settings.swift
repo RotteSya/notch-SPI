@@ -28,6 +28,12 @@ final class Settings {
         self.d = defaults; self.secrets = secrets
     }
 
+    /// Existing users retain their spend behavior until they explicitly change it.
+    var allowPurchasedCredits: Bool {
+        get { d.object(forKey: "allowPurchasedCredits") as? Bool ?? true }
+        set { d.set(newValue, forKey: "allowPurchasedCredits") }
+    }
+
     var cli: String {
         get { d.string(forKey: "cli") ?? "codex" }
         set { d.set(newValue, forKey: "cli") }
