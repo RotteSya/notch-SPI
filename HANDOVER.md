@@ -170,3 +170,7 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 本轮检查并准备提交设置五页改版、账户恢复/题包保护、Plus 客户端与服务端、隔离预览工具及 3.0 候选文档。修复 Plus 非法日期导致空白到期提示，兼容 ISO 时间无小数秒；统一引导、额度提示、官网及支付返回页的「账户与订阅」指引。生产开关仍默认关闭，Vercel Git 自动部署禁用，不创建发布标签、不执行部署或 Stripe 生产操作。
 
 `./scripts/verify.sh` 通过，证据 `output/verification/20261018T162610Z-30828/summary.tsv`：Swift 582 项（4 跳过、0 失败）、服务端 683 项、调度器 17 项、工程检查器 51 项，类型检查、隔离 smoke、arm64 Release、资源和路由检查通过。最后客户端文案修正后专项 40 项通过。此轮未配置 TEST_POSTGRES_URL，Postgres 留待 CI；硬件权限与签名公证未执行。
+
+### 3.0 build 27 发版准备（2026-10-19）
+
+最新源码重新生成 Developer ID 签名、公证及装订的 arm64 DMG，Gatekeeper 和公开版 2.17 升级身份检查通过。VERSION.env 升至 build 27，旧 build 26 仅为历史证据。CI 11 项任务全绿；本轮 quick 检查通过。安装包、源码快照、后端 CI 构建、发布文案及本地更新预览位于 output/release-3.0-build27/。未正式发布或修改生产。详见 [发布准备记录](docs/release-3.0-build27.md) 与 [Windows 开发交接](docs/windows-port-handoff.md)。硬件/权限覆盖升级及生产 Plus 配置仍待对应验收。
