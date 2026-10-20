@@ -2,6 +2,8 @@
 
 对应机器可读清单：[plus-3.0-production-plan.json](../deploy/plus-3.0-production-plan.json)。只准备字段与顺序；本轮不执行其中任何生产写入。目标 live 账户 `acct_1TrsrFDLfLoLVRGJ`，Vercel 项目 `prj_w2DZOa9GeyLV1K2yaRtOr4TS82ib`。
 
+2026-10-20 前置条件：先恢复生产数据库并通过就绪及业务检查，再执行下述 Plus 上线顺序。build 27 旧归档中的后端预构建包已过时，必须保留 10 月 19 日的维护节流和 `/readyz` 修复；本次已准备包含修复的后端源码快照，见 [发版审计](release-3.0-preflight-2026-10-20.md)。
+
 ## 正式批准后的执行顺序
 
 1. **保存基线并复查漂移**：重新读取正式部署 ID、生产/预览变量的目标范围、webhook 的完整事件集合与门户配置。确认仍与 10 月 17 日证据一致；不同则重新合并方案。保存数据库备份/恢复点，不把密钥值写进 Git、日志或验收报告。

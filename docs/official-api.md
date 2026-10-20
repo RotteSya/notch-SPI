@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | public | GET | / |
 | public | GET | /healthz |
+| internal | GET | /readyz |
 | public | GET | /spi |
 | public | GET | /reading-practice |
 | public | GET | /dl |
@@ -936,3 +937,9 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 账户响应新增 `allowance_sources`（`trial`、`plus`、`purchased`、`other` 四个非负整数，互斥且总和等于余额总量）与 `spending_policy_supported: true`。`plus` 指当前可用的 Plus 每日额度；`purchased` 排除 Plus 日额度。客户端不得把来源值重复加到总量。
 
 解题请求可传 `allow_purchased_credits`（布尔值，缺省为 true）。false 时，服务端扣费事务只选免费、Plus 日额度及其他非题包额度；仅剩已购题包时返回 HTTP 402 / `paid_credits_disabled`，不冻结题包。该选择参与请求 HMAC，默认 true 保持旧请求兼容。发布客户端前需同步发布此能力的服务端；本次仅本机验证，未发布。
+
+## GET /readyz — 数据库就绪检查
+
+要求 `Authorization: Bearer <CRON_SECRET>`，未配置密钥返回 404，鉴权失败返回 401。只执行 `SELECT 1`，不触发 schema 初始化；连接与查询分别限制为 3 秒。成功返回 200 和 `{ "ok": true, "database": "available" }`，连接失败、额度耗尽或超时返回 503 和 `{ "ok": false, "database": "unavailable" }`，全部禁止缓存。只在发布、排障或已有 15 分钟维护时段调用，避免高频探测唤醒数据库。
+
+`GET /healthz` 保留原有配置检查，新增 `scope: "process"`、`database: "not_checked"`、`readiness: "/readyz"`；200 仅表示进程及配置通过检查，不表示数据库可用。公开健康检查不访问数据库。

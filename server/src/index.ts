@@ -73,7 +73,7 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
     payment, readPurchaseProgress:overrides.readPurchaseProgress, readStripeRefund:overrides.readStripeRefund, createStripeCheckout:overrides.createStripeCheckout, readStripeCheckout:overrides.readStripeCheckout,readStripeFinance:overrides.readStripeFinance,
   });
   let paymentRecovery:Promise<void>|null=null;
-  const reaper = setInterval(() => {
+  const reaper = config.isServerless ? null : setInterval(() => {
     void store.billing.reap().catch(() => app.log.error('reservation recovery failed'));
     void store.pruneProductEvents(new Date(Date.now()-90*86_400_000).toISOString()).catch(()=>app.log.error('event retention failed'));
     if(payment.name==='stripe'&&!paymentRecovery) paymentRecovery=(async()=>{
@@ -91,9 +91,9 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
         try{await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments);}catch{app.log.error('payment finance reconciliation failed');}
       }));
     })().catch(()=>app.log.error('payment recovery failed')).finally(()=>{paymentRecovery=null;});
-  }, 60_000);
-  reaper.unref();
-  app.addHook('onClose', async () => { clearInterval(reaper); await paymentRecovery; await store.close(); });
+  }, 15 * 60_000);
+  reaper?.unref();
+  app.addHook('onClose', async () => { if (reaper) clearInterval(reaper); await paymentRecovery; await store.close(); });
   return app;
 }
 
