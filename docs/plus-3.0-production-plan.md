@@ -1,5 +1,7 @@
 # Plus 3.0 生产配置修改方案（尚未执行）
 
+> 2026-10-20 发布推进更新：候选部署、Release 草稿、生产 webhook 与默认门户已经落地；当前状态及剩余放行条件以 [执行记录](release-3.0-execution-2026-10-20.md) 为准。下文保留原核对时点。
+
 对应机器可读清单：[plus-3.0-production-plan.json](../deploy/plus-3.0-production-plan.json)。只准备字段与顺序；本轮不执行其中任何生产写入。目标 live 账户 `acct_1TrsrFDLfLoLVRGJ`，Vercel 项目 `prj_w2DZOa9GeyLV1K2yaRtOr4TS82ib`。
 
 2026-10-20 前置条件：先恢复生产数据库并通过就绪及业务检查，再执行下述 Plus 上线顺序。build 27 旧归档中的后端预构建包已过时，必须保留 10 月 19 日的维护节流和 `/readyz` 修复；本次已准备包含修复的后端源码快照，见 [发版审计](release-3.0-preflight-2026-10-20.md)。

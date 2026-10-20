@@ -174,3 +174,7 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 ### 3.0 build 27 发版准备（2026-10-19）
 
 最新源码重新生成 Developer ID 签名、公证及装订的 arm64 DMG，Gatekeeper 和公开版 2.17 升级身份检查通过。VERSION.env 升至 build 27，旧 build 26 仅为历史证据。CI 11 项任务全绿；本轮 quick 检查通过。安装包、源码快照、后端 CI 构建、发布文案及本地更新预览位于 output/release-3.0-build27/。未正式发布或修改生产。详见 [发布准备记录](docs/release-3.0-build27.md) 与 [Windows 开发交接](docs/windows-port-handoff.md)。硬件/权限覆盖升级及生产 Plus 配置仍待对应验收。
+
+### 2026-10-20：3.0 发布推进
+
+已建立隔离发布分支和 PR #13，11 项 CI 通过；后端候选 READY 且未切正式域名，v3.0 安装包已上传草稿。正式 Stripe webhook 已补齐 21 项事件，默认账单门户已创建，密钥已隔离到生产，PLUS_ENABLED=0。用户暂不升级 Neon，数据库仍阻塞正式发布；已批准的四项 Stripe 密钥权限保存还需 Stripe 身份验证。执行状态和恢复后顺序见 [发布推进记录](docs/release-3.0-execution-2026-10-20.md)。
