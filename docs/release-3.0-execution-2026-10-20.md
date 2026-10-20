@@ -13,9 +13,11 @@
 - 正式默认账单门户 `bpc_1USVW9DLfLoLVRGJlqS78rD4` 已创建并 API 回查：`active=true`、`is_default=true`、`livemode=true`。发票记录、更新付款方式、期末取消开启；取消不按比例退款；套餐/数量更改、暂停、取消原因收集关闭。标题为「NotchSPI Plus 订阅管理」，返回 `/purchase/complete?product=plus`。保留界面默认的客户账单信息更新功能。
 - [v3.0 Release 草稿](https://github.com/RotteSya/notch-SPI/releases/tag/untagged-eb0f8f8c9317224cd744) 已上传 `NotchSPI.dmg` 及 `SHA256SUMS.txt`，目标固定为 `a62d11d2b3012c12bccdf396f430a94e308fc17e`。GitHub 资产回读 SHA256 与本地已公证 DMG 一致：`7759d26f03fa10e60edf3c51b8500196da37328aafd9f609701146a2f0de00d6`。
 
+- 正式受限密钥 `checkout`（`mk_1TslOoDLfLoLVRGJV2YOllH1`）的四项新增权限已获用户批准；用户完成 Stripe 身份验证并保存后，重新进入编辑页面逐项核对：Customers / Invoices 为读取，Subscriptions / Customer Portal 为写入；原有 Checkout Sessions 写入仍在。未新建或轮换密钥。
+
 ## 尚未完成
 
-1. **Stripe 权限保存的身份验证**：正式账户受限密钥 `checkout`（`mk_1TslOoDLfLoLVRGJV2YOllH1`）现有 Customers、Invoices、Subscriptions、Customer Portal 均为“无”。用户已明确批准新增 Customers/Invoices 读取、Subscriptions/Customer Portal 写入。表单已准备并提交，Stripe 要求验证器或通行密钥验证；在重新加载并核对实际值前，不算生效。未轮换或新建密钥。Vercel 敏感值不可回读，因此也未证明它就是候选实际使用的密钥。
+1. **候选实际支付密钥验证**：受限密钥 `checkout` 的四项新增权限已保存并回读确认。Vercel 敏感值不可回读，尚未证明它就是候选实际使用的密钥；恢复后仍须用实际服务凭证验收 Checkout、订阅和门户调用。
 2. **生产数据库恢复**：用户本轮明确暂不升级付费套餐。2026-10-20 13:25（北京时间）复查 `/stats` 仍 500，正式 `/v1/plus` 仍 404。正式域名仍指向 `dpl_BiBGvjAazTWsmMqfUsgLWzuTBa6s`，`/update` 仍公开 2.17；候选没有覆盖生产流量。
 3. **恢复后的验收**：保存数据库备份/恢复点；验证 SELECT 1 和授权 `/readyz`；执行兼容迁移；核对既有账户、题包余额、体验领取、真实解题成功/失败扣费、重试与恢复任务。用实际服务密钥验证 Checkout、订阅读取/取消及门户，验证 Stripe 的真实签名投递，不以健康探针或未付款测试事件替代。
 4. **实机升级验收**：2.17 覆盖安装到 3.0 build 27、账户/设置/权限保留、拒绝录屏后的恢复、物理快捷键、跨屏及休眠唤醒仍需完成对应实机记录。Apple 签名、公证和身份兼容检查已经通过。

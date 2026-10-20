@@ -177,4 +177,4 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 
 ### 2026-10-20：3.0 发布推进
 
-已建立隔离发布分支和 PR #13，11 项 CI 通过；后端候选 READY 且未切正式域名，v3.0 安装包已上传草稿。正式 Stripe webhook 已补齐 21 项事件，默认账单门户已创建，密钥已隔离到生产，PLUS_ENABLED=0。用户暂不升级 Neon，数据库仍阻塞正式发布；已批准的四项 Stripe 密钥权限保存还需 Stripe 身份验证。执行状态和恢复后顺序见 [发布推进记录](docs/release-3.0-execution-2026-10-20.md)。
+数据库仍阻塞发版，详见 [发布记录](docs/release-3.0-execution-2026-10-20.md)。
