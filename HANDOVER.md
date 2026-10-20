@@ -177,4 +177,4 @@ CI 的平台、Node 与 Postgres 版本矩阵以 `.github/workflows/ci.yml` 为�
 
 ### 2026-10-20：3.0 发布推进
 
-数据库仍阻塞发版，详见 [发布记录](docs/release-3.0-execution-2026-10-20.md)。
+3.0 已发布，详见 [发布记录](docs/release-3.0-execution-2026-10-20.md)。
