@@ -2,13 +2,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   IMMUTABLE_EVIDENCE,
   checkDocumentLinks,
+  checkDelivery,
+  checkHistoricalArchives,
   checkGovernance,
   checkPortableDocs,
   checkTrackedSymlinks,
@@ -24,8 +27,12 @@ function git(root, args) {
   execFileSync('git', args, { cwd: root, stdio: 'ignore' });
 }
 
+const temporaryRoots = [];
+after(() => { for (const root of temporaryRoots) fs.rmSync(root, { recursive: true, force: true }); });
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-health-'));
+  temporaryRoots.push(root);
   git(root, ['init', '-q']);
   return root;
 }
@@ -41,7 +48,7 @@ function commit(root) {
   git(root, ['-c', 'user.email=repo-health@example.com', '-c', 'user.name=repo-health', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'fixture']);
 }
 
-test('a broken link inside an ignored directory is not scanned', () => {
+test('ignored evidence is not scanned, but current docs cannot depend on it', () => {
   const root = fixture();
   write(root, '.gitignore', 'output/\n.release-evidence/\n');
   write(root, 'docs/ok.md', 'See [note](../output/note.md).\n');
@@ -53,7 +60,7 @@ test('a broken link inside an ignored directory is not scanned', () => {
   assert.equal(governed.includes('output/bad.md'), false);
   assert.equal(governed.includes('.release-evidence/log.md'), false);
   assert.equal(governed.includes('docs/ok.md'), true);
-  assert.deepEqual(checkDocumentLinks(root, governed), []);
+  assert.match(checkDocumentLinks(root, governed).join("\n"), /relative link is outside the delivery file set/);
 });
 
 test('a broken link in a tracked document fails', () => {
@@ -197,4 +204,33 @@ test('a compact handover and pointer pass', () => {
   write(root, 'AGENTS.md', 'Read HANDOVER.md.\n');
   write(root, 'CLAUDE.md', 'Read HANDOVER.md.\n');
   assert.deepEqual(checkGovernance(root), []);
+});
+
+
+test('delivery rejects untracked dependencies and unstaged edits, then accepts the complete index', () => {
+  const root = fixture();
+  write(root, 'README.md', '# Entry\n');
+  commit(root);
+  write(root, 'README.md', '[Required contract](contract.md)\n');
+  write(root, 'contract.md', 'Contract\n');
+  assert.deepEqual(checkDocumentLinks(root, governedPaths(root)), []);
+  assert.match(checkDocumentLinks(root, indexedPaths(root)).join('\n'), /outside the delivery file set/);
+  assert.match(checkDelivery(root).join('\n'), /untracked file.*contract.md/);
+  assert.match(checkDelivery(root).join('\n'), /unstaged change.*README.md/);
+  git(root, ['add', '-A']);
+  assert.deepEqual(checkDelivery(root), []);
+  assert.deepEqual(checkDocumentLinks(root, indexedPaths(root)), []);
+});
+
+test('historical archives fail if their bytes are changed or missing', () => {
+  const root = fixture();
+  const archive = 'docs/history/2026-retired.tar.gz';
+  write(root, archive, 'original historical bytes');
+  const digest = createHash('sha256').update('original historical bytes').digest('hex');
+  write(root, 'docs/history/2026-retired.json', JSON.stringify({ archive: '2026-retired.tar.gz', sha256: digest }));
+  assert.deepEqual(checkHistoricalArchives(root), []);
+  write(root, archive, 'modified');
+  assert.match(checkHistoricalArchives(root).join('\n'), /SHA-256 mismatch/);
+  fs.unlinkSync(path.join(root, archive));
+  assert.equal(checkHistoricalArchives(root).length, 1);
 });
