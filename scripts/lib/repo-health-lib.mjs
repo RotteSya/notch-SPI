@@ -115,6 +115,11 @@ const forbiddenRes = [
   /^server\/node_modules\//,
   /^dist\//,
   /^dist-qa\//,
+  /^dist-intel-compat\//,
+  /^dist-qa-intel-compat\//,
+  /^desktop\/(dist|test-output)\//,
+  /^output\//,
+  /^\.release-evidence\//,
   /^\.eval-results\//,
   /^server\/data\//,
   /^server\/\.env$/,
@@ -138,6 +143,37 @@ export function governedPaths(root) {
 /** Git index only, including tracked files that .gitignore would otherwise hide. */
 export function indexedPaths(root) {
   return gitZ(root, ['ls-files', '-z']);
+}
+
+/** Delivery must be reproducible from the index, including new source and docs. */
+export function checkDelivery(root) {
+  const errors = [];
+  for (const file of gitZ(root, ['ls-files', '-z', '--others', '--exclude-standard'])) {
+    errors.push(`delivery: untracked file must be included or explicitly excluded: ${file}`);
+  }
+  for (const file of gitZ(root, ['diff', '--name-only', '-z'])) {
+    errors.push(`delivery: unstaged change is absent from the index: ${file}`);
+  }
+  return errors;
+}
+
+export function checkHistoricalArchives(root) {
+  const dir = path.join(root, 'docs/history');
+  if (!fs.existsSync(dir)) return [];
+  const errors = [];
+  for (const name of fs.readdirSync(dir).filter(file => file.endsWith('-retired.json'))) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+      if (path.basename(manifest.archive) !== manifest.archive || !/^[a-f0-9]{64}$/.test(manifest.sha256)) {
+        throw new Error('invalid archive path or digest');
+      }
+      const digest = createHash('sha256').update(fs.readFileSync(path.join(dir, manifest.archive))).digest('hex');
+      if (digest !== manifest.sha256) throw new Error('archive SHA-256 mismatch');
+    } catch (error) {
+      errors.push(`docs/history/${name}: ${error.message}`);
+    }
+  }
+  return errors;
 }
 
 function lineCount(text) {
@@ -204,6 +240,7 @@ function classifyTarget(root, fromFile, decoded) {
 
 export function checkDocumentLinks(root, files) {
   const errors = [];
+  const available = new Set(files.map(file => path.resolve(root, file)));
   for (const file of files) {
     if (!file.endsWith('.md')) continue;
     if (isImmutableEvidence(file)) continue;
@@ -221,6 +258,12 @@ export function checkDocumentLinks(root, files) {
       if (kind === 'escapes') errors.push(`${file}: link escapes repo: ${raw}`);
       else if (kind === 'symlink') errors.push(`${file}: link symlink leaves repo: ${raw}`);
       else if (kind === 'missing') errors.push(`${file}: broken relative link ${raw}`);
+      else if (kind === 'ok') {
+        const target = path.resolve(root, path.dirname(file), decoded);
+        if (!available.has(target) && ![...available].some(candidate => candidate.startsWith(`${target}${path.sep}`))) {
+          errors.push(`${file}: relative link is outside the delivery file set: ${raw}`);
+        }
+      }
     }
   }
   return errors;

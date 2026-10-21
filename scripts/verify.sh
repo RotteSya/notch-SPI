@@ -99,7 +99,7 @@ echo "==> verify $RUN_ID"
 run_step repo-health -- node "$REPO_ROOT/scripts/repo-health.mjs"
 run_step repo-health-tests -- node --test "$REPO_ROOT"/scripts/test/*.test.mjs
 run_step server-typecheck -- npm --prefix "$REPO_ROOT/server" run typecheck
-run_step scheduler-typecheck -- npm --prefix "$REPO_ROOT/scheduler" run typecheck
+run_step scheduler-typecheck WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run typecheck
 run_step isolated-smoke \
   HOST=0.0.0.0 \
   OFFICIAL_PROVIDER=anthropic \
@@ -114,12 +114,18 @@ run_step isolated-smoke \
   -- "$REPO_ROOT/scripts/dev.sh" --smoke
 
 if [[ "$QUICK" -eq 0 ]]; then
-  run_step dependency-lock -- bash -c "node \"$REPO_ROOT/scripts/lib/lock-check.mjs\" \"$REPO_ROOT/server\" && node \"$REPO_ROOT/scripts/lib/lock-check.mjs\" \"$REPO_ROOT/scheduler\""
+  run_step dependency-lock -- bash -c 'for project in server scheduler; do node scripts/lib/lock-check.mjs "$project" || exit 1; done'
   run_step server-tests -- npm --prefix "$REPO_ROOT/server" test
   run_step scheduler-tests -- npm --prefix "$REPO_ROOT/scheduler" test
-  run_step scheduler-build -- npm --prefix "$REPO_ROOT/scheduler" run build
-  run_step swift-tests NSPI_QA_EPHEMERAL=1 -- swift test -Xswiftc -warnings-as-errors
-  run_step release-arm64 -- swift build -c release --arch arm64
+  run_step scheduler-build WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run build
+  run_step swift-checkouts -- node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT"
+  if grep -q 'status: passed' "$OUT/swift-checkouts.result"; then
+    run_step swift-tests NSPI_QA_EPHEMERAL=1 -- swift test --disable-automatic-resolution --skip-update -Xswiftc -warnings-as-errors
+    run_step release-arm64 -- swift build --disable-automatic-resolution --skip-update -c release --arch arm64
+  else
+    note_step swift-tests blocked "Existing pinned Swift checkouts are required; no dependencies were downloaded"
+    note_step release-arm64 blocked "Existing pinned Swift checkouts are required; no dependencies were downloaded"
+  fi
   if [[ -f "$OUT/release-arm64.result" ]] && grep -q 'status: passed' "$OUT/release-arm64.result"; then
     run_step client-resources -- bash -c 'bin="$(swift build -c release --arch arm64 --show-bin-path)" && test -d "$bin/SwiftMath_SwiftMath.bundle" && test -d Resources/ThirdParty'
   else

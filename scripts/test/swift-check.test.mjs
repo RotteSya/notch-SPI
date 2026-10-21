@@ -1,0 +1,36 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { checkSwiftCheckouts } from '../lib/swift-check.mjs';
+
+test('offline Swift preflight checks an existing checkout against its pinned revision', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nspi-swift-check-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.notEqual(checkSwiftCheckouts(root).length, 0);
+  const entry = path.join(root, 'swift-check-link.mjs');
+  fs.symlinkSync(path.resolve(import.meta.dirname, '../lib/swift-check.mjs'), entry);
+  const missing = spawnSync(process.execPath, [entry, root], { encoding: 'utf8' });
+  assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+  const checkout = path.join(root, '.build/checkouts/LocalFixture');
+  fs.mkdirSync(checkout, { recursive: true });
+  fs.writeFileSync(path.join(checkout, 'Package.swift'), '// fixture\n');
+  const git = args => execFileSync('git', args, { cwd: checkout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git(['init', '-q']); git(['add', '.']);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture']);
+  const revision = git(['rev-parse', 'HEAD']);
+  fs.writeFileSync(path.join(root, 'Package.resolved'), JSON.stringify({ pins: [{ identity: 'fixture', state: { revision } }] }));
+  const state = { object: { dependencies: [{ packageRef: { identity: 'fixture' }, state: { checkoutState: { revision } }, subpath: 'LocalFixture' }] } };
+  const stateFile = path.join(root, '.build/workspace-state.json');
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  assert.deepEqual(checkSwiftCheckouts(root), []);
+  state.object.dependencies[0].state.checkoutState.revision = '0'.repeat(40);
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  assert.match(checkSwiftCheckouts(root).join('\n'), /does not match/);
+  state.object.dependencies[0].state.checkoutState.revision = revision;
+  state.object.dependencies[0].subpath = '../../../outside';
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  assert.match(checkSwiftCheckouts(root).join('\n'), /missing/);
+});

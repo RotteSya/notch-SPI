@@ -607,5 +607,113 @@
     "status": "historical",
     "replacement": "docs/client-behavior.md",
     "reason": "有效规则已归入当前参考，原文留在该提交的 Git 历史。"
+  },
+  {
+    "path_at_baseline": "HANDOVER.md",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "bc8fb05326288399ba7102716edb15731064010ebde2b825c64a00e970f5d9c0",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "Sources/NotchSPI/Cloud/MonthPass.swift",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "3babd5968dc3317aa088933a769903682e4a56cf6bfa853fdc156c06be7348fb",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "Sources/NotchSPI/Settings/MonthPassAccountPage.swift",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "053f4bf4c6c21428a72bab31cc9b75ebe06c3d9929c553d8bd2a08da684ef3d0",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "Tests/NotchSPITests/MonthPassTests.swift",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "858682f3aae05d6da8391782ab744a06214419c559aa30aa41804bb2bc89d319",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "deploy/plus-3.0-production-plan.json",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "e89ef72c15781f96fa6e32d525cd90c1c368d2b3391ecf3c6087a0cd608c4396",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "docs/plus-3.0-production-plan.md",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "e4dd30f46d1e12d1768df7dbb220a50c8e357942d6017ec88e95b1eca03aa199",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "docs/prototypes.md",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "7a9695b89b112f48de2b954a74197429257947f7b1843ee3d2a12203ebaa7c06",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "docs/release-3.0-candidate.md",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "40e29c11d735247e04e2ac82418ce8831b6bad4ac24f30418f76c570fd222eff",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "docs/windows-port-handoff.md",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "543de0d762740b07516c04a3b495a8720087ae31f6de56819c3db3aa483c95f0",
+    "replacement": "docs/windows/README.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "scripts/preview-month-pass.mjs",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "cc28e323896300a5ce64f2c7f7d97f7748834b0805c655820212924884d39dc8",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "server/src/month-pass-page.ts",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "894317db785bde19fef384dad58a927815b292537be1de03ec43b39eceff5470",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "server/test/month-pass-preview.test.ts",
+    "baseline_commit": "8b4f3f0aa6772162cb206b66470f5bee6dc9d3c3",
+    "status": "historical",
+    "archive": "docs/history/2026-10-21-retired.tar.gz",
+    "sha256": "ed60548d64b9f8deb51f4f92397147bbbf7be38fea9fd5ef7b65f476ef4e9742",
+    "replacement": "HANDOVER.md",
+    "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
   }
 ]

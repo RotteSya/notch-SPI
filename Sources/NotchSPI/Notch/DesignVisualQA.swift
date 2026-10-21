@@ -51,14 +51,6 @@ enum DesignVisualQA {
             controller.qaPresentOnboarding(.welcome)
             return controller
         }
-        if scenario == "month-pass" {
-            controller.model.answer = ""
-            controller.model.status = .ready
-            controller.model.statusText = MonthPassPreview.fixture(0).headline()
-            controller.setExpanded(true)
-            controller.openSettings(page: .account)
-            return controller
-        }
         if scenario == "settings" || scenario == "settings-local" {
             controller.setExpanded(true)
             controller.qaRefreshScreenshotLayout()
