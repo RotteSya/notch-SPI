@@ -2,7 +2,7 @@ import {PLUS} from './plus.ts';
 import type { QuestionPack } from './pricing.ts';
 import { designCopy, siteCSS } from './site-design.ts';
 import { demoScript } from './site-demo.ts';
-import { idleScreenshot } from './site-assets.ts';
+import { ghostAvatar, productScreenshot } from './site-assets.ts';
 import { formatMoney, escapeHtml, type PageLang } from './payments.ts';
 
 // The public product site, served at GET / — the "company website" for app users, curious
@@ -43,20 +43,6 @@ export function resolveSiteLang(query: string, acceptLanguage: string): PageLang
   return 'ja';
 }
 
-/** The Rose (r = a·cos 2θ) as an inline SVG path — the app's signature mark. */
-function roseSVGPath(): string {
-  const pts: string[] = [];
-  const steps = 240;
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const r = 42 * Math.cos(2 * t);
-    const x = 50 + Math.cos(t) * r;
-    const y = 50 + Math.sin(t) * r;
-    pts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
-  }
-  return pts.join('');
-}
-
 // Existing support, privacy and refund policies are preserved verbatim.
 const S = {
   "zh": {
@@ -66,6 +52,7 @@ const S = {
     },
     "priceNote": "一次请求交付可用答案扣 1 题；没有可用答案的失败不扣。可用不等于保证答对，重新执行是新请求。支付由 Stripe 处理。",
     "faqs": [
+      {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
         "q": "截图会被保存吗？",
         "a": "默认服务端不保存图片和答案正文。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
@@ -76,7 +63,7 @@ const S = {
       },
       {
         "q": "换电脑后余额怎么办？",
-        "a": "额度与设备凭证绑定；如需迁移请邮件联系支持。"
+        "a": "在旧 Mac 的设置 →「账户与订阅」保存恢复码，再在新 Mac 恢复原账户。恢复不会合并两个账户的余额；恢复码是账户凭证，请妥善保管。"
       },
       {
         "q": "可以退款吗？",
@@ -84,7 +71,7 @@ const S = {
       },
       {
         "q": "系统要求？",
-        "a": "Apple Silicon Mac，macOS 14 及以上。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。"
+        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記（日本法定披露）",
@@ -111,6 +98,7 @@ const S = {
     },
     "priceNote": "一つの依頼で利用可能な回答を受け取ると 1 問分を消費。回答なしの失敗は消費しません。利用可能は正解保証ではありません。別の再実行は新しい依頼です。決済は Stripe が処理します。",
     "faqs": [
+      {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
         "q": "スクリーンショットは保存されますか？",
         "a": "サーバーは通常、画像・回答を保存しません。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
@@ -121,7 +109,7 @@ const S = {
       },
       {
         "q": "機種変更したら残高は？",
-        "a": "残高はデバイス認証情報に紐づきます。移行はメールでサポートにご相談ください。"
+        "a": "旧 Mac の設定 →「アカウントとプラン」で復元コードを保存し、新しい Mac で元のアカウントを復元できます。残高の統合は行いません。復元コードは大切に保管してください。"
       },
       {
         "q": "返金はできますか？",
@@ -129,7 +117,7 @@ const S = {
       },
       {
         "q": "動作環境は？",
-        "a": "Apple Silicon Mac、macOS 14 以降。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。"
+        "a": "通常版：Apple Silicon Mac、macOS 14 以降。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記",
@@ -156,6 +144,7 @@ const S = {
     },
     "priceNote": "One request delivering a usable answer costs one question. Failures without a usable answer are not charged. Usable does not guarantee correct; running it again is a new request. Stripe processes payments.",
     "faqs": [
+      {"q": "How do I upgrade to 3.0?", "a": "From 2.17, download the Mac version and install it manually once. From 3.0 onward, updates can download, verify, install and restart within the app."},
       {
         "q": "Are my screenshots stored?",
         "a": "The server does not store images or answers by default. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
@@ -166,7 +155,7 @@ const S = {
       },
       {
         "q": "What about my balance on a new Mac?",
-        "a": "Credits are tied to the device credential. Contact support by email about migration."
+        "a": "Save your recovery code in Settings → Account & plan on your old Mac, then restore that account on your new Mac. Recovery does not merge account balances. Keep your recovery code private."
       },
       {
         "q": "Can I get a refund?",
@@ -174,7 +163,7 @@ const S = {
       },
       {
         "q": "Requirements?",
-        "a": "Apple Silicon Mac, macOS 14+. Displays without a notch use a top panel. Screen-recording permission is requested on first use."
+        "a": "Standard version: Apple Silicon Mac, macOS 14+. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
       }
     ],
     "legalTitle": "特定商取引法に基づく表記 (Japanese commerce disclosure)",
@@ -206,8 +195,8 @@ function tokushohoTable(): string {
     ['販売価格', '各チャージページに表示の金額（消費税込み）'],
     ['商品代金以外の必要料金', 'なし（通信料はお客様負担）'],
     ['お支払い方法', 'クレジットカード等（Stripe 決済）'],
-    ['支払時期', 'ご購入手続き完了時'],
-    ['商品の引渡時期', '決済完了後、ただちに質問数残高へ反映'],
+    ['支払時期', '問題パックは購入時。Plus は申込時および毎月の更新時に自動決済'],
+    ['商品の引渡時期', '決済確認後、問題数残高または Plus の利用権に反映'],
     ['返品・キャンセル', 'デジタル商品の性質上、チャージ後の返金は原則不可。当方の不具合による場合は全額返金いたします（返金ポリシー参照）'],
     ['動作環境', 'Apple Silicon Mac / macOS 14 以降（ノッチのない画面では上部パネル）'],
   ];
@@ -260,7 +249,7 @@ export function renderLandingPage(input: SiteInput): string {
   const pagePath = input.entry === 'spi' ? '/spi' : input.entry === 'reading_practice' ? '/reading-practice' : '/';
   const e = escapeHtml;
   const lines = (v:string) => e(v).replaceAll('\n','<br>');
-  const rose = `<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="${roseSVGPath()}" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>`;
+  const ghost = `<img class="ghost-mark" src="${ghostAvatar}" alt="" width="100" height="100" aria-hidden="true">`;
   const packs = [...input.packs].sort((a,b)=>a.questions-b.questions);
   // Same selection as MainSettingsWindow.topUpTapped; never invent an unbound checkout.
   const appPack = packs[1] ?? packs[0];
@@ -274,7 +263,7 @@ export function renderLandingPage(input: SiteInput): string {
       <div class="q">${d.questions(p.questions)}</div><div class="price">${e(formatMoney(p.amountCents,input.currency))}</div>
       <div class="unit">${e(input.currency)} · ${d.oneTime}</div><p class="per">${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>
       <p class="pack-caption">${d.packReasons[slot]}<br>${d.sameFeatures}</p>
-      <a class="button secondary" href="${'#purchase'}">${d.buy} <span aria-hidden="true">↗</span></a></article>`;
+      ${download('secondary')}</article>`;
   }).join('');
   const privacy=s.privacyBody.map(p=>`<p>${e(p.replaceAll('{{AI_PROVIDER}}',providerName))}</p>`).join('');
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');
@@ -288,21 +277,21 @@ export function renderLandingPage(input: SiteInput): string {
   const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
 <html lang="${input.lang==='zh'?'zh-CN':input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#f8f7f3">
+<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#f8f7f3"><link rel="icon" type="image/png" href="${ghostAvatar}">
 <meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}</style></head><body>
 <a class="skip" href="#main">${d.skip}</a>
-<header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${rose}NotchSPI</a>
+<header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>
 <nav class="languages" aria-label="Language">${langLink('ja','日本語')}${langLink('zh','中文')}${langLink('en','EN')}</nav><a class="button small" href="${DOWNLOAD}">${s.navDownload} <span aria-hidden="true">↗</span></a></header>
 <main id="main"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}<br><span>${e(d.accent)}</span>`}</h1>
-<p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<a class="button secondary" href="#demo">${d.demoCTA} <span aria-hidden="true">↘</span></a></div>
-<p class="trial-line">${d.free(input.trialQuestions)}</p><p class="requirements">${d.requirements}</p>
+<p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">Coming soon</span></button></div>
+<p class="trial-line">${d.free()}</p><p class="requirements"><span class="release-label">${d.release}</span>${d.requirements}</p>
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
 <div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===0?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
 <div class="desktop" id="demo-screen"><div class="menu-bar" aria-hidden="true"><span>NotchSPI &nbsp; · &nbsp; ${d.demoLabel}</span><span>⌘ &nbsp; ◉ &nbsp; 9:41</span></div>
-<div class="notch"><div class="notch-head">${rose}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
+<div class="notch"><div class="notch-head">${ghost}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
 <div class="pending"><span class="capture-thumb" aria-hidden="true"></span>${d.collected}</div><div class="notch-body"><div class="answer-label">${d.answerLabel}</div><div class="answer-value">${d.answer}</div><div class="answer-work">${e(d.explanation)}</div></div></div>
 <div class="question-window"><div class="window-chrome" aria-hidden="true"><i></i><i></i><i></i><span>practice / 01</span></div><div class="question-content"><p class="question-tag">${d.problemTag}</p><h3>${d.question}</h3><div class="options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div></div>
 <div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
@@ -311,13 +300,13 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <section id="how" class="section how" aria-labelledby="how-title"><div><p class="eyebrow">${d.howEyebrow}</p><h2 id="how-title">${lines(d.howTitle)}</h2></div><ol class="how-list">${d.steps.map(([t,p],i)=>`<li><span class="step-number">0${i+1}</span><div><h3>${t}</h3><p>${p}</p></div></li>`).join('')}</ol></section>
 <section id="features" class="features" aria-labelledby="features-title"><div class="feature-intro"><p class="eyebrow">${d.featureEyebrow}</p><h2 id="features-title">${lines(d.featureTitle)}</h2></div><div class="feature-grid">
 <article class="feature"><div class="multi-visual" aria-hidden="true">${d.multiLabels.map((t,i)=>`<div class="mini-page"><b>0${i+1}</b><div class="mini-lines"></div><span>${t}</span></div>`).join('')}</div><h3>${d.multiTitle}</h3><p>${d.multiBody}</p></article>
-<article class="feature"><div class="app-photo"><img src="${idleScreenshot}" alt="${e(d.actual)}" width="644" height="202" loading="lazy" decoding="async"><small>${d.actual}</small></div><h3>${d.quietTitle}</h3><p>${d.quietBody}</p></article></div></section></div>
+<article class="feature"><div class="app-photo"><img src="${productScreenshot}" alt="${e(d.actual)}" width="1288" height="641" loading="lazy" decoding="async"><small>${d.actual}</small></div><h3>${d.quietTitle}</h3><p>${d.quietBody}</p></article></div></section></div>
 <section id="pricing" class="pricing-band section" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><p class="eyebrow">${d.priceEyebrow}</p><h2 id="pricing-title">${lines(d.priceTitle)}</h2><p>${d.priceIntro}</p></div>
-${plusCard}<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.questions(input.trialQuestions)}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free(input.trialQuestions)}</p>${download('secondary')}</article>${packCards}</div>
+${plusCard}<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.trialAmount}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free()}</p>${download('secondary')}</article>${packCards}</div>
 <div class="price-notes"><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p></div><div class="purchase" id="purchase"><div><h3>${d.purchaseTitle}</h3><p>${d.purchaseBody}</p></div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></div></section>
 <div class="wrap"><section id="faq" class="section faq-section" aria-labelledby="faq-title"><div><p class="eyebrow">FAQ</p><h2 id="faq-title">${d.faqTitle}</h2></div><div class="faq">${faqItems}</div></section>
-<section class="closing">${rose}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free(input.trialQuestions)}<br>${d.requirements}</p></section>
+<section class="closing">${ghost}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free()}<br>${d.requirements}</p></section>
 <aside class="scope-links"><p>${d.scope}</p><nav class="entrylinks" aria-label="${d.scope}"><a href="/spi?lang=${input.lang}"${input.entry==='spi'?' aria-current="page"':''}>${d.spi}</a><a href="/reading-practice?lang=${input.lang}"${input.entry==='reading_practice'?' aria-current="page"':''}>${d.reading}</a></nav></aside>
 <section class="legal" id="legal" aria-label="${d.legal}"><details id="tokushoho"><summary>${s.legalTitle}</summary><table>${tokushohoTable()}</table></details><details id="privacy"><summary>${s.privacyTitle}</summary>${privacy}</details><details id="refund"><summary>${s.refundTitle}</summary>${refund}</details></section></div></main>
-<footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${rose}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer><script>${demoScript}</script></body></html>`;
+<footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${ghost}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer><script>${demoScript}</script></body></html>`;
 }

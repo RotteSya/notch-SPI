@@ -40,7 +40,7 @@ test('GET / renders the Japanese site by default with live pricing and legal sec
   assert.match(res.headers.get('content-type') ?? '', /text\/html/);
   const html = await res.text();
   assert.match(html, /問題は、そのまま。/);            // hero (ja default)
-  assert.match(html, /まずは 180 問/);            // trial from config
+  assert.match(html, /72 時間の無料体験/);            // current released trial
   assert.match(html, /¥800/);                               // live pack price
   assert.match(html, /特定商取引法に基づく表記/);            // JP commerce disclosure
   assert.match(html, /プライバシーとデータ利用/);            // privacy
@@ -130,13 +130,13 @@ test('entry descriptions distinguish unsupported reading practice from the exist
   assert.match(spi, /Historical SPI results do not establish accuracy for all questions/);
 });
 
-test('beta reading scope remains explicit and fixed30 pricing renders from the current catalog', () => {
+test('beta reading scope remains explicit and pack pricing renders from the current catalog', () => {
   const input = {packs: [{id:'current', questions:100, amountCents:500}], trialQuestions:30,
     currency:'USD', lang:'en' as const, aiProvider:'openai' as const, entry:'reading_practice' as const, entryStatus:'beta' as const};
   const html = renderLandingPage(input);
   assert.match(html, /Reading practice is in internal testing/);
   assert.match(html, /No public support combinations have completed independent evaluation/);
-  assert.match(html, /30 free questions/); assert.match(html, /class="price">\$5<\/div>/); assert.match(html, /class="price">\$0<\/div>/);
+  assert.match(html, /72-hour free trial/); assert.match(html, /class="price">\$5<\/div>/); assert.match(html, /class="price">\$0<\/div>/);
   assert.doesNotMatch(html, /¥0|180 free questions|\{\{TRIAL\}\}|invisible|notarized|Most popular/i);
   for (const lang of ['zh', 'ja', 'en'] as const) {
     const page = renderLandingPage({...input, lang});
@@ -154,8 +154,10 @@ test('pack recommendations match the app purchase entry, with precise fractional
   const page=renderLandingPage({packs,trialQuestions:30,currency:'JPY',lang:'en',aiProvider:'deepseek'});
   assert.match(page, /class="pack recommended" data-pack-id="daily"/);
   assert.match(page, /offers all packs and selects 300 questions by default/);
-  assert.match(page, /href="#purchase"/);
-  assert.equal((page.match(/href="#purchase"/g)??[]).length,3);
+  assert.doesNotMatch(page, /href="#purchase"/);
+  const cards=page.match(/<article class="pack[\s\S]*?<\/article>/g)??[];
+  assert.equal(cards.length,4);
+  for(const card of cards) assert.match(card,/href="\/dl"/);
   assert.doesNotMatch(page, /buy\.stripe\.com|checkout\.stripe\.com|device_token/);
   assert.equal((page.match(/ · One-time payment/g)??[]).length,3);
 });

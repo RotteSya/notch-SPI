@@ -25,3 +25,24 @@ test('Plus payment return opens Plus settings without claiming payment succeeded
   assert.doesNotMatch(html,/notchspi:\/\/account/);
  }
 });
+
+ test('released landing pages expose a pending Windows button and no legacy trial offer',()=>{
+  for(const lang of ['zh','ja','en'] as const) for(const entry of [undefined,'spi','reading_practice'] as const){
+   const html=renderLandingPage({lang,entry,packs:parsePacks(DEFAULT_PACKS_JSON),currency:'CNY',trialQuestions:30,aiProvider:'mock'});
+   const visible=html.replace(/<style>[\s\S]*?<\/style>|<script>[\s\S]*?<\/script>/g,'');
+   assert.match(visible,/<button[^>]*windows-download[^>]*disabled[^>]*>[^<]*Windows[^<]*<span class="coming-soon">Coming soon<\/span><\/button>/);
+   assert.match(visible,/NotchSPI 3\.0/);
+   assert.doesNotMatch(visible,/href="#demo"|30 free questions|先试 30 题|まずは 30 問|Settings → Account,|アカウントと残高/);
+   assert.match(visible,lang==='zh'?/恢复码/:lang==='ja'?/復元コード/:/recovery code/);
+   assert.match(visible,/2\.17/);
+  }
+ });
+
+ test('Ghost is used throughout the site including the favicon',()=>{
+  const html=renderLandingPage({lang:'zh',packs:[],currency:'CNY',trialQuestions:30,aiProvider:'mock'});
+  assert.equal((html.match(/class="ghost-mark"/g)??[]).length,4);
+  assert.match(html,/<link rel="icon" type="image\/png" href="data:image\/png;base64,/);
+  assert.match(html,/真实 App 画面 · 首次查题引导/);
+  const source=readFileSync(new URL('../src/site.ts',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/roseSVGPath|idleScreenshot|\$\{rose\}/);
+ });
