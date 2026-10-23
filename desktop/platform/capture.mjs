@@ -6,6 +6,7 @@ import {
 } from "electron";
 import { randomUUID } from "node:crypto";
 import { windowBounds } from "./window-bounds.mjs";
+import { autoDefaults } from "../generated/auto-session.mjs";
 export async function listTargets() {
   const sources = await desktopCapturer.getSources({
     types: ["screen", "window"],
@@ -52,9 +53,9 @@ export async function capture(target = "screen") {
   if (jpeg.length > 3 * 1024 * 1024)
     throw new Error("Screenshot is too large; choose a smaller window");
   const hashImage = source.thumbnail
-    .resize({ width: 32, height: 20 })
+    .resize({ width: autoDefaults.gridW, height: autoDefaults.gridH })
     .toBitmap();
-  const luma = Array.from({ length: 640 }, (_, i) =>
+  const luma = Array.from({ length: autoDefaults.gridW * autoDefaults.gridH }, (_, i) =>
     Math.round(
       0.114 * hashImage[i * 4] +
         0.587 * hashImage[i * 4 + 1] +

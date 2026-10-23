@@ -1,82 +1,20 @@
 import { product } from "./product.mjs";
+import { SharedAutoEngine, autoClamp } from "../generated/auto-session.mjs";
 export class AutoSession {
-  active = false;
-  count = 0;
-  state = "inactive";
-  last = null;
-  baseline = null;
-  changed = false;
-  stable = 0;
-  failures = 0;
+  engine = new SharedAutoEngine();
+  get active() { return this.engine.state !== "inactive"; }
+  get count() { return this.engine.count; }
+  get cap() { return this.engine.config.maxQuestions; }
   start(cap, now = Date.now()) {
-    this.active = true;
-    this.cap =
-      cap === -1
-        ? -1
-        : Math.min(100, Math.max(1, cap || product.defaultAutoCap));
-    this.count = 0;
-    this.state = "running";
-    this.since = now;
-    this.last = null;
-    this.baseline = null;
-    this.failures = 0;
+    this.engine.start({ maxQuestions: autoClamp(cap ?? 0,
+      product.defaultAutoCap, Math.max(...product.autoCaps)) });
   }
-  stop() {
-    this.active = false;
-    this.state = "inactive";
-  }
+  stop() { this.engine.stop("userToggled"); }
   succeeded(balance, rejected = false, now = Date.now()) {
-    this.count++;
-    if (
-      (this.cap !== -1 && this.count >= this.cap) ||
-      rejected ||
-      (balance != null && balance <= 0)
-    ) {
-      this.stop();
-      return "stop";
-    }
-    this.state = "baseline";
-    this.since = now;
-    this.changed = false;
-    this.stable = 0;
-    return "watch";
+    const result = this.engine.succeeded(balance ?? null, rejected, now / 1000);
+    return result === "none" ? "watch" : "stop";
   }
-  tick(hash, now = Date.now()) {
-    if (!this.active || this.state === "running") return false;
-    if (now - this.since >= 900000) {
-      this.stop();
-      return false;
-    }
-    if (!hash) {
-      if (++this.failures >= 3) this.stop();
-      return false;
-    }
-    this.failures = 0;
-    if (this.state === "baseline") {
-      this.baseline = hash;
-      this.last = hash;
-      this.state = "watching";
-      return false;
-    }
-    const diff = (a, b) =>
-      a.reduce((n, x, i) => n + (Math.abs(x - b[i]) > 10 ? 1 : 0), 0) /
-      a.length;
-    if (diff(hash, this.baseline) >= 0.02) this.changed = true;
-    this.stable = diff(hash, this.last) < 0.02 ? this.stable + 1 : 0;
-    this.last = hash;
-    if (this.changed && this.stable >= 2) {
-      // A temporary overlay may disappear back to the same question.
-      // Match the native engine: rearm instead of submitting it again.
-      if (diff(hash, this.baseline) < 0.02) {
-        this.changed = false;
-        this.stable = 0;
-        return false;
-      }
-      this.state = "running";
-      return true;
-    }
-    return false;
-  }
+  tick(hash, now = Date.now()) { return this.engine.tick(hash ?? null, now / 1000) === "trigger"; }
 }
 export class PersonaSession {
   records = [];

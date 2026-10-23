@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripTypeScriptTypes } from "node:module";
+import { autoDefaults } from "../../shared/protocol/auto-session.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (name) =>
   JSON.parse(fs.readFileSync(path.join(root, "shared", name), "utf8"));
@@ -51,6 +52,10 @@ const personality = fs.readFileSync(path.join(root, "shared/protocol/personality
 outputs["desktop/generated/personality.mjs"] = "// Generated from shared/protocol/personality.mjs.\n" + personality;
 outputs["Sources/NotchSPI/Shared/SharedPersonalitySource.generated.swift"] =
   `// Generated from shared/protocol/personality.mjs.\nimport Foundation\nenum SharedPersonalitySource { static let javascript = ${JSON.stringify(personality.replaceAll("export ", ""))} }\n`;
+const autoSource = fs.readFileSync(path.join(root, "shared/protocol/auto-session.mjs"), "utf8");
+outputs["desktop/generated/auto-session.mjs"] = "// Generated from shared/protocol/auto-session.mjs.\n" + autoSource;
+outputs["Sources/NotchSPI/Shared/SharedAutoSource.generated.swift"] =
+  `// Generated from shared/protocol/auto-session.mjs.\nimport Foundation\nenum SharedAutoSource {\n    static let javascript = ${JSON.stringify(autoSource.replaceAll("export ", ""))}\n${Object.entries(autoDefaults).map(([key, value]) => `    static let ${key} = ${value}`).join("\n")}\n}\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",
