@@ -501,7 +501,9 @@ async function start() {
       if (frozen.channel === "official") {
         if (operation === "solve" && !retry) {
           const previous = run;
-          run = await client.freeze(batch, frozen, mode, context);
+          const pendingRun = await client.freeze(batch, frozen, mode, context);
+          if (current !== generation || task.signal.aborted) return;
+          run = pendingRun;
           if (
             old.resultState === "retake" &&
             previous?.owner === run.owner &&
@@ -1193,7 +1195,9 @@ async function start() {
           break;
         case "status":
           if (state.requestStarted && canQueryCapture(run, client.owner(), Date.now(), product.capture.retentionSeconds)) {
-            const status = await client.status(run);
+            const pendingRun = run, current = generation;
+            const status = await client.status(pendingRun);
+            if (current !== generation || pendingRun !== run) break;
             state.settlement = {
               status: status.settlement_status,
               charged: status.questions_charged,

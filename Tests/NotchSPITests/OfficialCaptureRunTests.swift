@@ -180,6 +180,71 @@ private final class CaptureRunFixture {
 
 @MainActor
 final class OfficialCaptureRunTests: XCTestCase {
+    func testSharedCaptureIsolationFixtures() async throws {
+        struct Scenario: Decodable {
+            let id: String
+            let phase: String
+            let action: String
+            let expectedDeltas: Int
+            let expectedReceipts: Int
+            let expectedStatusRequests: Int
+            let expectedSuccess: Bool
+        }
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "cases", withExtension: "json", subdirectory: "Fixtures/capture-isolation"))
+        let scenarios = try JSONDecoder().decode([Scenario].self, from: Data(contentsOf: url))
+        XCTAssertFalse(scenarios.isEmpty)
+        for scenario in scenarios {
+            let f = try CaptureRunFixture(), next = try CaptureRunFixture()
+            var task: Task<Void, Never>?
+            var nextTask: Task<Void, Never>?
+            let payload = try f.frame(["type": "delta", "text": "first"]) + f.answer()
+            let nextPayload = try next.answer()
+            let status = try JSONSerialization.data(withJSONObject: f.snapshot())
+            let invalidate = {
+                if scenario.action == "replaceAccount" {
+                    f.account.value = .init(token: "dev_replacement", baseURL: f.account.value!.baseURL)
+                } else if scenario.action != "none" { task?.cancel() }
+            }
+            let server = try await connect(f) { request, reply in
+                if request.method == "GET" {
+                    invalidate()
+                    reply.respond(type: "application/json", body: status)
+                } else if scenario.phase == "status" {
+                    reply.respond(body: Data(), complete: false)
+                } else {
+                    let body = try! JSONSerialization.jsonObject(with: request.body) as! [String: Any]
+                    reply.respond(body: body["capture_id"] as? String == next.id.uuidString.lowercased() ? nextPayload : payload)
+                }
+            }
+            defer { server.stop(); f.cleanup(); next.cleanup() }
+            next.account.value = f.account.value
+            f.onDelta = {
+                guard f.deltas.count == 1 else { return }
+                invalidate()
+                if scenario.action == "nextQuestion" {
+                    do { nextTask = try next.run() }
+                    catch { XCTFail("Unable to start next question: \(error)") }
+                }
+            }
+            task = try f.run()
+            await finish(try XCTUnwrap(task), fixture: f)
+            if scenario.action == "nextQuestion" {
+                await finish(try XCTUnwrap(nextTask), fixture: next)
+                XCTAssertEqual(next.completions.first?.0, true, scenario.id)
+                XCTAssertEqual(next.receipts.count, 1, scenario.id)
+                XCTAssertEqual(next.receipts.first?.captureID, next.id, scenario.id)
+            }
+            XCTAssertEqual(f.deltas.count, scenario.expectedDeltas, scenario.id)
+            XCTAssertEqual(f.receipts.count, scenario.expectedReceipts, scenario.id)
+            XCTAssertTrue(f.settlements.isEmpty, scenario.id)
+            XCTAssertEqual(f.completions.first?.0, scenario.expectedSuccess, scenario.id)
+            XCTAssertEqual(f.requests.filter { $0.method == "GET" }.count, scenario.expectedStatusRequests, scenario.id)
+            XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count,
+                           scenario.action == "nextQuestion" ? 2 : 1, scenario.id)
+        }
+    }
+
     func testInterruptedConnectionReconcilesOnceAndNextQuestionUsesSameAccountWithoutReposting() async throws {
         let f = try CaptureRunFixture()
         let firstID = f.id
