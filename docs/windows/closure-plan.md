@@ -56,5 +56,11 @@
 
 - `Tests/Fixtures/persona-session/cases.json` 的 8 组时序由双端真实会话实现消费，覆盖完成/失败刷新时钟、精确过期、手动重置、scope 切换、失败屏障和 5 条记录窗口。修复前 desktop 6 组失败，修复后双端通过。
 - Windows 以完成/失败时间刷新活动时钟；重置保留捕获序号，失败屏障固定记录对应序号，避免后续 begin 改变其指向。
-- `shared/product.json.personalitySession` 统一保留时长、记录数和上下文字节上限，经现有生成器供 Swift 与 desktop 使用。尚待隔离副本中的参数变更实证；人物像解析和双端任务隔离适配仍需继续审计。
+- `shared/product.json.personalitySession` 统一保留时长、记录数和上下文字节上限，经现有生成器供 Swift 与 desktop 使用。隔离副本中的参数变更已在两端实际会话实现验证，见 `output/shared-change-proof/result.json` 及其源码/日志摘要；人物像解析和双端任务隔离适配仍需继续审计。
 - `output/verification/20261023T083526Z-55885/summary.tsv`：完整验证通过，desktop 148、server 684、scheduler 17、Swift 592（4 项跳过），arm64 Release 构建通过。未生成新候选、推送或发布，实机与签名边界未变。
+
+## 2026-10-23 共享参数变更实证
+
+- `node scripts/cross-platform/prove-shared-change.mjs` 已执行真实隔离变更，5 个步骤全部通过，包含 Swift 的 3 个人物像参数行为测试；`result.json` 绑定被证明源码和各步骤日志摘要，主树源码不变也作为硬性断言。
+- 原有截图等待时间与阅读字号变更证明继续通过；人物像参数在副本变为 901 秒、2 条、1024 字节，主树仍为 900 秒、5 条、8192 字节。
+- `output/verification/20261023T084458Z-65593/summary.tsv` 快速工程检查通过。本轮仅调整证明工具与文档，不替代上一轮产品全量验证，也不构成 Windows 实机或新候选验收。
