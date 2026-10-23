@@ -359,5 +359,78 @@
       "can_recover": true,
       "free_trial": null
     }
+  },
+  {
+    "id": "max-safe-balance",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 9007199254740991,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-balance",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 9007199254740992,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-held",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 9007199254740992,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-totals",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": {
+        "questions": 9007199254740992,
+        "input_tokens": 3,
+        "output_tokens": 4
+      }
+    }
   }
 ]

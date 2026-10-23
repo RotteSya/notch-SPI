@@ -64,6 +64,10 @@ const freeTrial = fs.readFileSync(path.join(root, "shared/protocol/free-trial.mj
 outputs["desktop/generated/free-trial.mjs"] = "// Generated from shared/protocol/free-trial.mjs.\n" + freeTrial;
 outputs["Sources/NotchSPI/Shared/SharedFreeTrialSource.generated.swift"] =
   `// Generated from shared/protocol/free-trial.mjs.\nimport Foundation\nenum SharedFreeTrialSource { static let javascript = ${JSON.stringify(freeTrial.replaceAll("export ", ""))} }\n`;
+const settlement = fs.readFileSync(path.join(root, "shared/protocol/settlement.mjs"), "utf8");
+outputs["desktop/generated/settlement.mjs"] = "// Generated from shared/protocol/settlement.mjs.\n" + settlement;
+outputs["Sources/NotchSPI/Shared/SharedSettlementSource.generated.swift"] =
+  `// Generated from shared/protocol/settlement.mjs.\nimport Foundation\nenum SharedSettlementSource { static let javascript = ${JSON.stringify(settlement.replaceAll("export ", "").replace(/^import .*$/gm, ""))} }\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",

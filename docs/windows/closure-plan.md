@@ -6,7 +6,7 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/解析/会话/完成提交策略、自动连答状态机、体验快照校验已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件已有共用用例；独立协议规则及界面完成效果仍需继续审计，共用用例不等于实现已迁移 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/解析/会话/完成提交策略、自动连答状态机、体验快照及终态结算校验已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件已有共用用例；独立协议规则及界面完成效果仍需继续审计，共用用例不等于实现已迁移 |
 | 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/`、`personality-completion/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
@@ -99,3 +99,10 @@
 - 审计 SSE 时发现 Windows 的体验回执校验弱于 Mac；先将 `FreeTrialSnapshot.isValid` 的额度、策略版本、72 小时有效期和重置时间约束迁到 `shared/protocol/free-trial.mjs`，两端共同执行。仅验证服务端快照，不授予本地权益或修改服务端计费。
 - `Tests/Fixtures/free-trial/cases.json` 的 22 组用例覆盖四类状态、时间/额度边界、偏移时区和小数秒格式。迁移前原生校验与预期全部一致；旧 Windows 错误接受其中 12 组无效快照，新实现双端通过。
 - `output/verification/20261023T093743Z-16359/summary.tsv` 完整验证通过：desktop 198、server 684、scheduler 17、Swift 595（4 项跳过），arm64 Release 通过。SSE 状态机迁移仍未完成，不能把此前提修复记为整条 SSE 链路已共享。
+
+## 2026-10-23 终态结算单一来源
+
+- `shared/protocol/settlement.mjs` 是终态规则来源，desktop 流/状态查询与 Mac `SettlementSnapshot.isTerminal` 共同执行；Swift 保留 Codable 字段适配。免费体验校验继续调用共享规则，网络、取消与账户归属检查未迁移或放宽。
+- 共用结算用例扩充至 24 组，增加安全整数上限及余额/预扣/累计用量越界。旧 Mac 实现在 3 组越界快照上错误接受，已在修复前复现；迁移后统一按安全整数拒绝。版本号继续使用最多 40 位十进制字符串，不转为数字。
+- 本轮只统一终态校验；SSE 事件状态机、平台 UI 效果、最终配对候选与 Windows 实机仍需继续完成。现有旧候选不得视作本轮源码产物。
+- `output/verification/20261023T095152Z-25976/summary.tsv` 完整自动验证通过：desktop 202、server 684、scheduler 17、Swift 595（4 项跳过），arm64 Release 通过。另有 80 项 Mac 专项通过；Postgres、硬件和签名保留未执行状态。未生成新候选、推送或发布。
