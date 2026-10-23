@@ -47,6 +47,10 @@ const jsCore = objective
   );
 outputs["Sources/NotchSPI/Shared/SharedObjective.generated.swift"] =
   `// Generated from server/src/objective-result.ts; executed by JavaScriptCore on macOS.\nimport Foundation\nimport JavaScriptCore\n\nenum SharedObjective {\n    private static let source = ${JSON.stringify(jsCore)}\n    static func compose(_ raw: String, enabled: Bool) -> ObjectiveResultComposition {\n        guard let context = JSContext() else { return failure }\n        context.evaluateScript(source)\n        guard context.exception == nil, let value = context.objectForKeyedSubscript("composeObjectiveResult")?.call(withArguments: [raw, enabled]),\n              context.exception == nil, let object = value.toDictionary(),\n              let data = try? JSONSerialization.data(withJSONObject: object),\n              let result = try? JSONDecoder().decode(ObjectiveResultComposition.self, from: data) else { return failure }\n        return result\n    }\n    private static var failure: ObjectiveResultComposition {\n        .init(visibleText: "", finalAnswer: nil, result: nil, state: nil, parserPath: .none, violations: [.invalidJSON, .missingUsableResult])\n    }\n}\n`;
+const personality = fs.readFileSync(path.join(root, "shared/protocol/personality.mjs"), "utf8");
+outputs["desktop/generated/personality.mjs"] = "// Generated from shared/protocol/personality.mjs.\n" + personality;
+outputs["Sources/NotchSPI/Shared/SharedPersonalitySource.generated.swift"] =
+  `// Generated from shared/protocol/personality.mjs.\nimport Foundation\nenum SharedPersonalitySource { static let javascript = ${JSON.stringify(personality.replaceAll("export ", ""))} }\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",

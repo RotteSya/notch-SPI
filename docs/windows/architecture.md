@@ -14,6 +14,7 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 | `shared/prompts.json` | 生成的 Swift `SharedProduct` 与桌面 JS | 查题、多图、screen_query、人物像提示词是；输入值只替换一次，不再展开 |
 | `shared/product.json` | Swift 捕获轮次/设置/自动连答/几何/动效；JS intake/motion/设置 | 已接入的参数是；未接入的原生外观仍需适配 |
 | `server/src/objective-result.ts` | 生成的 JS + Mac JavaScriptCore 包装 | 客观题严格解析、容错组合、FINAL 回退逻辑是 |
+| `shared/protocol/personality.mjs` | 生成的 desktop 模块 + Mac JavaScriptCore 类型适配 | 人物像选项、上下文、错误标记、序号归一化和协议诊断只改一次；字符限制统一按 grapheme 计数 |
 | `Tests/Fixtures/ObjectiveResult/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
 | `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
 | `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |

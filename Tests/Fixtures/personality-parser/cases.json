@@ -1,0 +1,333 @@
+[
+  {
+    "id": "valid",
+    "raw": "1. A\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "A",
+          "summary": "scene"
+        },
+        "referenceable": []
+      },
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "choice-only",
+    "raw": "1. A",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": [
+        "missingContext"
+      ]
+    }
+  },
+  {
+    "id": "provisional",
+    "raw": "1. A",
+    "streaming": true,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [],
+      "provisionalChoice": {
+        "ordinal": "1",
+        "choice": "A",
+        "visibleText": "1. A"
+      },
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "marker-prefix",
+    "raw": "1. A\n**NSPI_",
+    "streaming": true,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "prose",
+    "raw": "explanation\n1. A",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": [
+        "prose",
+        "missingContext"
+      ]
+    }
+  },
+  {
+    "id": "invalid-context",
+    "raw": "1. A\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"B\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": [
+        "invalidContext"
+      ]
+    }
+  },
+  {
+    "id": "last-valid",
+    "raw": "1. A\nNSPI_CONTEXT_V1: {bad}\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "A",
+          "summary": "scene"
+        },
+        "referenceable": []
+      },
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": [
+        "duplicateContextMarker",
+        "invalidContext"
+      ]
+    }
+  },
+  {
+    "id": "terminal",
+    "raw": "NSPI_ERROR_V1: {\"code\":\"unreadable\"}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "",
+      "finalizedChoices": [],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": "unreadable",
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "illegal-terminal",
+    "raw": "1. A\nNSPI_ERROR_V1: {\"code\":\"unreadable\"}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": "unreadable",
+      "errorOrdinals": [],
+      "violations": [
+        "missingContext",
+        "invalidErrorCombination"
+      ]
+    }
+  },
+  {
+    "id": "partial",
+    "raw": "1. A\nNSPI_ERROR_V1: {\"code\":\"partial_unreadable\",\"ordinals\":[\"Q２\"]}\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "A",
+          "summary": "scene"
+        },
+        "referenceable": []
+      },
+      "errorCode": "partial_unreadable",
+      "errorOrdinals": [
+        "2"
+      ],
+      "violations": []
+    }
+  },
+  {
+    "id": "grapheme-summary",
+    "raw": "1. A\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "A",
+          "summary": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦"
+        },
+        "referenceable": []
+      },
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "grapheme-choice",
+    "raw": "1. 👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. 👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦",
+          "visibleText": "1. 👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦👨‍👩‍👧‍👦",
+          "summary": "scene"
+        },
+        "referenceable": []
+      },
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  },
+  {
+    "id": "too-long-summary",
+    "raw": "1. A\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場場\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": null,
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": [
+        "invalidContext"
+      ]
+    }
+  },
+  {
+    "id": "decorations",
+    "raw": "**1. A**\r\n- nspi_context_v1：{\"last\": {\"ordinal\": \"1\", \"choice\": \"A\", \"summary\": \"scene\"}, \"referenceable\": []}",
+    "streaming": false,
+    "expected": {
+      "visibleChoices": "1. A",
+      "finalizedChoices": [
+        {
+          "ordinal": "1",
+          "choice": "A",
+          "visibleText": "1. A"
+        }
+      ],
+      "provisionalChoice": null,
+      "context": {
+        "last": {
+          "ordinal": "1",
+          "choice": "A",
+          "summary": "scene"
+        },
+        "referenceable": []
+      },
+      "errorCode": null,
+      "errorOrdinals": [],
+      "violations": []
+    }
+  }
+]
