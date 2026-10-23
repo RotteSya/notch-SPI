@@ -48,3 +48,16 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 Windows 飞入层由 `platform/flights.mjs` 管理，每屏一个透明穿透窗口，按真实窗口原点映射全局 DIP，跨屏图片只发送一次。纯队列与几何在 core/shared 层。Win32 DWM 窗口矩形通过固定 PowerShell P/Invoke 转换为 Electron DIP，未知/消失的来源使用原 Mac 定义的淡入路径。截图与请求不会等待飞行动画。
 
 仍需分别适配的范围是设置/引导的视图、窗口系统、截图权限/目标身份、热键、凭据、文本/材质绘制及安装签名。不能将这些平台适配称为已经共用同一套界面代码。常规提示词、解析器、计费后端、已迁移的 UI 结构与动效改动从同一提交进入两个构建，无需复制第二份逻辑。
+
+## 候选包源码身份与 ZIP 核验
+
+Windows 打包入口将每次产物保存在 `desktop/dist/candidates/<candidateID>/`，不覆盖旧候选。
+包内 `package.json.buildProvenance` 记录 Git 提交、整个非忽略源码集合的 SHA-256、dirty 标记、构建主机和 CI 运行标识。
+构建前后核对源码身份；源码中途变化直接失败。dirty 候选只代表该工作区内容，不能当成可从提交单独复现的发行版本。
+
+打包成功后自动运行 `verify-package.mjs <candidate-directory>`：先比较包内源码与工作区，再直接读取 ZIP 内 ASAR 和 EXE 并与解包目录逐字节摘要对照，拒绝缺失、重复或陈旧条目。
+每个候选旁保存 `delivery-manifest.json`；`output/windows-delivery/manifest.json` 仅为最新一次成功核验的索引副本。
+验证主机系统与 Windows 实机运行是不同事实，manifest 保留 `executedOnWindows: false`，实机、安装和签名更新明确为未验证。
+这些记录证明源码与候选包的绑定，不证明整个安装、截图、签名或升级流程通过。
+
+已有 Electron 缓存可通过单次命令的 `NSPI_ELECTRON_DIST` 指向锁定版本的 Windows x64 ZIP；入口核对文件名并记录文件摘要，不安装运行时或修改全局环境。无缓存时不能把联网下载当作已获安装授权。

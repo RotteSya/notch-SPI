@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
+import { sourceIdentity, verifySourceIdentity, sha256 } from "./provenance.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url)),
   desktop = path.join(root, "desktop");
 const generated = spawnSync(
@@ -24,7 +26,29 @@ const parts = version.APP_VERSION.split(".");
 const config = JSON.parse(
   fs.readFileSync(path.join(desktop, "package.json"), "utf8"),
 ).build;
+const source = sourceIdentity(root);
+const candidateID = `${source.commit.slice(0, 12)}-${source.sourceSHA256.slice(0, 12)}-${randomUUID()}`;
+const candidateDir = path.join(desktop, "dist", "candidates", candidateID);
+const provenance = {
+  schemaVersion: 1, candidateID, source,
+  builtAt: new Date().toISOString(),
+  host: { platform: process.platform, arch: process.arch, node: process.version },
+  ci: process.env.GITHUB_ACTIONS === "true" ? {
+    repository: process.env.GITHUB_REPOSITORY,
+    runID: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+  } : null,
+};
+if (process.env.NSPI_ELECTRON_DIST) {
+  const distribution = path.resolve(process.env.NSPI_ELECTRON_DIST);
+  const electronVersion = JSON.parse(fs.readFileSync(path.join(desktop, "package.json"), "utf8")).devDependencies.electron;
+  if (path.basename(distribution) !== `electron-v${electronVersion}-win32-x64.zip`)
+    throw new Error("Local Electron distribution must match the pinned Windows x64 version");
+  provenance.electronDistribution = { file: path.basename(distribution), sha256: sha256(fs.readFileSync(distribution)) };
+  config.electronDist = distribution;
+}
+config.directories.output = candidateDir;
 config.extraMetadata = {
+  buildProvenance: provenance,
   version: `${parts[0]}.${parts[1]}.${version.BUILD_NUMBER}`,
 };
 config.buildVersion = version.BUILD_NUMBER;
@@ -47,8 +71,8 @@ if (process.env.NSPI_WINDOWS_UPDATE_URL || process.env.NSPI_WINDOWS_PUBLISHER) {
   config.win.verifyUpdateCodeSignature = true;
   config.publish = { provider: "generic", url: url.href };
 }
-fs.mkdirSync(path.join(desktop, "dist"), { recursive: true });
-const file = path.join(desktop, "dist", "release-config.json");
+fs.mkdirSync(candidateDir, { recursive: true });
+const file = path.join(candidateDir, "release-config.json");
 fs.writeFileSync(file, JSON.stringify(config, null, 2));
 extra.push("--config", file);
 
@@ -65,4 +89,9 @@ const result = spawnSync(
   ],
   { cwd: desktop, stdio: "inherit" },
 );
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+verifySourceIdentity(source, root);
+const verified = spawnSync(process.execPath, [
+  path.join(root, "scripts/cross-platform/verify-package.mjs"), candidateDir,
+], { stdio: "inherit" });
+process.exit(verified.status ?? 1);

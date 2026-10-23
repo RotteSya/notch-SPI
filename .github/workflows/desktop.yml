@@ -40,9 +40,6 @@ jobs:
         if: runner.os == 'Windows'
         run: npm --prefix desktop run smoke:capture
         timeout-minutes: 2
-      - name: Inspect packaged Windows sources and dependencies
-        if: runner.os == 'Windows'
-        run: node scripts/cross-platform/verify-package.mjs
       - name: Mac native regression
         if: runner.os == 'macOS'
         run: swift test -Xswiftc -warnings-as-errors
@@ -62,8 +59,9 @@ jobs:
         with:
           name: desktop-${{ runner.os }}
           path: |
-            desktop/dist/*.zip
-            desktop/dist/*.exe
+            desktop/dist/candidates/*/*.zip
+            desktop/dist/candidates/*/*.exe
+            desktop/dist/candidates/*/delivery-manifest.json
             desktop/test-output/
             output/windows-delivery/manifest.json
             dist/*.dmg
