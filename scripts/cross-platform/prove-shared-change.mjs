@@ -4,10 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
+import { checkSwiftCheckouts } from "../lib/swift-check.mjs";
+import { sha256, sourceIdentity, verifySourceIdentity } from "./provenance.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const out = path.join(root, "output", "shared-change-proof"),
   copy = path.join(out, "source");
 fs.mkdirSync(copy, { recursive: true });
+fs.rmSync(path.join(out, "result.json"), { force: true });
+const source = sourceIdentity(root);
+const productBefore = fs.readFileSync(path.join(root, "shared/product.json"), "utf8");
+if (process.platform !== "darwin") throw new Error("This proof requires macOS");
 for (const name of [
   "Sources",
   "Tests",
@@ -24,11 +31,18 @@ for (const name of [
 ]) {
   const target = path.join(copy, name);
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  // Replace only this script's copied inputs; retain its existing Swift build cache.
+  fs.rmSync(target, { recursive: true, force: true });
   fs.cpSync(path.join(root, name), target, { recursive: true });
 }
 const productFile = path.join(copy, "shared/product.json"),
   p = JSON.parse(fs.readFileSync(productFile));
 const original = p.capture.submitDelay;
+const originalPersona = structuredClone(p.personalitySession);
+p.personalitySession = { maxAgeSeconds: 901, maxRecords: 2, maxContextBytes: 1024 };
+for (const key of Object.keys(originalPersona)) assert.notEqual(p.personalitySession[key], originalPersona[key]);
+const checkoutErrors = checkSwiftCheckouts(copy);
+assert.deepEqual(checkoutErrors, [], "Existing isolated Swift checkouts required; no downloads allowed");
 p.capture.submitDelay = original + 1;
 fs.writeFileSync(productFile, JSON.stringify(p, null, 2) + "\n");
 // Exercise a visible shared reading change as well as a business timing change.
@@ -51,8 +65,40 @@ final class SharedUIProofTests: XCTestCase {
 }
 `,
 );
+fs.writeFileSync(path.join(copy, "Tests/NotchSPITests/SharedPersonaProofTests.swift"), `import XCTest
+@testable import NotchSPI
+@MainActor
+final class SharedPersonaProofTests: XCTestCase {
+ let scope = PersonalitySessionScope(personaID: "p", personaName: "N", personaText: "T", captureTargetID: "screen", channelID: "official")
+ func payload(large: Bool = false) -> PersonalityContextPayload {
+  let item = PersonalityContextItem(ordinal: "1", summary: String(repeating: "x", count: large ? 100 : 1), choice: "A")
+  return .init(last: item, referenceable: Array(repeating: item, count: large ? 5 : 1))
+ }
+ func testChangedTTLReachesRealSession() {
+  var time = Date(timeIntervalSince1970: 0)
+  let session = PersonalitySession(now: { time })
+  let first = session.begin(scope: scope)
+  XCTAssertTrue(session.record(payload(), token: first))
+  time = Date(timeIntervalSince1970: 900)
+  XCTAssertEqual(session.begin(scope: scope).generation, first.generation)
+  time = Date(timeIntervalSince1970: 1801)
+  XCTAssertNotEqual(session.begin(scope: scope).generation, first.generation)
+ }
+ func testChangedRecordLimitReachesRealSession() {
+  let session = PersonalitySession()
+  for _ in 0..<3 { XCTAssertTrue(session.record(payload(), token: session.begin(scope: scope))) }
+  XCTAssertEqual(session.recordCount, 2)
+ }
+ func testChangedByteLimitReachesRealSession() {
+  let session = PersonalitySession()
+  for _ in 0..<2 { XCTAssertTrue(session.record(payload(large: true), token: session.begin(scope: scope))) }
+  XCTAssertEqual(session.recordCount, 1)
+ }
+}
+`);
 const checks = [];
 function run(name, cmd, args) {
+  fs.rmSync(path.join(out, name + ".log"), { force: true });
   const r = spawnSync(cmd, args, {
     cwd: copy,
     env: { ...process.env, NSPI_QA_EPHEMERAL: "1" },
@@ -62,7 +108,8 @@ function run(name, cmd, args) {
     path.join(out, name + ".log"),
     (r.stdout ?? "") + (r.stderr ?? ""),
   );
-  checks.push({ name, exit_code: r.status });
+  checks.push({ name, exit_code: r.status,
+    logSHA256: sha256(fs.readFileSync(path.join(out, name + ".log"))) });
   if (r.status !== 0) throw new Error(name + " failed; see " + out);
 }
 run("generate", process.execPath, ["scripts/cross-platform/generate.mjs"]);
@@ -75,19 +122,40 @@ run("desktop-shared-ui", process.execPath, [
   "-e",
   `import assert from 'node:assert/strict';import {readingSections,readingHTML} from './desktop/generated/ui/reading.mjs';assert.equal(readingSections({answer:'B',detail:'Shared UI proof'}).at(-1).size,16);assert.match(readingHTML({answer:'B',detail:'Shared UI proof'}),/font-size:16px/);console.log('Actual desktop reading template uses 16px');`,
 ]);
-if (process.platform !== "darwin")
-  throw new Error("The dual-platform proof requires a macOS Swift toolchain");
+run("desktop-persona", process.execPath, ["--input-type=module", "-e", `
+import assert from 'node:assert/strict';
+import {PersonaSession} from './desktop/core/sessions.mjs';
+const small = {ordinal:'1', summary:'x', choice:'A'};
+const payload = {last:small, referenceable:[small]};
+const ttl = new PersonaSession(); ttl.begin('p',0); ttl.finish(payload,0);
+assert.match(ttl.begin('p',900000), /"status":"available"/);
+assert.match(ttl.begin('p',1801000), /"status":"none"/);
+const count = new PersonaSession();
+for(let i=0;i<3;i++){count.begin('p',i);count.finish(payload,i);}
+assert.equal(count.records.length,2);
+const large = {...small, summary:'x'.repeat(100)};
+const bytes = new PersonaSession();
+for(let i=0;i<2;i++){bytes.begin('p',i);bytes.finish({last:large, referenceable:Array(5).fill(large)},i);}
+assert.equal(bytes.records.length,1);
+`]);
 run("mac-real-intake", "swift", [
   "test",
+  "--disable-automatic-resolution",
+  "--skip-update",
   "-Xswiftc",
   "-warnings-as-errors",
   "--filter",
-  "SharedProductTests|SharedUIProofTests",
+  "SharedProductTests|SharedUIProofTests|SharedPersonaProofTests",
 ]);
+verifySourceIdentity(source, root);
+assert.equal(fs.readFileSync(path.join(root, "shared/product.json"), "utf8"), productBefore);
+assert.equal(fs.readFileSync(path.join(root, "shared/ui/reading.mjs"), "utf8"), readingBefore);
 fs.writeFileSync(
   path.join(out, "result.json"),
   JSON.stringify(
     {
+      source,
+      personalitySession: { original: originalPersona, experimental: p.personalitySession },
       sharedUI: {
         originalBodySize: 15,
         experimentalBodySize: 16,
