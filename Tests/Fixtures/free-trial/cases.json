@@ -1,0 +1,354 @@
+[
+  {
+    "id": "active",
+    "valid": true,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "eligible",
+    "valid": true,
+    "snapshot": {
+      "status": "eligible",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 0,
+      "daily_held": 0,
+      "daily_remaining": 0,
+      "activated_at": null,
+      "expires_at": null,
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": null
+    }
+  },
+  {
+    "id": "ineligible",
+    "valid": true,
+    "snapshot": {
+      "status": "ineligible",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 0,
+      "daily_held": 0,
+      "daily_remaining": 0,
+      "activated_at": null,
+      "expires_at": null,
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": null
+    }
+  },
+  {
+    "id": "expired",
+    "valid": true,
+    "snapshot": {
+      "status": "expired",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 0,
+      "daily_held": 0,
+      "daily_remaining": 0,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-23T00:00:00.000Z",
+      "resets_at": null
+    }
+  },
+  {
+    "id": "wrong-policy",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "future-policy",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "wrong-limit",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 401,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 398,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "wrong-duration",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-24T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "active-after-expiration",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-23T00:00:00.000Z",
+      "resets_at": "2026-10-24T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "before-activation",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-19T23:00:00.000Z",
+      "resets_at": "2026-10-20T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "reset-in-past",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-21T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "reset-after-one-day",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.001Z"
+    }
+  },
+  {
+    "id": "wrong-total",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 396,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "negative-used",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": -1,
+      "daily_held": 2,
+      "daily_remaining": 399,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "boolean-used",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": true,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "expired-still-has-quota",
+    "valid": false,
+    "snapshot": {
+      "status": "expired",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-23T00:00:00.000Z",
+      "resets_at": null
+    }
+  },
+  {
+    "id": "eligible-with-activation",
+    "valid": false,
+    "snapshot": {
+      "status": "eligible",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 0,
+      "daily_held": 0,
+      "daily_remaining": 0,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "missing-server-time",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": null,
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "non-ISO-server-time",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "October 21, 2026 00:00:00 UTC",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "no-fractional-seconds",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "invalid-calendar-date",
+    "valid": false,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-02-31T00:00:00.000Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  },
+  {
+    "id": "timezone-offset",
+    "valid": true,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T08:00:00.000+08:00",
+      "expires_at": "2026-10-23T08:00:00.000+08:00",
+      "server_time": "2026-10-21T08:00:00.000+08:00",
+      "resets_at": "2026-10-22T08:00:00.000+08:00"
+    }
+  },
+  {
+    "id": "short-fraction",
+    "valid": true,
+    "snapshot": {
+      "status": "active",
+      "policy_version": "trial3d400-2026-10-16",
+      "daily_limit": 400,
+      "daily_used": 1,
+      "daily_held": 2,
+      "daily_remaining": 397,
+      "activated_at": "2026-10-20T00:00:00.000Z",
+      "expires_at": "2026-10-23T00:00:00.000Z",
+      "server_time": "2026-10-21T00:00:00.0Z",
+      "resets_at": "2026-10-22T00:00:00.000Z"
+    }
+  }
+]

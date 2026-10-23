@@ -17,6 +17,7 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 | `shared/protocol/personality.mjs` | 生成的 desktop 模块 + Mac JavaScriptCore 类型适配 | 人物像选项、上下文、错误标记、序号归一化和协议诊断只改一次；字符限制统一按 grapheme 计数 |
 | `shared/protocol/auto-session.mjs` | 生成的 desktop 状态机 + Mac JavaScriptCore 适配 | 自动连答停止条件、暂停/超时、画面差异和稳定判定只改一次；截图与轮询仍由平台提供 |
 | `shared/protocol/persona-session.mjs` | 生成的 desktop 会话 + Mac JavaScriptCore 类型适配 | 人物像 generation/token、上下文裁剪、失败屏障、过期及完成提交策略只改一次；异步请求和界面效果仍分别适配 |
+| `shared/protocol/free-trial.mjs` | desktop 账户/回执校验 + Mac JavaScriptCore 快照校验 | 免费体验回执的策略版本、额度与时间不变量只改一次；不授予本地权益，服务端仍为计费权威 |
 | `Tests/Fixtures/ObjectiveResult/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
 | `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
 | `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |

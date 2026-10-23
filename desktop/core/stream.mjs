@@ -1,3 +1,4 @@
+import { validFreeTrial } from "../generated/free-trial.mjs";
 export class ProtocolError extends Error {
   constructor(message = "Incomplete or invalid answer stream") {
     super(message);
@@ -60,24 +61,7 @@ export function validAccount(v) {
       ))
   )
     return false;
-  if (v.free_trial != null) {
-    const t = v.free_trial;
-    if (
-      !["eligible", "active", "expired", "ineligible"].includes(t.status) ||
-      !["daily_limit", "daily_used", "daily_held", "daily_remaining"].every(
-        (k) => uint(t[k]),
-      )
-    )
-      return false;
-    if (
-      t.status === "active" &&
-      (t.daily_used + t.daily_held + t.daily_remaining !== t.daily_limit ||
-        !["activated_at", "expires_at", "resets_at", "server_time"].every((k) =>
-          Number.isFinite(Date.parse(t[k])),
-        ))
-    )
-      return false;
-  }
+  if (v.free_trial != null && !validFreeTrial(v.free_trial)) return false;
   return true;
 }
 // Byte framing handles split UTF-8, CR/LF, BOM, comments and multi-line SSE data.
