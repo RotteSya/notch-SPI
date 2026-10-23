@@ -6,8 +6,8 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；自动连答与取消隔离新增共用用例。流中断/结算、人物像仍需继续审计 |
-| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；自动连答、取消隔离、终态结算快照新增共用用例。完整流事件序列、人物像仍需继续审计 |
+| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
 | 视觉与性能一致 | 同素材成对截图/录像，明确帧时间及允许差异 | 共享引擎和参数已有；Windows 成对视觉与帧时间证据缺失 |
@@ -36,3 +36,10 @@
 - `output/cross-platform-closure/mac-candidate.log`：ad-hoc App 严格签名校验、DMG 只读挂载、包内内容摘要对照全部通过。
 - `output/cross-platform-closure/mac-negative-check.json`：已有旧 DMG 被拒绝，原成功 manifest 保留，临时挂载已卸载清理。
 - `dist/NotchSPI.dmg` 旧包保留；release 新包进入独立候选目录。未使用正式签名或 Apple 公证，未推送或发布。
+
+## 2026-10-23 终态结算共用回归
+
+- `Tests/Fixtures/settlement/cases.json` 的 20 个快照同时由 Swift `SettlementSnapshot` 和 desktop `validSettlement` 验证，覆盖结算/释放/辅助操作、版本字符串、累计用量和可选体验字段。
+- 修复前 desktop 错误接受其中 6 个无效快照；修复后双端全部通过。Windows 终态查询复用账户校验，拒绝数字版本号、无效累计用量和体验数据；Mac 实现未修改。
+- `output/verification/20261023T081434Z-34293/summary.tsv`：完整自动验证通过，desktop 119、server 684、scheduler 17、Swift 590（4 项跳过），arm64 Release 构建通过。
+- 此证据限于终态快照校验，不代替完整 SSE 事件序列、实机或新候选包验证；此前生成的候选仍对应各自旧源码身份。
