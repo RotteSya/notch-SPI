@@ -354,5 +354,7 @@ export class MemoryStore implements Store {
     return this.counters.get(name) ?? 0;
   }
 
+  async checkHealth(): Promise<void> {}
+
   async close(): Promise<void> {}
 }

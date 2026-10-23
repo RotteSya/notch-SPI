@@ -223,6 +223,7 @@ export function resolvePostgresSSL(input: {
 
 export class PostgresStore implements Store {
   private pool: pg.Pool;
+  private readonly healthConnection: { connectionString: string; ssl: PgSSLConfig };
   readonly plus = new SQLPlus(transaction => this.runBilling(transaction));
   readonly billing = new SQLBilling(transaction => this.runBilling(transaction));
   readonly quotaMigration = new SQLQuotaMigration(transaction => this.runBilling(transaction, true));
@@ -234,6 +235,7 @@ export class PostgresStore implements Store {
   private ready: Promise<void> | null = null;
 
   constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }) {
+    this.healthConnection = { connectionString, ssl };
     this.pool = new pg.Pool({
       connectionString,
       max: 5, // serverless-friendly; use the provider's pooled URL for real concurrency
@@ -521,6 +523,12 @@ export class PostgresStore implements Store {
     } finally {
       client.release();
     }
+  }
+
+  async checkHealth(): Promise<void> {
+    const client = new pg.Client({ ...this.healthConnection, connectionTimeoutMillis: 3000, query_timeout: 3000, statement_timeout: 3000 });
+    try { await client.connect(); await client.query('SELECT 1'); }
+    finally { await client.end(); }
   }
 
   async close(): Promise<void> {

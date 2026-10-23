@@ -266,6 +266,20 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return reply.header('Cache-Control', 'no-store').send({ download_clicks: downloadClicks });
   });
 
+  // Explicit authenticated readiness; frequent public liveness probes never wake Neon.
+  app.get('/readyz', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    if (!config.cronSecret) throw new ApiError(404, '未启用', 'not_found');
+    const auth = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
+    if (!adminTokenMatches(auth, 'Bearer ' + config.cronSecret)) throw new ApiError(401, '凭证无效', 'invalid_token');
+    try {
+      await store.checkHealth();
+      return reply.send({ ok: true, database: 'available' });
+    } catch {
+      return reply.code(503).send({ ok: false, database: 'unavailable' });
+    }
+  });
+
   app.get('/healthz', async (_req, reply) => {
     const objectiveActive = config.objectiveResultV1Bps > 0;
     const ok = providerDegraded === null && (!objectiveActive || objectiveProviderDegraded === null);
@@ -278,6 +292,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       ...(providerDegraded === null ? {} : { provider_error: providerDegraded }),
       ...(objectiveProviderDegraded === null ? {} : { objective_provider_error: objectiveProviderDegraded }),
       db: storeKind,
+      scope: 'process',
+      database: 'not_checked',
+      readiness: '/readyz',
       payments: stripeLive ? 'stripe' : config.allowStubTopUp ? 'stub' : 'disabled',
       webhook: stripeLive ? (config.stripeWebhookSecret !== '' ? 'configured' : 'MISSING_SECRET') : 'n/a',
     };

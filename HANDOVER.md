@@ -47,7 +47,7 @@
 | 存储/迁移 | `server/src/db.ts`、三个 db 适配、[迁移规则](docs/quota-migration.md) | db、quota-migration |
 | 预算/证据 | `deploy/production-model-budget.json`、`docs/evaluation-budget.json`、`Tests/Fixtures/` | 对应预算和 attestation 测试 |
 
-`storage.ts` 按环境选择 Postgres、Serverless 内存或本地 SQLite，三者均为活跃实现。SwiftMath 与 BotAvatarsKit 随 Mac 客户端交付，保留资源和许可证。调度周期以 `scheduler/wrangler.jsonc` 为准；调度部署边界见 [调度说明](docs/cloudflare-scheduler.md)。
+`storage.ts` 按环境选择 Postgres、Serverless 内存或本地 SQLite，三者均为活跃实现。SwiftMath 与 BotAvatarsKit 随 Mac 客户端交付，保留资源和许可证。调度周期以 `scheduler/wrangler.jsonc` 为准；部署事实及 `/healthz` 与 `/readyz` 的区别见 [调度说明](docs/cloudflare-scheduler.md)。
 
 ## 兼容与安全不变量
 
