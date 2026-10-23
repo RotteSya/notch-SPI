@@ -32,13 +32,10 @@ struct OfficialStreamDecoder {
     enum Event: Equatable {
         case delta(String), usage(OfficialUsageReceipt), error(ServiceError), done
     }
-    struct Outcome: Equatable {
+    struct Outcome: Decodable, Equatable {
         let hasContent: Bool
         let serviceError: ServiceError?
     }
-    private struct Envelope: Decodable { let type: String }
-    private struct Delta: Decodable { let text: String }
-    private struct ErrorEnvelope: Decodable { let error: ServiceError?; let message: String?; let code: String? }
 
     let captureID: UUID
     let screenQuery: Bool
@@ -47,16 +44,14 @@ struct OfficialStreamDecoder {
     private var dataLines: [String] = []
     private var dataBytes = 0
     private var totalBytes = 0
-    private var contentBytes = 0
     private var skipLF = false
     private var firstLine = true
-    private var receipt: OfficialUsageReceipt?
-    private var serviceError: ServiceError?
-    private var hasContent = false
+    private var stream: SharedOfficialStream
     private(set) var isDone = false
 
     init(captureID: UUID, screenQuery: Bool, operation: String = "solve") {
         self.captureID = captureID; self.screenQuery = screenQuery; self.operation = operation
+        stream = SharedOfficialStream(captureID: captureID, screenQuery: screenQuery, operation: operation)
     }
 
     mutating func append(_ byte: UInt8) throws -> Event? {
@@ -72,8 +67,7 @@ struct OfficialStreamDecoder {
     }
 
     func finish() throws -> Outcome {
-        guard isDone, receipt != nil else { throw Failure.incomplete }
-        return .init(hasContent: hasContent, serviceError: serviceError)
+        try stream.finish()
     }
 
     private mutating func finishLine() throws -> Event? {
@@ -98,53 +92,10 @@ struct OfficialStreamDecoder {
     }
 
     private mutating func parse(_ payload: String) throws -> Event {
-        if payload == "[DONE]" {
-            guard receipt != nil else { throw Failure.invalidOrder }
-            isDone = true; return .done
-        }
-        let data = Data(payload.utf8), decoder = JSONDecoder()
-        guard let envelope = try? decoder.decode(Envelope.self, from: data) else { throw Failure.invalidEvent }
-        switch envelope.type {
-        case "delta":
-            guard receipt == nil, serviceError == nil else { throw Failure.invalidOrder }
-            guard let delta = try? decoder.decode(Delta.self, from: data) else { throw Failure.invalidEvent }
-            contentBytes += delta.text.utf8.count
-            guard contentBytes <= 64 * 1024 else { throw Failure.tooLarge }
-            hasContent = hasContent || !delta.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            return .delta(delta.text)
-        case "error":
-            guard receipt == nil, serviceError == nil else { throw Failure.invalidOrder }
-            guard let value = try? decoder.decode(ErrorEnvelope.self, from: data),
-                  let error = value.error ?? value.message.map({ ServiceError(message: $0, code: value.code) }),
-                  !error.message.isEmpty else { throw Failure.invalidEvent }
-            serviceError = error; return .error(error)
-        case "usage":
-            guard receipt == nil else { throw Failure.invalidOrder }
-            guard let value = try? decoder.decode(OfficialUsageReceipt.self, from: data),
-                  value.inputTokens >= 0, value.outputTokens >= 0, (0...1).contains(value.questionsCharged),
-                  value.balanceQuestions >= 0, value.captureID == nil || value.captureID == captureID,
-                  value.freeTrial?.isValid != false,
-                  value.operation == nil || value.operation == operation,
-                  value.balanceVersion == nil || value.balanceVersion.flatMap(BalanceVersion.canonical) != nil,
-                  value.accountTotals == nil || (value.accountTotals!.isValid && value.balanceVersion != nil),
-                  ["solve", "explain", "recover"].contains(operation),
-                  operation == "solve" || value.questionsCharged == 0 else { throw Failure.invalidEvent }
-            let expected = value.questionsCharged == 1 ? "settled" : operation == "solve" ? "released" : "not_required"
-            guard value.settlementStatus == nil || value.settlementStatus == expected else { throw Failure.invalidEvent }
-            if screenQuery {
-                guard let terminal = try? decoder.decode(SettlementSnapshot.self, from: data),
-                      terminal.captureID == captureID, terminal.isTerminal,
-                      !terminal.usableResult || (hasContent && serviceError == nil) else { throw Failure.invalidEvent }
-            }
-            if value.explanationAvailable == true {
-                guard screenQuery, operation != "explain",
-                      let terminal = try? decoder.decode(SettlementSnapshot.self, from: data),
-                      terminal.isTerminal, terminal.usableResult else { throw Failure.invalidEvent }
-            }
-            guard value.questionsCharged == 0 || (hasContent && serviceError == nil) else { throw Failure.invalidEvent }
-            receipt = value; return .usage(value)
-        default: throw Failure.invalidEvent
-        }
+        if !isKnownUniquelyReferenced(&stream) { stream = try stream.copy() }
+        let event = try stream.accept(payload)
+        if event == .done { isDone = true }
+        return event
     }
 
     static func consume<S: AsyncSequence>(_ bytes: S, captureID: UUID, screenQuery: Bool, operation: String = "solve",

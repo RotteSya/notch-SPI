@@ -147,6 +147,29 @@ final class OfficialStreamDecoderTests: XCTestCase {
         XCTAssertThrowsError(try consume(stream, screen: true))
     }
 
+    func testCopiedDecodersKeepIndependentEventState() throws {
+        var original = OfficialStreamDecoder(captureID: id, screenQuery: true)
+        for byte in try delta().utf8 { _ = try original.append(byte) }
+        var copy = original
+        for byte in try (frame(usage()) + "data: [DONE]\n\n").utf8 { _ = try original.append(byte) }
+        XCTAssertNil(try original.finish().serviceError)
+        XCTAssertFalse(copy.isDone)
+        let failure = try frame(["type": "error", "error": ["message": "failed", "code": "upstream_error"]])
+        let released = try frame(usage(["terminal_state": "failed", "settlement_status": "released",
+                                        "questions_charged": 0, "usable_result": false]))
+        for byte in (failure + released + "data: [DONE]\n\n").utf8 { _ = try copy.append(byte) }
+        XCTAssertEqual(try copy.finish().serviceError?.code, "upstream_error")
+        XCTAssertNil(try original.finish().serviceError)
+    }
+
+    func testPrematureFinishDoesNotPoisonLaterValidEvents() throws {
+        var decoder = OfficialStreamDecoder(captureID: id, screenQuery: true)
+        for byte in try delta().utf8 { _ = try decoder.append(byte) }
+        XCTAssertThrowsError(try decoder.finish())
+        for byte in try (frame(usage()) + "data: [DONE]\n\n").utf8 { _ = try decoder.append(byte) }
+        XCTAssertTrue(try decoder.finish().hasContent)
+    }
+
     func testEventAndDecodedTextLimitsRejectWithoutTruncatingIntoAUsableAnswer() throws {
         XCTAssertThrowsError(try consume("data: " + String(repeating: "x", count: 512 * 1024) + "\n\n"))
         XCTAssertThrowsError(try consume(delta(String(repeating: "x", count: 32 * 1024)) + delta(String(repeating: "x", count: 32 * 1024 + 1))))
