@@ -352,5 +352,111 @@
         ]
       }
     ]
+  },
+  {
+    "id": "stale-success-after-next-begin",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      },
+      {
+        "action": "finish",
+        "time": 3,
+        "valid": true,
+        "tokenIndex": 1
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "stale-failure-does-not-hide-current-success",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 1
+      },
+      {
+        "action": "finish",
+        "time": 3,
+        "valid": false,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "reset-rejects-old-success",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "reset"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      }
+    ]
   }
 ]

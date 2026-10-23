@@ -6,7 +6,7 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/纯解析器、自动连答状态机已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件和人物像会话已有共用用例；剩余独立会话/协议状态规则仍需继续审计，共用用例不等于实现已迁移 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/解析/会话、自动连答状态机已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件已有共用用例；独立协议规则及请求完成效果仍需继续审计，共用用例不等于实现已迁移 |
 | 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
@@ -79,3 +79,10 @@
 - 网格宽高与差异阈值从同一源生成，Windows 截图适配与 Mac 灰度采样读取共享网格尺寸。此接线不证明两平台实际截图像素或焦点轮询已通过实机验收。
 - `output/verification/20261023T090440Z-86713/summary.tsv` 完整验证通过：desktop 163、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 通过；截图适配补改后再次通过 desktop 163 项及语法检查。
 - 尚未制作包含本轮源码的新候选；人物像会话及 SSE 独立实现、远端 CI、Windows 实机与安装升级仍保留未完成状态。
+
+## 2026-10-23 人物像会话单一来源
+
+- `shared/protocol/persona-session.mjs` 统一 token/generation、上下文裁剪、失败屏障和过期；Swift 保留 Codable/JavaScriptCore 适配，Windows 完成回调显式传入开始时 token，原 generation 检查保留。
+- `persona-session/cases.json` 扩充至 11 组，共用验证下一题后旧成功、旧失败以及重置后的旧成功均不能修改当前上下文；三个场景已在旧 Windows 会话代码复现差异。上下文数据验证复用共享人物像规则文件。
+- 原有 Mac 人物像会话、完成流程和解析测试保留；两端请求完成后的展示/复制/会话提交策略还需继续审计，不能因底层会话统一就宣称整个完成流程一致。
+- `output/verification/20261023T091554Z-98388/summary.tsv` 完整验证通过：desktop 166、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 通过。未生成新候选、推送或发布；硬件和签名边界不变。

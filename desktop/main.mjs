@@ -465,7 +465,7 @@ async function start() {
       height,
     }));
     emit();
-    let raw = "";
+    let raw = "", personaToken = null;
     const update = (delta) => {
       if (current !== generation || task.signal.aborted) return;
       raw += delta;
@@ -496,7 +496,8 @@ async function start() {
               JSON.stringify([frozen.persona, frozen.target, frozen.channel]),
             )
           : "";
-      if (mode !== "personality") personaSession.reset();
+      if (mode === "personality") personaToken = personaSession.currentToken;
+      else personaSession.reset();
       let result;
       if (frozen.channel === "official") {
         if (operation === "solve" && !retry) {
@@ -558,7 +559,7 @@ async function start() {
             ? personality(result.raw)
             : compose(result.raw, run?.objective ?? false);
         if (mode === "personality") {
-          personaSession.finish(answer.context);
+          personaSession.finish(answer.context, Date.now(), personaToken);
           if (!answer.usable)
             throw new Error(
               "No valid personality result; capture the complete choices again",
@@ -632,7 +633,7 @@ async function start() {
         }
         state.answer = "";
         state.working = "";
-        if (mode === "personality") personaSession.finish(null);
+        if (mode === "personality") personaSession.finish(null, Date.now(), personaToken);
         if (["unsupported_scope", "multiple_targets"].includes(e.code)) {
           state.status = "empty";
           state.message = e.code;

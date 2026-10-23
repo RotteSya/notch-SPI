@@ -99,3 +99,12 @@ export function composePersonality(raw, streaming = false) {
     finalizedChoices, provisionalChoice, context, errorCode, errorOrdinals, violations,
   };
 }
+
+export function validPersonalitySessionPayload(payload) {
+  if (!personalityKeys(payload, ["last", "referenceable"]) || !Array.isArray(payload.referenceable) || payload.referenceable.length > 8) return false;
+  const valid = (item) => personalityKeys(item, ["ordinal", "summary", "choice"]) &&
+    ["ordinal", "summary", "choice"].every((key) => typeof item[key] === "string" && item[key].trim()) &&
+    personalityLength(item.ordinal) <= 24 && personalityLength(item.summary) <= 240 && personalityLength(item.choice) <= 80 &&
+    normalizePersonalityOrdinal(item.ordinal) !== null;
+  return [payload.last, ...payload.referenceable].every(valid) && personalityBytes(JSON.stringify(payload)) <= 4096;
+}
