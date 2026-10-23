@@ -56,6 +56,10 @@ const autoSource = fs.readFileSync(path.join(root, "shared/protocol/auto-session
 outputs["desktop/generated/auto-session.mjs"] = "// Generated from shared/protocol/auto-session.mjs.\n" + autoSource;
 outputs["Sources/NotchSPI/Shared/SharedAutoSource.generated.swift"] =
   `// Generated from shared/protocol/auto-session.mjs.\nimport Foundation\nenum SharedAutoSource {\n    static let javascript = ${JSON.stringify(autoSource.replaceAll("export ", ""))}\n${Object.entries(autoDefaults).map(([key, value]) => `    static let ${key} = ${value}`).join("\n")}\n}\n`;
+const personaSession = fs.readFileSync(path.join(root, "shared/protocol/persona-session.mjs"), "utf8");
+outputs["desktop/generated/persona-session.mjs"] = "// Generated from shared/protocol/persona-session.mjs.\n" + personaSession;
+outputs["Sources/NotchSPI/Shared/SharedPersonaSessionSource.generated.swift"] =
+  `// Generated from shared/protocol/persona-session.mjs.\nimport Foundation\nenum SharedPersonaSessionSource { static let javascript = ${JSON.stringify(personaSession.replaceAll("export ", "").replace(/^import .*$/gm, ""))} }\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",
