@@ -406,7 +406,6 @@ async function start() {
     state.preview = null;
     state.remaining = null;
     auto.stop();
-    if (state.mode === "personality") personaSession.finish(null);
     state.status = "canceled";
     emit();
   }
@@ -465,7 +464,15 @@ async function start() {
       height,
     }));
     emit();
-    let raw = "", personaToken = null;
+    let raw = "", personaToken = null, personaCompleted = false;
+    const completePersona = (transportOK, answerRaw = raw) => {
+      personaCompleted = true;
+      return personaSession.complete(answerRaw, { token: personaToken, transportOK,
+        currentScope: JSON.stringify([settings.persona, settings.target, settings.channel]) });
+    };
+    task.signal.addEventListener("abort", () => {
+      if (mode === "personality" && !personaCompleted) completePersona(false);
+    }, { once: true });
     const update = (delta) => {
       if (current !== generation || task.signal.aborted) return;
       raw += delta;
@@ -556,15 +563,14 @@ async function start() {
       } else {
         const answer =
           mode === "personality"
-            ? personality(result.raw)
+            ? completePersona(true, result.raw)
             : compose(result.raw, run?.objective ?? false);
         if (mode === "personality") {
-          personaSession.finish(answer.context, Date.now(), personaToken);
-          if (!answer.usable)
+          if (answer.isError)
             throw new Error(
               "No valid personality result; capture the complete choices again",
             );
-          state.answer = answer.visible;
+          state.answer = answer.composition.visibleChoices;
         } else {
           state.resultState = answer.state;
           state.answer = answer.finalAnswer ?? "";
@@ -633,7 +639,7 @@ async function start() {
         }
         state.answer = "";
         state.working = "";
-        if (mode === "personality") personaSession.finish(null, Date.now(), personaToken);
+        if (mode === "personality" && !personaCompleted) completePersona(false);
         if (["unsupported_scope", "multiple_targets"].includes(e.code)) {
           state.status = "empty";
           state.message = e.code;

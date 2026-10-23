@@ -1,0 +1,144 @@
+[
+  {
+    "id": "success",
+    "raw": "2. B\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}, \"referenceable\": [{\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}]}",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "done",
+    "mutation": "recorded",
+    "status": "available",
+    "count": 2,
+    "summaries": [
+      "seed",
+      "new"
+    ]
+  },
+  {
+    "id": "terminal-cannot-store-contradictory-context",
+    "raw": "2. B\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}, \"referenceable\": [{\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}]}\nNSPI_ERROR_V1: {\"code\":\"unreadable\"}",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "unreadable",
+    "mutation": "none",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "empty-preserves-history",
+    "raw": "",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "noValidChoices",
+    "mutation": "none",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "transport-before-choice",
+    "raw": "network prose",
+    "transportOK": false,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "transportFailure",
+    "mutation": "none",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "transport-after-choice",
+    "raw": "2. B\n",
+    "transportOK": false,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "transportFailure",
+    "mutation": "continuityBarrier",
+    "status": "unavailable",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "invalid-context",
+    "raw": "2. B",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "invalidContext",
+    "mutation": "continuityBarrier",
+    "status": "unavailable",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "partial",
+    "raw": "2. B\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}, \"referenceable\": [{\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}]}\nNSPI_ERROR_V1: {\"code\":\"partial_unreadable\"}",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": false,
+    "primary": "partialUnreadable",
+    "mutation": "recorded",
+    "status": "available",
+    "count": 2,
+    "summaries": [
+      "seed",
+      "new"
+    ]
+  },
+  {
+    "id": "stale-success",
+    "raw": "2. B\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}, \"referenceable\": [{\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}]}",
+    "transportOK": true,
+    "stale": true,
+    "scopeChanged": false,
+    "primary": "contextCleared",
+    "mutation": "discardedStaleResult",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "stale-invalid-context",
+    "raw": "2. B",
+    "transportOK": true,
+    "stale": true,
+    "scopeChanged": false,
+    "primary": "invalidContext",
+    "mutation": "discardedStaleResult",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  },
+  {
+    "id": "changed-scope",
+    "raw": "2. B\nNSPI_CONTEXT_V1: {\"last\": {\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}, \"referenceable\": [{\"ordinal\": \"2\", \"summary\": \"new\", \"choice\": \"B\"}]}",
+    "transportOK": true,
+    "stale": false,
+    "scopeChanged": true,
+    "primary": "contextCleared",
+    "mutation": "discardedStaleResult",
+    "status": "available",
+    "count": 1,
+    "summaries": [
+      "seed"
+    ]
+  }
+]

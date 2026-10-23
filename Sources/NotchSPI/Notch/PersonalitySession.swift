@@ -70,6 +70,18 @@ final class PersonalitySession {
     func reset(reason: PersonalitySessionResetReason) { _ = invoke("reset", [reason.rawValue]) }
     func contextBlock() -> String { invoke("contextBlock", [])?.toString() ?? "" }
 
+    func complete(raw: String, token: PersonalitySessionToken, currentScope: PersonalitySessionScope?,
+                  transportOK: Bool) -> PersonalityCompletionOutcome {
+        let scope = currentScope.flatMap(object) ?? NSNull()
+        guard let binding = object(token), let result = invoke("complete", [raw, binding, scope, transportOK, now().timeIntervalSince1970])?.toDictionary(),
+              let data = try? JSONSerialization.data(withJSONObject: result),
+              let outcome = try? JSONDecoder().decode(PersonalityCompletionOutcome.self, from: data) else {
+            return .init(primary: .transportFailure, composition: PersonalityAnswer.compose(raw: raw, streaming: false),
+                         sessionMutation: .discardedStaleResult)
+        }
+        return outcome
+    }
+
     private func object<T: Encodable>(_ value: T) -> Any? {
         guard let data = try? JSONEncoder().encode(value) else { return nil }
         return try? JSONSerialization.jsonObject(with: data)

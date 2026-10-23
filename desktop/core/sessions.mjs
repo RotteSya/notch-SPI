@@ -27,6 +27,9 @@ export class PersonaSession {
     return this.currentToken.contextBlock;
   }
   contextBlock() { return this.engine.contextBlock(); }
+  complete(raw, { token = this.currentToken, currentScope = token?.scope ?? null, transportOK = true, now = Date.now() } = {}) {
+    return this.engine.complete(raw, token, currentScope, transportOK, now / 1000);
+  }
   finish(payload, now = Date.now(), token = this.currentToken) {
     return payload ? this.engine.record(payload, token, now / 1000) : this.engine.unavailable(token, now / 1000);
   }
