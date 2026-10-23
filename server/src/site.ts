@@ -15,6 +15,7 @@ import { formatMoney, escapeHtml, type PageLang } from './payments.ts';
 // the DMG back from this origin (see routes.ts; the upstream location lives in config, not here).
 // No link on this page may point off-site to where the app is built or hosted.
 const DOWNLOAD = '/dl';
+const INTEL_DOWNLOAD = '/dl/intel';
 const CONTACT_EMAIL = 'raysyadesu@gmail.com';
 
 export interface SiteInput {
@@ -71,7 +72,7 @@ const S = {
       },
       {
         "q": "系统要求？",
-        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
+        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。Intel 老 Mac 兼容版：macOS 12.3 及以上，需手动更新。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記（日本法定披露）",
@@ -117,7 +118,7 @@ const S = {
       },
       {
         "q": "動作環境は？",
-        "a": "通常版：Apple Silicon Mac、macOS 14 以降。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
+        "a": "通常版：Apple Silicon Mac、macOS 14 以降。Intel Mac 互換版：macOS 12.3 以降、手動更新。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記",
@@ -163,7 +164,7 @@ const S = {
       },
       {
         "q": "Requirements?",
-        "a": "Standard version: Apple Silicon Mac, macOS 14+. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
+        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later, manual updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
       }
     ],
     "legalTitle": "特定商取引法に基づく表記 (Japanese commerce disclosure)",
@@ -198,7 +199,7 @@ function tokushohoTable(): string {
     ['支払時期', '問題パックは購入時。Plus は申込時および毎月の更新時に自動決済'],
     ['商品の引渡時期', '決済確認後、問題数残高または Plus の利用権に反映'],
     ['返品・キャンセル', 'デジタル商品の性質上、チャージ後の返金は原則不可。当方の不具合による場合は全額返金いたします（返金ポリシー参照）'],
-    ['動作環境', 'Apple Silicon Mac / macOS 14 以降（ノッチのない画面では上部パネル）'],
+    ['動作環境', 'Apple Silicon Mac / macOS 14 以降、Intel Mac / macOS 12.3 以降（ノッチのない画面では上部パネル）'],
   ];
   return rows
     .map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`)
@@ -256,6 +257,12 @@ export function renderLandingPage(input: SiteInput): string {
   const providerName = input.aiProvider === 'deepseek' ? 'DeepSeek' : input.aiProvider === 'anthropic' ? 'Anthropic' : input.aiProvider === 'openai' ? 'OpenAI' : 'AI';
   const langLink = (lang:PageLang,label:string) => `<a class="lang${lang===input.lang?' on':''}" href="${pagePath}?lang=${lang}" lang="${lang}"${lang===input.lang?' aria-current="page"':''}>${label}</a>`;
   const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}"><span aria-hidden="true">↓</span> ${d.download}</a>`;
+  const intelCopy = {
+    zh: {label:'下载 Intel 老 Mac 兼容版', note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.0 build 28 · 手动更新'},
+    ja: {label:'Intel Mac 互換版をダウンロード', note:'Intel プロセッサ · macOS 12.3 以降 · 3.0 build 28 · 手動更新'},
+    en: {label:'Download for older Intel Macs', note:'Intel processor · macOS 12.3 or later · 3.0 build 28 · Manual updates'},
+  }[input.lang];
+  const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${intelCopy.label}</a><p class="requirements">${intelCopy.note}</p></div>`;
   const packCards = packs.map((p,i)=>{
     const recommended=p.id===appPack?.id, slot=packs.length===1?1:i===0?0:i===packs.length-1?2:1;
     return `<article class="pack${recommended?' recommended':''}" data-pack-id="${e(p.id)}">
@@ -286,7 +293,7 @@ export function renderLandingPage(input: SiteInput): string {
 <main id="main"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}<br><span>${e(d.accent)}</span>`}</h1>
 <p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">Coming soon</span></button></div>
-<p class="trial-line">${d.free()}</p><p class="requirements"><span class="release-label">${d.release}</span>${d.requirements}</p>
+<p class="trial-line">${d.free()}</p><p class="requirements"><span class="release-label">${d.release}</span>${d.requirements}</p>${intelDownload()}
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
 <div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===0?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
@@ -305,7 +312,7 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 ${plusCard}<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.trialAmount}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free()}</p>${download('secondary')}</article>${packCards}</div>
 <div class="price-notes"><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p></div><div class="purchase" id="purchase"><div><h3>${d.purchaseTitle}</h3><p>${d.purchaseBody}</p></div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></div></section>
 <div class="wrap"><section id="faq" class="section faq-section" aria-labelledby="faq-title"><div><p class="eyebrow">FAQ</p><h2 id="faq-title">${d.faqTitle}</h2></div><div class="faq">${faqItems}</div></section>
-<section class="closing">${ghost}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free()}<br>${d.requirements}</p></section>
+<section class="closing">${ghost}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free()}<br>${d.requirements}</p>${intelDownload()}</section>
 <aside class="scope-links"><p>${d.scope}</p><nav class="entrylinks" aria-label="${d.scope}"><a href="/spi?lang=${input.lang}"${input.entry==='spi'?' aria-current="page"':''}>${d.spi}</a><a href="/reading-practice?lang=${input.lang}"${input.entry==='reading_practice'?' aria-current="page"':''}>${d.reading}</a></nav></aside>
 <section class="legal" id="legal" aria-label="${d.legal}"><details id="tokushoho"><summary>${s.legalTitle}</summary><table>${tokushohoTable()}</table></details><details id="privacy"><summary>${s.privacyTitle}</summary>${privacy}</details><details id="refund"><summary>${s.refundTitle}</summary>${refund}</details></section></div></main>
 <footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${ghost}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer><script>${demoScript}</script></body></html>`;

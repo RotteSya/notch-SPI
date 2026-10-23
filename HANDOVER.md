@@ -9,7 +9,7 @@
 - Mac 原生主开发树：Apple Silicon / macOS 14+，AppKit/Carbon，截图与题组、官方服务/自定义 API Key/本机 CLI 三通道、流式答案、公式、Ghost、本机最近查题、中日英界面。行为见 [客户端契约](docs/client-behavior.md)。
 - Windows：Electron 客户端与共享源码在本仓库；实现、签名和实机验收边界见 [Windows 入口](docs/windows/README.md)。不要删除共享生成文件。
 - 版本以 `VERSION.env` 为准；[build 27 发布准备记录](docs/release-3.0-build27.md)是对应日期的证据，不能据此推断当前线上状态。Plus 的生产开关和账本以服务端配置与实现为准。
-- Intel/旧 macOS：本地主开发树兼容实现已撤回；现有下载入口及历史归档保留，详见 [撤回记录](docs/intel-retirement-2026-10-22.md)。
+- Intel/旧 macOS：主开发树已撤回兼容实现，见 [撤回记录](docs/intel-retirement-2026-10-22.md)。现有 build 28 下载入口保留；Intel/Catalina 冻结源码、安装包与证据仍归档。对应系统下限和发布事实以 [Intel 记录](docs/intel-release-2026-10-21.md)、[Catalina 记录](docs/catalina-compatibility.md) 为准，不能用主树重新制作这些包。
 - 当前源码版本读取 `VERSION.env`；Swift 编译下限读取 `Package.swift`。开发引导限定 macOS 14+ arm64，不能把它的主机限制当成 Intel 发布包的系统下限。
 - 旧月票 QA 原型已退役；正式 Plus、题包、免费体验与旧用户兼容保持。完整答案窗口和其他 QA 入口仍保留，见 [QA 边界](docs/prototypes.md)。本地题库已从产品移除，旧用户文件不清理。
 
