@@ -108,7 +108,7 @@ quick：健康检查、检查器测试、共享生成检查、server/scheduler �
 
 desktop 图形验收：`npm --prefix desktop run smoke`、`smoke:motion`、Windows 上的 `smoke:capture`；先退出其他实例，要求真实交互桌面。混合 DPI、多屏、远程桌面、系统凭据、安装/升级和支付回跳按 [实机清单](docs/windows/manual-acceptance.md) 验收，Node 测试不替代这些结果。
 
-Windows 打包用 `npm --prefix desktop run pack:win`，版本读取 `VERSION.env`；Windows x64 产出 NSIS/ZIP，Apple Silicon 仅 ZIP；产物位于 `desktop/dist/candidates/<candidateID>/`，自动核验 ZIP 并附源码与包摘要，见 [候选追溯](docs/windows/architecture.md#候选包源码身份与-zip-核验)。签名发行需要 `CSC_LINK`、可选 `CSC_KEY_PASSWORD`、`NSPI_WINDOWS_PUBLISHER` 和 HTTPS `NSPI_WINDOWS_UPDATE_URL`，否则候选禁用自动更新。打包器固定 `--publish never`。Mac 打包用 `scripts/package.sh`，仅产出 arm64 / macOS 14+；Intel/Catalina 的复现材料留在各自冻结归档，不再提供主树兼容打包入口。
+Windows 打包用 `npm --prefix desktop run pack:win`，版本读取 `VERSION.env`；Windows x64 产出 NSIS/ZIP，Apple Silicon 仅 ZIP；产物位于 `desktop/dist/candidates/<candidateID>/`，自动核验 ZIP 并附源码与包摘要，见 [候选追溯](docs/windows/architecture.md#候选包源码身份与-zip-核验)。签名发行需要 `CSC_LINK`、可选 `CSC_KEY_PASSWORD`、`NSPI_WINDOWS_PUBLISHER` 和 HTTPS `NSPI_WINDOWS_UPDATE_URL`，否则候选禁用自动更新。打包器固定 `--publish never`。Mac 打包用 `scripts/package.sh`，release 输出独立候选目录并核对 DMG 内 App，见 [Mac 追溯](docs/windows/mac-provenance.md)；仅产出 arm64 / macOS 14+；Intel/Catalina 的复现材料留在各自冻结归档，不再提供主树兼容打包入口。
 
 提交交付前运行 `node scripts/repo-health.mjs --delivery`：校验 Git index 对应的文件集合，拒绝遗漏新增源码/文档及未暂存改动。平时健康检查包含未忽略的新文件，不等于已提交可克隆。当前清理验证及源码快照见 [治理验收](docs/governance-acceptance-2026-10-21.md)；旧克隆耗时只对 [2026-10-17 验收提交](docs/handover-acceptance.md) 有效。
 
