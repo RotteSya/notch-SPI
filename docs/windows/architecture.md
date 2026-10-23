@@ -15,13 +15,14 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 | `shared/product.json` | Swift 捕获轮次/设置/自动连答/几何/动效；JS intake/motion/设置 | 已接入的参数是；未接入的原生外观仍需适配 |
 | `server/src/objective-result.ts` | 生成的 JS + Mac JavaScriptCore 包装 | 客观题严格解析、容错组合、FINAL 回退逻辑是 |
 | `shared/protocol/personality.mjs` | 生成的 desktop 模块 + Mac JavaScriptCore 类型适配 | 人物像选项、上下文、错误标记、序号归一化和协议诊断只改一次；字符限制统一按 grapheme 计数 |
+| `shared/protocol/auto-session.mjs` | 生成的 desktop 状态机 + Mac JavaScriptCore 适配 | 自动连答停止条件、暂停/超时、画面差异和稳定判定只改一次；截图与轮询仍由平台提供 |
 | `Tests/Fixtures/ObjectiveResult/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
 | `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
 | `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |
 | `shared/ui/flight.mjs`、`capture.mjs` | Mac ScreenshotFlight/Tray + Windows 多窗口飞入层 | 轨迹、裁切避让、尺寸、落地/重排参数一次修改；窗口系统分别适配 |
 | `shared/ui/reading.mjs` | Mac 完整答案/历史详情 + Electron 答案 | 段落结构、三语复核/错误提示、字号层级一次修改；文本绘制保留平台实现 |
 | `shared/ui/onboarding.mjs` | Mac 引导检查点 + 桌面完整引导 | 恢复规则一次修改；截图、权限、试用请求和视图通过平台适配 |
-| `desktop/core/` | Electron macOS 开发宿主 / Windows | 桌面两平台可共用；原生 Mac 的 SSE/会话状态机尚未迁移 |
+| `desktop/core/` | Electron macOS 开发宿主 / Windows | 桌面两平台可共用；自动连答已调用共享状态机，原生 Mac 的 SSE/人物像会话状态机仍独立 |
 | `desktop/ui/` | Electron macOS 开发宿主 / Windows | 桌面两平台共用，当前生产 AppKit UI 不消费它 |
 | `desktop/platform/` | Windows 或桌面宿主 | 截图、DPAPI/safeStorage、历史、更新为边界；Mac 原有原生适配保留 |
 

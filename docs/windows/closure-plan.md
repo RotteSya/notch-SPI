@@ -6,7 +6,7 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数及纯解析器已迁入 shared/，两端执行同源规则。自动连答、取消隔离、终态结算、SSE 事件和人物像会话已有共用用例；剩余独立会话/协议状态规则仍需继续审计，共用用例不等于实现已迁移 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/纯解析器、自动连答状态机已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件和人物像会话已有共用用例；剩余独立会话/协议状态规则仍需继续审计，共用用例不等于实现已迁移 |
 | 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
@@ -71,3 +71,11 @@
 - `Tests/Fixtures/personality-parser/cases.json` 的 14 个用例在两端断言完整结果，包含可见文本、最终/临时选项、上下文、错误序号及协议诊断。既有 Mac 解析、连续题和评估测试保留。
 - 字符上限统一按 grapheme 计数。旧 Windows 实现在复杂 emoji 的 summary/choice 两个用例错误丢弃上下文，已用旧源码复现并由共享实现修复。
 - `output/verification/20261023T085150Z-73976/summary.tsv` 完整验证通过：desktop 162、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 构建通过。新解析器尚未进入新的配对候选包；实机、签名及远端 CI 证据仍未补齐。
+
+## 2026-10-23 自动连答状态机单一来源
+
+- `shared/protocol/auto-session.mjs` 统一计数/停止、暂停超时、截图失败、画面差异与稳定判定；Swift 通过 JavaScriptCore、desktop 通过生成模块执行同一状态机。截图、时钟与触发效果由平台适配。
+- 原 `auto-session/cases.json` 增加渐变亮度场景：旧 Windows 实现过早累计稳定帧而提前触发，修复前复现失败；现在六组共用场景及 Mac 27 项专项均通过。
+- 网格宽高与差异阈值从同一源生成，Windows 截图适配与 Mac 灰度采样读取共享网格尺寸。此接线不证明两平台实际截图像素或焦点轮询已通过实机验收。
+- `output/verification/20261023T090440Z-86713/summary.tsv` 完整验证通过：desktop 163、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 通过；截图适配补改后再次通过 desktop 163 项及语法检查。
+- 尚未制作包含本轮源码的新候选；人物像会话及 SSE 独立实现、远端 CI、Windows 实机与安装升级仍保留未完成状态。

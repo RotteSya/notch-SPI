@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import JavaScriptCore
 
 /// Why an auto session ended — drives the status message the user sees.
 enum AutoStopReason: Equatable {
@@ -15,23 +16,17 @@ enum AutoStopReason: Equatable {
 
 /// Downsampled grayscale change detection. Pure byte math — no AppKit, fully unit-tested.
 enum ScreenHasher {
-    static let gridW = 32
-    static let gridH = 20
+    static let gridW = SharedAutoSource.gridW
+    static let gridH = SharedAutoSource.gridH
     /// Per-cell luma delta below this is noise (JPEG-ish shimmer, AA, cursor blink residue).
-    static let perPixelTolerance: UInt8 = 10
+    static let perPixelTolerance = UInt8(SharedAutoSource.perPixelTolerance)
     /// Fraction of grid cells that must move beyond tolerance for the screen to count as changed.
-    static let changedFraction: Double = 0.02
+    static let changedFraction = SharedAutoSource.changedFraction
 
     /// Fraction (0…1) of cells whose |a−b| exceeds the tolerance.
     /// Mismatched or empty inputs count as fully changed (defensive).
     static func difference(_ a: [UInt8], _ b: [UInt8], tolerance: UInt8 = perPixelTolerance) -> Double {
-        guard !a.isEmpty, a.count == b.count else { return 1 }
-        var moved = 0
-        for i in a.indices {
-            let d = a[i] > b[i] ? a[i] - b[i] : b[i] - a[i]
-            if d > tolerance { moved += 1 }
-        }
-        return Double(moved) / Double(a.count)
+        SharedAutoRules.call("autoDifference", [a, b, tolerance])?.toDouble() ?? 1
     }
 
     static func changed(_ a: [UInt8], _ b: [UInt8], threshold: Double = changedFraction) -> Bool {
@@ -56,198 +51,111 @@ enum ScreenHasher {
     }
 }
 
-/// The auto-session brain. Owns no timers and does no capture — NotchController feeds it
-/// explicit events (run finished, poll tick) and acts on the returned outcome, so every
-/// transition is deterministic under test. Modeled on PersonalitySession (injected clock).
+/// Platform adapter for the shared deterministic engine. No timers or capture live here.
 @MainActor
 final class AutoSessionEngine {
     struct Config: Equatable {
         var maxQuestions: Int
-        var stableTicksRequired = 2       // 0.5 s polls → changed-then-2-stable ≈ 1 s settle
-        var maxHashFailures = 3
-        var idleTimeout: TimeInterval = 15 * 60
+        var stableTicksRequired = SharedAutoSource.stableTicksRequired
+        var maxHashFailures = SharedAutoSource.maxHashFailures
+        var idleTimeout: TimeInterval = TimeInterval(SharedAutoSource.idleTimeout)
     }
-
-    enum State: Equatable {
-        case inactive
-        case running          // the capture pipeline owns the moment (trigger → onDone/finishError)
-        case baselinePending  // answer done; the next successful hash becomes the baseline
-        case watching
-    }
-
-    enum TickOutcome: Equatable {
-        case none
-        case trigger          // fire the next capture; engine is now .running
-        case stop(AutoStopReason)
-    }
+    enum State: String, Equatable { case inactive, running, baselinePending, watching }
+    enum TickOutcome: Equatable { case none, trigger, stop(AutoStopReason) }
 
     private let now: () -> Date
-
-    private(set) var state: State = .inactive
-    private(set) var questionsAsked = 0
-    private(set) var config = Config(maxQuestions: 20)
-    private(set) var lastStopReason: AutoStopReason?
-
-    private var baseline: [UInt8]?
-    private var lastHash: [UInt8]?
-    private var changedSeen = false
-    private var stableCount = 0
-    private var hashFailureStreak = 0
-    private var watchStart: Date?
-
+    private let context: JSContext?
+    private let engine: JSValue?
+    private var bridgeFailed = false
+    private var explicitStopReason: AutoStopReason?
+    private(set) var config = Config(maxQuestions: SharedProduct.defaultAutoCap)
+    var state: State { bridgeFailed ? .inactive : State(rawValue: engine?.forProperty("state")?.toString() ?? "") ?? .inactive }
+    var questionsAsked: Int { Int(engine?.forProperty("count")?.toInt32() ?? 0) }
+    var lastStopReason: AutoStopReason? { bridgeFailed ? .runFailed : explicitStopReason ?? reason(engine?.forProperty("lastStopReason")?.toString() ?? "") }
     var isActive: Bool { state != .inactive }
-
-    init(now: @escaping () -> Date = Date.init) {
-        self.now = now
-    }
-
-    /// -1 means no question cap; 0 (unset) keeps the default of 20.
     nonisolated static let unlimitedQuestions = -1
-
     var progressText: String {
         let limit = config.maxQuestions == Self.unlimitedQuestions ? "∞" : String(config.maxQuestions)
         return "\(questionsAsked)/\(limit)"
     }
-
-    /// Finite caps are clamped to 1…100.
-    nonisolated static func clampMaxQuestions(_ n: Int) -> Int {
-        if n == unlimitedQuestions { return n }
-        guard n != 0 else { return SharedProduct.defaultAutoCap }
-        return min(max(n, 1), SharedProduct.autoCaps.max()!)
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+        context = SharedAutoRules.makeContext()
+        engine = context?.objectForKeyedSubscript("createAutoEngine")?.call(withArguments: [])
     }
-
+    nonisolated static func clampMaxQuestions(_ n: Int) -> Int {
+        Int(SharedAutoRules.call("autoClamp", [n, SharedProduct.defaultAutoCap, SharedProduct.autoCaps.max()!])?.toInt32()
+            ?? Int32(SharedProduct.defaultAutoCap))
+    }
     func start(config: Config) {
         self.config = config
-        questionsAsked = 0
-        lastStopReason = nil
-        resetWatchState()
-        state = .running
+        explicitStopReason = nil
+        _ = invoke("start", [["maxQuestions": config.maxQuestions,
+                               "stableTicksRequired": config.stableTicksRequired,
+                               "maxHashFailures": config.maxHashFailures,
+                               "idleTimeout": config.idleTimeout]])
     }
-
-    /// From onDone(ok: true). Counts the question, then decides watch vs stop.
-    /// The quota check here also covers the 401 trap: a rejected credential wipes the
-    /// cached balance to nil, which the preflight gate would wave through forever.
     func noteRunSucceeded(balanceQuestions: Int?, credentialRejected: Bool) -> TickOutcome {
-        guard state != .inactive else { return .none }
-        questionsAsked += 1
-        if config.maxQuestions != Self.unlimitedQuestions, questionsAsked >= config.maxQuestions {
-            return stopped(.questionCap(config.maxQuestions))
-        }
-        if credentialRejected || balanceQuestions.map({ $0 <= 0 }) == true {
-            return stopped(.quotaExhausted)
-        }
-        resetWatchState()
-        watchStart = now()
-        state = .baselinePending
-        return .none
+        outcome(invoke("succeeded", [balanceQuestions.map { $0 as Any } ?? NSNull(),
+                                     credentialRejected, now().timeIntervalSince1970]))
     }
-
-    /// From onDone(ok: false) and finishError. Never re-triggers after a failed run.
-    func noteRunFailed() -> TickOutcome {
-        guard state != .inactive else { return .none }
-        return stopped(.runFailed)
-    }
-
-    /// A poll tick while triggering is paused (the locked target app isn't frontmost).
-    /// Only the idle timeout advances; watch state (baseline, stability, failure streak)
-    /// is frozen so returning to an unchanged page settles back onto the baseline
-    /// instead of firing on the app switch itself.
-    func tickPaused() -> TickOutcome {
-        switch state {
-        case .inactive, .running:
-            return .none
-        case .baselinePending, .watching:
-            break
-        }
-        if let start = watchStart, now().timeIntervalSince(start) >= config.idleTimeout {
-            return stopped(.idleTimeout)
-        }
-        return .none
-    }
-
-    /// One poll tick; nil hash means the capture failed.
+    func noteRunFailed() -> TickOutcome { outcome(invoke("failed", [])) }
+    func tickPaused() -> TickOutcome { outcome(invoke("paused", [now().timeIntervalSince1970])) }
     func tick(hash: [UInt8]?) -> TickOutcome {
-        switch state {
-        case .inactive, .running:
-            return .none   // stray timer tick after a stop or trigger is harmless
-        case .baselinePending, .watching:
-            break
-        }
-        if let start = watchStart, now().timeIntervalSince(start) >= config.idleTimeout {
-            return stopped(.idleTimeout)
-        }
-        guard let hash else {
-            hashFailureStreak += 1
-            if hashFailureStreak >= config.maxHashFailures {
-                return stopped(.hashFailures)
-            }
-            return .none
-        }
-        hashFailureStreak = 0
-
-        if state == .baselinePending {
-            baseline = hash
-            lastHash = hash
-            changedSeen = false
-            stableCount = 0
-            state = .watching
-            return .none
-        }
-
-        guard let baseline, let previous = lastHash else {
-            self.baseline = hash   // defensive; both are set when .watching is entered
-            lastHash = hash
-            return .none
-        }
-        defer { lastHash = hash }
-
-        if !changedSeen {
-            if ScreenHasher.changed(hash, baseline) {
-                changedSeen = true
-                stableCount = 0
-            }
-            return .none
-        }
-
-        // Changed already — stability is measured against the previous tick, not the
-        // baseline, so continuous scrolling keeps resetting instead of triggering.
-        if ScreenHasher.changed(hash, previous) {
-            stableCount = 0
-            return .none
-        }
-        stableCount += 1
-        guard stableCount >= config.stableTicksRequired else { return .none }
-
-        // Settled — but if the screen settled back onto the baseline (notification
-        // banner, volume HUD), rearm instead of burning a question on the same screen.
-        if !ScreenHasher.changed(hash, baseline) {
-            changedSeen = false
-            stableCount = 0
-            return .none
-        }
-        state = .running
-        return .trigger
+        outcome(invoke("tick", [hash.map { $0 as Any } ?? NSNull(), now().timeIntervalSince1970]))
     }
-
-    /// Idempotent; the first reason wins so a late hook can't overwrite what the user did.
     func stop(reason: AutoStopReason) {
-        guard state != .inactive else { return }
-        state = .inactive
-        lastStopReason = reason
-        resetWatchState()
+        guard isActive else { return }
+        explicitStopReason = reason
+        let key: String
+        switch reason {
+        case .userToggled: key = "userToggled"
+        case .captureHotkey: key = "captureHotkey"
+        case .stopButton: key = "stopButton"
+        case .questionCap: key = "questionCap"
+        case .runFailed: key = "runFailed"
+        case .quotaExhausted: key = "quotaExhausted"
+        case .idleTimeout: key = "idleTimeout"
+        case .hashFailures: key = "hashFailures"
+        }
+        _ = invoke("stop", [key])
     }
-
-    private func stopped(_ reason: AutoStopReason) -> TickOutcome {
-        stop(reason: reason)
-        return .stop(reason)
+    private func invoke(_ method: String, _ arguments: [Any]) -> String {
+        guard let context, let engine, context.exception == nil,
+              let result = engine.invokeMethod(method, withArguments: arguments), context.exception == nil else {
+            bridgeFailed = true
+            return "runFailed"
+        }
+        return result.toString() ?? "none"
     }
+    private func outcome(_ value: String) -> TickOutcome {
+        if value == "trigger" { return .trigger }
+        return reason(value).map(TickOutcome.stop) ?? .none
+    }
+    private func reason(_ value: String) -> AutoStopReason? {
+        switch value {
+        case "userToggled": return .userToggled
+        case "captureHotkey": return .captureHotkey
+        case "stopButton": return .stopButton
+        case "questionCap": return .questionCap(config.maxQuestions)
+        case "runFailed": return .runFailed
+        case "quotaExhausted": return .quotaExhausted
+        case "idleTimeout": return .idleTimeout
+        case "hashFailures": return .hashFailures
+        default: return nil
+        }
+    }
+}
 
-    private func resetWatchState() {
-        baseline = nil
-        lastHash = nil
-        changedSeen = false
-        stableCount = 0
-        hashFailureStreak = 0
-        watchStart = nil
+private enum SharedAutoRules {
+    static func makeContext() -> JSContext? {
+        guard let context = JSContext() else { return nil }
+        context.evaluateScript(SharedAutoSource.javascript)
+        return context.exception == nil ? context : nil
+    }
+    static func call(_ function: String, _ arguments: [Any]) -> JSValue? {
+        guard let context = makeContext() else { return nil }
+        let result = context.objectForKeyedSubscript(function)?.call(withArguments: arguments)
+        return context.exception == nil ? result : nil
     }
 }
