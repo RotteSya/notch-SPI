@@ -82,6 +82,7 @@ export class OfficialClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const data = await readJSON(response);
+    signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401 && token === this.token) this.account = null;
       throw Object.assign(
@@ -272,11 +273,14 @@ export class OfficialClient {
     )
       throw new Error("Capture expired or account changed; capture again");
   }
-  async status(run) {
+  async status(run, { signal } = {}) {
+    signal?.throwIfAborted();
     this.assertOwner(run);
     const v = await this.request(`/v1/captures/${run.id}/status`, undefined, {
       token: run.token,
+      signal,
     });
+    signal?.throwIfAborted();
     this.assertOwner(run);
     if (!(
       validSettlement(v, run.id) ||
@@ -293,6 +297,7 @@ export class OfficialClient {
     run,
     { signal, onDelta, operation = "solve", finalAnswer } = {},
   ) {
+    signal?.throwIfAborted();
     this.assertOwner(run);
     let id = run.id,
       body = structuredClone(run.body),
@@ -337,6 +342,8 @@ export class OfficialClient {
       });
       if (!response.ok) {
         const v = await readJSON(response);
+        signal?.throwIfAborted();
+        this.assertOwner(run);
         if (response.status === 401 && run.owner === this.owner())
           this.account = null;
         throw Object.assign(
@@ -353,6 +360,9 @@ export class OfficialClient {
         this.assertOwner(run);
         signal?.throwIfAborted();
         for (const payload of framer.feed(value)) {
+          // A callback can cancel or replace the account within this same chunk.
+          signal?.throwIfAborted();
+          this.assertOwner(run);
           const event = decoder.accept(payload);
           if (event.type === "delta") onDelta?.(event.text);
           if (event.type === "usage") {
@@ -376,7 +386,7 @@ export class OfficialClient {
         operation === "solve"
       ) {
         try {
-          await this.status(run);
+          await this.status(run, { signal });
         } catch {}
       }
       throw error;
