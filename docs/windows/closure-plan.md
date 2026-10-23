@@ -6,8 +6,8 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/解析/会话、自动连答状态机已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件已有共用用例；独立协议规则及请求完成效果仍需继续审计，共用用例不等于实现已迁移 |
-| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数/解析/会话/完成提交策略、自动连答状态机已迁入 shared/，两端执行同源规则。取消隔离、终态结算、SSE 事件已有共用用例；独立协议规则及界面完成效果仍需继续审计，共用用例不等于实现已迁移 |
+| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/`、`personality-completion/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
 | 视觉与性能一致 | 同素材成对截图/录像，明确帧时间及允许差异 | 共享引擎和参数已有；Windows 成对视觉与帧时间证据缺失 |
@@ -86,3 +86,10 @@
 - `persona-session/cases.json` 扩充至 11 组，共用验证下一题后旧成功、旧失败以及重置后的旧成功均不能修改当前上下文；三个场景已在旧 Windows 会话代码复现差异。上下文数据验证复用共享人物像规则文件。
 - 原有 Mac 人物像会话、完成流程和解析测试保留；两端请求完成后的展示/复制/会话提交策略还需继续审计，不能因底层会话统一就宣称整个完成流程一致。
 - `output/verification/20261023T091554Z-98388/summary.tsv` 完整验证通过：desktop 166、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 通过。未生成新候选、推送或发布；硬件和签名边界不变。
+
+## 2026-10-23 人物像完成提交策略
+
+- 完成优先级与会话提交决策迁入共享会话引擎；Swift `PersonalityCaptureRun` 与 Windows 完成入口共同调用。传输/终止错误先判定，之后才允许写入有效上下文。
+- 修复 Windows 先记录再报错导致终止错误上下文残留的问题；旧调用顺序已复现记录数从 1 变 2，而预期为 1。空回复/无选项的传输失败保留此前上下文；已收到选项的传输失败写入连续性屏障。取消按该请求已收到的内容走相同策略。
+- `Tests/Fixtures/personality-completion/cases.json` 10 组用例双端验证优先状态、实际会话变更和历史内容；包含矛盾终止回复、空失败、部分结果、旧 token 及 scope 变化。旧 token 被拒绝时不再误报屏障已写入。
+- `output/verification/20261023T092552Z-7631/summary.tsv` 完整验证通过：desktop 176、server 684、scheduler 17、Swift 594（4 项跳过），arm64 Release 通过。各平台状态文案/窗口效果尚未据此认定一致；SSE、最终候选及实机证据仍待完成。

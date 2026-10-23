@@ -1,4 +1,4 @@
-import { validPersonalitySessionPayload } from "./personality.mjs";
+import { validPersonalitySessionPayload, composePersonality, isPersonalityTerminalError } from "./personality.mjs";
 const personaScopeKey = (scope) => typeof scope === "string" ? scope : JSON.stringify(scope, Object.keys(scope).sort());
 export function createPersonaEngine(config) { return new SharedPersonaEngine(config); }
 export class SharedPersonaEngine {
@@ -50,6 +50,26 @@ export class SharedPersonaEngine {
     this.lastBeginResetReason = reason;
     this.generation++; this.activeSequence = null;
     this.records = []; this.barrier = null; this.lastActivity = null;
+  }
+  complete(raw, token, currentScope, transportOK, now) {
+    const composition = composePersonality(raw, false);
+    const scopeMatches = token && currentScope !== null && personaScopeKey(currentScope) === personaScopeKey(token.scope);
+    const terminal = isPersonalityTerminalError(composition.errorCode);
+    const choices = composition.finalizedChoices.length > 0;
+    const outcome = (primary, sessionMutation) => ({ primary, composition, sessionMutation,
+      isError: ["transportFailure", "unreadable", "dependsOnMissingPrevious", "noValidChoices"].includes(primary) });
+    const barrier = () => scopeMatches && this.unavailable(token, now) ? "continuityBarrier" : "discardedStaleResult";
+    if (!transportOK) return outcome("transportFailure", choices && !terminal && scopeMatches
+      ? barrier() : scopeMatches ? "none" : "discardedStaleResult");
+    if (terminal) return outcome(composition.errorCode === "unreadable" ? "unreadable" : "dependsOnMissingPrevious",
+      scopeMatches ? "none" : "discardedStaleResult");
+    if (!choices) return outcome("noValidChoices", scopeMatches ? "none" : "discardedStaleResult");
+    if (!composition.context) return outcome("invalidContext", barrier());
+    if (!scopeMatches || !this.record(composition.context, token, now)) return outcome("contextCleared", "discardedStaleResult");
+    if (composition.errorCode === "partial_unreadable") return outcome("partialUnreadable", "recorded");
+    if (composition.errorCode === "partial_missing_previous") return outcome("partialMissingPrevious", "recorded");
+    if (token.contextBlock.includes('"status":"unavailable"')) return outcome("missingPrevious", "recorded");
+    return outcome("done", "recorded");
   }
   contextBlock() {
     const latest = this.records.at(-1);
