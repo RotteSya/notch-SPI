@@ -22,61 +22,20 @@ enum ScreenshotThumbnail {
 
 /// Image aspect is preserved in both the global flight and the tray's reserved slot.
 enum ScreenshotFlightGeometry {
-    static let duration: CFTimeInterval = 0.68
-
-    /// Lift the captured pixels from their original area, before the card's inset forms.
+    static let duration = SharedVisual.number("flightStyle.duration")
     static func sourceFrame(image: CGSize, in area: CGRect) -> CGRect {
-        guard image.width > 0, image.height > 0 else { return area }
-        let scale = min(area.width / image.width, area.height / image.height)
-        let size = CGSize(width: image.width * scale, height: image.height * scale)
-        return CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
-                      width: size.width, height: size.height)
+        SharedVisual.nativeRect(SharedVisual.call("fit", [["width": image.width, "height": image.height], SharedVisual.rect(area)]))
     }
-
-    /// Tendedero's quiet lift, fast middle and gentle arrival, without a mid-flight pause.
-    static func travelProgress(_ progress: CGFloat) -> CGFloat {
-        let t = max(0, min(1, progress))
-        return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
-    }
-
+    static func travelProgress(_ progress: CGFloat) -> CGFloat { SharedVisual.call("travel", [progress]).toDouble() }
     static func photoInset(progress: CGFloat) -> CGFloat { 4 * travelProgress(progress) }
-
     static func cardFrame(image: CGSize, in slot: CGRect) -> CGRect {
-        guard image.width > 0, image.height > 0, slot.width > 8, slot.height > 8 else { return slot }
-        let scale = min((slot.width - 8) / image.width, (slot.height - 8) / image.height)
-        let size = CGSize(width: image.width * scale + 8, height: image.height * scale + 8)
-        return CGRect(x: slot.midX - size.width / 2, y: slot.midY - size.height / 2, width: size.width, height: size.height)
+        SharedVisual.nativeRect(SharedVisual.call("fit", [["width":image.width,"height":image.height], SharedVisual.rect(slot), 4]))
     }
-    /// Include the card's rotation: even its corners must stay below camera cutouts.
     static func avoidingCutouts(_ frame: CGRect, angle: CGFloat, cutouts: [CGRect]) -> CGRect {
-        let width = abs(cos(angle)) * frame.width + abs(sin(angle)) * frame.height
-        let height = abs(sin(angle)) * frame.width + abs(cos(angle)) * frame.height
-        guard width > 0, height > 0 else { return frame }
-        var lower = -CGFloat.infinity, upper = CGFloat.infinity
-        for cutout in cutouts where frame.midX + width / 2 > cutout.minX && frame.midX - width / 2 < cutout.maxX {
-            if cutout.maxY <= frame.midY { lower = max(lower, cutout.maxY + 1) }
-            else { upper = min(upper, cutout.minY - 1) }
-        }
-        // Stacked displays may bound both sides. Fit the image between them rather
-        // than pushing a full-screen image behind the next display's camera.
-        let scale = min(1, max(0, upper - lower) / height)
-        let size = CGSize(width: frame.width * scale, height: frame.height * scale)
-        let centerY = min(max(frame.midY, lower + height * scale / 2), upper - height * scale / 2)
-        return CGRect(x: frame.midX - size.width / 2, y: centerY - size.height / 2,
-                      width: size.width, height: size.height)
+        SharedVisual.nativeRect(SharedVisual.call("avoidCutouts", [SharedVisual.rect(frame), -angle, cutouts.map { SharedVisual.rect($0) }]))
     }
-
     static func frame(source: CGRect, destination: CGRect, progress: CGFloat, reduced: Bool) -> CGRect {
-        if reduced { return destination }
-        if progress <= 0 { return source }
-        if progress >= 1 { return destination }
-        let p = travelProgress(progress)
-        // Anchor the top edge as the photo shrinks, with the reference's modest 30pt lift.
-        let top = CGPoint(x: source.midX + (destination.midX - source.midX) * p,
-                          y: source.maxY + (destination.maxY - source.maxY) * p + sin(.pi * p) * 30)
-        let size = CGSize(width: source.width + (destination.width-source.width)*p,
-                          height: source.height + (destination.height-source.height)*p)
-        return CGRect(x: top.x-size.width/2, y: top.y-size.height, width: size.width, height: size.height)
+        SharedVisual.nativeRect(SharedVisual.call("flightFrame", [SharedVisual.rect(source), SharedVisual.rect(destination), progress, reduced]))
     }
 }
 

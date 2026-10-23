@@ -19,14 +19,14 @@ final class GhostIndicatorView: NSView {
         updateClock()
         needsDisplay = true
     } }
-    private let simulation = BotAvatarSim(seed: 0.37)
+    private let simulation = SharedGhostSimulation(seed: 0.37)
     private let renderState = BotAvatarRenderState()
     private var lastTick: CFTimeInterval = 0
     private var thinkingTime = 0.0
     private var thinkingBlend = 0.0
     private var completionTime: Double?
     private var completionTint: NSColor?
-    private let completionDuration = 1.25
+    private let completionDuration = SharedVisual.number("ghostStyle.completionDuration")
 
     func acknowledgeCompletion(from tint: NSColor? = nil) {
         guard !busy, !reduceMotion else { return }
@@ -44,11 +44,7 @@ final class GhostIndicatorView: NSView {
     }
 
     private var completionWeight: Double {
-        guard !reduceMotion, let time = completionTime else { return 0 }
-        let fadeIn = min(1, time / 0.22)
-        let fadeOut = min(1, (completionDuration - time) / 0.35)
-        let x = max(0, min(fadeIn, fadeOut))
-        return x * x * (3 - 2 * x)
+        SharedVisual.call("completionWeight", [completionTime as Any? ?? NSNull(), reduceMotion]).toDouble()
     }
 
     private final class ClockTarget: NSObject {
@@ -134,36 +130,8 @@ final class GhostIndicatorView: NSView {
     /// its design bounds are y=17...87.5, so compensate the extra 2.25 body units.
     /// The rig's full hops/spins are softened in the notch to protect neighbouring ink.
     private var displayPose: BotAvatarPose {
-        var pose = reduceMotion ? BotAvatarPose.rest(busy ? .working : .default) : simulation.pose
-        pose.yaw = sin(pose.yaw) * (hero ? 0.4 : 0.22)
-        pose.pitch *= 0.45
-        pose.roll *= 0.25
-        pose.x *= 0.15
-        pose.y = pose.y * (hero ? 0.25 : 0.08) - 2.25
-        pose.sx = 1 + (pose.sx - 1) * 0.15
-        pose.sy = 1 + (pose.sy - 1) * 0.15
-        let weight = reduceMotion ? (busy ? 1.0 : 0.0) : thinkingBlend
-        let phase = reduceMotion ? 0 : thinkingTime * 2 * .pi / 1.4
-        // A deliberate, continuous thinking loop; no long waits for the rig's random events.
-        pose.yaw += (0.24 * sin(phase * 0.5) - pose.yaw) * weight
-        pose.roll += (0.09 * sin(phase) - pose.roll) * weight
-        pose.y += (-2.25 - 3.5 * sin(phase) - pose.y) * weight
-        pose.lookX += (0.55 * sin(phase * 0.5) - pose.lookX) * weight
-        pose.lookY += (-0.35 - pose.lookY) * weight
-        pose.laugh *= 1 - weight
-        let finished = completionWeight
-        if let time = completionTime {
-            // One small nod, entirely inside the existing slot. Smooth envelope starts
-            // at zero so the previous thinking pose never snaps on the completion frame.
-            let nod = sin(min(1, time / 0.8) * .pi)
-            pose.pitch += (-0.20 * nod - pose.pitch) * finished
-            pose.yaw *= 1 - finished
-            pose.roll *= 1 - finished
-            pose.lookX *= 1 - finished
-            pose.lookY *= 1 - finished
-            pose.laugh += (0.75 - pose.laugh) * finished
-        }
-        return pose
+        SharedVisual.notchPose(reduceMotion ? BotAvatarPose.rest(busy ? .working : .default) : simulation.pose,
+            reduced: reduceMotion, busy: busy, hero: hero, time: thinkingTime, blend: thinkingBlend, completion: completionTime)
     }
 
     override func draw(_ dirtyRect: NSRect) {

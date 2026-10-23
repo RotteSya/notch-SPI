@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "capture": {
+    "limit": 4,
+    "submitDelay": 4,
+    "undoSeconds": 8,
+    "retentionSeconds": 900,
+    "bodyLimit": 4194304
+  },
+  "reasoningEfforts": ["low", "high", "max"],
+  "autoCaps": [5, 10, 20, 30, 50, 100, -1],
+  "defaultAutoCap": 20,
+  "motion": {
+    "duration": 0.32,
+    "springDecay": 6,
+    "springFrequency": 5.2,
+    "closeDecay": 1.5,
+    "openStart": 0.12,
+    "openEnd": 0.86,
+    "closeEnd": 0.72
+  },
+  "layout": {
+    "cardWidth": 600,
+    "collapsedWidth": 200,
+    "collapsedHeight": 28,
+    "shadowH": 22,
+    "shadowBottom": 28,
+    "headerHeight": 48,
+    "contentInsetH": 20,
+    "answerBottomPad": 16,
+    "cardCorner": 14,
+    "cardPadV": 14,
+    "cardPadH": 16
+  },
+  "contractVersion": "screen-query-v1-r1"
+}

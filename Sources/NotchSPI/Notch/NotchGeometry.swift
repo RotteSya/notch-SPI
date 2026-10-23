@@ -115,7 +115,7 @@ struct NotchScreenLayout: Equatable {
         return NotchGeometry.collapsed(metrics, sideExtension: sideExtension)
     }
 
-    var cardWidth: CGFloat { min(600, max(1, visibleFrame.width - 2 * NotchMetrics.shadowMarginH)) }
+    var cardWidth: CGFloat { min(SharedProduct.cardWidth, max(1, visibleFrame.width - 2 * NotchMetrics.shadowMarginH)) }
     var maximumCardHeight: CGFloat {
         max(1, frame.maxY - visibleFrame.minY - NotchMetrics.shadowMarginBottom)
     }

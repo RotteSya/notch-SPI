@@ -32,11 +32,11 @@ enum CaptureAction: CaseIterable {
 
 /// Shared screenshot geometry keeps the flight's final frame and its reserved slot identical.
 enum CaptureStyle {
-    static let cardSize = NSSize(width: 128, height: 80)
-    static let cardRadius: CGFloat = 8
-    static let cardGap: CGFloat = 12
+    static let cardSize = NSSize(width: SharedVisual.number("captureStyle.cardWidth"), height: SharedVisual.number("captureStyle.cardHeight"))
+    static let cardRadius: CGFloat = SharedVisual.number("captureStyle.radius")
+    static let cardGap: CGFloat = SharedVisual.number("captureStyle.cardGap")
     static let referenceHeight: CGFloat = 48
-    static let referenceThumbnail = NSSize(width: 52, height: 30)
+    static let referenceThumbnail = NSSize(width: SharedVisual.number("captureStyle.referenceWidth"), height: SharedVisual.number("captureStyle.referenceHeight"))
     static let trayHeight: CGFloat = 136
     static let trayDetailHeight: CGFloat = 172
     static let actionHeight: CGFloat = 40

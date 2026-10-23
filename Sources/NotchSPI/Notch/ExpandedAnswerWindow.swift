@@ -176,21 +176,10 @@ final class ExpandedAnswerWindowController: NSWindowController, NSWindowDelegate
     private func renderAnswer(_ content: ExpandedAnswerContent) {
         let position = answerScroll.contentView.bounds.origin
         answer.beginTextUpdate()
-        answer.addSection(L10n.t("答案", "回答", "Answer"))
-        answer.addText(content.reading.conclusion, size: InformationHierarchy.conclusionSize, weight: .semibold)
-        if content.needsReview {
-            answer.addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange)
-        }
-        if !content.detail.isEmpty {
-            answer.addSection(L10n.t("解释", "解説", "Explanation"))
-            answer.addText(content.detail, size: InformationHierarchy.bodySize)
-        }
-        if content.explaining {
-            answer.addText(L10n.t("正在生成解释…", "解説を生成中…", "Generating explanation…"), size: 13, color: .secondaryLabelColor)
-        } else if content.explanationFailed {
-            answer.addText(L10n.t("解释未完成，原答案保留。", "解説は未完了です。元の回答を保持しています。", "Explanation incomplete. The original answer is preserved."), size: 13, color: .secondaryLabelColor)
-        } else if content.detail.isEmpty {
-            answer.addText(L10n.t("暂无已生成的解释", "生成済みの解説はありません", "No explanation has been generated yet"), size: 13, color: .secondaryLabelColor)
+        for row in SharedVisual.reading(answer: content.reading.conclusion, detail: content.detail, review: content.needsReview,
+            explaining: content.explaining, failed: content.explanationFailed) {
+            if row.kind == "section" { answer.addSection(row.text) }
+            else { answer.addText(row.text, size: row.size, weight: row.weight, color: row.color) }
         }
         explainButton.isHidden = !currentQuestion || !content.canExplain || content.explaining
         note.stringValue = currentQuestion

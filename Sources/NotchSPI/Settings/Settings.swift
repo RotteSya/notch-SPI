@@ -53,7 +53,7 @@ final class Settings {
         set { d.set(Self.reasoningEffortCycle.contains(newValue) ? newValue : "low", forKey: "reasoningEffort") }
     }
 
-    static let reasoningEffortCycle = ["low", "high", "max"]
+    static let reasoningEffortCycle = SharedProduct.reasoningEfforts
 
     // MARK: - Mode (tutor ↔ personality test)
 
