@@ -8,6 +8,11 @@ export const product = {
     "retentionSeconds": 900,
     "bodyLimit": 4194304
   },
+  "personalitySession": {
+    "maxAgeSeconds": 900,
+    "maxRecords": 5,
+    "maxContextBytes": 8192
+  },
   "reasoningEfforts": [
     "low",
     "high",
