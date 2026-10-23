@@ -60,6 +60,10 @@ const personaSession = fs.readFileSync(path.join(root, "shared/protocol/persona-
 outputs["desktop/generated/persona-session.mjs"] = "// Generated from shared/protocol/persona-session.mjs.\n" + personaSession;
 outputs["Sources/NotchSPI/Shared/SharedPersonaSessionSource.generated.swift"] =
   `// Generated from shared/protocol/persona-session.mjs.\nimport Foundation\nenum SharedPersonaSessionSource { static let javascript = ${JSON.stringify(personaSession.replaceAll("export ", "").replace(/^import .*$/gm, ""))} }\n`;
+const freeTrial = fs.readFileSync(path.join(root, "shared/protocol/free-trial.mjs"), "utf8");
+outputs["desktop/generated/free-trial.mjs"] = "// Generated from shared/protocol/free-trial.mjs.\n" + freeTrial;
+outputs["Sources/NotchSPI/Shared/SharedFreeTrialSource.generated.swift"] =
+  `// Generated from shared/protocol/free-trial.mjs.\nimport Foundation\nenum SharedFreeTrialSource { static let javascript = ${JSON.stringify(freeTrial.replaceAll("export ", ""))} }\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",
