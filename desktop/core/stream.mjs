@@ -7,10 +7,12 @@ export class ProtocolError extends Error {
 const uint = (n) => Number.isSafeInteger(n) && n >= 0;
 export function validSettlement(v, id) {
   if (
+    !validAccount(v) ||
     v.capture_id !== id ||
     !uint(v.balance_questions) ||
     !uint(v.held_questions) ||
-    !/^\d{1,40}$/.test(v.balance_version ?? "") ||
+    typeof v.balance_version !== "string" ||
+    !/^\d{1,40}$/.test(v.balance_version) ||
     typeof v.usable_result !== "boolean" ||
     typeof v.can_retry !== "boolean" ||
     typeof v.can_recover !== "boolean"
@@ -39,7 +41,8 @@ export function validAccount(v) {
   if (
     !v ||
     !uint(v.balance_questions) ||
-    (v.balance_version !== undefined && !/^\d{1,40}$/.test(v.balance_version))
+    (v.balance_version !== undefined &&
+      (typeof v.balance_version !== "string" || !/^\d{1,40}$/.test(v.balance_version)))
   )
     return false;
   for (const k of [
@@ -50,14 +53,14 @@ export function validAccount(v) {
   ])
     if (v[k] !== undefined && !uint(v[k])) return false;
   if (
-    v.account_totals &&
+    v.account_totals != null &&
     (!v.balance_version ||
       !["questions", "input_tokens", "output_tokens"].every((k) =>
         uint(v.account_totals[k]),
       ))
   )
     return false;
-  if (v.free_trial) {
+  if (v.free_trial != null) {
     const t = v.free_trial;
     if (
       !["eligible", "active", "expired", "ineligible"].includes(t.status) ||
