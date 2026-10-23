@@ -9,7 +9,7 @@
 - Intel/旧 macOS：本地主开发树兼容实现已撤回；现有下载入口及历史归档保留，详见 [撤回记录](docs/intel-retirement-2026-10-22.md)。
 - Mac 原生主开发树：Apple Silicon / macOS 14+，AppKit/Carbon，截图与题组、官方服务/自定义 API Key/本机 CLI 三通道、流式答案、公式、Ghost、本机最近查题、中日英界面。行为见 [客户端契约](docs/client-behavior.md)。
 - 版本以 `VERSION.env` 为准；[build 27 发布准备记录](docs/release-3.0-build27.md)是对应日期的证据，不能据此推断当前线上状态。Plus 的生产开关和账本以服务端配置与实现为准。
-- 本次独立治理提交不包含工作区已有的 Windows、Intel/Catalina、共享解析迁移和网络隔离开发改动；这些源码、发布证据与对应清理增量保留在原工作区，不能视为本提交已交付。
+- 独立治理提交的历史范围与验证边界见 [治理验收](docs/governance-acceptance-2026-10-21.md)；其他开发改动按独立提交逐组纳入。
 - 当前源码版本读取 `VERSION.env`；Swift 编译下限读取 `Package.swift`。开发引导限定 macOS 14+ arm64，不能把它的主机限制当成 Intel 发布包的系统下限。
 - 旧月票 QA 原型已退役；正式 Plus、题包、免费体验与旧用户兼容保持。完整答案窗口和其他 QA 入口仍保留，见 [QA 边界](docs/prototypes.md)。本地题库已从产品移除，旧用户文件不清理。
 
@@ -66,10 +66,11 @@
 
 ## 验证与交付
 
-本提交基于既有主线；工作区的 XCTest 网络隔离修复尚未纳入。`NSPI_QA_EPHEMERAL=1` 单独使用不足以阻止生产网络，运行完整 Swift 测试前须使用进程网络隔离或先纳入相应修复。本次提交验证不运行未隔离的 Swift 测试。
+测试前阅读 [网络隔离说明](docs/test-network-isolation-2026-10-21.md)。当前 XCTest 目标依赖 `Tests/NetworkIsolation`；历史源码副本不会自动获得此修复。`NSPI_QA_EPHEMERAL=1` 单独使用并不足以阻止生产网络。
 
 ```sh
 ./scripts/verify.sh --quick
+./scripts/verify.sh
 ```
 
 quick：健康检查、检查器测试、server/scheduler 类型检查、隔离 smoke。满足上述测试隔离条件后，`./scripts/verify.sh` 另检查两个 npm 锁、server/scheduler 测试、两个 Worker dry-run、Swift 测试、arm64 Release、资源、不可变证据、路由清单和差异空白。Swift 使用现有 checkout 并禁止自动解析依赖；命令不安装依赖。

@@ -11,10 +11,16 @@ let package = Package(
             dependencies: [.product(name: "SwiftMath", package: "SwiftMath"), .product(name: "BotAvatarsKit", package: "BotAvatarsKit")],
             path: "Sources/NotchSPI"
         ),
+        .target(
+            name: "TestNetworkIsolation",
+            path: "Tests/NetworkIsolation",
+            linkerSettings: [.linkedFramework("SystemConfiguration")]
+        ),
         .testTarget(
             name: "NotchSPITests",
-            dependencies: ["NotchSPI"],
+            dependencies: ["NotchSPI", "TestNetworkIsolation"],
             path: "Tests",
+            exclude: ["NetworkIsolation"],
             sources: ["NotchSPITests"],
             resources: [.copy("Fixtures")]
         )
