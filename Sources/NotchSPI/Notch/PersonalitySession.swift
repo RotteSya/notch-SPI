@@ -36,7 +36,7 @@ final class PersonalitySession {
     private let now: () -> Date
     private let maxRecords: Int
     private let maxAge: TimeInterval
-    private let maxContextBytes = 8 * 1_024
+    private let maxContextBytes = SharedProduct.personalityMaxContextBytes
 
     private var generation: UInt64 = 0
     private var nextSequence: UInt64 = 0
@@ -51,8 +51,8 @@ final class PersonalitySession {
 
     init(
         now: @escaping () -> Date = Date.init,
-        maxRecords: Int = 5,
-        maxAge: TimeInterval = 15 * 60
+        maxRecords: Int = SharedProduct.personalityMaxRecords,
+        maxAge: TimeInterval = SharedProduct.personalityMaxAge
     ) {
         self.now = now
         self.maxRecords = max(1, maxRecords)

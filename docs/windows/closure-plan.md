@@ -6,8 +6,8 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；自动连答、取消隔离、终态结算和 SSE 事件新增共用用例。人物像及剩余独立实现规则仍需继续审计；共用用例不等于实现已迁移到单一来源 |
-| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像保留时长/记录数/字节上限已进入 shared/product.json；自动连答、取消隔离、终态结算、SSE 事件和人物像会话新增共用用例。人物像解析及剩余独立实现规则仍需继续审计；共用用例不等于实现已迁移到单一来源 |
+| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
 | 视觉与性能一致 | 同素材成对截图/录像，明确帧时间及允许差异 | 共享引擎和参数已有；Windows 成对视觉与帧时间证据缺失 |
@@ -51,3 +51,10 @@
 - 行、事件和流的大小上限另有边界回归。Swift 生产实现未变，既有解码器测试保留。
 - `output/verification/20261023T082513Z-45451/summary.tsv`：完整验证通过，desktop 140、server 684、scheduler 17、Swift 591（4 项跳过），arm64 Release 通过；硬件、签名及 Postgres 仍保留各自未执行边界。
 - 这是共用契约测试，尚不等于 SSE 两端实现已统一；此前候选包也不代表本次新源码。
+
+## 2026-10-23 人物像会话时序
+
+- `Tests/Fixtures/persona-session/cases.json` 的 8 组时序由双端真实会话实现消费，覆盖完成/失败刷新时钟、精确过期、手动重置、scope 切换、失败屏障和 5 条记录窗口。修复前 desktop 6 组失败，修复后双端通过。
+- Windows 以完成/失败时间刷新活动时钟；重置保留捕获序号，失败屏障固定记录对应序号，避免后续 begin 改变其指向。
+- `shared/product.json.personalitySession` 统一保留时长、记录数和上下文字节上限，经现有生成器供 Swift 与 desktop 使用。尚待隔离副本中的参数变更实证；人物像解析和双端任务隔离适配仍需继续审计。
+- `output/verification/20261023T083526Z-55885/summary.tsv`：完整验证通过，desktop 148、server 684、scheduler 17、Swift 592（4 项跳过），arm64 Release 构建通过。未生成新候选、推送或发布，实机与签名边界未变。

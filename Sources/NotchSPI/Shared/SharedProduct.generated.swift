@@ -2,6 +2,9 @@
 import Foundation
 
 enum SharedProduct {
+    static let personalityMaxAge: TimeInterval = 900.0
+    static let personalityMaxRecords = 5
+    static let personalityMaxContextBytes = 8192
     static let captureLimit = 4
     static let submitDelay: TimeInterval = 4.0
     static let reasoningEfforts = ["low","high","max"]
