@@ -6,8 +6,8 @@
 
 | 要求 | 可接受的证据 | 当前状态 / 下一步 |
 | --- | --- | --- |
-| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像保留时长/记录数/字节上限已进入 shared/product.json；自动连答、取消隔离、终态结算、SSE 事件和人物像会话新增共用用例。人物像解析及剩余独立实现规则仍需继续审计；共用用例不等于实现已迁移到单一来源 |
-| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
+| 规则单一来源 | 同一源变更抵达两个实际运行时；参数、协议、状态规则有共用用例 | 已有 shared/、生成器、prove-shared-change；人物像参数及纯解析器已迁入 shared/，两端执行同源规则。自动连答、取消隔离、终态结算、SSE 事件和人物像会话已有共用用例；剩余独立会话/协议状态规则仍需继续审计，共用用例不等于实现已迁移 |
+| 两端行为一致 | 相同输入及事件序列下的结果、请求次数、取消/账户隔离一致 | `Tests/Fixtures/auto-session/`、`capture-isolation/`、`settlement/`、`official-stream/`、`persona-session/`、`personality-parser/` 被 Swift 和 desktop 共同消费；不是所有功能均覆盖 |
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
 | 视觉与性能一致 | 同素材成对截图/录像，明确帧时间及允许差异 | 共享引擎和参数已有；Windows 成对视觉与帧时间证据缺失 |
@@ -64,3 +64,10 @@
 - `node scripts/cross-platform/prove-shared-change.mjs` 已执行真实隔离变更，5 个步骤全部通过，包含 Swift 的 3 个人物像参数行为测试；`result.json` 绑定被证明源码和各步骤日志摘要，主树源码不变也作为硬性断言。
 - 原有截图等待时间与阅读字号变更证明继续通过；人物像参数在副本变为 901 秒、2 条、1024 字节，主树仍为 900 秒、5 条、8192 字节。
 - `output/verification/20261023T084458Z-65593/summary.tsv` 快速工程检查通过。本轮仅调整证明工具与文档，不替代上一轮产品全量验证，也不构成 Windows 实机或新候选验收。
+
+## 2026-10-23 人物像解析单一来源
+
+- `shared/protocol/personality.mjs` 成为人物像纯解析规则来源，生成 desktop 模块和 Mac JavaScriptCore 源码；两端原重复解析实现已移除，Swift 保留 Codable 类型与调用适配。
+- `Tests/Fixtures/personality-parser/cases.json` 的 14 个用例在两端断言完整结果，包含可见文本、最终/临时选项、上下文、错误序号及协议诊断。既有 Mac 解析、连续题和评估测试保留。
+- 字符上限统一按 grapheme 计数。旧 Windows 实现在复杂 emoji 的 summary/choice 两个用例错误丢弃上下文，已用旧源码复现并由共享实现修复。
+- `output/verification/20261023T085150Z-73976/summary.tsv` 完整验证通过：desktop 162、server 684、scheduler 17、Swift 593（4 项跳过），arm64 Release 构建通过。新解析器尚未进入新的配对候选包；实机、签名及远端 CI 证据仍未补齐。
