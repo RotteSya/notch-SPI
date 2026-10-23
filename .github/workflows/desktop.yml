@@ -64,7 +64,8 @@ jobs:
             desktop/dist/candidates/*/delivery-manifest.json
             desktop/test-output/
             output/windows-delivery/manifest.json
-            dist/*.dmg
+            dist/candidates/*/*.dmg
+            dist/candidates/*/delivery-manifest.json
             output/shared-change-proof/result.json
             output/shared-change-proof/*.log
           if-no-files-found: warn

@@ -38,3 +38,21 @@ export async function verifyArchivedFile(entries, name, expected) {
   assert.equal(matches.length, 1, `Missing or duplicate ZIP entry: ${name}`);
   assert.equal(sha256(await matches[0].buffer()), sha256(expected), `Stale ZIP entry: ${name}`);
 }
+
+// Do not follow bundle symlinks: their targets, not external files, are part of the payload.
+export function bundleIdentity(directory) {
+  const files = [];
+  function visit(relative) {
+    const absolute = path.join(directory, relative);
+    const stat = fs.lstatSync(absolute);
+    if (stat.isSymbolicLink()) files.push([relative, 'symlink', fs.readlinkSync(absolute)]);
+    else if (stat.isDirectory()) {
+      for (const name of fs.readdirSync(absolute).sort()) visit(relative ? `${relative}/${name}` : name);
+    } else {
+      assert.ok(stat.isFile(), `Unsupported bundle entry: ${relative}`);
+      files.push([relative, (stat.mode & 0o111) !== 0 ? 'executable' : 'file', sha256(fs.readFileSync(absolute))]);
+    }
+  }
+  visit('');
+  return { sha256: sha256(JSON.stringify(files)), fileCount: files.length };
+}

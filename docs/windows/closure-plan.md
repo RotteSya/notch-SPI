@@ -11,7 +11,7 @@
 | 自动验证闭环 | 当前提交的双平台 CI 成功记录，必要检查作为合并要求 | 本地完整验证已有；远端 CI 和分支保护仍需重新只读核实，禁止推送限制继续生效 |
 | Windows 实机 | 绑定具体候选、系统、DPI、屏幕布局的验收记录 | 未完成。按 manual-acceptance.md 检查截图、热键、焦点、多屏、凭据与支付回跳；Mac/Electron smoke 不能替代 |
 | 视觉与性能一致 | 同素材成对截图/录像，明确帧时间及允许差异 | 共享引擎和参数已有；Windows 成对视觉与帧时间证据缺失 |
-| 交付可追溯 | 包内源码身份、同候选包摘要、CI 标识、验证及实机证据绑定 | Windows 入口已补候选独立目录、源码指纹与 ZIP 内核验，并完成本机离线构建验证；Mac 包仍需同等追溯；不可拿旧包附上新提交 |
+| 交付可追溯 | 包内源码身份、同候选包摘要、CI 标识、验证及实机证据绑定 | Windows 入口已补候选独立目录、源码指纹与 ZIP 内核验，并完成本机离线构建验证；Mac 入口已增加包内来源与 DMG 内容对照，实际 ad-hoc DMG 正向与旧包反向检查通过；不可拿旧包附上新提交 |
 | 安装与升级 | 已签名候选安装、升级保留数据、错误签名拒绝及回退记录 | Windows 未完成；正式签名、更新源和发布仍需对应授权 |
 
 ## 推进顺序
@@ -29,3 +29,10 @@
 - `output/cross-platform-closure/windows-candidate-offline.log`：禁止网络条件下复用本机 Electron ZIP，构建与实际 ZIP 内容核验成功；实际 ZIP 的错误内容反向检查也被拒绝。
 - GitHub Desktop workflow 只读查询再次 TLS 超时；远端运行状态仍未确认。
 - 本轮不构成 Mac 包追溯或 Windows 实机/安装/签名验收完成的证据。
+
+## 2026-10-23 Mac 追溯验证
+
+- `output/verification/20261023T075446Z-20373/summary.tsv`：完整自动验证通过；589 项 Swift 测试中 4 项跳过，真实硬件/安装/更新验收仍未完成。
+- `output/cross-platform-closure/mac-candidate.log`：ad-hoc App 严格签名校验、DMG 只读挂载、包内内容摘要对照全部通过。
+- `output/cross-platform-closure/mac-negative-check.json`：已有旧 DMG 被拒绝，原成功 manifest 保留，临时挂载已卸载清理。
+- `dist/NotchSPI.dmg` 旧包保留；release 新包进入独立候选目录。未使用正式签名或 Apple 公证，未推送或发布。

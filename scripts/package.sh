@@ -8,7 +8,7 @@ cd "$REPO_ROOT"
 usage() {
   echo "Usage: $0 qa|release [--unsigned]" >&2
   echo "  qa       → dist-qa/NotchSPI.app" >&2
-  echo "  release  → dist/NotchSPI.dmg (Developer ID + notarize + staple)" >&2
+  echo "  release  → dist/candidates/<id>/NotchSPI.dmg (Developer ID + notarize + staple)" >&2
   echo "  --unsigned  release only: ad-hoc signed DMG, skip notarization" >&2
 }
 
@@ -98,21 +98,26 @@ if [[ "$MODE" == "release" && "$UNSIGNED" != 1 && -z "$SIGN_ID" ]]; then
   exit 1
 fi
 
+node scripts/lib/swift-check.mjs "$REPO_ROOT"
+PROVENANCE_DIR="$(node scripts/cross-platform/mac-provenance.mjs begin "$MODE")"
+CANDIDATE_ID="$(basename "$PROVENANCE_DIR")"
+
 echo "==> Building release binary (arm64)"
-swift build -c release --arch arm64
-BINDIR="$(swift build -c release --arch arm64 --show-bin-path)"
+swift build --disable-automatic-resolution --skip-update -c release --arch arm64
+BINDIR="$(swift build --disable-automatic-resolution --skip-update -c release --arch arm64 --show-bin-path)"
 BIN="$BINDIR/$APP_NAME"
 [[ -x "$BIN" ]] || { echo "package: missing binary $BIN" >&2; exit 1; }
 echo "    $(file "$BIN")"
 
 if [[ "$MODE" == "qa" ]]; then
   OUT="dist-qa"
-  rm -rf "$OUT"
   APP="$OUT/$APP_NAME.app"
+  rm -rf "$APP"
+  rm -f "$OUT/delivery-manifest.json"
 else
-  OUT="dist"
+  OUT="dist/candidates/$CANDIDATE_ID"
+  [[ ! -e "$OUT" ]] || { echo "package: candidate already exists: $OUT" >&2; exit 1; }
   STAGING="$OUT/staging"
-  rm -rf "$OUT"
   APP="$STAGING/$APP_NAME.app"
 fi
 
@@ -124,6 +129,7 @@ ditto "$BINDIR/SwiftMath_SwiftMath.bundle" "$APP/Contents/Resources/SwiftMath_Sw
 ditto Resources/ThirdParty "$APP/Contents/Resources/ThirdParty"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 cp "Resources/$ICON_FILE" "$APP/Contents/Resources/$ICON_FILE"
+cp "$PROVENANCE_DIR/build-provenance.json" "$APP/Contents/Resources/build-provenance.json"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -162,6 +168,7 @@ echo "==> Verifying app signature"
 codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
 
 if [[ "$MODE" == "qa" ]]; then
+  node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP"
   echo "==> Done:"
   du -sh "$APP" | sed 's/^/    /'
   echo "    $(cd "$OUT" && pwd)/$APP_NAME.app"
@@ -179,6 +186,7 @@ echo "==> Verifying DMG integrity"
 hdiutil verify "$OUT/$APP_NAME.dmg"
 
 if [[ "$UNSIGNED" == 1 || -z "$SIGN_ID" ]]; then
+  node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$APP_NAME.dmg"
   echo "==> Unsigned DMG (ad-hoc). Recipients must bypass Gatekeeper."
   echo "==> Done:"
   ls -lh "$OUT/$APP_NAME.dmg"
@@ -194,5 +202,6 @@ echo "==> Stapling notarization ticket"
 xcrun stapler staple "$OUT/$APP_NAME.dmg"
 xcrun stapler validate "$OUT/$APP_NAME.dmg" 2>&1 | sed 's/^/    /'
 
+node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$APP_NAME.dmg"
 echo "==> Done:"
 ls -lh "$OUT/$APP_NAME.dmg"

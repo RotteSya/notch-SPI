@@ -53,3 +53,26 @@ test('ZIP payload verification rejects stale, missing and duplicate entries', as
   await assert.rejects(verifyArchivedFile([], 'resources/app.asar', expected), /Missing or duplicate/);
   await assert.rejects(verifyArchivedFile([entry('resources/app.asar', 'new archive'), entry('resources/app.asar', 'new archive')], 'resources/app.asar', expected), /Missing or duplicate/);
 });
+
+test('bundle identity detects resource tampering, missing files and changed symlink targets', async t => {
+  const { bundleIdentity } = await import('../cross-platform/provenance.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nspi-bundle-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'Resources'));
+  const resource = path.join(root, 'Resources', 'data');
+  fs.writeFileSync(resource, 'original');
+  const original = bundleIdentity(root);
+  fs.writeFileSync(resource, 'tampered');
+  assert.notDeepEqual(bundleIdentity(root), original);
+  fs.writeFileSync(resource, 'original');
+  assert.deepEqual(bundleIdentity(root), original);
+  fs.unlinkSync(resource);
+  assert.notDeepEqual(bundleIdentity(root), original);
+  if (process.platform !== 'win32') {
+    fs.symlinkSync('/outside-original', resource);
+    const linked = bundleIdentity(root);
+    fs.unlinkSync(resource);
+    fs.symlinkSync('/outside-replaced', resource);
+    assert.notDeepEqual(bundleIdentity(root), linked);
+  }
+});
