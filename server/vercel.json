@@ -2,7 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "outputDirectory": "public",
-  "git": { "deploymentEnabled": false },
+  "git": {
+    "deploymentEnabled": false
+  },
   "fluid": true,
   "functions": {
     "api/index.ts": {
@@ -10,5 +12,17 @@
       "memory": 1024
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/dl/intel",
+      "destination": "https://github.com/RotteSya/notch-SPI/releases/download/v3.0/NotchSPI-3.0-build28-Intel.dmg",
+      "permanent": false
+    }
+  ]
 }
