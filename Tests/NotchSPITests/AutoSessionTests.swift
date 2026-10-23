@@ -105,6 +105,29 @@ final class AutoSessionTests: XCTestCase {
 
     // MARK: Engine lifecycle
 
+    func testSharedAutoSessionFixtures() throws {
+        struct Fixture: Decodable {
+            let id: String
+            let luma: [UInt8]
+            let triggerTicks: [Int]
+        }
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "cases", withExtension: "json", subdirectory: "Fixtures/auto-session"))
+        let fixtures = try JSONDecoder().decode([Fixture].self, from: Data(contentsOf: url))
+        XCTAssertFalse(fixtures.isEmpty)
+        for fixture in fixtures {
+            let clock = Clock()
+            let engine = watchingEngine(clock: clock)
+            for (index, value) in fixture.luma.enumerated() {
+                clock.advance(0.5)
+                let expected: AutoSessionEngine.TickOutcome = fixture.triggerTicks.contains(index) ? .trigger : .none
+                XCTAssertEqual(engine.tick(hash: grid(value)), expected, "\(fixture.id), tick \(index)")
+                XCTAssertTrue(engine.isActive, fixture.id)
+                XCTAssertEqual(engine.questionsAsked, 1, "Polling must not count a new success")
+            }
+        }
+    }
+
     func testStartThenFirstSuccessEntersBaselinePending() {
         let engine = AutoSessionEngine()
         engine.start(config: .init(maxQuestions: 20))

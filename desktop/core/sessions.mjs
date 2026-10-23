@@ -65,6 +65,13 @@ export class AutoSession {
     this.stable = diff(hash, this.last) < 0.02 ? this.stable + 1 : 0;
     this.last = hash;
     if (this.changed && this.stable >= 2) {
+      // A temporary overlay may disappear back to the same question.
+      // Match the native engine: rearm instead of submitting it again.
+      if (diff(hash, this.baseline) < 0.02) {
+        this.changed = false;
+        this.stable = 0;
+        return false;
+      }
       this.state = "running";
       return true;
     }

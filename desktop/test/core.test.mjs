@@ -184,6 +184,26 @@ test("Prompts use shared templates and do not expand user content", () => {
     /OBJECTIVE RESULT V1/,
   );
 });
+const autoFixtures = JSON.parse(
+  fs.readFileSync(new URL("../../Tests/Fixtures/auto-session/cases.json", import.meta.url)),
+);
+assert.ok(autoFixtures.length > 0);
+for (const fixture of autoFixtures)
+  test(`Shared AutoSession fixture: ${fixture.id}`, () => {
+    const session = new AutoSession();
+    session.start(20, 0);
+    session.succeeded(100, false, 0);
+    for (const [index, value] of fixture.luma.entries()) {
+      assert.equal(
+        session.tick(new Array(640).fill(value), (index + 1) * 500),
+        fixture.triggerTicks.includes(index),
+        `${fixture.id}, tick ${index}`,
+      );
+      assert.equal(session.active, true);
+      assert.equal(session.count, 1, "Polling must not count a new success");
+    }
+  });
+
 test("Auto mode counts only successes, waits for changed and stable screen; stops at cap/idle/failures", () => {
   const a = new AutoSession();
   a.start(5, 0);
