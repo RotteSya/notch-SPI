@@ -82,47 +82,50 @@ export function validAccount(v) {
 }
 // Byte framing handles split UTF-8, CR/LF, BOM, comments and multi-line SSE data.
 export class SSEFramer {
-  decoder = new TextDecoder("utf-8", { fatal: true });
-  line = "";
+  decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  line = [];
   lines = [];
   bytes = 0;
   eventBytes = 0;
-  lineBytes = 0;
   skipLF = false;
-  feed(chunk) {
-    this.bytes += chunk.byteLength;
-    if (this.bytes > 4 * 1024 * 1024)
-      throw new ProtocolError("Stream too large");
-    const values = [];
-    for (const char of this.decoder.decode(chunk, { stream: true })) {
+  firstLine = true;
+  *feed(chunk) {
+    // Yield each complete event before examining later bytes in this chunk.
+    // A malformed suffix must not erase a validated settlement or a prior DONE.
+    for (const byte of chunk) {
+      if (++this.bytes > 4 * 1024 * 1024)
+        throw new ProtocolError("Stream too large");
       if (this.skipLF) {
         this.skipLF = false;
-        if (char === "\n") continue;
+        if (byte === 10) continue;
       }
-      if (char === "\r" || char === "\n") {
-        this.skipLF = char === "\r";
-        if (!this.line) {
-          if (this.lines.length) values.push(this.lines.join("\n"));
+      if (byte === 13 || byte === 10) {
+        this.skipLF = byte === 13;
+        let line = this.decoder.decode(Uint8Array.from(this.line));
+        this.line = [];
+        if (this.firstLine) {
+          this.firstLine = false;
+          if (line.startsWith("\uFEFF")) line = line.slice(1);
+        }
+        if (!line) {
+          const payload = this.lines.length ? this.lines.join("\n") : null;
           this.lines = [];
           this.eventBytes = 0;
-        } else if (this.line === "data" || this.line.startsWith("data:")) {
-          const data = this.line.slice(5).replace(/^ /, "");
+          if (payload !== null) yield payload;
+        } else if (line === "data" || line.startsWith("data:")) {
+          const data = line.slice(5).replace(/^ /, "");
           this.eventBytes += new TextEncoder().encode(data).length + 1;
           if (this.eventBytes > 512 * 1024) throw new ProtocolError();
           this.lines.push(data);
         }
-        this.line = "";
-        this.lineBytes = 0;
       } else {
-        this.line += char;
-        this.lineBytes += new TextEncoder().encode(char).length;
-        if (this.lineBytes > 512 * 1024) throw new ProtocolError();
+        if (this.line.length >= 512 * 1024) throw new ProtocolError();
+        this.line.push(byte);
       }
     }
-    return values;
   }
   finish() {
-    this.decoder.decode();
+    this.decoder.decode(Uint8Array.from(this.line));
   }
 }
 export class OfficialStream {
@@ -148,6 +151,7 @@ export class OfficialStream {
     } catch {
       throw new ProtocolError();
     }
+    if (!v || typeof v !== "object") throw new ProtocolError();
     if (v.type === "delta") {
       if (this.receipt || this.error || typeof v.text !== "string")
         throw new ProtocolError();
@@ -156,12 +160,16 @@ export class OfficialStream {
         throw new ProtocolError();
     } else if (v.type === "error") {
       if (this.receipt || this.error) throw new ProtocolError();
-      this.error = v.error ?? v;
-      if (!this.error.message) throw new ProtocolError();
+      const error = v.error ?? v;
+      if (typeof error.message !== "string" || !error.message ||
+          (error.code != null && typeof error.code !== "string"))
+        throw new ProtocolError();
+      this.error = error;
     } else if (v.type === "usage") {
       if (
         this.receipt ||
         !validAccount(v) ||
+        (v.explanation_available != null && typeof v.explanation_available !== "boolean") ||
         !uint(v.input_tokens) ||
         !uint(v.output_tokens) ||
         ![0, 1].includes(v.questions_charged) ||
