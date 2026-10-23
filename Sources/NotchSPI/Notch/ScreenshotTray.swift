@@ -132,7 +132,7 @@ final class ScreenshotTray: NSView {
                 }
                 settle.keyTimes = [0, 0.3, 0.65, 1]
                 settle.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
-                settle.duration = 0.22
+                settle.duration = SharedVisual.number("captureStyle.settleDuration")
                 card.layer?.add(settle, forKey: "landing")
             }
         }
@@ -295,7 +295,7 @@ final class ScreenshotTray: NSView {
         if reorderPending {
             reorderPending = false
             reorder.set(0)
-            reorder.animate(to: 1, duration: 0.22)
+            reorder.animate(to: 1, duration: SharedVisual.number("captureStyle.reorderDuration"))
         } else if reorder.isAnimating { applyReorder(reorder.value) }
     }
 

@@ -3,7 +3,7 @@ import Foundation
 /// One local intake round. All times are monotonic seconds; animation never owns a deadline.
 /// A capture token fences late picker/file callbacks after cancellation or a new round.
 struct ScreenshotRound<Item> {
-    static var limit: Int { 4 } // Existing official-service image contract.
+    static var limit: Int { SharedProduct.captureLimit } // Existing official-service image contract.
     private(set) var id = UUID()
     private(set) var items: [Item] = []
     private(set) var captureToken: UUID?
@@ -27,7 +27,7 @@ struct ScreenshotRound<Item> {
         captureToken = nil
         if let item {
             items.append(item)
-            deadline = items.count >= 2 && !previewing ? now + 4 : nil
+            deadline = items.count >= 2 && !previewing ? now + SharedProduct.submitDelay : nil
         } else {
             deadline = previewing ? nil : pausedRemaining.map { now + $0 }
         }
@@ -51,13 +51,13 @@ struct ScreenshotRound<Item> {
         guard value != previewing else { return }
         previewing = value
         if value { deadline = nil; pausedRemaining = nil }
-        else if captureToken == nil { deadline = items.count >= 2 ? now + 4 : nil }
+        else if captureToken == nil { deadline = items.count >= 2 ? now + SharedProduct.submitDelay : nil }
     }
 
     mutating func remove(at index: Int, now: TimeInterval) -> Item? {
         guard captureToken == nil, items.indices.contains(index) else { return nil }
         let item = items.remove(at: index)
-        deadline = items.count >= 2 && !previewing ? now + 4 : nil
+        deadline = items.count >= 2 && !previewing ? now + SharedProduct.submitDelay : nil
         pausedRemaining = nil
         return item
     }
@@ -65,7 +65,7 @@ struct ScreenshotRound<Item> {
     mutating func restore(_ item: Item, at index: Int, now: TimeInterval) -> Bool {
         guard captureToken == nil, items.count < Self.limit else { return false }
         items.insert(item, at: min(max(0, index), items.count))
-        deadline = items.count >= 2 && !previewing ? now + 4 : nil
+        deadline = items.count >= 2 && !previewing ? now + SharedProduct.submitDelay : nil
         return true
     }
 

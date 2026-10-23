@@ -206,12 +206,9 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
             addText(L10n.t("继续使用原来的快捷键查题，完成后会自动保存在这里。", "いつものショートカットで解答すると、ここに自動保存されます。", "Use your usual capture shortcut. Completed answers will appear here automatically."), size: 14)
             return
         }
-        addSection(L10n.t("答案", "回答", "Answer"))
-        addText(record.reading.conclusion, size: InformationHierarchy.conclusionSize, weight: .semibold)
-        if record.needsReview { addText(AnswerReadingContent.reviewMessage, size: 13, color: .systemOrange) }
-        if !record.detail.isEmpty {
-            addSection(L10n.t("解释", "解説", "Explanation"))
-            addText(record.detail, size: InformationHierarchy.bodySize)
+        for row in SharedVisual.reading(answer: record.reading.conclusion, detail: record.detail, review: record.needsReview, emptyNote: false) {
+            if row.kind == "section" { addSection(row.text) }
+            else { addText(row.text, size: row.size, weight: row.weight, color: row.color) }
         }
         addSection(L10n.t("题目截图", "問題の画像", "Question images"))
         for index in 0..<record.imageCount {

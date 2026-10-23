@@ -526,7 +526,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     private let telemetryCheckbox = SettingsToggleButton()
     private let autoCopyCheckbox = SettingsToggleButton()
 
-    private static let autoCapChoices = [5, 10, 20, 30, 50, 100, AutoSessionEngine.unlimitedQuestions]
+    private static let autoCapChoices = SharedProduct.autoCaps
 
     private let contentWidth: CGFloat = 536
 

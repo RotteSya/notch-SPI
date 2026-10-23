@@ -69,7 +69,7 @@ enum BalanceVersion {
 }
 
 struct ScreenQueryRequest: Equatable {
-    static let version = "screen-query-v1-r1"
+    static let version = SharedProduct.contractVersion
     let profileID: String
     let language: String
     let parentCaptureID: UUID?

@@ -98,6 +98,7 @@ note_step() {
 echo "==> verify $RUN_ID"
 run_step repo-health -- node "$REPO_ROOT/scripts/repo-health.mjs"
 run_step repo-health-tests -- node --test "$REPO_ROOT"/scripts/test/*.test.mjs
+run_step shared-generated -- node "$REPO_ROOT/scripts/cross-platform/generate.mjs" --check
 run_step server-typecheck -- npm --prefix "$REPO_ROOT/server" run typecheck
 run_step scheduler-typecheck WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run typecheck
 run_step isolated-smoke \
@@ -114,7 +115,8 @@ run_step isolated-smoke \
   -- "$REPO_ROOT/scripts/dev.sh" --smoke
 
 if [[ "$QUICK" -eq 0 ]]; then
-  run_step dependency-lock -- bash -c 'for project in server scheduler; do node scripts/lib/lock-check.mjs "$project" || exit 1; done'
+  run_step dependency-lock -- bash -c 'for project in server scheduler desktop; do node scripts/lib/lock-check.mjs "$project" || exit 1; done'
+  run_step desktop-check -- npm --prefix "$REPO_ROOT/desktop" run check
   run_step server-tests -- npm --prefix "$REPO_ROOT/server" test
   run_step scheduler-tests -- npm --prefix "$REPO_ROOT/scheduler" test
   run_step scheduler-build WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run build

@@ -1,0 +1,77 @@
+{
+  "name": "notchspi-desktop",
+  "version": "3.0.27",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "description": "NotchSPI cross-platform desktop client",
+  "author": "NotchSPI",
+  "scripts": {
+    "start": "electron .",
+    "dev": "node ../scripts/cross-platform/dev.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node ../scripts/cross-platform/generate.mjs --check && node --check main.mjs && node --check ui/app.mjs && npm test",
+    "pack:win": "node ../scripts/cross-platform/package.mjs",
+    "pack:mac": "electron-builder --mac --arm64 --dir --publish never",
+    "smoke": "electron . --smoke",
+    "smoke:motion": "electron . --motion-smoke",
+    "smoke:capture": "electron . --capture-smoke"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "js-yaml": "4.3.2",
+    "katex": "0.19.0"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.rottesya.notchspi.desktop",
+    "productName": "NotchSPI Desktop",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.mjs",
+      "THIRD_PARTY_NOTICES.md",
+      "preload.cjs",
+      "core/**",
+      "platform/**",
+      "ui/**",
+      "generated/**",
+      "node_modules/katex/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "NotchSPI-${version}-Windows-${arch}.${ext}",
+      "signAndEditExecutable": true,
+      "icon": "ui/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "category": "public.app-category.education",
+      "identity": null
+    },
+    "protocols": [
+      {
+        "name": "NotchSPI Desktop",
+        "schemes": [
+          "notchspi"
+        ]
+      }
+    ]
+  },
+  "engines": {
+    "node": ">=24.16.0"
+  }
+}

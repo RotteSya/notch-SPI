@@ -1,0 +1,50 @@
+# 共享架构与渐进迁移
+
+## 选择
+
+Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当前 AppKit 保持运行，不整体切换 Mac 界面。选择依据是现有 Node/TypeScript 后端、公式渲染与流式协议可以直接复用，透明置顶窗口、Windows 截图/热键/凭据/安装器有成熟平台接口，而立即把全部 AppKit 重写会扩大 Mac 体验回归范围。
+
+对照其他路线：WinUI 能提供原生系统集成，但无法直接共享 AppKit UI，双份状态机更多；纯 Web 没有桌面截图/全局快捷键；Tauri 仍需要 WebView 与 Rust/Windows 系统层，而且此仓库没有 Rust 基础。Electron 的代价是安装体积、运行内存、Chromium/DWM 与 CoreAnimation 的渲染差异，不能因为用同一 CSS 就忽略这些验收。
+
+## 单一来源与适配边界
+
+| 来源 | 实际消费者 | 后续是否只改一次 |
+|---|---|---|
+| `server/` | AppKit 与 Windows 同一 HTTP/SSE 后端 | 账户、计费、模型路由、支持范围等服务端行为是 |
+| `shared/prompts.json` | 生成的 Swift `SharedProduct` 与桌面 JS | 查题、多图、screen_query、人物像提示词是；输入值只替换一次，不再展开 |
+| `shared/product.json` | Swift 捕获轮次/设置/自动连答/几何/动效；JS intake/motion/设置 | 已接入的参数是；未接入的原生外观仍需适配 |
+| `server/src/objective-result.ts` | 生成的 JS + Mac JavaScriptCore 包装 | 客观题严格解析、容错组合、FINAL 回退逻辑是 |
+| `Tests/Fixtures/ObjectiveResult/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
+| `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
+| `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |
+| `shared/ui/flight.mjs`、`capture.mjs` | Mac ScreenshotFlight/Tray + Windows 多窗口飞入层 | 轨迹、裁切避让、尺寸、落地/重排参数一次修改；窗口系统分别适配 |
+| `shared/ui/reading.mjs` | Mac 完整答案/历史详情 + Electron 答案 | 段落结构、三语复核/错误提示、字号层级一次修改；文本绘制保留平台实现 |
+| `shared/ui/onboarding.mjs` | Mac 引导检查点 + 桌面完整引导 | 恢复规则一次修改；截图、权限、试用请求和视图通过平台适配 |
+| `desktop/core/` | Electron macOS 开发宿主 / Windows | 桌面两平台可共用；原生 Mac 的 SSE/会话状态机尚未迁移 |
+| `desktop/ui/` | Electron macOS 开发宿主 / Windows | 桌面两平台共用，当前生产 AppKit UI 不消费它 |
+| `desktop/platform/` | Windows 或桌面宿主 | 截图、DPAPI/safeStorage、历史、更新为边界；Mac 原有原生适配保留 |
+
+`main.mjs` 管理窗口、生命周期、任务 generation、owner、快捷键、托盘、权限和 IPC 白名单。renderer 没有 Node/网络权限，凭据留在主进程；仅加载本地页面，禁止任意导航/弹窗。答案转为转义文本、受限格式和 `trust:false` KaTeX，不把模型内容当 HTML 执行。密钥通过系统 `safeStorage` 加密，不写进普通 settings/history。
+
+历史题图是本机用户数据，单独文件保存并按容量回收。开发/QA 使用单独 userData，凭据仅在内存；打包版本拒绝开发 flags。QA 与 smoke 不可连接生产端点。模型 fixture 仅在开发入口与测试内，发行包不包含 fixture/test 目录。
+
+## 实际共享改动证明
+
+`prove-shared-change.mjs` 在 `output/shared-change-proof/source/` 创建独立源码副本，将 `capture.submitDelay` **4→5**，执行同一个生成器，然后运行：
+
+1. 桌面真实 `Intake` 单元回归，验证新时间到达前不能提交，到达后提交。
+2. Swift `SharedProductTests`，构造真实 `ScreenshotRound`，验证两张图等待时间跟随 JSON 改变。
+3. 将共享阅读 bodySize **15→16**，运行真实桌面 HTML 生成器与 Mac `SharedVisual.reading`/`InformationHierarchy`，断言两者使用 16。
+4. 检查主工作区配置保持原值 4 秒/15 pt。
+
+2026-10-19 四项检查 exit 0，结果 `output/shared-change-proof/result.json`，不是只比较生成文本。原生 Mac 全量 585 项测试也通过，原有答案解析 fixtures 覆盖 JavaScriptCore 迁移。
+
+## 已完成的渐进迁移与边界
+
+这次迁移让 Mac 在默认产品路径中执行共享 UI 描述和动画，无关闭的试验开关。原生 Ghost 的绘制器、窗口/命中测试、CADisplayLink、SwiftMath、可选中文字及滚动锚点保持原适配。旧 Swift Ghost 引擎作为独立测试基准保留；生产两端使用同一 JS 仿真，7,200 帧与旧版误差低于 1e-9。
+
+共享阅读返回语义段落（标题/结论/解释/复核/错误），AppKit 保留原 NSStackView/NSTextField，Electron 使用同一段落的安全 DOM。这样阅读内容与层级变更只改一份，系统字体、文字栅格化和原生控件行为依然在适配层。既有长解释持续更新、选择、焦点、滚动与销毁测试均保留并通过。
+
+Windows 飞入层由 `platform/flights.mjs` 管理，每屏一个透明穿透窗口，按真实窗口原点映射全局 DIP，跨屏图片只发送一次。纯队列与几何在 core/shared 层。Win32 DWM 窗口矩形通过固定 PowerShell P/Invoke 转换为 Electron DIP，未知/消失的来源使用原 Mac 定义的淡入路径。截图与请求不会等待飞行动画。
+
+仍需分别适配的范围是设置/引导的视图、窗口系统、截图权限/目标身份、热键、凭据、文本/材质绘制及安装签名。不能将这些平台适配称为已经共用同一套界面代码。常规提示词、解析器、计费后端、已迁移的 UI 结构与动效改动从同一提交进入两个构建，无需复制第二份逻辑。

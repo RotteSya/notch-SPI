@@ -112,8 +112,8 @@ final class AutoSessionEngine {
     /// Finite caps are clamped to 1…100.
     nonisolated static func clampMaxQuestions(_ n: Int) -> Int {
         if n == unlimitedQuestions { return n }
-        guard n != 0 else { return 20 }
-        return min(max(n, 1), 100)
+        guard n != 0 else { return SharedProduct.defaultAutoCap }
+        return min(max(n, 1), SharedProduct.autoCaps.max()!)
     }
 
     func start(config: Config) {
