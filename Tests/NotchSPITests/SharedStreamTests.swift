@@ -6,13 +6,14 @@ final class SharedStreamTests: XCTestCase {
         struct Scenario: Decodable {
             let id: String, captureID: UUID, operation: String, bytes: String, content: String
             let complete: Bool, receipts: Int, serviceError: Bool
+            let screenQuery: Bool?
         }
         let url = try XCTUnwrap(Bundle.module.url(
             forResource: "cases", withExtension: "json", subdirectory: "Fixtures/official-stream"))
         let cases = try JSONDecoder().decode([Scenario].self, from: Data(contentsOf: url))
         XCTAssertFalse(cases.isEmpty)
         for scenario in cases {
-            var decoder = OfficialStreamDecoder(captureID: scenario.captureID, screenQuery: true, operation: scenario.operation)
+            var decoder = OfficialStreamDecoder(captureID: scenario.captureID, screenQuery: scenario.screenQuery ?? true, operation: scenario.operation)
             var content = "", receipts = 0, complete = false, serviceError = false
             do {
                 for byte in try XCTUnwrap(Data(base64Encoded: scenario.bytes)) {

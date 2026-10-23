@@ -68,6 +68,10 @@ const settlement = fs.readFileSync(path.join(root, "shared/protocol/settlement.m
 outputs["desktop/generated/settlement.mjs"] = "// Generated from shared/protocol/settlement.mjs.\n" + settlement;
 outputs["Sources/NotchSPI/Shared/SharedSettlementSource.generated.swift"] =
   `// Generated from shared/protocol/settlement.mjs.\nimport Foundation\nenum SharedSettlementSource { static let javascript = ${JSON.stringify(settlement.replaceAll("export ", "").replace(/^import .*$/gm, ""))} }\n`;
+const officialStream = fs.readFileSync(path.join(root, "shared/protocol/official-stream.mjs"), "utf8");
+outputs["desktop/generated/official-stream.mjs"] = "// Generated from shared/protocol/official-stream.mjs.\n" + officialStream;
+outputs["Sources/NotchSPI/Shared/SharedOfficialStreamSource.generated.swift"] =
+  `// Generated from shared/protocol/official-stream.mjs.\nimport Foundation\nenum SharedOfficialStreamSource { static let javascript = ${JSON.stringify(officialStream.replaceAll("export ", "").replace(/^import .*$/gm, ""))} }\n`;
 // UI sources are local, pinned and copied byte-for-byte into the desktop package.
 const visual = [
   "ghost-engine",

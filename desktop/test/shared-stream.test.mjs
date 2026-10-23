@@ -9,7 +9,7 @@ const cases = JSON.parse(fs.readFileSync(new URL(
 for (const scenario of cases) test(`Shared stream: ${scenario.id}`, () => {
   const bytes = Buffer.from(scenario.bytes, "base64");
   for (const size of [1, 7, bytes.length]) {
-    const stream = new OfficialStream(scenario.captureID, true, scenario.operation);
+    const stream = new OfficialStream(scenario.captureID, scenario.screenQuery ?? true, scenario.operation);
     const framer = new SSEFramer();
     let content = "", receipts = 0, complete = false, serviceError = false;
     try {
