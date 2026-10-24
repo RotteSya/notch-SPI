@@ -6,17 +6,9 @@ export function requireCaptureExclusionSupport(release) {
     throw new Error("Screenshot exclusion requires Windows 10 version 2004 or later.");
 }
 
-export function renewCaptureProtection(window) {
-  // Chromium caches the requested flag. A native style change can discard
-  // affinity while that cache remains true, so true alone may be a no-op.
-  // Both calls are synchronous; the existing composition fence follows them.
-  window.setContentProtection(false);
-  window.setContentProtection(true);
-}
-
 export function createCaptureExclusion({
   enabled = true,
-  protect = renewCaptureProtection,
+  protect = window => window.setContentProtection(true),
   now = () => performance.now(),
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
   settleMilliseconds = 120,
