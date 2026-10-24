@@ -89,3 +89,10 @@ export function readingHTML(value) {
     )
     .join("");
 }
+
+// Automatic copying is reserved for a ready answer; review results require an explicit action.
+export function canCopyAnswer({ mode, busy = false, resultState = null, hasAnswer = false,
+  automatic = false, autoCopyEnabled = false } = {}) {
+  return mode === "tutor" && !busy && hasAnswer && resultState !== "retake" &&
+    (!automatic || (autoCopyEnabled && resultState === "ready"));
+}

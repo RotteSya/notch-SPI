@@ -1,0 +1,158 @@
+[
+  {
+    "id": "ready-auto",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": true
+  },
+  {
+    "id": "disabled-auto",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": false
+    },
+    "allowed": false
+  },
+  {
+    "id": "personality-auto",
+    "input": {
+      "mode": "personality",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "review-auto",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "review",
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "review-manual",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "review",
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": true
+    },
+    "allowed": true
+  },
+  {
+    "id": "personality-manual",
+    "input": {
+      "mode": "personality",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "streaming",
+    "input": {
+      "mode": "tutor",
+      "busy": true,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "streaming-manual",
+    "input": {
+      "mode": "tutor",
+      "busy": true,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "retake-manual",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "retake",
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "missing-answer",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": false,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "legacy-manual",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": null,
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": true
+    },
+    "allowed": true
+  },
+  {
+    "id": "unknown-result-auto",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": null,
+      "hasAnswer": true,
+      "automatic": true,
+      "autoCopyEnabled": true
+    },
+    "allowed": false
+  },
+  {
+    "id": "ready-manual-disabled-setting",
+    "input": {
+      "mode": "tutor",
+      "busy": false,
+      "resultState": "ready",
+      "hasAnswer": true,
+      "automatic": false,
+      "autoCopyEnabled": false
+    },
+    "allowed": true
+  }
+]

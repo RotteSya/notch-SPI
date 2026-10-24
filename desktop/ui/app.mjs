@@ -6,7 +6,7 @@ import {
 } from "../generated/ui/capture.mjs";
 import { onboardingCopy } from "../generated/ui/onboarding.mjs";
 import { Ghost } from "../generated/ui/ghost.mjs";
-import { readingHTML } from "../generated/ui/reading.mjs";
+import { readingHTML, canCopyAnswer } from "../generated/ui/reading.mjs";
 import { containsPoint, canCollapseOnLeave, pointerExitDelay } from "../core/window-behavior.mjs";
 import { translate } from "./i18n.mjs";
 import { product, spring, close, contentOpacity } from "../core/product.mjs";
@@ -199,7 +199,8 @@ function notch() {
       (state.undo ? button("undo", t("undo")) : "");
   if (state.status === "done" && state.answer)
     actions =
-      button("copy", t("copy")) +
+      (canCopyAnswer({ mode: state.mode, resultState: state.resultState, hasAnswer: Boolean(state.answer) })
+        ? button("copy", t("copy")) : "") +
       (state.canExplain ? button("explain", t("explain")) : "");
   if (["error", "canceled"].includes(state.status))
     actions =

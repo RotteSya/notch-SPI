@@ -44,6 +44,11 @@ enum SharedVisual {
     static func notchPose(_ base: BotAvatarPose, reduced: Bool, busy: Bool, hero: Bool, time: Double, blend: Double, completion: Double?) -> BotAvatarPose {
         pose(call("notchPose", [dictionary(base), ["reduced":reduced,"busy":busy,"hero":hero,"time":time,"blend":blend,"completion":completion as Any? ?? NSNull()]]))
     }
+    static func canCopyAnswer(mode: String, busy: Bool, resultState: String?, hasAnswer: Bool,
+                              automatic: Bool, autoCopyEnabled: Bool) -> Bool {
+        call("canCopyAnswer", [["mode": mode, "busy": busy, "resultState": resultState as Any? ?? NSNull(),
+            "hasAnswer": hasAnswer, "automatic": automatic, "autoCopyEnabled": autoCopyEnabled]]).toBool()
+    }
     struct ReadingRow {
         let kind: String, text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor
     }

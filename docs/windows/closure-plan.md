@@ -131,3 +131,11 @@
 - 额外外层 sandbox 的首次尝试因 Swift 嵌套 manifest 沙箱拒绝而未进入测试；最终运行使用现有 XCTest 网络隔离，不以该失败尝试作为通过证据。
 - 当前配对候选仍绑定 079852d，见 `output/cross-platform-closure/paired-079852d.json`。本次只修改证明脚本和说明，不能给旧候选改挂本次提交；远端 CI、分支保护及 Windows 实机仍未完成。
 - `output/verification/20261024T091817Z-35310/summary.tsv` 快速工程检查通过；源文件与生成文件一致，检查器测试及 server/scheduler 类型检查通过。
+
+## 2026-10-24 答案复制资格统一
+
+- 平台完成动作审计发现 Windows 的自动复制只判断开关，会复制人物像选项及 review 答案；Mac 要求非人物像且结果 ready。Windows 人物像结果也曾显示并允许手动复制按钮。
+- 复制资格迁入现有 `shared/ui/reading.mjs`，Mac 剪贴板入口、Windows 自动/手动复制入口和按钮显示共用。自动复制只接受 ready 答案；review 保留用户主动复制；人物像、正在接收、retake 与空答案禁止。各平台仍负责纯文本提取和实际系统剪贴板写入。
+- `Tests/Fixtures/answer-copy/cases.json` 的 13 组输入由两端真实共享调用消费，覆盖开关、自动/手动、人物像、review、retake、忙碌、空值及旧格式。
+- 仍有平台完成展示待核对：Windows 人物像部分错误/连续题警告未展示 Mac 的同等细分提示。本轮不宣称该项已修复，也不以单元测试代替 Windows 视觉/剪贴板实机验收。旧候选仍对应其原提交。
+- `output/verification/20261024T092449Z-43351/summary.tsv` 完整自动验证通过：desktop 220、server 684、scheduler 17、Swift 598（4 项跳过），arm64 Release 通过。另有 33 项 Mac 专项通过。Postgres、硬件和签名仍保留未执行状态。
