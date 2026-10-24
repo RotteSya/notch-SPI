@@ -20,6 +20,20 @@ public static class CaptureState {
   [DllImport("dwmapi.dll")] public static extern int DwmIsCompositionEnabled(out bool enabled);
 }
 
+'@
+[uint32]$affinity = 0
+$ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
+$errorCode = if ($ok) { 0 } else { [Runtime.InteropServices.Marshal]::GetLastWin32Error() }
+$composition = $false
+$hr = [CaptureState]::DwmIsCompositionEnabled([ref]$composition)
+@{ ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
+`;
+  const { stdout } = await promisify(execFile)("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),
+  ], { windowsHide: true, timeout: 10000, maxBuffer: 8192 });
+  return JSON.parse(stdout.trim());
+}
+
 async function diagnoseProtection() {
   const rows = [];
   for (const mode of ["opaque", "transparent", "passthrough", "opacity"]) {
@@ -36,19 +50,6 @@ async function diagnoseProtection() {
     } finally { w.destroy(); }
   }
   console.log("Capture protection comparison:", JSON.stringify(rows));
-}
-'@
-[uint32]$affinity = 0
-$ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
-$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-$composition = $false
-$hr = [CaptureState]::DwmIsCompositionEnabled([ref]$composition)
-@{ ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
-`;
-  const { stdout } = await promisify(execFile)("powershell.exe", [
-    "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),
-  ], { windowsHide: true, timeout: 10000, maxBuffer: 8192 });
-  return JSON.parse(stdout.trim());
 }
 
 const background = [18, 84, 160], ordinary = [30, 210, 180];
