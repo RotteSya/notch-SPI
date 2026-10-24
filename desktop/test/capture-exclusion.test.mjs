@@ -89,6 +89,18 @@ test("new overlays while awaiting composition are protected before any pixels ar
   done();
   assert.equal(await result, 1);
 });
+test("unregister removes automatic protection refresh and re-register restores it", () => {
+  const { exclusion, notch } = setup();
+  exclusion.unregister(notch);
+  notch.setContentProtection(false);
+  notch.emit("show");
+  exclusion.refresh(notch);
+  assert.equal(notch.protected, false);
+  assert.equal(notch.listenerCount("show"), 0);
+  exclusion.register(notch);
+  assert.equal(notch.protected, true);
+  assert.equal(notch.listenerCount("show"), 1);
+});
 test("Windows establishes full-opacity layered style before requesting capture exclusion", async () => {
   const notch = new Window();
   let layered = false;
