@@ -88,6 +88,22 @@ test("new overlays while awaiting composition are protected before any pixels ar
   done();
   assert.equal(await result, 1);
 });
+test("style changes restore native protection even when Electron still caches true", async () => {
+  const notch = new Window();
+  let cached = false, native = false;
+  notch.setContentProtection = value => {
+    if (cached === value) return;
+    cached = value;
+    native = value;
+  };
+  const exclusion = createCaptureExclusion({ settleMilliseconds: 0 });
+  exclusion.register(notch);
+  assert.equal(native, true);
+  native = false; // Native window styles changed without updating Chromium's cache.
+  assert.equal(cached, true);
+  exclusion.refresh(notch);
+  await exclusion.capture(() => assert.equal(native, true));
+});
 test("capture does not change flight start time, progress, landing or cancellation", async () => {
   const { exclusion, now, advance } = setup();
   await exclusion.capture(() => {});
