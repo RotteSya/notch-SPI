@@ -96,6 +96,33 @@ final class SharedPersonaProofTests: XCTestCase {
  }
 }
 `);
+// Change the actual protocol source, not the generated adapter or test-only constants.
+const streamFile = path.join(copy, "shared/protocol/official-stream.mjs");
+const streamBefore = fs.readFileSync(streamFile, "utf8");
+const streamNeedle = "this.contentBytes + bytes > 65536";
+assert.equal(streamBefore.split(streamNeedle).length, 2, "Expected exactly one production content limit");
+const streamExperimental = streamBefore.replace(streamNeedle, "this.contentBytes + bytes > 4");
+fs.writeFileSync(path.join(copy, "Tests/NotchSPITests/SharedStreamProofTests.swift"), `import XCTest
+@testable import NotchSPI
+final class SharedStreamProofTests: XCTestCase {
+ func append(_ object: [String: Any], to decoder: inout OfficialStreamDecoder) throws {
+  let data = try JSONSerialization.data(withJSONObject: object)
+  let frame = "data: " + String(decoding: data, as: UTF8.self) + "\\n\\n"
+  for byte in frame.utf8 { _ = try decoder.append(byte) }
+ }
+ func testChangedContentLimitReachesRealDecoder() throws {
+  var exact = OfficialStreamDecoder(captureID: UUID(), screenQuery: false)
+  try append(["type": "delta", "text": "🔎"], to: &exact)
+  try append(["type": "usage", "input_tokens": 1, "output_tokens": 1,
+              "questions_charged": 1, "balance_questions": 29], to: &exact)
+  for byte in "data: [DONE]\\n\\n".utf8 { _ = try exact.append(byte) }
+  XCTAssertTrue(try exact.finish().hasContent)
+  var overflow = OfficialStreamDecoder(captureID: UUID(), screenQuery: false)
+  try append(["type": "delta", "text": "ab"], to: &overflow)
+  XCTAssertThrowsError(try append(["type": "delta", "text": "cde"], to: &overflow))
+ }
+}
+`);
 const checks = [];
 function run(name, cmd, args) {
   fs.rmSync(path.join(out, name + ".log"), { force: true });
@@ -138,6 +165,21 @@ const bytes = new PersonaSession();
 for(let i=0;i<2;i++){bytes.begin('p',i);bytes.finish({last:large, referenceable:Array(5).fill(large)},i);}
 assert.equal(bytes.records.length,1);
 `]);
+fs.writeFileSync(streamFile, streamExperimental);
+run("generate-stream", process.execPath, ["scripts/cross-platform/generate.mjs"]);
+run("desktop-stream", process.execPath, ["--input-type=module", "-e", `
+import assert from 'node:assert/strict';
+import {OfficialStream} from './desktop/core/stream.mjs';
+const exact = new OfficialStream('proof', false);
+exact.accept(JSON.stringify({type:'delta',text:'🔎'}));
+exact.accept(JSON.stringify({type:'usage',input_tokens:1,output_tokens:1,questions_charged:1,balance_questions:29}));
+exact.accept('[DONE]');
+assert.equal(exact.finish().questions_charged,1);
+const overflow = new OfficialStream('proof', false);
+overflow.accept(JSON.stringify({type:'delta',text:'ab'}));
+assert.throws(()=>overflow.accept(JSON.stringify({type:'delta',text:'cde'})));
+console.log('Actual desktop stream accepts 4 UTF-8 bytes and rejects cumulative 5 bytes');
+`]);
 run("mac-real-intake", "swift", [
   "test",
   "--disable-automatic-resolution",
@@ -145,7 +187,7 @@ run("mac-real-intake", "swift", [
   "-Xswiftc",
   "-warnings-as-errors",
   "--filter",
-  "SharedProductTests|SharedUIProofTests|SharedPersonaProofTests",
+  "SharedProductTests|SharedUIProofTests|SharedPersonaProofTests|SharedStreamProofTests",
 ]);
 verifySourceIdentity(source, root);
 assert.equal(fs.readFileSync(path.join(root, "shared/product.json"), "utf8"), productBefore);
@@ -155,6 +197,9 @@ fs.writeFileSync(
   JSON.stringify(
     {
       source,
+      officialStream: { originalContentBytes: 65536, experimentalContentBytes: 4,
+        originalSHA256: sha256(streamBefore), experimentalSHA256: sha256(streamExperimental),
+        sourceUnchanged: fs.readFileSync(path.join(root, "shared/protocol/official-stream.mjs"), "utf8") === streamBefore },
       personalitySession: { original: originalPersona, experimental: p.personalitySession },
       sharedUI: {
         originalBodySize: 15,

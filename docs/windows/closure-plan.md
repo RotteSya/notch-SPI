@@ -114,3 +114,11 @@
 - Mac 桥接采用写时复制，两个新增回归验证复制后的流独立完成/失败，以及过早调用 finish 后仍能继续接收完整流。既有取消、缓冲、断流后保留有效结算和大小上限测试继续保留；内容字节数增量累计，避免每个事件重算全部内容。
 - 本轮不代替平台 UI 完成效果、Windows 实机或新候选验收；旧候选仍绑定旧源码。当前提交的双平台 CI 与签名安装升级证据仍缺失。
 - `output/verification/20261023T100822Z-37846/summary.tsv` 完整自动验证通过：desktop 207、server 684、scheduler 17、Swift 597（4 项跳过），arm64 Release 通过。Postgres、硬件与签名保留未执行边界；未生成新候选、推送或发布。
+
+## 2026-10-24 SSE 单源变更实证
+
+- `prove-shared-change.mjs` 在隔离副本中修改实际 `shared/protocol/official-stream.mjs`，将内容上限从 65536 降到 4 字节，重新生成双端编译输入；没有修改主树产品源码或生成文件。
+- Desktop 真实 `OfficialStream` 和 Mac 真实 `OfficialStreamDecoder` 均验证：4 字节 emoji 能收到有效回执并完成，分两个 delta 送达的 5 字节内容被拒绝。原有截图、阅读和人物像变更证明保留。
+- 首次实验因在正常流基线前降低上限而失败，已将协议变更移至基线之后，并重新执行通过；不是产品测试失败被绕过。结果文件仅在全部步骤及主树源码身份不变断言通过后写入，记录原始/实验协议摘要与每步日志摘要。
+- 最终证据读取 `output/shared-change-proof/result.json` 的源码提交和指纹；此证明不替代同提交的 Windows 实机、远端 CI 或候选包验证。
+- `output/verification/20261024T090110Z-17020/summary.tsv` 快速工程检查通过；此轮只变更证明脚本和文档，产品代码沿用此前完整验证。证明脚本全部 7 步通过，Mac 执行 6 项实际变更测试。
