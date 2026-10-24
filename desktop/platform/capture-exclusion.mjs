@@ -49,6 +49,15 @@ export function createCaptureExclusion({
       window.on("always-on-top-changed", onChange);
       window.once("closed", onClose);
     },
+    unregister(window) {
+      const listeners = windows.get(window);
+      if (!listeners) return;
+      window.off("show", listeners.onChange);
+      window.off("always-on-top-changed", listeners.onChange);
+      window.off("closed", listeners.onClose);
+      windows.delete(window);
+      revision++;
+    },
     refresh,
     async capture(takePixels) {
       if (!enabled) return takePixels();

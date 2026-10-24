@@ -102,19 +102,21 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
   // Positive control: prove this backend sees the real overlay when unprotected.
   // This catches locked/headless desktops and tests which accidentally capture a
   // blank source. Only these synthetic QA windows can have protection disabled.
+  exclusion.unregister(win);
   win.setContentProtection(false);
   let control;
   try {
     await wait(180);
     control = pixels(await takePixels());
+    await fs.writeFile(path.join(directory, "capture-control.png"), control.image.toPNG());
+    console.log("Positive control protection:", JSON.stringify(await nativeProtection(win)));
     assert.ok(!near(control.at(notchPoint), background), "Positive control did not see the notch");
     assert.ok(near(control.at({ x: notch.x + 5, y: notch.y + notch.height - 5 }), background),
       "Transparent overlay background became opaque");
     assert.ok(near(control.at(ordinaryPoint), ordinary), "Ordinary window or desktop is not capturable");
   } finally {
-    exclusion.refresh(win);
+    exclusion.register(win);
   }
-  await fs.writeFile(path.join(directory, "capture-control.png"), control.image.toPNG());
   const protection = await nativeProtection(win);
   console.log("Native capture protection:", JSON.stringify(protection));
   await fs.writeFile(path.join(directory, "capture-protection.json"), JSON.stringify(protection, null, 2));
