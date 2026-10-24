@@ -74,13 +74,13 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
     });
     fixtures.push(w);
+    const painted = new Promise(resolve => w.once("ready-to-show", resolve));
     await w.loadURL("data:text/html," + encodeURIComponent(
       `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><body style="margin:0;background:rgb(${color.join(",")})"></body>`,
     ));
+    await painted;
     w.setBounds(rect);
     w.showInactive();
-    // Navigation completion does not guarantee the first compositor frame.
-    await w.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
     return w;
   }
   await fixture(bounds, background);
@@ -116,7 +116,6 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
   win.setContentProtection(false);
   let control;
   try {
-    await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
     await wait(180);
     control = pixels(await takePixels());
     await fs.writeFile(path.join(directory, "capture-control.png"), control.image.toPNG());
