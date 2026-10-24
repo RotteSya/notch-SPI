@@ -49,7 +49,9 @@ if (app.isPackaged && (development || qa || smoke))
 if (development || qa || smoke)
   app.setPath(
     "userData",
-    path.join(os.tmpdir(), "notchspi-desktop-development"),
+    path.join(os.tmpdir(), smoke
+      ? `notchspi-desktop-smoke-${captureSmoke ? "capture" : qa ?? "launch"}`
+      : "notchspi-desktop-development"),
   );
 let pendingBilling = process.argv.find((value) => billingDestination(value)),
   routeBilling = null;
@@ -63,6 +65,11 @@ app.on("open-url", (event, url) => {
 if (!app.requestSingleInstanceLock()) {
   app.exit(smoke ? 1 : 0);
 } else {
+  if (smoke)
+    setTimeout(() => {
+      console.error("Renderer readiness timed out");
+      app.exit(1);
+    }, captureSmoke ? 45000 : 15000).unref();
   app
     .whenReady()
     .then(start)
@@ -77,11 +84,6 @@ async function start() {
     app.exit(0);
     return;
   }
-  if (smoke)
-    setTimeout(() => {
-      console.error("Renderer readiness timed out");
-      app.exit(1);
-    }, captureSmoke ? 45000 : 15000).unref();
   const local = new LocalStore(app.getPath("userData")),
     vault = new Vault(
       app.getPath("userData"),
@@ -319,6 +321,7 @@ async function start() {
     changed: emit,
     protection: !development && !qa && !smoke,
     exclusion,
+    ...(motionSmoke ? { reducedMotion: () => false } : {}),
   });
   win.setAlwaysOnTop(true, "screen-saver");
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -973,6 +976,8 @@ async function start() {
     );
     if (!started.frames.length)
       throw new Error("Flight did not start on the real desktop");
+    if (started.frames.some(frame => frame.reduced))
+      throw new Error("Full-motion smoke unexpectedly selected reduced motion");
     const painting = (async () => {
       await wait(100);
       return flights.evidence(directory, "flight-moving");

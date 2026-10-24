@@ -8,7 +8,8 @@ import {
 import path from "node:path";
 import fs from "node:fs/promises";
 import { FlightQueue } from "../core/flights.mjs";
-export function createFlights({ root, host, changed, protection, exclusion }) {
+export function createFlights({ root, host, changed, protection, exclusion,
+  reducedMotion = () => systemPreferences.getAnimationSettings().prefersReducedMotion }) {
   const overlays = new Map();
   let suspended = 0;
   let targets = [],
@@ -172,7 +173,7 @@ export function createFlights({ root, host, changed, protection, exclusion }) {
       ensure();
       queue.add(
         image,
-        systemPreferences.getAnimationSettings().prefersReducedMotion,
+        reducedMotion(),
       );
       send();
     },
