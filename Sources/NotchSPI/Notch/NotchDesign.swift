@@ -84,7 +84,8 @@ enum NotchMotion {
     static func close(_ t: CGFloat) -> CGFloat {
         let time = min(1, max(0, t))
         let remaining = 1 - time
-        return 1 - remaining * remaining * (1 + SharedProduct.closeDecay * time) * exp(-SharedProduct.closeDecay * time)
+        let decay = CGFloat(SharedProduct.closeDecay)
+        return 1 - remaining * remaining * (1 + decay * time) * exp(-decay * time)
     }
 
     /// Equal percentages leave a tall panel's bottom visibly farther from rest.
