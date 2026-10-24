@@ -25,7 +25,7 @@ import { Vault, LocalStore } from "./platform/storage.mjs";
 import { QuestionHistory } from "./platform/history.mjs";
 import { createUpdater } from "./platform/updater.mjs";
 import { createCaptureVisibility } from "./platform/capture-visibility.mjs";
-import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor } from "./platform/capture-exclusion.mjs";
+import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor, createWindowsCaptureProtection } from "./platform/capture-exclusion.mjs";
 import { canQueryCapture } from "./core/window-behavior.mjs";
 import { createFlights } from "./platform/flights.mjs";
 import { capture, listTargets, fromFile } from "./platform/capture.mjs";
@@ -242,10 +242,7 @@ async function start() {
   const exclusion = createCaptureExclusion({
     // The motion smoke also exercises this lifecycle on the Mac test host.
     enabled: windowsCapture || motionSmoke,
-    protect: window => {
-      if (windowsCapture) window.setOpacity(1);
-      window.setContentProtection(windowsCapture);
-    },
+    protect: windowsCapture ? createWindowsCaptureProtection() : window => window.setContentProtection(false),
     validate: () => {
       if (windowsCapture) {
         requireCaptureExclusionSupport(os.release());

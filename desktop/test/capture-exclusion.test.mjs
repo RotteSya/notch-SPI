@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor } from "../platform/capture-exclusion.mjs";
+import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor, createWindowsCaptureProtection } from "../platform/capture-exclusion.mjs";
 import { FlightQueue } from "../core/flights.mjs";
 import { flightSample, flightStyle } from "../generated/ui/flight.mjs";
 
@@ -160,4 +160,18 @@ test("compositor fallback while capture is pending discards the captured frame",
   status = "disabled_software";
   finish("uncertain pixels");
   await assert.rejects(capture, /accelerated compositor/);
+});
+
+test("Windows layered attributes initialize once across show and passthrough refreshes", async () => {
+  const notch = new Window(), opacity = [];
+  notch.setOpacity = value => opacity.push(value);
+  const exclusion = createCaptureExclusion({ protect: createWindowsCaptureProtection(), settleMilliseconds: 0 });
+  exclusion.register(notch);
+  notch.emit("show");
+  notch.protected = false;
+  exclusion.refresh(notch);
+  await exclusion.capture(() => assert.equal(notch.protected, true));
+  exclusion.unregister(notch);
+  exclusion.register(notch);
+  assert.deepEqual(opacity, [1]);
 });

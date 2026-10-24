@@ -6,6 +6,17 @@ export function requireCaptureExclusionSupport(release) {
     throw new Error("Screenshot exclusion requires Windows 10 version 2004 or later.");
 }
 
+export function createWindowsCaptureProtection() {
+  const initialized = new WeakSet();
+  return window => {
+    if (!initialized.has(window)) {
+      window.setOpacity(1);
+      initialized.add(window);
+    }
+    window.setContentProtection(true);
+  };
+}
+
 export function requireCaptureCompositor(status) {
   if (status !== "enabled")
     throw new Error("Screenshot exclusion requires the Windows accelerated compositor. Restart the app.");
