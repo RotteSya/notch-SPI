@@ -154,6 +154,7 @@ export function createFlights({ root, host, changed, protection, exclusion,
       const result = [];
       for (const [id, { w, ready: loaded }] of overlays)
         if (loaded) {
+          const visible = w.isVisible(), requestedAt = Date.now();
           const image = await w.webContents.capturePage(undefined, {
               stayHidden: true,
               stayAwake: true,
@@ -165,7 +166,8 @@ export function createFlights({ root, host, changed, protection, exclusion,
             path.join(directory, `${label}-${id}.png`),
             image.toPNG(),
           );
-          result.push({ id, ink, visible: !w.isDestroyed() && w.isVisible() });
+          result.push({ id, ink, visible, requestedAt, completedAt: Date.now(),
+            visibleAfterCapture: !w.isDestroyed() && w.isVisible() });
         }
       return result;
     },
