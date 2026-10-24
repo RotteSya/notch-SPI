@@ -19,6 +19,24 @@ public static class CaptureState {
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
   [DllImport("dwmapi.dll")] public static extern int DwmIsCompositionEnabled(out bool enabled);
 }
+
+async function diagnoseProtection() {
+  const rows = [];
+  for (const mode of ["opaque", "transparent", "passthrough", "opacity"]) {
+    const w = new BrowserWindow({ width: 100, height: 100, show: false, frame: false,
+      transparent: mode !== "opaque", webPreferences: { sandbox: true } });
+    try {
+      await w.loadURL("data:text/html,<body>Capture diagnostic</body>");
+      if (mode === "passthrough" || mode === "opacity") w.setIgnoreMouseEvents(true);
+      if (mode === "opacity") w.setOpacity(1);
+      w.showInactive();
+      w.setContentProtection(true);
+      await wait(120);
+      rows.push({ mode, ...await nativeProtection(w) });
+    } finally { w.destroy(); }
+  }
+  console.log("Capture protection comparison:", JSON.stringify(rows));
+}
 '@
 [uint32]$affinity = 0
 $ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
@@ -104,6 +122,7 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
       const sample = pixels(await captureWithOverlays(takePixels));
       await fs.writeFile(path.join(directory, `capture-${label}.png`), sample.image.toPNG());
       assert.ok(win.isVisible(), "Notch must remain visible after capture");
+      if (!near(sample.at(notchPoint), background)) await diagnoseProtection();
       assert.ok(near(sample.at(notchPoint), background),
         `Notch is present in captured pixels or replaced by a black rectangle: ${JSON.stringify({ label, actual: sample.at(notchPoint), expected: background, protected: win.isContentProtected(), notchPoint, bounds: win.getBounds(), electron: process.versions.electron })}`);
       assert.ok(near(sample.at(ordinaryPoint), ordinary), "Ordinary settings-like window was excluded");
