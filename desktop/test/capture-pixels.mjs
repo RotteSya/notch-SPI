@@ -16,6 +16,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class CaptureState {
   [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowDisplayAffinity(IntPtr h, out uint affinity);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
   [DllImport("dwmapi.dll")] public static extern int DwmIsCompositionEnabled(out bool enabled);
 }
@@ -26,7 +27,7 @@ $ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
 $errorCode = if ($ok) { 0 } else { [Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 $composition = $false
 $hr = [CaptureState]::DwmIsCompositionEnabled([ref]$composition)
-@{ ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
+@{ exStyle=[CaptureState]::GetWindowLong([IntPtr]${id}, -20); ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
 `;
   const { stdout } = await promisify(execFile)("powershell.exe", [
     "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),

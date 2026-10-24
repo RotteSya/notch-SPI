@@ -34,6 +34,9 @@ import { directAPI, localCLI } from "./core/providers.mjs";
 import { Intake, product } from "./core/product.mjs";
 import { compose, parseAnswer, personality } from "./core/answer.mjs";
 import { AutoSession, PersonaSession } from "./core/sessions.mjs";
+// Windows transparent click-through overlays use layered windows. Keep their
+// compositor compatible with native capture exclusion (electron/electron#47834).
+if (process.platform === "win32") app.disableHardwareAcceleration();
 const root = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name) => {
   const i = process.argv.indexOf(name);
