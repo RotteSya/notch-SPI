@@ -10,11 +10,10 @@ class Window extends EventEmitter {
   destroyed = false;
   protected = false;
   isDestroyed() { return this.destroyed; }
-  isVisible() { return this.visible; }
   setContentProtection(value) { this.protected = value; }
   hide() { assert.fail("Capturing must never hide an overlay"); }
   showInactive() { assert.fail("Capturing must never restore a hidden overlay"); }
-  setOpacity(value) { assert.equal(value, 1, "Capturing must never fade an overlay"); }
+  setOpacity() { assert.fail("Capturing must never fade an overlay"); }
 }
 function setup() {
   let time = 0;
@@ -100,21 +99,6 @@ test("unregister removes automatic protection refresh and re-register restores i
   exclusion.register(notch);
   assert.equal(notch.protected, true);
   assert.equal(notch.listenerCount("show"), 1);
-});
-test("Windows establishes full-opacity layered style before requesting capture exclusion", async () => {
-  const notch = new Window();
-  let layered = false;
-  notch.setOpacity = value => { assert.equal(value, 1); layered = true; };
-  notch.setContentProtection = value => { notch.protected = layered && value; };
-  const exclusion = createCaptureExclusion({ settleMilliseconds: 0 });
-  notch.visible = false;
-  exclusion.register(notch);
-  assert.equal(layered, false);
-  assert.equal(notch.protected, false);
-  notch.visible = true;
-  notch.emit("show");
-  await exclusion.capture(() => assert.equal(notch.protected, true));
-  assert.equal(notch.visible, true);
 });
 test("capture does not change flight start time, progress, landing or cancellation", async () => {
   const { exclusion, now, advance } = setup();
