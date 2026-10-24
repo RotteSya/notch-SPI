@@ -150,24 +150,33 @@ export function createFlights({ root, host, changed, protection, exclusion,
       };
     },
     async evidence(directory, label) {
-      await fs.mkdir(directory, { recursive: true });
       const result = [];
       for (const [id, { w, ready: loaded }] of overlays)
         if (loaded) {
-          const visible = w.isVisible(), requestedAt = Date.now();
-          const image = await w.webContents.capturePage(undefined, {
-              stayHidden: true,
-              stayAwake: true,
-            }),
-            bitmap = image.toBitmap();
-          let ink = 0;
-          for (let i = 3; i < bitmap.length; i += 4) if (bitmap[i] > 20) ink++;
-          await fs.writeFile(
-            path.join(directory, `${label}-${id}.png`),
-            image.toPNG(),
-          );
-          result.push({ id, ink, visible, requestedAt, completedAt: Date.now(),
-            visibleAfterCapture: !w.isDestroyed() && w.isVisible() });
+          const requestedAt = Date.now();
+          // Subscribe to an actual presented frame. capturePage can finish after
+          // this short animation has landed and return the now-empty surface.
+          const sample = await new Promise(resolve => {
+            const finish = value => {
+              clearTimeout(timeout);
+              if (!w.isDestroyed()) w.webContents.endFrameSubscription();
+              resolve(value);
+            };
+            const timeout = setTimeout(() => finish({ ink: 0, visible: false }), 2000);
+            w.webContents.beginFrameSubscription(false, image => {
+              const bitmap = image.toBitmap();
+              let ink = 0;
+              for (let i = 3; i < bitmap.length; i += 4) if (bitmap[i] > 20) ink++;
+              if (ink > 100 && w.isVisible())
+                finish({ png: image.toPNG(), ink, visible: true, presentedAt: Date.now() });
+            });
+          });
+          const { png, ...details } = sample;
+          if (png) {
+            await fs.mkdir(directory, { recursive: true });
+            await fs.writeFile(path.join(directory, `${label}-${id}.png`), png);
+          }
+          result.push({ id, ...details, requestedAt, completedAt: Date.now() });
         }
       return result;
     },

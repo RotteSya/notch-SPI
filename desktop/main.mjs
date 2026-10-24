@@ -971,6 +971,7 @@ async function start() {
     for (let i = 0; i < 80 && flights.diagnostics.frames.length === 0; i++)
       await wait(10);
     const started = flights.diagnostics;
+    const painting = flights.evidence(directory, "flight-moving");
     await fs.writeFile(
       path.join(directory, "started.json"),
       JSON.stringify(started, null, 2),
@@ -979,10 +980,6 @@ async function start() {
       throw new Error("Flight did not start on the real desktop");
     if (started.frames.some(frame => frame.reduced))
       throw new Error("Full-motion smoke unexpectedly selected reduced motion");
-    const painting = (async () => {
-      await wait(100);
-      return flights.evidence(directory, "flight-moving");
-    })();
     const captureContinuity = [];
     let hiddenDuringCapture = false;
     const visibilityMonitor = setInterval(() => {
