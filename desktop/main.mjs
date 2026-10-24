@@ -39,6 +39,8 @@ import { AutoSession, PersonaSession } from "./core/sessions.mjs";
 if (process.platform === "win32") {
   app.commandLine.appendSwitch("use-angle", "d3d11-warp");
   app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  const disabled = app.commandLine.getSwitchValue("disable-features");
+  app.commandLine.appendSwitch("disable-features", [disabled, "RemoveRedirectionBitmap"].filter(Boolean).join(","));
 }
 const root = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name) => {
@@ -730,7 +732,8 @@ async function start() {
         shot = fromFile(await fs.readFile(result.filePaths[0]));
       } else shot = await captureScreen();
       if (current !== generation) return;
-      flights.add(shot);
+      await flights.prepareEvidence();
+    flights.add(shot);
       if (kind === "multiple") {
         intake.finish(token, shot, Date.now());
         images = intake.items;

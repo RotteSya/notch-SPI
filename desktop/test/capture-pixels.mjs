@@ -79,6 +79,8 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
     ));
     w.setBounds(rect);
     w.showInactive();
+    // Navigation completion does not guarantee the first compositor frame.
+    await w.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
     return w;
   }
   await fixture(bounds, background);
@@ -114,6 +116,7 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
   win.setContentProtection(false);
   let control;
   try {
+    await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
     await wait(180);
     control = pixels(await takePixels());
     await fs.writeFile(path.join(directory, "capture-control.png"), control.image.toPNG());
