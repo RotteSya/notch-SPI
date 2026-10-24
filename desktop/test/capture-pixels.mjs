@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-async function nativeProtection(win) {
+async function nativeProtection(win, point = { x: 0, y: 0 }) {
   const handle = win.getNativeWindowHandle();
   const id = handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
   const script = `
@@ -15,6 +15,9 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class CaptureState {
+  [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowDisplayAffinity(IntPtr h, out uint affinity);
   [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
@@ -22,12 +25,16 @@ public static class CaptureState {
 }
 
 '@
+[CaptureState+Point]$point = New-Object CaptureState+Point
+$point.X = ${Math.round(point.x)}
+$point.Y = ${Math.round(point.y)}
+$hit = [CaptureState]::GetAncestor([CaptureState]::WindowFromPoint($point), 2)
 [uint32]$affinity = 0
 $ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
 $errorCode = if ($ok) { 0 } else { [Runtime.InteropServices.Marshal]::GetLastWin32Error() }
 $composition = $false
 $hr = [CaptureState]::DwmIsCompositionEnabled([ref]$composition)
-@{ exStyle=[CaptureState]::GetWindowLong([IntPtr]${id}, -20); ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
+@{ hitOwnWindow=($hit -eq [IntPtr]${id}); exStyle=[CaptureState]::GetWindowLong([IntPtr]${id}, -20); ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
 `;
   const { stdout } = await promisify(execFile)("powershell.exe", [
     "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),
@@ -152,6 +159,9 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
   for (const ignore of [false, true]) {
     win.setIgnoreMouseEvents(ignore, { forward: true });
     exclusion.refresh(win);
+    const hit = await nativeProtection(win, screen.dipToScreenPoint(notchPoint));
+    assert.equal(Boolean(hit.exStyle & 0x20), ignore, "Native passthrough style did not follow interactive state");
+    assert.equal(hit.hitOwnWindow, !ignore, "Native hit testing did not follow interactive state");
     await result.check(ignore ? "passthrough" : "interactive", fn => exclusion.capture(fn));
   }
   return result;

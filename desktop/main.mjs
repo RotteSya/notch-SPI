@@ -36,7 +36,10 @@ import { compose, parseAnswer, personality } from "./core/answer.mjs";
 import { AutoSession, PersonaSession } from "./core/sessions.mjs";
 // Keep transparent Windows overlays on DirectComposition even without a GPU.
 // The legacy layered-bitmap fallback cannot apply capture exclusion.
-if (process.platform === "win32") app.commandLine.appendSwitch("use-angle", "d3d11-warp");
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("use-angle", "d3d11-warp");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+}
 const root = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name) => {
   const i = process.argv.indexOf(name);
@@ -82,8 +85,10 @@ if (!app.requestSingleInstanceLock()) {
     });
 }
 async function start() {
-  if (smoke && process.platform === "win32")
-    console.log("NSPI_GPU", JSON.stringify({ features: app.getGPUFeatureStatus(), info: await app.getGPUInfo("complete") }));
+  if (smoke && process.platform === "win32") {
+    const { auxAttributes } = await app.getGPUInfo("complete");
+    console.log("NSPI_GPU", JSON.stringify({ features: app.getGPUFeatureStatus(), renderer: auxAttributes.glRenderer, overlay: auxAttributes.overlayInfo }));
+  }
   if (captureSmoke && process.platform !== "win32") {
     console.log("NSPI_CAPTURE_PIXELS_SKIPPED: Windows interactive desktop required");
     app.exit(0);
@@ -235,7 +240,10 @@ async function start() {
   const exclusion = createCaptureExclusion({
     // The motion smoke also exercises this lifecycle on the Mac test host.
     enabled: windowsCapture || motionSmoke,
-    protect: window => window.setContentProtection(windowsCapture),
+    protect: window => {
+      if (windowsCapture) window.setOpacity(1);
+      window.setContentProtection(windowsCapture);
+    },
     validate: () => {
       if (windowsCapture) requireCaptureExclusionSupport(os.release());
     },
