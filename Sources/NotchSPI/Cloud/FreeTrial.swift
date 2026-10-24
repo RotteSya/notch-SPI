@@ -24,19 +24,7 @@ struct FreeTrialSnapshot: Codable, Equatable {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value)
     }
-    var isValid: Bool {
-        guard policyVersion == "trial3d400-2026-10-16", dailyLimit == 400,
-              let now = date(serverTime), [dailyUsed, dailyHeld, dailyRemaining].allSatisfy({ (0...400).contains($0) }) else { return false }
-        switch status {
-        case .eligible, .ineligible:
-            return activatedAt == nil && expiresAt == nil && resetsAt == nil && dailyUsed + dailyHeld + dailyRemaining == 0
-        case .active, .expired:
-            guard let start = date(activatedAt), let end = date(expiresAt), end.timeIntervalSince(start) == 72 * 3600, now >= start else { return false }
-            if status == .expired { return now >= end && resetsAt == nil && dailyUsed + dailyHeld + dailyRemaining == 0 }
-            return now < end && date(resetsAt).map { $0 > now && $0.timeIntervalSince(now) <= 86400 } == true
-                && dailyUsed + dailyHeld + dailyRemaining == 400
-        }
-    }
+    var isValid: Bool { SharedFreeTrial.isValid(self) }
     var expirationLabel: String? {
         guard let end = date(expiresAt) else { return nil }
         let formatter = DateFormatter()

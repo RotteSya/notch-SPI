@@ -2,7 +2,7 @@ import Foundation
 
 /// Lifetime solve counters from the same committed snapshot as balance_version.
 /// Per-attempt tokens remain separate and must never be added to this mirror.
-struct OfficialAccountTotals: Decodable, Equatable {
+struct OfficialAccountTotals: Codable, Equatable {
     let questions: Int
     let inputTokens: Int
     let outputTokens: Int
@@ -13,7 +13,7 @@ struct OfficialAccountTotals: Decodable, Equatable {
     var isValid: Bool { questions >= 0 && inputTokens >= 0 && outputTokens >= 0 }
 }
 
-struct SettlementSnapshot: Decodable, Equatable {
+struct SettlementSnapshot: Codable, Equatable {
     let captureID: UUID
     let operation: String?
     let terminalState: String
@@ -37,21 +37,7 @@ struct SettlementSnapshot: Decodable, Equatable {
         case accountTotals = "account_totals"
         case freeTrial = "free_trial"
     }
-    var isTerminal: Bool {
-        guard balanceQuestions >= 0, heldQuestions >= 0,
-              freeTrial?.isValid != false,
-              BalanceVersion.canonical(balanceVersion) != nil,
-              accountTotals?.isValid != false else { return false }
-        switch settlementStatus {
-        case "settled": return questionsCharged == 1 && terminalState == "usable" && usableResult
-        case "released": return questionsCharged == 0 && !usableResult
-            && ["retake", "no_result", "failed", "canceled"].contains(terminalState)
-        case "not_required": return questionsCharged == 0
-            && ["usable", "failed", "canceled"].contains(terminalState)
-            && usableResult == (terminalState == "usable")
-        default: return false
-        }
-    }
+    var isTerminal: Bool { SharedSettlement.isTerminal(self) }
 }
 
 enum BalanceVersion {
@@ -69,7 +55,7 @@ enum BalanceVersion {
 }
 
 struct ScreenQueryRequest: Equatable {
-    static let version = "screen-query-v1-r1"
+    static let version = SharedProduct.contractVersion
     let profileID: String
     let language: String
     let parentCaptureID: UUID?

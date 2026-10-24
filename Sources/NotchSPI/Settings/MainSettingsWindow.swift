@@ -49,7 +49,6 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
     var onHotkeysChanged: (() -> Void)?
     var onAnythingChanged: (() -> Void)?
     var onStartQuestion: (() -> Void)?
-    var onMonthPassStatusChanged: ((String) -> Void)?
 
     private let sidebar = SettingsFlippedView()
     private let sidebarSubtitle = captionLabel("", size: 11)
@@ -276,11 +275,6 @@ final class MainSettingsWindowController: NSWindowController, NSWindowDelegate {
             vc.onChange = { [weak self] in self?.onHotkeysChanged?() }
             return vc
         case .account:
-            if MonthPassPreview.isEnabled {
-                let vc = MonthPassAccountPage()
-                vc.onStatusChange = { [weak self] in self?.onMonthPassStatusChanged?($0) }
-                return vc
-            }
             let vc = AccountPageController()
             vc.onStartQuestion = { [weak self] in self?.onStartQuestion?() }
             return vc
@@ -532,7 +526,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     private let telemetryCheckbox = SettingsToggleButton()
     private let autoCopyCheckbox = SettingsToggleButton()
 
-    private static let autoCapChoices = [5, 10, 20, 30, 50, 100, AutoSessionEngine.unlimitedQuestions]
+    private static let autoCapChoices = SharedProduct.autoCaps
 
     private let contentWidth: CGFloat = 536
 

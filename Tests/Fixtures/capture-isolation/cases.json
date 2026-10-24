@@ -1,0 +1,56 @@
+[
+  {
+    "id": "delta-none",
+    "phase": "delta",
+    "action": "none",
+    "expectedDeltas": 2,
+    "expectedReceipts": 1,
+    "expectedStatusRequests": 0,
+    "expectedSuccess": true
+  },
+  {
+    "id": "delta-cancel",
+    "phase": "delta",
+    "action": "cancel",
+    "expectedDeltas": 1,
+    "expectedReceipts": 0,
+    "expectedStatusRequests": 0,
+    "expectedSuccess": false
+  },
+  {
+    "id": "delta-replaceAccount",
+    "phase": "delta",
+    "action": "replaceAccount",
+    "expectedDeltas": 1,
+    "expectedReceipts": 0,
+    "expectedStatusRequests": 0,
+    "expectedSuccess": false
+  },
+  {
+    "id": "delta-nextQuestion",
+    "phase": "delta",
+    "action": "nextQuestion",
+    "expectedDeltas": 1,
+    "expectedReceipts": 0,
+    "expectedStatusRequests": 0,
+    "expectedSuccess": false
+  },
+  {
+    "id": "status-cancel",
+    "phase": "status",
+    "action": "cancel",
+    "expectedDeltas": 0,
+    "expectedReceipts": 0,
+    "expectedStatusRequests": 1,
+    "expectedSuccess": false
+  },
+  {
+    "id": "status-replaceAccount",
+    "phase": "status",
+    "action": "replaceAccount",
+    "expectedDeltas": 0,
+    "expectedReceipts": 0,
+    "expectedStatusRequests": 1,
+    "expectedSuccess": false
+  }
+]

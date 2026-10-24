@@ -1,0 +1,436 @@
+[
+  {
+    "id": "settled",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "released",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "failed",
+      "settlement_status": "released",
+      "questions_charged": 0,
+      "usable_result": false,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "auxiliary",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "recover",
+      "terminal_state": "usable",
+      "settlement_status": "not_required",
+      "questions_charged": 0,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "zero-padded-version",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "0003",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "numeric-version",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": 3,
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "invalid-version",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "3e2",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "long-version",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "11111111111111111111111111111111111111111",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "negative-balance",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": -1,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "charged-without-result",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": false,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "released-with-charge",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "failed",
+      "settlement_status": "released",
+      "questions_charged": 1,
+      "usable_result": false,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unknown-terminal",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "unknown",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "held-not-terminal",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "held",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "valid-totals",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": {
+        "questions": 2,
+        "input_tokens": 3,
+        "output_tokens": 4
+      }
+    }
+  },
+  {
+    "id": "null-totals",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": null
+    }
+  },
+  {
+    "id": "negative-totals",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": {
+        "questions": -1,
+        "input_tokens": 3,
+        "output_tokens": 4
+      }
+    }
+  },
+  {
+    "id": "missing-total-field",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": {
+        "questions": 2,
+        "input_tokens": 3
+      }
+    }
+  },
+  {
+    "id": "false-totals",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": false
+    }
+  },
+  {
+    "id": "invalid-trial",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "free_trial": {
+        "status": "unknown"
+      }
+    }
+  },
+  {
+    "id": "false-trial",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "free_trial": false
+    }
+  },
+  {
+    "id": "null-trial",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "free_trial": null
+    }
+  },
+  {
+    "id": "max-safe-balance",
+    "valid": true,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 9007199254740991,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-balance",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 9007199254740992,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-held",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 9007199254740992,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true
+    }
+  },
+  {
+    "id": "unsafe-totals",
+    "valid": false,
+    "snapshot": {
+      "capture_id": "6d559174-c118-4891-aec1-b486bfaa0bdb",
+      "operation": "solve",
+      "terminal_state": "usable",
+      "settlement_status": "settled",
+      "questions_charged": 1,
+      "usable_result": true,
+      "balance_questions": 29,
+      "held_questions": 0,
+      "balance_version": "9007199254740993",
+      "can_retry": false,
+      "can_recover": true,
+      "account_totals": {
+        "questions": 9007199254740992,
+        "input_tokens": 3,
+        "output_tokens": 4
+      }
+    }
+  }
+]

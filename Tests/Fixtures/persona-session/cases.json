@@ -1,0 +1,462 @@
+[
+  {
+    "id": "completion-refreshes-clock",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 840000,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 900000,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 1,
+        "older": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": "failure-refreshes-clock",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 840000,
+        "valid": false
+      },
+      {
+        "action": "begin",
+        "time": 900000,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "unavailable",
+        "sequence": 1,
+        "older": []
+      }
+    ]
+  },
+  {
+    "id": "exact-expiry",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 900000,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      },
+      {
+        "action": "finish",
+        "time": 900000,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 900001,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "manual-reset-keeps-sequence",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": true
+      },
+      {
+        "action": "reset"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 1,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 2,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "scope-change-keeps-sequence",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "b"
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      },
+      {
+        "action": "finish",
+        "time": 1,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 2,
+        "scope": "b"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "failure-barrier-keeps-its-sequence",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 1,
+        "valid": false
+      },
+      {
+        "action": "check",
+        "status": "unavailable",
+        "sequence": 2,
+        "older": [
+          1
+        ]
+      },
+      {
+        "action": "begin",
+        "time": 2,
+        "scope": "a"
+      },
+      {
+        "action": "begin",
+        "time": 3,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "unavailable",
+        "sequence": 2,
+        "older": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "id": "success-clears-barrier",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": false
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 1,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 2,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "five-record-window",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 0,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 1,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 2,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 3,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 3,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 4,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 4,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 5,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 5,
+        "valid": true
+      },
+      {
+        "action": "begin",
+        "time": 7,
+        "scope": "a"
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 6,
+        "older": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      }
+    ]
+  },
+  {
+    "id": "stale-success-after-next-begin",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      },
+      {
+        "action": "finish",
+        "time": 3,
+        "valid": true,
+        "tokenIndex": 1
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "stale-failure-does-not-hide-current-success",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 1
+      },
+      {
+        "action": "finish",
+        "time": 3,
+        "valid": false,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "available",
+        "sequence": 2,
+        "older": [
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "id": "reset-rejects-old-success",
+    "steps": [
+      {
+        "action": "begin",
+        "time": 0,
+        "scope": "a"
+      },
+      {
+        "action": "reset"
+      },
+      {
+        "action": "begin",
+        "time": 1,
+        "scope": "a"
+      },
+      {
+        "action": "finish",
+        "time": 2,
+        "valid": true,
+        "tokenIndex": 0
+      },
+      {
+        "action": "check",
+        "status": "none",
+        "sequence": null,
+        "older": []
+      }
+    ]
+  }
+]

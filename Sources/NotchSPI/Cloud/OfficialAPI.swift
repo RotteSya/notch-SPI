@@ -124,12 +124,13 @@ enum OfficialAPI {
     static let defaultBaseURL = "https://notchspi-api.vercel.app"
 
     static var baseURL: String {
-        DevelopmentIsolation.resolvedServiceAddress(
+        let address = DevelopmentIsolation.resolvedServiceAddress(
             bundleID: Bundle.main.bundleIdentifier,
             arguments: CommandLine.arguments,
             persisted: UserDefaults.standard.string(forKey: "official.baseURL") ?? "",
             production: defaultBaseURL
         )
+        return DevelopmentIsolation.testServiceAddress(address, runningTests: DevelopmentIsolation.isRunningTests)
     }
 
     /// Posted whenever quota / usage / registration state changes, so open panels refresh.
@@ -147,7 +148,7 @@ enum OfficialAPI {
         get { accountState.value("balanceQuestions") as? Int }
         set { accountState.setValue(newValue, for: "balanceQuestions") }
     }
-    static let lowQuotaThreshold = 10
+    static let lowQuotaThreshold = Int(SharedVisual.number("personalityLowQuotaThreshold"))
     static var cliEnabled: Bool {
         get { accountState.value("cliEnabled") as? Bool ?? false }
         set { accountState.setValue(newValue ? true : nil, for: "cliEnabled") }
@@ -544,6 +545,9 @@ enum OfficialAPI {
     /// Small JSON endpoints cannot grow an unbounded Data buffer or silently follow a redirect
     /// carrying a credential to another service. All early exits cancel the underlying task.
     static func readAccountHTTP(_ request: URLRequest, session: URLSession) async throws -> (Int, Data) {
+        guard DevelopmentIsolation.permitsTestRequest(request.url, runningTests: DevelopmentIsolation.isRunningTests) else {
+            throw URLError(.unsupportedURL)
+        }
         try Task.checkCancellation()
         var request = request
         request.cachePolicy = .reloadIgnoringLocalCacheData

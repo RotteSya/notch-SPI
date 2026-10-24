@@ -993,15 +993,14 @@ final class NotchController: NSObject {
 
         // Quota at a glance + one-tap top-up (official channel only).
         if Settings.shared.serviceMode == ServiceMode.official {
-            let balanceTitle = MonthPassPreview.isEnabled ? model.statusText
-                : OfficialAPI.balanceQuestions.map { L10n.questionsLeft($0) } ?? L10n.quotaUnknown
+            let balanceTitle = OfficialAPI.balanceQuestions.map { L10n.questionsLeft($0) } ?? L10n.quotaUnknown
             let balance = NSMenuItem(title: balanceTitle, action: #selector(openAccount), keyEquivalent: "")
             balance.target = self
             if let img = NSImage(systemSymbolName: "circle.dotted.circle", accessibilityDescription: nil) {
                 balance.image = img
             }
             menu.addItem(balance)
-            let topUp = NSMenuItem(title: MonthPassPreview.isEnabled ? L10n.t("订阅方案", "プランを見る", "View subscription") : L10n.topUp, action: #selector(topUpTapped), keyEquivalent: "")
+            let topUp = NSMenuItem(title: L10n.topUp, action: #selector(topUpTapped), keyEquivalent: "")
             topUp.target = self
             topUp.image = NSImage(systemSymbolName: "plus.circle", accessibilityDescription: nil)
             menu.addItem(topUp)
@@ -1881,10 +1880,6 @@ final class NotchController: NSObject {
     func openSettings(page: MainSettingsWindowController.Page) {
         if settingsController == nil {
             let c = MainSettingsWindowController()
-            c.onMonthPassStatusChanged = { [weak self] in
-                guard MonthPassPreview.isEnabled else { return }
-                self?.model.statusText = $0
-            }
             c.onStartQuestion = { [weak self, weak c] in
                 c?.window?.orderOut(nil)
                 self?.screenshotTapped(mode: "tutor", multiple: false)
@@ -3029,10 +3024,10 @@ final class NotchController: NSObject {
 
     @discardableResult
     private func copyCurrentAnswer(requireAutoCopy: Bool) -> Bool {
-        guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.mode != "personality",
-              model.resultState != .retake, model.status != .running, model.status != .streaming,
-              (!requireAutoCopy || model.resultState == .ready),
-              let answer = AnswerComposer.clipboardAnswer(model.answer) else { return false }
+        guard let answer = AnswerComposer.clipboardAnswer(model.answer),
+              SharedVisual.canCopyAnswer(mode: model.mode, busy: model.status == .running || model.status == .streaming,
+                  resultState: model.resultState?.rawValue, hasAnswer: true, automatic: requireAutoCopy,
+                  autoCopyEnabled: Appearance.autoCopyAnswer) else { return false }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(answer, forType: .string)
         if let captureID = currentCaptureID {

@@ -1,0 +1,76 @@
+name: Desktop cross-platform
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            server/package-lock.json
+      - run: npm --prefix server ci --include=optional
+      - run: npm --prefix desktop ci
+      - run: npm --prefix desktop run check
+      - run: npm --prefix desktop audit --omit=dev --audit-level=high
+      - name: Desktop launches and renderer is ready
+        run: npm --prefix desktop run smoke
+        timeout-minutes: 2
+      - name: Personality warning remains visible and never offers copying
+        run: npm --prefix desktop run smoke:personality
+        timeout-minutes: 2
+      - name: Ghost and screenshot flight on a real desktop compositor
+        run: npm --prefix desktop run smoke:motion
+        timeout-minutes: 2
+      - name: Windows ZIP and NSIS from the same source
+        if: runner.os == 'Windows'
+        run: npm --prefix desktop run pack:win
+      - name: Visible overlays excluded from captured Windows pixels
+        if: runner.os == 'Windows'
+        run: npm --prefix desktop run smoke:capture
+        timeout-minutes: 2
+      - name: Mac native regression
+        if: runner.os == 'macOS'
+        run: swift test -Xswiftc -warnings-as-errors
+        env:
+          NSPI_QA_EPHEMERAL: "1"
+      - name: Mac native Release
+        if: runner.os == 'macOS'
+        run: swift build -c release --arch arm64
+      - name: Mac native unsigned review package
+        if: runner.os == 'macOS'
+        run: ./scripts/package.sh release --unsigned
+      - name: Prove one source change reaches both runtimes
+        if: runner.os == 'macOS'
+        run: node scripts/cross-platform/prove-shared-change.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/dist/candidates/*/*.zip
+            desktop/dist/candidates/*/*.exe
+            desktop/dist/candidates/*/delivery-manifest.json
+            desktop/test-output/
+            output/windows-delivery/manifest.json
+            dist/candidates/*/*.dmg
+            dist/candidates/*/delivery-manifest.json
+            output/shared-change-proof/result.json
+            output/shared-change-proof/*.log
+          if-no-files-found: warn
+# This workflow creates review artifacts only. Publishing and production signing are separate,
+# explicit release actions; no production endpoints, deployment credentials, or account keys.

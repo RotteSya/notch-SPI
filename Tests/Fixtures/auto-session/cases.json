@@ -1,0 +1,32 @@
+[
+  {
+    "id": "unchanged-screen",
+    "luma": [100, 100, 100, 100, 100],
+    "triggerTicks": []
+  },
+  {
+    "id": "changed-screen-triggers-once-after-two-stable-ticks",
+    "luma": [100, 200, 200, 200, 200, 200],
+    "triggerTicks": [3]
+  },
+  {
+    "id": "continuous-changes-do-not-trigger",
+    "luma": [100, 150, 200, 150, 200, 150],
+    "triggerTicks": []
+  },
+  {
+    "id": "temporary-overlay-returns-to-baseline",
+    "luma": [100, 200, 100, 100, 100, 100],
+    "triggerTicks": []
+  },
+  {
+    "id": "rearmed-session-still-detects-a-new-question",
+    "luma": [100, 200, 100, 100, 100, 200, 200, 200, 200],
+    "triggerTicks": [7]
+  },
+  {
+    "id": "gradual-luma-drift-requires-two-stable-ticks-after-change",
+    "luma": [100, 105, 110, 115, 115, 115],
+    "triggerTicks": [5]
+  }
+]

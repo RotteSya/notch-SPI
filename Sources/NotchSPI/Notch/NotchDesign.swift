@@ -7,8 +7,8 @@ enum InformationHierarchy {
     static let pageTitle = NSFont.systemFont(ofSize: 22, weight: .semibold)
     static let subtitle = NSFont.systemFont(ofSize: 13)
     static let rowTitle = NSFont.systemFont(ofSize: 13, weight: .medium)
-    static let conclusionSize: CGFloat = 24
-    static let bodySize: CGFloat = 15
+    static let conclusionSize: CGFloat = SharedVisual.number("readingStyle.conclusionSize")
+    static let bodySize: CGFloat = SharedVisual.number("readingStyle.bodySize")
     static let sectionSize: CGFloat = 12
     static let metadataSize: CGFloat = 11
     static let sectionGap: CGFloat = 8
@@ -46,13 +46,13 @@ enum NotchPalette {
 
     // Motion durations (s). The single morph time is shared by the controller's panel-frame
     // animation and the view's radius/content tween, so the whole instrument moves as one body.
-    static let referenceDuration: CFTimeInterval = 0.32
+    static let referenceDuration: CFTimeInterval = SharedProduct.motionDuration
     static let morphDuration: CFTimeInterval = {
         #if DEBUG
         // Visual QA: NSPI_SLOW_MORPH=1 stretches the morph to 2.4s for frame-by-frame inspection.
         if ProcessInfo.processInfo.environment["NSPI_SLOW_MORPH"] == "1" { return 2.4 }
         #endif
-        return 0.32
+        return SharedProduct.motionDuration
     }()
 }
 
@@ -64,7 +64,7 @@ enum NotchMotion {
     /// ~380pt width delta that is a ~17pt breath past the target and a settle back — a soft body
     /// landing, never a wobble. Radii re-amplify it (see `applyLayout`) to keep corners lively.
     /// Expansion may overshoot; closing approaches the hardware boundary without reversing.
-    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-6.0 * t) * cos(5.2 * t) }
+    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-SharedProduct.springDecay * t) * cos(SharedProduct.springFrequency * t) }
 
     /// Out-cubic remains the opacity curve and the guide's opening curve.
     static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
@@ -84,7 +84,8 @@ enum NotchMotion {
     static func close(_ t: CGFloat) -> CGFloat {
         let time = min(1, max(0, t))
         let remaining = 1 - time
-        return 1 - remaining * remaining * (1 + 1.5 * time) * exp(-1.5 * time)
+        let decay = CGFloat(SharedProduct.closeDecay)
+        return 1 - remaining * remaining * (1 + decay * time) * exp(-decay * time)
     }
 
     /// Equal percentages leave a tall panel's bottom visibly farther from rest.

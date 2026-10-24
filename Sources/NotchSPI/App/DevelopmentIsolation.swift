@@ -7,6 +7,24 @@ enum DevelopmentIsolation {
     static let launchAddressFlag = "-official.baseURL"
     static let launchChannelFlag = "-serviceMode"
 
+    static var isRunningTests: Bool {
+        Bundle.main.bundleIdentifier == "com.apple.dt.xctest.tool"
+            || Bundle.allBundles.contains { $0.bundleURL.pathExtension == "xctest" }
+    }
+
+    static func testServiceAddress(_ address: String, runningTests: Bool) -> String {
+        guard runningTests else { return address }
+        return agreedLoopback(address) ?? "http://127.0.0.1:9"
+    }
+
+    static func permitsTestRequest(_ url: URL?, runningTests: Bool) -> Bool {
+        guard runningTests else { return true }
+        guard let url, let scheme = url.scheme, ["http", "https"].contains(scheme),
+              let host = url.host, ["127.0.0.1", "::1", "[::1]"].contains(host),
+              let port = url.port, (1...65535).contains(port), url.user == nil, url.password == nil else { return false }
+        return true
+    }
+
     static let missingAddressMessage = """
     开发包需要通过 ./scripts/bootstrap.sh --run 启动。
     当前进程没有合法的本机服务地址 http://127.0.0.1:<端口>，已停止初始化。

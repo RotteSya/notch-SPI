@@ -19,3 +19,9 @@
 /.wrangler/
 
 /output/
+/desktop/node_modules/
+/desktop/dist/
+/desktop/test-output/
+
+/dist-intel-compat/
+/dist-qa-intel-compat/

@@ -5,7 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   checkDocumentLinks,
+  checkDelivery,
   checkGovernance,
+  checkHistoricalArchives,
   checkPortableDocs,
   checkTrackedSymlinks,
   forbiddenTrackedReason,
@@ -15,6 +17,11 @@ import {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const errors = [];
+const delivery = process.argv.includes('--delivery');
+if (process.argv.slice(2).some(arg => arg !== '--delivery')) {
+  console.error('Usage: node scripts/repo-health.mjs [--delivery]');
+  process.exit(2);
+}
 
 const fail = (msg) => errors.push(msg);
 
@@ -153,6 +160,30 @@ for (const retired of ['scripts/make-dmg.sh', 'scripts/make-qa-app.sh', 'scripts
   if (exists(retired)) fail(`${retired} must not remain; use scripts/package.sh`);
 }
 
+for (const retired of [
+  'Sources/NotchSPI/Cloud/MonthPass.swift', 'Sources/NotchSPI/Settings/MonthPassAccountPage.swift',
+  'Tests/NotchSPITests/MonthPassTests.swift', 'server/src/month-pass-page.ts',
+  'server/test/month-pass-preview.test.ts', 'scripts/preview-month-pass.mjs',
+]) {
+  if (exists(retired)) fail(`${retired}: retired prototype must stay in the history archive`);
+}
+
+if (exists('desktop/package.json')) {
+  try {
+    const pkg = JSON.parse(read('desktop/package.json'));
+    const engine = pkg.engines?.node;
+    const match = typeof engine === 'string' ? engine.match(/^>=(\d+\.\d+\.\d+)$/) : null;
+    if (!match) fail('desktop/package.json must declare an exact Node minimum');
+    const lock = JSON.parse(read('desktop/package-lock.json'));
+    if (lock.packages?.['']?.engines?.node !== engine) fail('desktop lock Node engine must match its manifest');
+    if (match && !read('.github/workflows/desktop.yml').includes(`node-version: "${match[1]}"`)) {
+      fail('Desktop CI must exercise its declared minimum Node version');
+    }
+  } catch (error) {
+    fail(`desktop runtime configuration: ${error.message}`);
+  }
+}
+
 if (exists('scripts/package.sh')) {
   const pkg = read('scripts/package.sh');
   if (!pkg.includes('VERSION.env')) {
@@ -211,7 +242,8 @@ if (exists('Sources/NotchSPI/Update/UpdateChecker.swift')) {
 
 let governed = [];
 try {
-  governed = governedPaths(REPO_ROOT);
+  governed = delivery ? indexedPaths(REPO_ROOT) : governedPaths(REPO_ROOT);
+  if (delivery) for (const message of checkDelivery(REPO_ROOT)) fail(message);
 } catch (err) {
   fail(`git ls-files failed: ${err.message}`);
 }
@@ -219,6 +251,7 @@ for (const message of checkDocumentLinks(REPO_ROOT, governed)) fail(message);
 for (const message of checkTrackedSymlinks(REPO_ROOT, governed)) fail(message);
 for (const message of checkPortableDocs(REPO_ROOT, governed)) fail(message);
 for (const message of checkGovernance(REPO_ROOT)) fail(message);
+for (const message of checkHistoricalArchives(REPO_ROOT)) fail(message);
 
 // --- Env var parity --------------------------------------------------------------
 

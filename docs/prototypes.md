@@ -1,29 +1,15 @@
-# 预览与 QA 入口
+# 预览与 QA 边界
 
-这些入口留在源码里，供 DEBUG 和验收使用。它们有自己的状态，不改变已发布的计费和菜单。
+启动命令统一在 [HANDOVER](../HANDOVER.md#专项操作与历史)。这些工具用于隔离验收，不代表生产能力或发布授权。
 
-## Plus 月票预览
+## 当前入口
 
-`Sources/NotchSPI/Cloud/MonthPass.swift` 与 `MonthPassAccountPage.swift` 有 DEBUG 入口。预览页面由 `server/src/month-pass-page.ts` 渲染，本机查看用 `scripts/preview-month-pass.mjs`（`127.0.0.1:43069`）。
+- `ExpandedAnswerWindow.swift` 仍由 `DesignVisualQA` 和测试调用；日常齿轮菜单不提供该窗口。
+- `scripts/design-qa.sh` 组装独立设计 QA bundle；`scripts/onboarding-qa.sh` 提供 mock 引导。
+- `server/tools/settings-preview.ts` 是回环地址上的内存预览，模拟账户和 Plus 状态；禁用外部 fetch。它与真实 Stripe 沙箱是不同用途，保留类型检查。
+- `scripts/plus-sandbox/` 验证正式 Plus 的沙箱支付与独立回跳 scheme；需要既有沙箱授权，不使用真实账户或生产付款。
+- `scripts/run-objective-diagnostic.mjs` 直接调用供应商，输出到 `objective-eval-output/diagnostics`，不经过评测预算模块。验证与 CI 不运行它。
 
-历史离线预览：CNY 69.00、30 天、每日 400 次成功求解、360 次提醒、上海时区重置。正式题包价格仍是 `pricing.ts` 里的 300 / 800 / 2200。免费体验是另一套实现：72 小时、每日 400 次，见 [official-api.md](official-api.md)。
+## 已退役
 
-购买页模块 `server/src/purchase-page.ts` 只渲染正式题包页。
-
-测试：`server/test/month-pass-preview.test.ts`。
-
-正式 3.0 候选实现位于 PlusSubscriptionPage.swift 与 server/src/plus-*.ts：按自然月自动续费、每日 400 次、付款回执、到期账本、取消续费和账单管理。旧预览仍为离线样例，不接入付款；正式入口是设置中的 NotchSPI Plus。尚未正式部署。
-
-## 完整答案窗口
-
-`ExpandedAnswerWindow.swift` 仍被 `DesignVisualQA` 和测试调用。日常齿轮菜单不再提供这个窗口。离线样例：
-
-```sh
-bash scripts/design-qa.sh expanded-answer
-```
-
-`scripts/design-qa.sh` 组装隔离 bundle `com.rottesya.notchspi.design-qa`，不连接真实账户。`scripts/onboarding-qa.sh --mock` 只跑引导验收。
-
-## 直接供应商诊断
-
-`scripts/run-objective-diagnostic.mjs` 可以直接运行，结果写到 `objective-eval-output/diagnostics`。它单独调用供应商，不经过 `docs/evaluation-budget.json` 使用的预算模块。验证和 CI 不运行它。
+30 天、不自动续费的旧月票原型已成组移除，原文和源码保存在 [历史归档](history/README.md)。正式 Plus 仍由 `PlusSubscriptionPage.swift` 与 `server/src/plus-*.ts` 实现；规则以 [API 契约](official-api.md) 为准。免费体验、题包、完整答案 QA 和迁移路径不受此次退役影响。

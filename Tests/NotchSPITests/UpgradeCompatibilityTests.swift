@@ -52,7 +52,10 @@ final class UpgradeCompatibilityTests: XCTestCase {
                     let personas = PersonaStore(defaults: reopened)
                     XCTAssertEqual(personas.activeID, "saved-217")
                     XCTAssertEqual(personas.active?.text, "Original target description")
-                    let account = OfficialAccountState(defaults: reopened, secrets: secrets)
+                    // Preserve the frozen production identity in this storage-only fixture;
+                    // XCTest's live service address is deliberately isolated to loopback.
+                    let account = OfficialAccountState(defaults: reopened, secrets: secrets,
+                        baseURL: { OfficialAPI.defaultBaseURL })
                     guard case .existing(let existing) = try account.prepareRegistration() else {
                         return XCTFail("An upgrade must reuse the paid identity, never register another account")
                     }

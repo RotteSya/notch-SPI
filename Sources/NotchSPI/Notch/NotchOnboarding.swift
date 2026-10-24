@@ -7,14 +7,7 @@ enum OnboardingTrialState { case unavailable, loading, available, claiming, clai
 /// an interrupted request resumes at the instructions, not at an orphaned spinner.
 enum NotchOnboardingStep: String, CaseIterable {
     case welcome, permission, practice, capture, working, firstAnswer, multiple, multiCapture, collecting, success, trial
-    var checkpoint: String {
-        switch self {
-        case .working: return "capture"
-        case .success: return "trial"
-        case .firstAnswer, .multiCapture, .collecting: return "multiple"
-        default: return rawValue
-        }
-    }
+    var checkpoint: String { SharedVisual.call("onboardingCheckpoint", [rawValue]).toString() }
     var showsLiveContent: Bool { [.working, .firstAnswer, .collecting, .success].contains(self) }
     var motionOrder: Int { Self.allCases.firstIndex(of: self) ?? 0 }
     var height: CGFloat { showsLiveContent ? 164 : 260 }

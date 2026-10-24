@@ -6,23 +6,27 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="prepare"
-case "${1:-}" in
-  "") MODE="prepare" ;;
+NO_INSTALL=0
+for arg in "$@"; do
+case "$arg" in
   --check) MODE="check" ;;
   --run) MODE="run" ;;
+  --no-install) NO_INSTALL=1 ;;
   -h|--help)
-    echo "Usage: $0 [--check|--run]"
-    echo "  (default)  check the toolchain, install locked dependencies, build, smoke, then exit"
+    echo "Usage: $0 [--check|--run] [--no-install]"
+    echo "  (default)  check the toolchain, reuse or install locked dependencies, build, smoke, then exit"
     echo "  --check    toolchain and lock consistency only"
     echo "  --run      prepare, then launch the isolated mock client"
+    echo "  --no-install  require existing locked npm dependencies and Swift checkouts; never download"
     exit 0
     ;;
   *)
-    echo "bootstrap: unknown argument: $1" >&2
-    echo "Usage: $0 [--check|--run]" >&2
+    echo "bootstrap: unknown argument: $arg" >&2
+    echo "Usage: $0 [--check|--run] [--no-install]" >&2
     exit 2
     ;;
 esac
+done
 
 fail() {
   echo "bootstrap: $*" >&2
@@ -163,15 +167,31 @@ if [[ "$MODE" == "run" ]]; then
   port_busy "$RUN_PORT"
 fi
 
-echo "==> Installing server dependencies (npm ci)"
-( cd "$REPO_ROOT/server" && npm ci --include=optional )
-echo "==> Installing scheduler dependencies (npm ci)"
-( cd "$REPO_ROOT/scheduler" && npm ci --include=optional )
-node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/server"
-node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/scheduler"
+for project in server scheduler; do
+  if node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/$project" >/dev/null 2>&1; then
+    echo "==> Reusing locked $project dependencies"
+  elif [[ "$NO_INSTALL" -eq 1 ]]; then
+    node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/$project" || true
+    fail "$project dependencies need preparation; --no-install stopped before installation or build"
+  else
+    echo "==> Installing $project dependencies (npm ci)"
+    ( cd "$REPO_ROOT/$project" && npm ci --include=optional )
+  fi
+  node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/$project"
+done
+
+SWIFT_ARGS=()
+if [[ "$NO_INSTALL" -eq 1 ]]; then
+  node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT" || fail "Swift dependencies need preparation; --no-install stopped before build"
+  SWIFT_ARGS=(--disable-automatic-resolution --skip-update)
+fi
 
 echo "==> Building client (debug)"
-swift build
+if [[ "$NO_INSTALL" -eq 1 ]]; then
+  swift build "${SWIFT_ARGS[@]}"
+else
+  swift build
+fi
 bin_dir="$(swift build --show-bin-path)"
 [[ -d "$bin_dir/SwiftMath_SwiftMath.bundle" ]] || fail "SwiftMath resources missing from $bin_dir"
 

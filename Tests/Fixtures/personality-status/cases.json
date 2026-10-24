@@ -1,0 +1,342 @@
+[
+  {
+    "id": "transportFailure-zh",
+    "primary": "transportFailure",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "回答传输中断"
+  },
+  {
+    "id": "transportFailure-ja",
+    "primary": "transportFailure",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "回答の受信が中断されました"
+  },
+  {
+    "id": "transportFailure-en",
+    "primary": "transportFailure",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Answer transport interrupted"
+  },
+  {
+    "id": "unreadable-zh",
+    "primary": "unreadable",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "截图或选项无法辨认"
+  },
+  {
+    "id": "unreadable-ja",
+    "primary": "unreadable",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "画像または選択肢を読み取れません"
+  },
+  {
+    "id": "unreadable-en",
+    "primary": "unreadable",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Screenshot or choices unreadable"
+  },
+  {
+    "id": "dependsOnMissingPrevious-zh",
+    "primary": "dependsOnMissingPrevious",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "本页依赖缺失的上一题"
+  },
+  {
+    "id": "dependsOnMissingPrevious-ja",
+    "primary": "dependsOnMissingPrevious",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "このページには前の質問が必要です"
+  },
+  {
+    "id": "dependsOnMissingPrevious-en",
+    "primary": "dependsOnMissingPrevious",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "This page depends on the missing previous question"
+  },
+  {
+    "id": "noValidChoices-zh",
+    "primary": "noValidChoices",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "未收到有效选项"
+  },
+  {
+    "id": "noValidChoices-ja",
+    "primary": "noValidChoices",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "有効な選択肢を受信できませんでした"
+  },
+  {
+    "id": "noValidChoices-en",
+    "primary": "noValidChoices",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "No valid choices received"
+  },
+  {
+    "id": "invalidContext-zh",
+    "primary": "invalidContext",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "连续题上下文未保存"
+  },
+  {
+    "id": "invalidContext-ja",
+    "primary": "invalidContext",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "連続質問のコンテキストを保存できませんでした"
+  },
+  {
+    "id": "invalidContext-en",
+    "primary": "invalidContext",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Questionnaire context wasn't saved"
+  },
+  {
+    "id": "contextCleared-zh",
+    "primary": "contextCleared",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "连续题上下文已清空"
+  },
+  {
+    "id": "contextCleared-ja",
+    "primary": "contextCleared",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "連続質問のコンテキストを消去しました"
+  },
+  {
+    "id": "contextCleared-en",
+    "primary": "contextCleared",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Questionnaire context cleared"
+  },
+  {
+    "id": "partialUnreadable-zh",
+    "primary": "partialUnreadable",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "部分题目无法辨认"
+  },
+  {
+    "id": "partialUnreadable-ja",
+    "primary": "partialUnreadable",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "一部の質問を読み取れません"
+  },
+  {
+    "id": "partialUnreadable-en",
+    "primary": "partialUnreadable",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Some questions were unreadable"
+  },
+  {
+    "id": "partialMissingPrevious-zh",
+    "primary": "partialMissingPrevious",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "部分题目缺少上一题上下文"
+  },
+  {
+    "id": "partialMissingPrevious-ja",
+    "primary": "partialMissingPrevious",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "一部の質問に前の質問が必要です"
+  },
+  {
+    "id": "partialMissingPrevious-en",
+    "primary": "partialMissingPrevious",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Some questions need the previous-question context"
+  },
+  {
+    "id": "missingPrevious-zh",
+    "primary": "missingPrevious",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "上一题上下文不可用"
+  },
+  {
+    "id": "missingPrevious-ja",
+    "primary": "missingPrevious",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "前の質問のコンテキストがありません"
+  },
+  {
+    "id": "missingPrevious-en",
+    "primary": "missingPrevious",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Previous-question context unavailable"
+  },
+  {
+    "id": "done-zh",
+    "primary": "done",
+    "language": "zh",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "完成"
+  },
+  {
+    "id": "done-ja",
+    "primary": "done",
+    "language": "ja",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "完了"
+  },
+  {
+    "id": "done-en",
+    "primary": "done",
+    "language": "en",
+    "contextWasCleared": false,
+    "questionsRemaining": null,
+    "quotaRunningLow": false,
+    "copied": false,
+    "text": "Done"
+  },
+  {
+    "id": "suffixes-zh",
+    "primary": "invalidContext",
+    "language": "zh",
+    "contextWasCleared": true,
+    "questionsRemaining": 3,
+    "quotaRunningLow": true,
+    "copied": false,
+    "text": "连续题上下文未保存 · 连续题上下文已清空 · 剩余 3 题 · 额度即将用完"
+  },
+  {
+    "id": "suffixes-ja",
+    "primary": "invalidContext",
+    "language": "ja",
+    "contextWasCleared": true,
+    "questionsRemaining": 3,
+    "quotaRunningLow": true,
+    "copied": false,
+    "text": "連続質問のコンテキストを保存できませんでした · 連続質問のコンテキストを消去しました · 残り3問 · 残りわずか"
+  },
+  {
+    "id": "suffixes-en",
+    "primary": "invalidContext",
+    "language": "en",
+    "contextWasCleared": true,
+    "questionsRemaining": 3,
+    "quotaRunningLow": true,
+    "copied": false,
+    "text": "Questionnaire context wasn't saved · Questionnaire context cleared · 3 questions left · Running low"
+  },
+  {
+    "id": "no-duplicate-clear",
+    "primary": "contextCleared",
+    "language": "en",
+    "contextWasCleared": true,
+    "questionsRemaining": 1,
+    "quotaRunningLow": false,
+    "copied": true,
+    "text": "Questionnaire context cleared · 1 question left · Copied"
+  }
+]

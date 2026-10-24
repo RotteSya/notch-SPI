@@ -69,20 +69,17 @@ exit 1
 `);
 fs.chmodSync(path.join(stubDir, 'pgrep'), 0o755);
 
-execFileSync('rsync', [
-  '-a',
-  '--exclude', 'node_modules',
-  '--exclude', '.build',
-  '--exclude', 'output',
-  '--exclude', 'dist',
-  '--exclude', 'dist-qa',
-  '--exclude', '.swiftpm',
-  '--exclude', '.release-evidence',
-  '--exclude', '.eval-results',
-  '--exclude', '.wrangler',
-  `${repo}/`,
-  `${base}/`,
-]);
+const sourceFiles = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean);
+for (const relative of sourceFiles) {
+  const source = path.join(repo, relative);
+  if (!fs.existsSync(source)) continue;
+  const target = path.join(base, relative);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  fs.chmodSync(target, fs.statSync(source).mode);
+}
+execFileSync('git', ['init', '-q', base]);
+execFileSync('git', ['add', '-f', '--', ...sourceFiles.filter(file => fs.existsSync(path.join(base, file)))], { cwd: base });
 fs.rmSync(path.join(base, 'scripts/test/bootstrap.test.mjs'), { force: true });
 after(() => {
   fs.rmSync(work, { recursive: true, force: true });
@@ -256,14 +253,41 @@ describe('bootstrap install recovery', { concurrency: 1 }, () => {
   test('a stale installed version reaches npm ci and the post-install check', () => {
     const dir = scenario();
     breakVersion(dir);
-    assertReachedInstall(invoke(dir, []));
+    const result = invoke(dir, []);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal((result.order.match(/npm-ci /g) ?? []).length, 1);
+    assert.match(result.stdout, /Reusing locked scheduler dependencies/);
+    assert.ok(result.order.indexOf('swift build') > result.order.indexOf('npm-ci '));
   });
 
-  test('a consistent install still runs the post-install check before the build', () => {
+  test('a consistent install is reused without npm ci before the build', () => {
     const dir = scenario();
     installLocked(dir, 'server');
     installLocked(dir, 'scheduler');
-    assertReachedInstall(invoke(dir, []));
+    const result = invoke(dir, []);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Reusing locked server dependencies/);
+    assert.equal(result.order.includes('npm-ci '), false);
+    assert.equal(result.order.includes('swift build'), true);
+  });
+
+  test('no-install refuses absent dependencies before npm or Swift build', () => {
+    const result = invoke(scenario(), ['--no-install']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /--no-install stopped/);
+    assert.equal(result.order.includes('npm-ci '), false);
+    assert.equal(result.order.includes('swift build'), false);
+  });
+
+  test('no-install refuses missing Swift checkouts after reusing npm dependencies', () => {
+    const dir = scenario();
+    installLocked(dir, 'server');
+    installLocked(dir, 'scheduler');
+    const result = invoke(dir, ['--no-install']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Swift dependencies need preparation/);
+    assert.equal(result.order.includes('npm-ci '), false);
+    assert.equal(result.order.includes('swift build'), false);
   });
 
   test('a failed npm ci stops before the Swift build and the client', () => {
