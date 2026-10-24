@@ -938,6 +938,7 @@ async function start() {
   async function verifyMotion() {
     if (motionStarted) return;
     motionStarted = true;
+    const { assertFlightSample } = await import("./test/motion-continuity.mjs");
     const directory = path.join(root, "test-output/motion"),
       wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     await fs.mkdir(directory, { recursive: true });
@@ -994,11 +995,13 @@ async function start() {
         await wait(delay);
         await captureWithOverlays(async () => {
           const before = flights.diagnostics.frames[0];
+          const beforeTime = Date.now();
+          assertFlightSample(started.frames[0], before, beforeTime);
           await wait(60); // Keep captures overlapping while the real window paints.
           const after = flights.diagnostics.frames[0];
-          captureContinuity.push({ before: before?.start, after: after?.start, visible: win.isVisible() });
-          if (!before || !after || before.start !== after.start)
-            throw new Error("Capture interrupted or restarted the screenshot flight");
+          const afterTime = Date.now();
+          captureContinuity.push({ before: before?.start, after: after?.start, beforeTime, afterTime, visible: win.isVisible() });
+          assertFlightSample(started.frames[0], after, afterTime);
         });
       });
       if (pixelCheck) continuity.push((async () => {
@@ -1012,7 +1015,10 @@ async function start() {
       await Promise.all(continuity);
     } finally {
       clearInterval(visibilityMonitor);
+      await fs.writeFile(path.join(directory, "continuity.json"), JSON.stringify(captureContinuity, null, 2));
     }
+    if (!captureContinuity.some(sample => sample.before != null && sample.after != null))
+      throw new Error("No capture observed the active flight continuously");
     if (hiddenDuringCapture) throw new Error("An overlay was hidden during continuous capture");
     const painted = await painting;
     await fs.writeFile(path.join(directory, "painted.json"), JSON.stringify(painted, null, 2));
