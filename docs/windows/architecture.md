@@ -57,9 +57,9 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 
 Windows 飞入层由 `platform/flights.mjs` 管理，每屏一个透明穿透窗口，按真实窗口原点映射全局 DIP，跨屏图片只发送一次。纯队列与几何在 core/shared 层。Win32 DWM 窗口矩形通过固定 PowerShell P/Invoke 转换为 Electron DIP，未知/消失的来源使用原 Mac 定义的淡入路径。截图与请求不会等待飞行动画。
 
-Windows 截图排除依赖 DirectComposition：启动时选择系统 D3D11 WARP，并允许该软件 Direct3D 设备运行 Chromium 合成器；透明覆盖窗初始化分层属性后设置 `WDA_EXCLUDEFROMCAPTURE`。不能用 `disableHardwareAcceleration()` 代替：旧版 Windows 的分层位图回退无法排除透明窗。WARP 使用 CPU，避免依赖用户显卡驱动，但多屏/高 DPI 下的 CPU 与帧时间仍需实机测量。macOS 不使用这些启动配置。截图入口在合成器回退时拒绝采集，不以隐藏窗口或遮黑图像兜底。
+Windows 截图排除依赖 DirectComposition：启动时选择系统 D3D11 WARP，并允许该软件 Direct3D 设备运行 Chromium 合成器；禁用新系统的 `RemoveRedirectionBitmap` 以保持同一分层窗口合成路径；透明覆盖窗初始化分层属性后设置 `WDA_EXCLUDEFROMCAPTURE`。不能用 `disableHardwareAcceleration()` 代替：旧版 Windows 的分层位图回退无法排除透明窗。WARP 使用 CPU，避免依赖用户显卡驱动，但多屏/高 DPI 下的 CPU 与帧时间仍需实机测量。macOS 不使用这些启动配置。截图入口在合成器回退时拒绝采集，不以隐藏窗口或遮黑图像兜底。
 
-`smoke:capture` 保留未保护窗口可见、透明背景、普通窗口可捕获的正对照，以及基线、交互/穿透切换、飞行中和连续截图的排除断言；同时通过 Win32 原生命中检查验证鼠标穿透。`isContentProtected()` 的缓存布尔值本身不是排除成功证据。
+`smoke:capture` 保留未保护窗口可见、透明背景、普通窗口可捕获的正对照，以及基线、交互/穿透切换、飞行中和连续截图的排除断言；同时通过 Win32 原生命中检查验证鼠标穿透。测试夹具等待首个合成帧；短动画的读回管线在计时开始前预热，动画时长、连续性和像素门槛不变。`isContentProtected()` 的缓存布尔值本身不是排除成功证据。
 
 仍需分别适配的范围是设置/引导的视图、窗口系统、截图权限/目标身份、热键、凭据、文本/材质绘制及安装签名。不能将这些平台适配称为已经共用同一套界面代码。常规提示词、解析器、计费后端、已迁移的 UI 结构与动效改动从同一提交进入两个构建，无需复制第二份逻辑。
 

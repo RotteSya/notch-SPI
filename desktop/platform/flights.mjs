@@ -149,6 +149,16 @@ export function createFlights({ root, host, changed, protection, exclusion,
         })),
       };
     },
+    async prepareEvidence() {
+      // Prime the readback pipeline before the timed animation, while surfaces
+      // are still empty. This never changes the flight clock or its duration.
+      ensure();
+      for (const { w } of overlays.values()) {
+        if (w.webContents.isLoading())
+          await new Promise(resolve => w.webContents.once("did-finish-load", resolve));
+        await w.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
+      }
+    },
     async evidence(directory, label) {
       await fs.mkdir(directory, { recursive: true });
       const result = [];
