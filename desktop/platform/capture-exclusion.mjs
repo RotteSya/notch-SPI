@@ -7,6 +7,9 @@ export function requireCaptureExclusionSupport(release) {
 }
 
 export function protectWindowsOverlay(window) {
+  // Changing layered attributes before the first show can prevent Chromium's
+  // transparent surface from presenting. register() refreshes on every show.
+  if (!window.isVisible()) return;
   // Electron's transparent window alone can reject display affinity on Windows.
   // Full opacity establishes its persistent layered-window style without fading
   // the window, and preserves that style when mouse passthrough is toggled.

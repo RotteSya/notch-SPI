@@ -1081,6 +1081,7 @@ async function start() {
           return snapshot();
         case "rendered":
           if (smoke && event.sender === win.webContents && payload === true) {
+            console.log("NSPI_RENDERER_READY");
             if (motionSmoke) {
               verifyMotion().catch((error) => {
                 console.error(error);
