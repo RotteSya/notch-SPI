@@ -139,3 +139,13 @@
 - `Tests/Fixtures/answer-copy/cases.json` 的 13 组输入由两端真实共享调用消费，覆盖开关、自动/手动、人物像、review、retake、忙碌、空值及旧格式。
 - 仍有平台完成展示待核对：Windows 人物像部分错误/连续题警告未展示 Mac 的同等细分提示。本轮不宣称该项已修复，也不以单元测试代替 Windows 视觉/剪贴板实机验收。旧候选仍对应其原提交。
 - `output/verification/20261024T092449Z-43351/summary.tsv` 完整自动验证通过：desktop 220、server 684、scheduler 17、Swift 598（4 项跳过），arm64 Release 通过。另有 33 项 Mac 专项通过。Postgres、硬件和签名仍保留未执行状态。
+
+## 2026-10-24 人物像完成提示统一
+
+- `shared/ui/reading.mjs` 成为十类人物像完成状态及中/日/英文案、上下文清空/额度/复制后缀的来源；Mac 完成结果与 Windows renderer 共同使用。低额度阈值也由共享来源读取。
+- Windows 完成回调保存结构化提示，只允许当前 generation 且未取消的请求更新；新请求清空旧提示。部分缺失、无法辨认、上下文未保存等不再统一显示 Done 或泛化英文错误。完整提示放在结果正文前，避免长后缀挤压顶部操作按钮。
+- `Tests/Fixtures/personality-status/cases.json` 34 组输入共用验证十类主提示的三语输出、后缀顺序和清空提示去重；原 Mac 优先级回归保留。另有 Desktop 低额度阈值边界测试。
+- 新增 `npm --prefix desktop run smoke:personality`，已在 Mac 宿主实际运行 Electron 的部分缺失警告与终态错误两个场景，检查完整提示可见、只出现一次且人物像无复制按钮；截图保存为 `desktop/test-output/personality-status.png` 与 `personality-error.png`。该检查已加入双平台 Desktop workflow，但尚未在远端或 Windows 实机运行。
+- 此证据解决之前记录的细分提示缺失，不代表整体像素、帧时间及 Windows 安装升级验收完成。旧候选仍绑定原源码。
+- `output/verification/20261024T093646Z-53409/summary.tsv` 完整自动验证通过：desktop 255、server 684、scheduler 17、Swift 599（4 项跳过），arm64 Release 通过。随后仅调整 Desktop 错误提示去重及双场景 smoke，再次通过 desktop 255 项及两次真实 Electron 窗口断言；最终复查生成一致性与 desktop 255 项也通过。Postgres、硬件与签名仍保留未执行状态。
+- 提交前补跑 Mac 的 `OfficialCaptureRunTests`、`PersonalityCaptureRunTests` 与 `SharedPersonalityStatusTests`，38 项全部通过，覆盖取消、旧回调、人物像完成优先级及共用文案；提交集合通过 `repo-health --delivery` 检查。

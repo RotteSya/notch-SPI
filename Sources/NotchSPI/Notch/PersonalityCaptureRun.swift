@@ -22,18 +22,7 @@ enum PersonalityCompletionPrimary: String, Codable, Equatable {
     }
 
     var localizedStatus: String {
-        switch self {
-        case .transportFailure: return L10n.statusTransportFailure
-        case .unreadable: return L10n.statusUnreadable
-        case .dependsOnMissingPrevious: return L10n.statusDependsOnMissingPrevious
-        case .noValidChoices: return L10n.statusNoValidChoices
-        case .invalidContext: return L10n.statusContextNotSaved
-        case .contextCleared: return L10n.statusContextCleared
-        case .partialUnreadable: return L10n.statusPartialUnreadable
-        case .partialMissingPrevious: return L10n.statusPartialMissingPrevious
-        case .missingPrevious: return L10n.statusMissingPrevious
-        case .done: return L10n.statusDone
-        }
+        SharedVisual.personalityStatusText(rawValue, language: L10n.t("zh", "ja", "en"))
     }
 }
 
@@ -58,17 +47,9 @@ struct PersonalityCompletionOutcome: Codable, Equatable {
 
     var isError: Bool { primary.isError }
 
-    func statusText(suffixes: PersonalityCompletionSuffixes = .init()) -> String {
-        var parts = [primary.localizedStatus]
-        if suffixes.contextWasCleared, primary != .contextCleared {
-            parts.append(L10n.statusContextCleared)
-        }
-        if let questionsRemaining = suffixes.questionsRemaining {
-            parts.append(L10n.questionsLeft(questionsRemaining))
-        }
-        if suffixes.quotaRunningLow { parts.append(L10n.statusQuotaRunningLow) }
-        if suffixes.copied { parts.append(L10n.statusCopied) }
-        return parts.joined(separator: " · ")
+    func statusText(suffixes: PersonalityCompletionSuffixes = .init(),
+                    language: String = L10n.t("zh", "ja", "en")) -> String {
+        SharedVisual.personalityStatusText(primary.rawValue, language: language, suffixes: suffixes)
     }
 }
 
