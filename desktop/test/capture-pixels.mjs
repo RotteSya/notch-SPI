@@ -108,6 +108,8 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
     await wait(180);
     control = pixels(await takePixels());
     assert.ok(!near(control.at(notchPoint), background), "Positive control did not see the notch");
+    assert.ok(near(control.at({ x: notch.x + 5, y: notch.y + notch.height - 5 }), background),
+      "Transparent overlay background became opaque");
     assert.ok(near(control.at(ordinaryPoint), ordinary), "Ordinary window or desktop is not capturable");
   } finally {
     exclusion.refresh(win);
