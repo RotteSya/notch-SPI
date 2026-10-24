@@ -3024,10 +3024,10 @@ final class NotchController: NSObject {
 
     @discardableResult
     private func copyCurrentAnswer(requireAutoCopy: Bool) -> Bool {
-        guard (!requireAutoCopy || Appearance.autoCopyAnswer), model.mode != "personality",
-              model.resultState != .retake, model.status != .running, model.status != .streaming,
-              (!requireAutoCopy || model.resultState == .ready),
-              let answer = AnswerComposer.clipboardAnswer(model.answer) else { return false }
+        guard let answer = AnswerComposer.clipboardAnswer(model.answer),
+              SharedVisual.canCopyAnswer(mode: model.mode, busy: model.status == .running || model.status == .streaming,
+                  resultState: model.resultState?.rawValue, hasAnswer: true, automatic: requireAutoCopy,
+                  autoCopyEnabled: Appearance.autoCopyAnswer) else { return false }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(answer, forType: .string)
         if let captureID = currentCaptureID {

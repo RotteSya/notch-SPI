@@ -1,3 +1,4 @@
+import { canCopyAnswer } from "./generated/ui/reading.mjs";
 import { Onboarding } from "./generated/ui/onboarding.mjs";
 import { practiceHTML } from "./core/practice.mjs";
 import { billingDestination } from "./core/platform-actions.mjs";
@@ -608,7 +609,8 @@ async function start() {
           ];
           saveHistory();
         }
-        if (frozen.autoCopy && !onboardingAttempt)
+        if (!onboardingAttempt && canCopyAnswer({ mode, resultState: state.resultState,
+          hasAnswer: Boolean(state.answer), automatic: true, autoCopyEnabled: frozen.autoCopy }))
           clipboard.writeText(state.answer.replace(/\*\*|__/g, ""));
         if (auto.active)
           auto.succeeded(
@@ -1192,7 +1194,8 @@ async function start() {
           break;
         }
         case "copy":
-          if (state.status === "done" && state.answer)
+          if (state.status === "done" && canCopyAnswer({ mode: state.mode, resultState: state.resultState,
+            hasAnswer: Boolean(state.answer) }))
             clipboard.writeText(state.answer.replace(/\*\*|__/g, ""));
           break;
         case "retry":
