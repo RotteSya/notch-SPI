@@ -1015,6 +1015,7 @@ async function start() {
     }
     if (hiddenDuringCapture) throw new Error("An overlay was hidden during continuous capture");
     const painted = await painting;
+    await fs.writeFile(path.join(directory, "painted.json"), JSON.stringify(painted, null, 2));
     if (!painted.some((p) => p.visible && p.ink > 100))
       throw new Error("Flight overlay has no visible painted image");
     await wait(750);
