@@ -6,9 +6,17 @@ export function requireCaptureExclusionSupport(release) {
     throw new Error("Screenshot exclusion requires Windows 10 version 2004 or later.");
 }
 
+export function protectWindowsOverlay(window) {
+  // Electron's transparent window alone can reject display affinity on Windows.
+  // Full opacity establishes its persistent layered-window style without fading
+  // the window, and preserves that style when mouse passthrough is toggled.
+  window.setOpacity(1);
+  window.setContentProtection(true);
+}
+
 export function createCaptureExclusion({
   enabled = true,
-  protect = window => window.setContentProtection(true),
+  protect = protectWindowsOverlay,
   now = () => performance.now(),
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
   settleMilliseconds = 120,
