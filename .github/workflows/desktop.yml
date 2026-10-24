@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, macos-15]
+        os: [windows-2022, windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -60,7 +60,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: desktop-${{ runner.os }}
+          name: desktop-${{ matrix.os }}
           path: |
             desktop/dist/candidates/*/*.zip
             desktop/dist/candidates/*/*.exe
