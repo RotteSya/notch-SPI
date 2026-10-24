@@ -146,5 +146,10 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
     },
   };
   await result.check("baseline", fn => exclusion.capture(fn));
+  for (const ignore of [false, true]) {
+    win.setIgnoreMouseEvents(ignore, { forward: true });
+    exclusion.refresh(win);
+    await result.check(ignore ? "passthrough" : "interactive", fn => exclusion.capture(fn));
+  }
   return result;
 }
