@@ -4,6 +4,34 @@ import { BrowserWindow, screen, nativeImage } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+async function nativeProtection(win) {
+  const handle = win.getNativeWindowHandle();
+  const id = handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
+  const script = `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class CaptureState {
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowDisplayAffinity(IntPtr h, out uint affinity);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+  [DllImport("dwmapi.dll")] public static extern int DwmIsCompositionEnabled(out bool enabled);
+}
+'@
+[uint32]$affinity = 0
+$ok = [CaptureState]::GetWindowDisplayAffinity([IntPtr]${id}, [ref]$affinity)
+$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+$composition = $false
+$hr = [CaptureState]::DwmIsCompositionEnabled([ref]$composition)
+@{ ok=$ok; affinity=$affinity; errorCode=$errorCode; remote=[CaptureState]::GetSystemMetrics(4096); composition=$composition; hresult=$hr } | ConvertTo-Json -Compress
+`;
+  const { stdout } = await promisify(execFile)("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),
+  ], { windowsHide: true, timeout: 10000, maxBuffer: 8192 });
+  return JSON.parse(stdout.trim());
+}
 
 const background = [18, 84, 160], ordinary = [30, 210, 180];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -66,6 +94,9 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
     exclusion.refresh(win);
   }
   await fs.writeFile(path.join(directory, "capture-control.png"), control.image.toPNG());
+  const protection = await nativeProtection(win);
+  console.log("Native capture protection:", JSON.stringify(protection));
+  await fs.writeFile(path.join(directory, "capture-protection.json"), JSON.stringify(protection, null, 2));
   let checked = 0;
   const result = {
     async check(label, captureWithOverlays) {
