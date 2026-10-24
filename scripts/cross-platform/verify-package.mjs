@@ -28,7 +28,7 @@ for (const directory of ["core", "platform", "ui", "generated"])
   visit(directory);
 for (const file of owned)
   assert.deepEqual(
-    asar.extractFile(archive, file),
+    asar.extractFile(archive, path.normalize(file)),
     fs.readFileSync(path.join(desktop, file)),
     `Stale packaged file: ${file}`,
   );
