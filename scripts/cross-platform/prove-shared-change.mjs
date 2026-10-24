@@ -41,8 +41,27 @@ const original = p.capture.submitDelay;
 const originalPersona = structuredClone(p.personalitySession);
 p.personalitySession = { maxAgeSeconds: 901, maxRecords: 2, maxContextBytes: 1024 };
 for (const key of Object.keys(originalPersona)) assert.notEqual(p.personalitySession[key], originalPersona[key]);
-const checkoutErrors = checkSwiftCheckouts(copy);
-assert.deepEqual(checkoutErrors, [], "Existing isolated Swift checkouts required; no downloads allowed");
+// A fresh CI runner has resolved the main package, but has no isolated build cache yet.
+// Seed only dependency metadata/checkouts from that validated cache; never fetch or install.
+if (checkSwiftCheckouts(copy).length) {
+  assert.deepEqual(checkSwiftCheckouts(root), [], "Pinned main-workspace Swift checkouts required; no downloads allowed");
+  for (const name of ["checkouts", "repositories"]) {
+    const from = path.join(root, ".build", name), to = path.join(copy, ".build", name);
+    fs.rmSync(to, { recursive: true, force: true });
+    if (fs.existsSync(from)) fs.cpSync(from, to, { recursive: true });
+  }
+  const state = JSON.parse(fs.readFileSync(path.join(root, ".build/workspace-state.json"), "utf8"));
+  for (const dependency of state.object.dependencies) {
+    if (dependency.packageRef.kind !== "fileSystem") continue;
+    for (const [object, key] of [[dependency.packageRef, "location"], [dependency.state, "path"]]) {
+      if (typeof object[key] === "string" && object[key].startsWith(path.resolve(root) + path.sep))
+        object[key] = path.join(copy, path.relative(root, object[key]));
+    }
+  }
+  fs.mkdirSync(path.join(copy, ".build"), { recursive: true });
+  fs.writeFileSync(path.join(copy, ".build/workspace-state.json"), JSON.stringify(state, null, 2) + "\n");
+}
+assert.deepEqual(checkSwiftCheckouts(copy), [], "Isolated Swift checkout preflight failed; no downloads allowed");
 p.capture.submitDelay = original + 1;
 fs.writeFileSync(productFile, JSON.stringify(p, null, 2) + "\n");
 // Exercise a visible shared reading change as well as a business timing change.
