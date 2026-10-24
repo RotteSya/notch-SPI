@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createCaptureExclusion, requireCaptureExclusionSupport } from "../platform/capture-exclusion.mjs";
+import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor } from "../platform/capture-exclusion.mjs";
 import { FlightQueue } from "../core/flights.mjs";
 import { flightSample, flightStyle } from "../generated/ui/flight.mjs";
 
@@ -142,4 +142,22 @@ test("repeated window churn is bounded and does not release an uncertain frame",
     return "uncertain";
   }), /changed repeatedly/);
   assert.equal(attempts, 5);
+});
+
+test("software compositor fallback fails closed before pixels can enter a request", async () => {
+  let status = "enabled", captured = 0;
+  const exclusion = createCaptureExclusion({ validate: () => requireCaptureCompositor(status) });
+  await exclusion.capture(() => captured++);
+  for (status of ["disabled_software", "disabled_off", "unavailable_software", undefined])
+    await assert.rejects(exclusion.capture(() => captured++), /accelerated compositor/);
+  assert.equal(captured, 1);
+});
+
+test("compositor fallback while capture is pending discards the captured frame", async () => {
+  let status = "enabled", finish;
+  const exclusion = createCaptureExclusion({ validate: () => requireCaptureCompositor(status) });
+  const capture = exclusion.capture(() => new Promise(resolve => { finish = resolve; }));
+  status = "disabled_software";
+  finish("uncertain pixels");
+  await assert.rejects(capture, /accelerated compositor/);
 });

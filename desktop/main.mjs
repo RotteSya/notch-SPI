@@ -25,7 +25,7 @@ import { Vault, LocalStore } from "./platform/storage.mjs";
 import { QuestionHistory } from "./platform/history.mjs";
 import { createUpdater } from "./platform/updater.mjs";
 import { createCaptureVisibility } from "./platform/capture-visibility.mjs";
-import { createCaptureExclusion, requireCaptureExclusionSupport } from "./platform/capture-exclusion.mjs";
+import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor } from "./platform/capture-exclusion.mjs";
 import { canQueryCapture } from "./core/window-behavior.mjs";
 import { createFlights } from "./platform/flights.mjs";
 import { capture, listTargets, fromFile } from "./platform/capture.mjs";
@@ -245,7 +245,10 @@ async function start() {
       window.setContentProtection(windowsCapture);
     },
     validate: () => {
-      if (windowsCapture) requireCaptureExclusionSupport(os.release());
+      if (windowsCapture) {
+        requireCaptureExclusionSupport(os.release());
+        requireCaptureCompositor(app.getGPUFeatureStatus().gpu_compositing);
+      }
     },
   });
   const position = () => {
