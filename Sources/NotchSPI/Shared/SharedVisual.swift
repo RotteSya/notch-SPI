@@ -49,6 +49,13 @@ enum SharedVisual {
         call("canCopyAnswer", [["mode": mode, "busy": busy, "resultState": resultState as Any? ?? NSNull(),
             "hasAnswer": hasAnswer, "automatic": automatic, "autoCopyEnabled": autoCopyEnabled]]).toBool()
     }
+    static func personalityStatusText(_ primary: String, language: String,
+                                      suffixes: PersonalityCompletionSuffixes = .init()) -> String {
+        call("personalityStatusText", [primary, ["language": language,
+            "contextWasCleared": suffixes.contextWasCleared,
+            "questionsRemaining": suffixes.questionsRemaining as Any? ?? NSNull(),
+            "quotaRunningLow": suffixes.quotaRunningLow, "copied": suffixes.copied]]).toString()
+    }
     struct ReadingRow {
         let kind: String, text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor
     }

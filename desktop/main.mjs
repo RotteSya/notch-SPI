@@ -1,4 +1,4 @@
-import { canCopyAnswer } from "./generated/ui/reading.mjs";
+import { canCopyAnswer, personalityStatusText } from "./generated/ui/reading.mjs";
 import { Onboarding } from "./generated/ui/onboarding.mjs";
 import { practiceHTML } from "./core/practice.mjs";
 import { billingDestination } from "./core/platform-actions.mjs";
@@ -160,6 +160,7 @@ async function start() {
     explanation: "",
     message: startupError ?? "",
     resultState: null,
+    personalityNotice: null,
     requestStarted: false,
     images: [],
     expanded: true,
@@ -446,6 +447,7 @@ async function start() {
       resultState: state.resultState,
     };
     state.status = "running";
+    state.personalityNotice = null;
     state.message = "";
     state.settlement = null;
     state.mode = mode;
@@ -465,11 +467,20 @@ async function start() {
       height,
     }));
     emit();
-    let raw = "", personaToken = null, personaCompleted = false;
+    let raw = "", personaToken = null, personaCompleted = false, personaContextCleared = false;
     const completePersona = (transportOK, answerRaw = raw) => {
       personaCompleted = true;
-      return personaSession.complete(answerRaw, { token: personaToken, transportOK,
+      const outcome = personaSession.complete(answerRaw, { token: personaToken, transportOK,
         currentScope: JSON.stringify([settings.persona, settings.target, settings.channel]) });
+      if (current === generation && !task.signal.aborted) {
+        state.personalityNotice = {
+          primary: outcome.primary,
+          contextWasCleared: personaContextCleared || outcome.sessionMutation === "discardedStaleResult",
+          questionsRemaining: frozen.channel === "official" && transportOK
+            ? client.account?.balance_questions ?? null : null,
+        };
+      }
+      return outcome;
     };
     task.signal.addEventListener("abort", () => {
       if (mode === "personality" && !personaCompleted) completePersona(false);
@@ -504,8 +515,10 @@ async function start() {
               JSON.stringify([frozen.persona, frozen.target, frozen.channel]),
             )
           : "";
-      if (mode === "personality") personaToken = personaSession.currentToken;
-      else personaSession.reset();
+      if (mode === "personality") {
+        personaToken = personaSession.currentToken;
+        personaContextCleared = personaSession.engine.lastBeginClearedContext;
+      } else personaSession.reset();
       let result;
       if (frozen.channel === "official") {
         if (operation === "solve" && !retry) {
@@ -568,9 +581,7 @@ async function start() {
             : compose(result.raw, run?.objective ?? false);
         if (mode === "personality") {
           if (answer.isError)
-            throw new Error(
-              "No valid personality result; capture the complete choices again",
-            );
+            throw new Error(personalityStatusText(answer.primary, { language: frozen.language }));
           state.answer = answer.composition.visibleChoices;
         } else {
           state.resultState = answer.state;
@@ -1065,9 +1076,25 @@ async function start() {
               });
               break;
             }
+            if (["personality-warning", "personality-error"].includes(qa)) {
+              const view = await win.webContents.executeJavaScript(`(() => {
+                const notice = document.querySelector('[data-personality-notice]');
+                return { text: notice?.textContent, visible: Boolean(notice && notice.getBoundingClientRect().height > 0),
+                  copy: Boolean(document.querySelector('[data-action="copy"]')),
+                  shelfText: document.querySelector('.shelf')?.textContent };
+              })()`);
+              const expected = qa === "personality-error" ? "Screenshot or choices unreadable"
+                : "Some questions need the previous-question context · Questionnaire context cleared · 3 questions left · Running low";
+              if (view.text !== expected || !view.visible || view.copy || view.shelfText.split(expected).length !== 2) {
+                console.error("Personality notice rendering or copy eligibility failed");
+                app.exit(1);
+                return;
+              }
+              console.log("NSPI_PERSONALITY_NOTICE_OK");
+            }
             await fs.mkdir(path.join(root, "test-output"), { recursive: true });
             await fs.writeFile(
-              path.join(root, "test-output", "launch.png"),
+              path.join(root, "test-output", qa === "personality-warning" ? "personality-status.png" : qa === "personality-error" ? "personality-error.png" : "launch.png"),
               (await win.webContents.capturePage()).toPNG(),
             );
             console.log("NSPI_DESKTOP_LAUNCH_OK");
@@ -1560,6 +1587,18 @@ async function start() {
         await fs.readFile(path.join(root, "test/fixtures/question.jpg")),
       ),
     ];
+    if (["personality-warning", "personality-error"].includes(qa)) {
+      settings.language = "en";
+      state.mode = "personality";
+      state.answer = "1. A\n2. B";
+      state.personalityNotice = { primary: "partialMissingPrevious", contextWasCleared: true, questionsRemaining: 3 };
+      if (qa === "personality-error") {
+        state.status = "error";
+        state.answer = "";
+        state.message = "Screenshot or choices unreadable";
+        state.personalityNotice = { primary: "unreadable" };
+      }
+    }
     if (qa === "collecting") {
       images = [0, 1, 2, 3].map((i) => ({
         ...images[0],

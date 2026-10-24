@@ -24,7 +24,7 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 | `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
 | `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |
 | `shared/ui/flight.mjs`、`capture.mjs` | Mac ScreenshotFlight/Tray + Windows 多窗口飞入层 | 轨迹、裁切避让、尺寸、落地/重排参数一次修改；窗口系统分别适配 |
-| `shared/ui/reading.mjs` | Mac 完整答案/历史详情 + Electron 答案 | 段落结构、三语复核/错误提示、字号层级及复制资格规则一次修改；文本绘制与系统剪贴板写入保留平台实现 |
+| `shared/ui/reading.mjs` | Mac 完整答案/历史详情 + Electron 答案 | 段落结构、三语复核/错误提示、字号层级、人物像完成提示/后缀及复制资格规则一次修改；文本绘制与系统剪贴板写入保留平台实现 |
 | `shared/ui/onboarding.mjs` | Mac 引导检查点 + 桌面完整引导 | 恢复规则一次修改；截图、权限、试用请求和视图通过平台适配 |
 | `desktop/core/` | Electron macOS 开发宿主 / Windows | 桌面两平台可共用；自动连答及人物像会话已调用共享状态机，SSE 事件规则已共享，字节分帧与请求完成效果仍由平台适配 |
 | `desktop/ui/` | Electron macOS 开发宿主 / Windows | 桌面两平台共用，当前生产 AppKit UI 不消费它 |

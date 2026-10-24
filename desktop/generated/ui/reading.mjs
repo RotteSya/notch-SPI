@@ -96,3 +96,71 @@ export function canCopyAnswer({ mode, busy = false, resultState = null, hasAnswe
   return mode === "tutor" && !busy && hasAnswer && resultState !== "retake" &&
     (!automatic || (autoCopyEnabled && resultState === "ready"));
 }
+
+export const personalityLowQuotaThreshold = 10;
+const personalityStatuses = {
+  "transportFailure": [
+    "回答传输中断",
+    "回答の受信が中断されました",
+    "Answer transport interrupted"
+  ],
+  "unreadable": [
+    "截图或选项无法辨认",
+    "画像または選択肢を読み取れません",
+    "Screenshot or choices unreadable"
+  ],
+  "dependsOnMissingPrevious": [
+    "本页依赖缺失的上一题",
+    "このページには前の質問が必要です",
+    "This page depends on the missing previous question"
+  ],
+  "noValidChoices": [
+    "未收到有效选项",
+    "有効な選択肢を受信できませんでした",
+    "No valid choices received"
+  ],
+  "invalidContext": [
+    "连续题上下文未保存",
+    "連続質問のコンテキストを保存できませんでした",
+    "Questionnaire context wasn't saved"
+  ],
+  "contextCleared": [
+    "连续题上下文已清空",
+    "連続質問のコンテキストを消去しました",
+    "Questionnaire context cleared"
+  ],
+  "partialUnreadable": [
+    "部分题目无法辨认",
+    "一部の質問を読み取れません",
+    "Some questions were unreadable"
+  ],
+  "partialMissingPrevious": [
+    "部分题目缺少上一题上下文",
+    "一部の質問に前の質問が必要です",
+    "Some questions need the previous-question context"
+  ],
+  "missingPrevious": [
+    "上一题上下文不可用",
+    "前の質問のコンテキストがありません",
+    "Previous-question context unavailable"
+  ],
+  "done": [
+    "完成",
+    "完了",
+    "Done"
+  ]
+};
+export function personalityStatusText(primary, { language = "en", contextWasCleared = false,
+  questionsRemaining = null, quotaRunningLow = questionsRemaining !== null && questionsRemaining <= personalityLowQuotaThreshold,
+  copied = false } = {}) {
+  const index = { zh: 0, ja: 1, en: 2 }[language] ?? 2;
+  const parts = [(personalityStatuses[primary] ?? personalityStatuses.noValidChoices)[index]];
+  if (contextWasCleared && primary !== "contextCleared") parts.push(personalityStatuses.contextCleared[index]);
+  if (Number.isSafeInteger(questionsRemaining) && questionsRemaining >= 0) {
+    parts.push([`剩余 ${questionsRemaining} 题`, `残り${questionsRemaining}問`,
+      questionsRemaining === 1 ? "1 question left" : `${questionsRemaining} questions left`][index]);
+  }
+  if (quotaRunningLow) parts.push(["额度即将用完", "残りわずか", "Running low"][index]);
+  if (copied) parts.push(["已复制", "コピー済み", "Copied"][index]);
+  return parts.join(" · ");
+}

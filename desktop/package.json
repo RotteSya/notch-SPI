@@ -15,7 +15,8 @@
     "pack:mac": "electron-builder --mac --arm64 --dir --publish never",
     "smoke": "electron . --smoke",
     "smoke:motion": "electron . --motion-smoke",
-    "smoke:capture": "electron . --capture-smoke"
+    "smoke:capture": "electron . --capture-smoke",
+    "smoke:personality": "electron . --smoke --qa personality-warning && electron . --smoke --qa personality-error"
   },
   "dependencies": {
     "electron-updater": "6.8.9",

@@ -30,6 +30,9 @@ jobs:
       - name: Desktop launches and renderer is ready
         run: npm --prefix desktop run smoke
         timeout-minutes: 2
+      - name: Personality warning remains visible and never offers copying
+        run: npm --prefix desktop run smoke:personality
+        timeout-minutes: 2
       - name: Ghost and screenshot flight on a real desktop compositor
         run: npm --prefix desktop run smoke:motion
         timeout-minutes: 2

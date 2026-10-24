@@ -6,7 +6,7 @@ import {
 } from "../generated/ui/capture.mjs";
 import { onboardingCopy } from "../generated/ui/onboarding.mjs";
 import { Ghost } from "../generated/ui/ghost.mjs";
-import { readingHTML, canCopyAnswer } from "../generated/ui/reading.mjs";
+import { readingHTML, canCopyAnswer, personalityStatusText } from "../generated/ui/reading.mjs";
 import { containsPoint, canCollapseOnLeave, pointerExitDelay } from "../core/window-behavior.mjs";
 import { translate } from "./i18n.mjs";
 import { product, spring, close, contentOpacity } from "../core/product.mjs";
@@ -185,6 +185,14 @@ function notch() {
       ? `<div class="reading working" data-rich>${escape(state.working)}</div>`
       : '<div class="waiting-light"></div>';
   } else body = guide();
+  const personalityLabel = state.mode === "personality" && state.personalityNotice && ["done", "error"].includes(state.status)
+    ? personalityStatusText(state.personalityNotice.primary, { ...state.personalityNotice, language: state.settings.language })
+    : null;
+  if (personalityLabel) {
+    const notice = `<p class="${state.status === "error" ? "error-message" : "muted"}" role="status" data-personality-notice>${escape(personalityLabel)}</p>`;
+    const primary = personalityStatusText(state.personalityNotice.primary, { language: state.settings.language });
+    body = state.status === "error" && !state.answer && state.message === primary ? notice : notice + body;
+  }
   const material =
     state.images.length && (!state.onboarding || state.guide.live)
       ? `<div class="material-strip ${captureIsCompact(state) ? "compact" : "collecting"}">${state.images.map((x, i) => `<div class="thumb">${button("preview", `<img src="${escape(x.thumbnail)}" alt="${t("preview")} ${i + 1}">`, `class="photo-card" data-flight-id="${x.id}" style="opacity:${state.flying?.includes(x.id) ? 0 : 1}" data-value="${x.id}" aria-label="${t("preview")} ${i + 1}"`)}${state.collecting ? `<span class="ordinal">${i + 1}</span>` : ""}${state.collecting ? button("remove", "×", `class="remove" data-value="${x.id}" aria-label="${t("remove")} ${i + 1}"`) : ""}</div>`).join("")}<span class="image-count">${state.settings.language === "zh" ? "题图 " : state.settings.language === "ja" ? "画像 " : "Images "}${state.images.length}</span></div>`
