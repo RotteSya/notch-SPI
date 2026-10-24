@@ -230,7 +230,10 @@ async function start() {
   const exclusion = createCaptureExclusion({
     // The motion smoke also exercises this lifecycle on the Mac test host.
     enabled: windowsCapture || motionSmoke,
-    protect: windowsCapture ? protectWindowsOverlay : window => window.setContentProtection(false),
+    // Visual smoke must read its own offline windows; the separate capture smoke
+    // keeps production protection and asserts exclusion in real desktop pixels.
+    protect: windowsCapture && !(smoke && !captureSmoke)
+      ? protectWindowsOverlay : window => window.setContentProtection(false),
     validate: () => {
       if (windowsCapture) requireCaptureExclusionSupport(os.release());
     },
@@ -939,7 +942,7 @@ async function start() {
     if (motionStarted) return;
     motionStarted = true;
     const { assertFlightSample } = await import("./test/motion-continuity.mjs");
-    const directory = path.join(root, "test-output/motion"),
+    const directory = path.join(root, "test-output", captureSmoke ? "capture" : "motion"),
       wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     await fs.mkdir(directory, { recursive: true });
     await fs.rm(path.join(directory, "result.json"), { force: true });
@@ -952,7 +955,7 @@ async function start() {
     state.answer = "";
     emit();
     await wait(350);
-    await fs.writeFile(
+    if (!captureSmoke) await fs.writeFile(
       path.join(directory, "ghost-working.png"),
       (await win.webContents.capturePage()).toPNG(),
     );
@@ -979,7 +982,7 @@ async function start() {
       throw new Error("Flight did not start on the real desktop");
     if (started.frames.some(frame => frame.reduced))
       throw new Error("Full-motion smoke unexpectedly selected reduced motion");
-    const painting = (async () => {
+    const painting = captureSmoke ? Promise.resolve([]) : (async () => {
       await wait(100);
       return flights.evidence(directory, "flight-moving");
     })();
@@ -1022,7 +1025,7 @@ async function start() {
     if (hiddenDuringCapture) throw new Error("An overlay was hidden during continuous capture");
     const painted = await painting;
     await fs.writeFile(path.join(directory, "painted.json"), JSON.stringify(painted, null, 2));
-    if (!painted.some((p) => p.visible && p.ink > 100))
+    if (!captureSmoke && !painted.some((p) => p.visible && p.ink > 100))
       throw new Error("Flight overlay has no visible painted image");
     await wait(750);
     if (
@@ -1034,7 +1037,7 @@ async function start() {
     state.answer = "B. 60 km/h";
     emit();
     await wait(350);
-    await fs.writeFile(
+    if (!captureSmoke) await fs.writeFile(
       path.join(directory, "ghost-completion.png"),
       (await win.webContents.capturePage()).toPNG(),
     );
@@ -1053,6 +1056,7 @@ async function start() {
           host: process.platform,
           started,
           painted,
+          paintedEvidence: captureSmoke ? "separate-visual-smoke" : "captured",
           captureContinuity,
           hiddenDuringCapture,
           windowsPixels: pixelCheck ? "passed" : "not-run",
