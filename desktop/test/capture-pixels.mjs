@@ -71,8 +71,10 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
     async check(label, captureWithOverlays) {
       assert.ok(win.isVisible(), "Notch must remain visible before capture");
       const sample = pixels(await captureWithOverlays(takePixels));
+      await fs.writeFile(path.join(directory, `capture-${label}.png`), sample.image.toPNG());
       assert.ok(win.isVisible(), "Notch must remain visible after capture");
-      assert.ok(near(sample.at(notchPoint), background), "Notch is present in captured pixels or replaced by a black rectangle");
+      assert.ok(near(sample.at(notchPoint), background),
+        `Notch is present in captured pixels or replaced by a black rectangle: ${JSON.stringify({ label, actual: sample.at(notchPoint), expected: background, protected: win.isContentProtected(), notchPoint, bounds: win.getBounds(), electron: process.versions.electron })}`);
       assert.ok(near(sample.at(ordinaryPoint), ordinary), "Ordinary settings-like window was excluded");
       // Any rendered screenshot card over this fixture would contaminate the
       // uniform background. Probe the entire overlay/flight travel region.
@@ -80,7 +82,6 @@ export async function prepareCapturePixels({ win, exclusion, takePixels, directo
       for (let y = area.y + 30; y < area.y + area.height - 160; y += 31)
         for (let x = area.x + 20; x < area.x + area.width - 20; x += 31)
           assert.ok(near(sample.at({ x, y }), background), `Overlay visible in capture at ${x},${y}`);
-      await fs.writeFile(path.join(directory, `capture-${label}.png`), sample.image.toPNG());
       checked++;
     },
     async finish() {
