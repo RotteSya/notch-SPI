@@ -43,7 +43,7 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 3. 将共享阅读 bodySize **15→16**，运行真实桌面 HTML 生成器与 Mac `SharedVisual.reading`/`InformationHierarchy`，断言两者使用 16。
 4. 检查主工作区配置保持原值 4 秒/15 pt。
 
-现有脚本还将人物像会话的时长 **900→901 秒**、记录数 **5→2**、上下文上限 **8192→1024 字节**，分别在真实 `PersonaSession` 和 `PersonalitySession` 上验证过期与裁剪行为。SSE 事件规则也在副本中把内容上限从 **65536→4 字节**，重新生成后使用真实 `OfficialStream` 与 `OfficialStreamDecoder` 验证 4 字节 Unicode 内容可完成、分两次到达的 5 字节内容被拒绝；原有正常流基线先于该实验运行。结果保存协议原始/实验摘要，主树仍保持 64 KiB。它检查隔离副本已有 Swift checkout 与锁文件一致，禁用自动依赖解析/更新；缺少缓存时停止，不自动下载。复制输入时替换脚本管理的旧源码副本，保留其 `.build` 缓存。首次准备缓存需要另行处理，不能把脚本当作依赖安装入口。
+现有脚本还将人物像会话的时长 **900→901 秒**、记录数 **5→2**、上下文上限 **8192→1024 字节**，分别在真实 `PersonaSession` 和 `PersonalitySession` 上验证过期与裁剪行为。SSE 事件规则也在副本中把内容上限从 **65536→4 字节**，重新生成后使用真实 `OfficialStream` 与 `OfficialStreamDecoder` 验证 4 字节 Unicode 内容可完成、分两次到达的 5 字节内容被拒绝；原有正常流基线先于该实验运行。结果保存协议原始/实验摘要，主树仍保持 64 KiB。它检查隔离副本的 Swift checkout 与锁文件一致，禁用自动依赖解析/更新。隔离缓存缺失时，从已经校验的主工作区复制 checkout、仓库缓存和 workspace-state，并把本地 Vendor 路径改指副本；主工作区也缺少锁定缓存时停止，不自动下载。复制输入时替换脚本管理的旧源码副本，保留已有编译缓存。该脚本不是依赖安装入口。
 
 证明开始时删除旧 `result.json`，每一步执行前删除对应旧日志，只有所有检查通过且主工作区源码摘要未变才写入新结果。结果绑定 Git 提交、源码摘要、dirty 状态及每步日志摘要；脏工作区证据不能当作干净提交证据。
 
