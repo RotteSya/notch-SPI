@@ -261,3 +261,31 @@ export function onboardingCopy(step, language = "en", trial = null) {
     action: step === "multiCapture" ? "" : r[2][i],
   };
 }
+
+// Presentation contract from NotchOnboardingView. Mac keeps its native renderer;
+// both test suites compare against this contract so desktop cannot add actions.
+export function onboardingControls({ step, failed = false, capturing = false,
+  previewing = false, count = 0, trial = "unavailable" } = {}) {
+  const capture = ["capture", "multiCapture", "collecting"].includes(step) || (step === "working" && failed);
+  return {
+    primary: !["capture", "multiCapture", "collecting", "working"].includes(step),
+    primaryEnabled: !capturing && !(step === "trial" && ["unavailable", "loading", "claiming"].includes(trial)),
+    back: ["permission", "practice", "capture", "multiple", "multiCapture"].includes(step) || (step === "working" && failed),
+    shortcut: capture && !capturing && !previewing && !(step === "collecting" && count >= 4),
+    secondary: step === "trial" ? !["loading", "claiming", "claimed", "expired", "ineligible"].includes(trial) : capture && !capturing && !previewing,
+    language: step === "welcome",
+    target: step === "permission",
+    finish: step === "trial" && trial === "claimed",
+  };
+}
+export function onboardingBackStep(step, multiple = false, permissionReturn = "capture", failed = false) {
+  if (!onboardingControls({ step, failed }).back) return null;
+  if (step === "permission") return permissionReturn;
+  if (step === "multiCapture") return "multiple";
+  if (step === "working") return multiple ? "multiple" : "capture";
+  return "welcome";
+}
+export function onboardingDismissal(step, trial = "unavailable") {
+  return { cancelCollection: step === "collecting", clearAnswer: step === "success",
+    complete: step === "trial" && trial === "claimed" };
+}

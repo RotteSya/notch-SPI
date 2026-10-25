@@ -1,0 +1,8 @@
+[
+ {"action":"add","id":"first","name":"First","description":"","active":"first","count":1},
+ {"action":"add","id":"second","name":"Second","description":"","active":"first","count":2},
+ {"action":"update","id":"second","name":"Second edited","description":"Testing only","active":"first","count":2},
+ {"action":"activate","id":"second","active":"second","count":2},
+ {"action":"remove","id":"second","active":"","count":1},
+ {"action":"remove","id":"first","active":"","count":0}
+]

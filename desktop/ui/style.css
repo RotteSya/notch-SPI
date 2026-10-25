@@ -382,24 +382,6 @@ body.notch {
 .notch-menu button:hover {
   background: #ffffff15;
 }
-.preview {
-  position: fixed;
-  inset: 12px 16px;
-  background: #141417fa;
-  border: 1px solid #ffffff25;
-  border-radius: 16px;
-  padding: 16px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.preview img {
-  object-fit: contain;
-  min-height: 0;
-  flex: 1;
-  width: 100%;
-}
 .review {
   font-size: 11px;
   color: #e6bc75;
@@ -963,3 +945,234 @@ body.notch {
 button, input, select, textarea, a, summary {
   -webkit-app-region:no-drag; app-region:no-drag;
 }
+
+/* Native guide chrome: header dismissal, a passive illustration and an anchored
+   footer. Ordinary notch controls never leak into the lesson. */
+.guide-active .guide-header {
+  height: 48px;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 6px;
+  box-sizing: border-box;
+  color: #ffffff9e;
+  font-size: 12px;
+  font-weight: 500;
+}
+.guide-header > span { margin: 6px 0 0 24px; }
+.guide-active .guide-dismiss {
+  margin-left: auto;
+  width: 96px;
+  height: 28px;
+  padding: 0 8px;
+}
+.guide-active .shelf { padding: 16px 15px 14px; }
+.guide-active .guide-illustration { height: 104px; pointer-events: none; }
+.guide-illustration svg { display: block; height: 104px; width: 284px; margin: auto; }
+.guide-active .onboarding h1 {
+  font-size: 25px; font-weight: 600; line-height: 1.2;
+  margin: 16px 0 12px; color: #fffffff5;
+}
+.guide-active .onboarding p {
+  max-width: 464px; margin: 0 auto; color: #ffffffb8;
+  font-size: 13px; line-height: calc(1em + 6px);
+}
+.guide-active .onboarding .guide-note { margin-top: 12px; }
+.guide-copy { min-height: 56px; }
+.guide-active[data-guide-step="permission"] .guide-copy { min-height: 146px; }
+.guide-active[data-guide-step="permission"] .guide-copy p { text-align: left; max-width: 480px; }
+.guide-active[data-guide-step="trial"] .guide-copy { min-height: 146px; }
+.guide-active .guide-target { display: block; margin: 4px 0 0 -8px; height: 28px; }
+.guide-active .guide-footer {
+  margin-top: 28px; padding-top: 13px; border-top: 1px solid #ffffff14;
+  transform: translateY(var(--guide-action-shift, 0px));
+}
+.guide-active .guide-actions { position: relative; height: 38px; }
+.guide-active .guide-actions button { position: absolute; height: 38px; font-size: 12px; }
+.guide-active .guide-actions .guide-primary { right: 0; min-width: 166px; font-size: 13px; font-weight: 600; }
+.guide-active .guide-primary::after { content: ' →'; margin-left: 6px; }
+.guide-active[data-guide-step="permission"] .guide-primary::after { content: none; }
+.guide-active .guide-back, .guide-active .guide-later { left: -8px; }
+.guide-active .guide-secondary:not(.guide-later) { right: -8px; }
+.guide-active .guide-language { padding: 0; line-height: normal; position: absolute; left: -6px; top: 5px; width: 116px; height: 28px; font-size: 12px; }
+.guide-active .guide-shortcut { position: absolute; left: 50%; top: 0; transform: translateX(-50%); height: 38px; display: flex; align-items: center; gap: 7px; white-space: nowrap; color: #ffffffb8; font-size: 12px; pointer-events: none; }
+.guide-active .guide-shortcut.leading { left: 0; transform: none; }
+.guide-active .guide-shortcut .keycaps { display: inline-flex; gap: 6px; }
+.guide-active .guide-shortcut kbd { font-size: 16px; font-weight: 500; padding: 0 9px; min-width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: .5px solid #ffffff38; background: #ffffff0e; color: #ffffffeb; }
+.guide-active .guide-dismiss, .guide-active .guide-back, .guide-active .guide-secondary, .guide-active .guide-target, .guide-active .guide-language {
+  background: transparent; border-color: transparent; color: #ffffffa6;
+}
+.guide-active .guide-dismiss:hover, .guide-active .guide-back:hover, .guide-active .guide-secondary:hover, .guide-active .guide-target:hover { background: #ffffff0d; color: #ffffffed; }
+.guide-live .shelf { border: 0; background: none; }
+.guide-live .guide-footer { border: 0; margin-top: 16px; padding-top: 0; }
+.guide-live .guide-footer > p { min-height: 42px; margin: 0 0 12px; color: #ffffffb8; font-size: 13px; line-height: calc(1em + 6px); }
+
+.guide-active { --accent: #7c9eff; }
+.guide-active .guide-primary { background: var(--accent); color: #081329; border-radius: 11px; border-color: #94afff; box-shadow: inset 0 1px 0 #ffffff29; }
+
+/* ScreenshotTray: count/actions first, fixed image slots, then countdown/hint. */
+.capture-shelf { padding-top: 8px; }
+.capture-toolbar { display: flex; align-items: center; gap: 10px; height: 24px; color: #ffffffa6; font-size: 12px; }
+.capture-toolbar button { min-width: 90px; height: 24px; padding: 0 8px; font-size: 12px; background: #ffffff0d; border-color: transparent; }
+.capture-shelf .material-strip.collecting { min-height: 80px; border-top: 0; margin-top: 8px; padding-top: 0; margin-bottom: 0; flex-wrap: nowrap; }
+.next-capture { height: 80px; flex-shrink: 0; border: 1px dashed #ffffff26; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: #ffffff66; font-size: 12px; }
+.next-capture > span { font-size: 20px; font-weight: 300; }
+.capture-progress { height: 2px; margin-top: 6px; }
+.capture-progress > span { display: block; height: 2px; border-radius: 1px; background: #7c9eff; }
+.capture-hint { display: flex; align-items: center; gap: 8px; margin-top: 5px; min-height: 26px; font-size: 11px; color: #ffffffa6; }
+.capture-hint > span { flex: 1; }
+.capture-hint:has(> span:empty):not(:has(button)) { display: none; }
+.reading:focus-visible { outline: 1px solid #7c9eff; outline-offset: 2px; }
+
+/* Native daily flow: actions sit below the content shelf, inside the notch. */
+.notch .daily-actions { margin: 8px 16px 8px; gap: 8px; }
+.notch .daily-actions button { font-size: 11px; font-weight: 400; min-width: 74px; padding: 4px 10px; line-height: 18px; min-height: 26px; border: 0; border-radius: 9px; background: #ffffff12; }
+.notch:not(.guide-active) .material-strip.compact { min-height: 40px; }
+.notch:not(.guide-active) .shelf > p[role="status"] { margin: 0; padding: 0; font-size: 13px; line-height: 16px; color: #ffffff99; }
+body.preview { overflow: hidden; }
+.image-preview { height: 100vh; display: grid; grid-template-rows: minmax(0,1fr) 68px; }
+.image-preview img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+.image-preview p { margin: 10px 16px; font-size: 11px; color: var(--muted); align-self: end; min-height: 48px; }
+
+.notch:not(.guide-active) .shelf:has(> p[role="status"]) .material-strip.compact { min-height: 48px; }
+
+/* Current native five-page settings: stable sidebar and reading transitions. */
+.settings .sidebar { padding-top: 48px; }
+.settings .sidebar .logo { font-size: 17px; margin-left: 12px; margin-bottom: 10px; }
+.settings .sidebar .muted { font-size: 11px; margin-left: 12px; margin-bottom: 25px; }
+.settings .sidebar nav { gap: 6px; }
+.settings .sidebar nav button { height: 38px; padding: 8px 12px; font-size: 13px; border-radius: 8px; }
+.settings .sidebar nav button:nth-child(2),.settings .sidebar nav button:nth-child(4) { margin-bottom: 14px; }
+.settings .settings-main { padding-top: 42px; }
+.settings .settings-main header { padding-bottom: 14px; }
+.settings .settings-main header h1 { margin: 0 0 8px; font-size: 22px; }
+.settings .settings-footer:has(> .toast:empty):not(:has(button)) { display: none; }
+.account-overview h3,.subscription h3 { margin: 4px 0 10px; font-size: 19px; }
+.balance-sources { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 18px 0; }
+.balance-sources strong,.balance-sources small { display: block; }
+.balance-sources strong { font-size: 24px; font-weight: 500; }
+.balance-sources small { color: var(--muted); margin-top: 6px; }
+.plan-terms { border-top: 1px solid var(--line); padding-top: 12px; line-height: 1.5; }
+.pack-choice { display: flex; gap: 10px; margin: 16px 0; }
+.pack-choice select { min-width: 0; flex: 1; }
+.account-dialog { width: 460px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); padding: 24px; }
+.account-dialog input { width: 100%; }
+.account-dialog::backdrop { background: #0006; }
+.settings-main[data-settings-page="account"] { padding: 42px 0 0; }
+.settings-main[data-settings-page="account"] > header { margin: 0 36px; height: 70px; flex-shrink: 0; }
+.settings-main[data-settings-page="account"] .settings-scroll { padding: 0 20px 22px; }
+.settings-main[data-settings-page="account"] .settings-scroll > h2 { margin: 24px 16px 12px; }
+.settings-main[data-settings-page="account"] .group { padding: 16px; }
+.settings-main[data-settings-page="account"] .account-overview { min-height: 210px; }
+.account-section-heading { display: flex; align-items: center; justify-content: space-between; height: 28px; margin: 0 16px; }
+.account-section-heading h2 { margin: 0 !important; }
+.account-section-heading button,.subscription .row > button { min-width: 110px; height: 30px; padding: 3px 12px; }
+.account-overview h3 { font-size: 22px; margin: 0 0 20px; }
+.account-overview .actions { margin-top: 28px; }
+.account-overview .primary { width: 242px; height: 32px; }
+.subscription .primary { width: 234px; height: 30px; }
+.subscription { min-height: 264px; }
+.subscription .row { min-height: 30px; }
+.subscription .actions { margin-top: 12px; }
+.settings-main[data-settings-page="account"] .group > p { font-size: 13px; }
+.service-options { display: grid; gap: 12px; }
+.service-options button { text-align: left; min-height: 68px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #80808005; }
+.service-options button strong,.service-options button small { display: block; }
+.service-options button strong { font-size: 13px; }
+.service-options button small { font-size: 11px; color: var(--muted); margin-top: 9px; }
+.service-options button[aria-checked="true"] { outline: 1px solid var(--ink); border-color: var(--ink); }
+.plus-progress { width: 100%; height: 4px; display: block; margin: 12px 0 16px; accent-color: #83a4ff; }
+.subscription [data-action="plusPortal"] { width: 234px; height: 30px; }
+.subscription [data-action="plusCancel"] { flex: 1; height: 30px; }
+
+/* Current Mac persona library: selection edits; the active dot is independent. */
+.settings-main[data-settings-page="personas"] { padding:42px 0 0; }
+.settings-main[data-settings-page="personas"] > header { margin:0 36px; min-height:70px; }
+.settings-main[data-settings-page="personas"] .settings-scroll { padding:0 20px 12px; }
+.persona-columns { display:grid;grid-template-columns:198px minmax(0,1fr);gap:12px; }
+.persona-columns h2 { margin:0 16px 12px;line-height:16px; }
+.persona-columns .group { padding:8px 16px 12px; }
+.persona-columns .persona-library { display:flex;flex-direction:column;gap:2px;height:358px;overflow:auto;border:1px solid var(--line);border-radius:5px;padding:8px 0; }
+.persona-library [role="option"] { display:flex;gap:8px;flex-shrink:0;text-align:left;height:28px;min-height:28px;padding:3px 10px;border:1px solid transparent;background:transparent; }
+.persona-library [aria-selected="true"] { background:rgba(255,255,255,.08);border-color:var(--line); }
+.persona-active { color:#829aff;width:12px;flex-shrink:0; }
+.persona-list-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.persona-columns .actions { margin-top:10px;gap:8px; }
+.persona-columns .actions button { width:34px;height:30px;padding:0;font-size:20px; }
+.persona-editor { display:flex;flex-direction:column;gap:0;min-height:476px; }
+.persona-editor input { width:100%;height:32px; }
+.persona-editor label { color:var(--muted);font-size:11px;margin:8px 0;min-height:32px; }
+.persona-editor textarea { resize:none;min-height:278px;height:278px;width:100%;font-size:12.5px;padding:8px; }
+.persona-editor button { margin-top:10px;width:190px;height:32px; }
+.persona-editor p { margin:12px 0 0;font-size:10.5px;line-height:17px;color:var(--muted); }
+.persona-empty { text-align:center;padding-top:112px; }
+.persona-empty-icon svg { width:48px;height:44px;color:var(--muted); }
+.persona-empty p { white-space:pre-line;font-size:14px;color:var(--muted);line-height:27px;margin:18px 0; }
+.persona-empty button { width:200px;height:34px; }
+
+.settings-main[data-settings-page="personas"] header p { font-size:11px; }
+.persona-columns h2 { margin-bottom:10px; }
+.persona-columns > section:first-child .group { padding-right:6px; }
+.persona-columns > section:last-child h2 { margin-left:8px; }
+.persona-editor input,.persona-editor textarea { border-radius:5px; }
+.persona-editor input:focus-visible { outline-offset:0;outline-color:#39769b; }
+.persona-active { font-size:7px;align-self:center; }
+.settings-main[data-settings-page="general"] header p { font-size:12px; }
+.settings-main[data-settings-page="general"] .group { border-color:rgba(128,128,128,.18); }
+.settings-main[data-settings-page="general"] .group:has(#languageMode) { min-height:228px; }
+.settings-main[data-settings-page="general"] .login-hint { margin:0 0 12px; }
+.settings-main[data-settings-page="general"] .row:has(#reliabilitySharing) { border-top:1px solid var(--line);padding-top:18px;margin-top:12px; }
+.settings-main[data-settings-page="general"] .row:has(#launchAtLogin),
+.settings-main[data-settings-page="general"] .row:has(#showReasoning) { border-bottom:0; }
+.settings input[type="checkbox"] { background:color-mix(in srgb,var(--ink) 16%,var(--bg));height:17px; }
+.settings input[type="checkbox"]:before { background:var(--bg);width:12px;height:12px;box-shadow:none; }
+.settings input[type="checkbox"]:checked { background:var(--ink); }
+.settings input[type="checkbox"]:checked:after { content:'✓';color:var(--bg);position:absolute;left:4px;top:0;font-size:11px; }
+
+.settings-main[data-settings-page="personas"] > header { min-height:74px; }
+.persona-columns .group { border-color:rgba(128,128,128,.18); }
+
+.settings-main[data-settings-page="general"] .row:has(#keepExpanded) { border-top:0; }
+.settings-main[data-settings-page="general"] .row:has(#reliabilitySharing) { padding-top:6px; }
+.settings-main[data-settings-page="general"] .row label { font-weight:500; }
+
+/* New Mac shortcut page: detailed capture rows, then compact session controls. */
+.settings-main[data-settings-page="shortcuts"] { padding:42px 0 0; }
+.settings-main[data-settings-page="shortcuts"] > header { margin:0 36px;min-height:72px; }
+.settings-main[data-settings-page="shortcuts"] header p { font-size:12px; }
+.settings-main[data-settings-page="shortcuts"] .settings-scroll { padding:0 20px 22px; }
+.settings-main[data-settings-page="shortcuts"] h2 { margin:0 16px 12px;line-height:16px; }
+.settings-main[data-settings-page="shortcuts"] .group+h2 { margin-top:12px; }
+.shortcut-group { padding:0 16px;border-color:rgba(128,128,128,.18); }
+.shortcut-row { display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:78px;padding-top:10px; }
+.shortcut-row+.shortcut-row { border-top:1px solid var(--line); }
+.shortcut-row label { display:block;font-weight:500;line-height:32px; }
+.shortcut-row p { margin:0;font-size:11px;color:var(--muted);line-height:17px; }
+.shortcut-row button { flex-shrink:0;min-width:148px;height:34px;border-radius:5px;padding:3px 12px; }
+.shortcut-group:nth-of-type(2) .shortcut-row { min-height:44px; }
+.shortcut-rule,.shortcut-hint { margin:10px 16px 16px;font-size:11px;line-height:16px;color:var(--muted); }
+.shortcut-row [data-recording] { outline:2px solid #39769b;outline-offset:-1px; }
+
+.shortcut-row button:not([data-recording]) { display:flex;align-items:center;justify-content:center;gap:12px;font:500 13px ui-monospace,monospace; }
+.notch:not(.guide-active) .shelf:has(> p[role="status"]) .material-strip.compact { min-height:40px;margin-top:10px; }
+
+/* Native black body: transparent window exterior, not frosted desktop sampling. */
+.slab-background {
+  pointer-events:none;
+  border-bottom:0;
+  background:linear-gradient(#0009,transparent 18%),linear-gradient(transparent 24%,rgba(204,219,255,var(--surface-sheen,.062))),#000;
+}
+.slab-background::after {
+  content:'';position:absolute;inset:0;background-image:var(--surface-dither);
+  background-size:96px 96px;opacity:.025;mix-blend-mode:screen;pointer-events:none;
+}
+.surface-edge { position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none; }
+.notch .slab-header button[data-action="menu"],
+.notch .slab-header button[data-action="collapse"] { transition:none;transform:none; }
+.notch .slab-header button[data-action="menu"] svg,
+.notch .slab-header button[data-action="collapse"] svg { opacity:.82;width:12px;height:12px; }
+.notch .slab-header button[data-action="menu"]:hover,
+.notch .slab-header button[data-action="collapse"]:hover { background:#ffffff1a;box-shadow:inset 0 0 0 .75px #ffffff1f;filter:none; }
+.notch .slab-header button:hover svg { opacity:1; }
+.notch .slab-header button[data-action="menu"]:active svg,
+.notch .slab-header button[data-action="collapse"]:active svg { transform:scale(.94);opacity:.72; }
+.light-field { position:absolute;inset:0;width:100%;height:100%;pointer-events:none; }

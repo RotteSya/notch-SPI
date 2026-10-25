@@ -14,9 +14,12 @@
     "pack:win": "node ../scripts/cross-platform/package.mjs",
     "pack:mac": "electron-builder --mac --arm64 --dir --publish never",
     "smoke": "electron . --smoke",
+    "smoke:daily": "electron . --daily-smoke",
+    "smoke:guide": "electron . --guide-smoke",
     "smoke:motion": "electron . --motion-smoke",
     "smoke:capture": "electron . --capture-smoke",
-    "smoke:personality": "electron . --smoke --qa personality-warning && electron . --smoke --qa personality-error"
+    "smoke:personality": "electron . --smoke --qa personality-warning && electron . --smoke --qa personality-error",
+    "smoke:settings": "electron . --settings-smoke"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
