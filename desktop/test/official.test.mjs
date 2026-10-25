@@ -304,3 +304,24 @@ test("Actual unclaimed account receives 402 without an implicit claim or provide
   assert.equal(providerCalls, before);
   assert.equal(c.account.balance_questions, 0);
 });
+
+test('Actual loopback server accepts automatic-session diagnostics and verifies complete coverage',async()=>{
+ const {Reliability}=await import('../core/reliability.mjs');
+ const {AutoSession}=await import('../core/sessions.mjs');
+ const c=new OfficialClient({base,store:memory(),development:true});await c.initialize();await c.register();
+ let disk=null;const receipts=[];const request=c.request.bind(c);
+ c.request=async(...args)=>{const reply=await request(...args);receipts.push({route:args[0],body:structuredClone(args[1]),reply});return reply;};
+ const journal=new Reliability({client:c,store:{read:()=>disk,write:(_name,value)=>{disk=structuredClone(value);}}});
+ await journal.flush();
+ const auto=new AutoSession((name,metadata)=>journal.record(name,metadata));
+ auto.start(1);auto.succeeded(100);await journal.flush();
+ const batch=receipts.find(x=>x.body?.events);
+ assert.equal(batch.reply.accepted,2);assert.equal(batch.reply.rejected,0);
+ assert.deepEqual(batch.body.events.map(x=>x.event_name),['auto_session_started','auto_session_ended']);
+ assert.equal(batch.body.events[1].error_code,'question_cap');
+ const coverage=receipts.filter(x=>x.body?.coverage).at(-1);
+ assert.equal(coverage.reply.coverage.coverage_status,'complete');assert.equal(coverage.reply.coverage.sequence_to,2);
+ assert.equal(disk.pendingCoverage,null);
+ journal.setEnabled(false);await journal.flush();
+ assert.equal((await request('/v1/device-observation')).preference.sharing_enabled,false);
+});
