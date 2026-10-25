@@ -66,7 +66,7 @@ export class OfficialClient {
   async request(
     route,
     body,
-    { token = this.token, signal, timeout = 12000 } = {},
+    { token = this.token, signal, timeout = 12000, expectedStatus } = {},
   ) {
     const response = await this.fetch(this.base + route, {
       method: body === undefined ? "GET" : "POST",
@@ -90,6 +90,7 @@ export class OfficialClient {
         { status: response.status, code: data.error?.code },
       );
     }
+    if(expectedStatus!==undefined&&response.status!==expectedStatus)throw new Error('Unexpected response status');
     return data;
   }
   async register() {

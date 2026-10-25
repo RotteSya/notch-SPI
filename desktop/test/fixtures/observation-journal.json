@@ -1,0 +1,12 @@
+[
+ {"name":"receipted interval then idle interval","steps":[{"op":"append","count":2},{"op":"prepare","status":null},{"op":"ackEvents"},{"op":"prepare","status":"complete","from":0,"to":2,"drops":0},{"op":"ackCoverage"},{"op":"prepare","status":"complete","from":2,"to":2,"drops":0}]},
+ {"name":"bounded queue retains loss then recovers","steps":[{"op":"append","count":105},{"op":"ackEvents"},{"op":"prepare","status":"partial","reason":"queue_drop","drops":5},{"op":"ackCoverage"},{"op":"prepare","status":"complete","drops":0}]},
+ {"name":"new gap survives old coverage receipt","steps":[{"op":"prepare","status":"complete"},{"op":"gap","reason":"storage_failure"},{"op":"ackCoverage"},{"op":"prepare","status":"partial","reason":"storage_failure"}]},
+ {"name":"unclean restart","steps":[{"op":"resume"},{"op":"prepare","status":"partial","reason":"client_restart"}]},
+ {"name":"clean restart","steps":[{"op":"shutdown"},{"op":"resume"},{"op":"prepare","status":"complete"}]},
+ {"name":"open capture makes shutdown unclean","steps":[{"op":"append","count":1,"capture":true},{"op":"ackEvents"},{"op":"shutdown"},{"op":"resume"},{"op":"prepare","status":"partial","reason":"client_restart"}]},
+ {"name":"rejected events are loss","steps":[{"op":"append","count":2},{"op":"ackEvents","rejected":1},{"op":"prepare","status":"partial","reason":"event_rejected","drops":1}]},
+ {"name":"expired and future timestamps","steps":[{"op":"append","count":1,"offset":-691200},{"op":"append","count":1,"offset":400},{"op":"prepare","status":"partial","reason":"invalid_time","drops":2,"to":2}]},
+ {"name":"unreceipted proof persists unchanged","steps":[{"op":"prepare","status":"complete","to":0},{"op":"append","count":1},{"op":"prepare","status":"complete","to":0},{"op":"ackCoverage"},{"op":"prepare","status":null}]},
+ {"name":"opt out clears pending proof","steps":[{"op":"append","count":1,"capture":true},{"op":"optOut"},{"op":"prepare","status":null}]}
+]

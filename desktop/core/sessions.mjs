@@ -3,19 +3,30 @@ import { product } from "./product.mjs";
 import { SharedAutoEngine, autoClamp } from "../generated/auto-session.mjs";
 export class AutoSession {
   engine = new SharedAutoEngine();
+  constructor(onEvent=()=>{}) {this.onEvent=onEvent;}
+  reportStop(wasActive) {
+    if(!wasActive||this.active)return;
+    const codes={userToggled:'user_toggled',captureHotkey:'capture_hotkey',stopButton:'stop_button',questionCap:'question_cap',quotaExhausted:'quota_exhausted',runFailed:'run_failed',idleTimeout:'idle_timeout',hashFailures:'hash_failures'};
+    this.onEvent('auto_session_ended',{trigger:'auto',error_code:codes[this.engine.lastStopReason]});
+  }
   get active() { return this.engine.state !== "inactive"; }
   get count() { return this.engine.count; }
   get cap() { return this.engine.config.maxQuestions; }
   start(cap, now = Date.now()) {
+    if(this.active)this.stop();
     this.engine.start({ maxQuestions: autoClamp(cap ?? 0,
       product.defaultAutoCap, Math.max(...product.autoCaps)) });
+    this.onEvent("auto_session_started",{trigger:"auto"});
   }
-  stop() { this.engine.stop("userToggled"); }
+  stop(reason="userToggled") {const wasActive=this.active;this.engine.stop(reason);this.reportStop(wasActive);}
   succeeded(balance, rejected = false, now = Date.now()) {
+    const wasActive=this.active;
     const result = this.engine.succeeded(balance ?? null, rejected, now / 1000);
+    this.reportStop(wasActive);
     return result === "none" ? "watch" : "stop";
   }
-  tick(hash, now = Date.now()) { return this.engine.tick(hash ?? null, now / 1000) === "trigger"; }
+  paused(now=Date.now()) {const wasActive=this.active;const result=this.engine.paused(now/1000);this.reportStop(wasActive);return result;}
+  tick(hash, now = Date.now()) {const wasActive=this.active;const result=this.engine.tick(hash??null,now/1000);this.reportStop(wasActive);return result==="trigger";}
 }
 export class PersonaSession {
   engine = new SharedPersonaEngine(product.personalitySession);
