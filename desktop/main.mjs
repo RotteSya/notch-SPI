@@ -1,5 +1,9 @@
+import { changePersona } from './core/personas.mjs';
+import { Reliability, captureObservation } from './core/reliability.mjs';
+import { previewSize, previewLabels } from "./core/image-preview.mjs";
+import { canPollAutomatic } from "./core/daily-session.mjs";
 import { canCopyAnswer, personalityStatusText } from "./generated/ui/reading.mjs";
-import { Onboarding } from "./generated/ui/onboarding.mjs";
+import { Onboarding, onboardingControls, onboardingBackStep, onboardingDismissal } from "./generated/ui/onboarding.mjs";
 import { practiceHTML } from "./core/practice.mjs";
 import { billingDestination } from "./core/platform-actions.mjs";
 import {
@@ -47,11 +51,14 @@ const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? null : process.argv[i + 1];
 };
+const dailySmoke = process.argv.includes("--daily-smoke");
+const guideSmoke = process.argv.includes("--guide-smoke");
 const captureSmoke = process.argv.includes("--capture-smoke");
+const settingsSmoke = process.argv.includes("--settings-smoke");
 const motionSmoke = process.argv.includes("--motion-smoke") || captureSmoke;
 const development = Boolean(arg("--dev-base")),
-  qa = arg("--qa") ?? (motionSmoke ? "motion" : null),
-  smoke = process.argv.includes("--smoke") || motionSmoke;
+  qa = arg("--qa") ?? (settingsSmoke ? "settings" : dailySmoke ? "daily" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
+  smoke = process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || settingsSmoke;
 if (app.isPackaged && (development || qa || smoke))
   throw new Error("Development flags are unavailable in packaged builds");
 if (development || qa || smoke)
@@ -77,7 +84,7 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => {
       console.error("Renderer readiness timed out");
       app.exit(1);
-    }, captureSmoke ? 45000 : 15000).unref();
+    }, settingsSmoke ? 60000 : captureSmoke || guideSmoke || dailySmoke ? 45000 : 15000).unref();
   app
     .whenReady()
     .then(start)
@@ -103,14 +110,16 @@ async function start() {
     );
   const defaults = {
     language: "zh",
+    languageMode: null,
     reasoning: "low",
     channel: "official",
     target: "screen",
     autoCap: 20,
     autoCopy: false,
     launchAtLogin: false,
+    reliabilitySharing: true,
     keepExpanded: false,
-    collapseDelay: 4,
+    collapseDelay: 9,
     answerSize: 13,
     showReasoning: false,
     allowPurchasedCredits: true,
@@ -133,15 +142,22 @@ async function start() {
     ...defaults,
     ...(development || qa || smoke ? {} : local.read("settings", {})),
   };
+  settings.answerSize=Math.min(19,Math.max(11,Number(settings.answerSize)||13));
+  settings.collapseDelay=Math.min(30,Math.max(2,Number(settings.collapseDelay)||9));
+  // Preserve a legacy single profile even if it never entered the old library.
+  if(settings.persona?.id && !settings.personas.some(x=>x.id===settings.persona.id))settings.personas.push({...settings.persona});
+  const systemLanguage = () => app.getLocale().startsWith('zh') ? 'zh' : app.getLocale().startsWith('ja') ? 'ja' : 'en';
+  if (settings.languageMode === 'system') settings.language = systemLanguage();
   const guide = new Onboarding(
     development || qa || smoke ? {} : local.read("onboarding", {}),
     Boolean(settings.onboarded) ||
       (Boolean(qa) && qa !== "onboarding") ||
-      smoke,
+      (smoke && !guideSmoke),
   );
   const saveGuide = () => {
     if (!qa && !smoke && !development) local.write("onboarding", guide.saved);
   };
+  let guideTrial = "unavailable", permissionReturn = "capture", practiceFailed = false, guideTargetLabel = null, guideTrialRevision = 0;
   const client = new OfficialClient({
     base:
       arg("--dev-base") ??
@@ -156,6 +172,13 @@ async function start() {
   } catch (e) {
     startupError = e.message;
   }
+  const reliability=new Reliability({store:local,client,enabled:settings.reliabilitySharing,disabled:Boolean(qa)||smoke||development,onPreference:enabled=>{
+    settings.reliabilitySharing=enabled;
+    if(!qa&&!smoke&&!development)local.write('settings',settings);
+    emit();
+  }});
+  settings.reliabilitySharing=reliability.data.preference.sharing_enabled;
+  reliability.start();
   const historyStore = new QuestionHistory(app.getPath("userData"));
   let history = [];
   try {
@@ -164,7 +187,7 @@ async function start() {
     startupError ??= e.message;
   }
   const intake = new Intake(),
-    auto = new AutoSession(),
+    auto = new AutoSession((name,metadata)=>reliability.record(name,{...metadata,config_revision:client.config?.revision??'base',variant:client.config?.objective_result_v1?.variant??'control'})),
     personaSession = new PersonaSession();
   let state = {
     status: "ready",
@@ -198,6 +221,7 @@ async function start() {
   let win,
     settingsWin,
     historyWin,
+    previewWin,
     tray,
     active = null,
     generation = 0,
@@ -208,16 +232,18 @@ async function start() {
     singleDeadline = null,
     expiration = null;
   const windows = () =>
-    [win, settingsWin, historyWin].filter((w) => w && !w.isDestroyed());
+    [win, settingsWin, historyWin, previewWin].filter((w) => w && !w.isDestroyed());
   const snapshot = () => ({
     ...state,
     onboarding: guide.active,
-    guide: guide.snapshot,
+    readingTurn: generation,
+    guide: { ...guide.snapshot, trial: guideTrial, targetLabel: guideTargetLabel, capturing: Boolean(state.capturing), practiceFailed },
     flying: flights?.ids ?? [],
     settings,
     update: updater.state,
-    account: client.account,
+    account: guideSmoke && guideTrial === "claimed" ? { free_trial: { status: "active", expires_at: "2026-10-27T12:00:00Z" } } : client.account,
     accountSync: client.accountSync,
+    hasAccountCredential: Boolean(client.token),
     canCheckSettlement: state.requestStarted && canQueryCapture(run, client.owner(), Date.now(), product.capture.retentionSeconds),
     config: client.config,
     plus: client.plus,
@@ -225,7 +251,7 @@ async function start() {
       ...x,
       images: images.map(({ thumbnail, id }) => ({ thumbnail, id })),
     })),
-    auto: { active: auto.active, count: auto.count, cap: auto.cap },
+    auto: { active: auto.active, count: auto.count, cap: auto.cap, reviewPending: Boolean(state.autoReviewPending) },
     canExplain: Boolean(
       run?.receipt?.explanation_available && !state.explanation,
     ),
@@ -235,6 +261,9 @@ async function start() {
     platform: process.platform,
   });
   const emit = () => {
+    if (!state.preview && previewWin && !previewWin.isDestroyed()) previewWin.close();
+    if (!dailySmoke) state.remaining = intake.deadline === null
+      ? null : Math.max(0, Math.ceil((intake.deadline - Date.now()) / 1000));
     for (const w of windows()) w.webContents.send("state", snapshot());
   };
   const updater = createUpdater(emit);
@@ -267,9 +296,9 @@ async function start() {
       height: kind === "notch" ? 780 : 620,
       show: false,
       frame: kind !== "notch",
-      titleBarStyle: kind !== "notch" ? "hidden" : undefined,
+      titleBarStyle: kind !== "notch" && kind !== "preview" ? "hidden" : undefined,
       titleBarOverlay:
-        kind !== "notch" && process.platform === "win32"
+        kind !== "notch" && kind !== "preview" && process.platform === "win32"
           ? { color: "#282b30", symbolColor: "#eeeeee", height: 30 }
           : undefined,
       transparent: kind === "notch",
@@ -279,7 +308,8 @@ async function start() {
           : nativeTheme.shouldUseDarkColors
             ? "#202024"
             : "#fafafa",
-      resizable: kind !== "notch",
+      resizable: kind !== "notch" && kind !== "settings",
+      minimizable: kind !== "preview",
       alwaysOnTop: kind === "notch",
       skipTaskbar: kind === "notch",
       hasShadow: kind !== "notch",
@@ -294,7 +324,7 @@ async function start() {
       },
     });
     if (!windowsCapture && !motionSmoke) {
-      const protect = () => w.setContentProtection(kind === "notch" && !development && !qa && !smoke);
+      const protect = () => w.setContentProtection(["notch", "preview", "settings"].includes(kind) && !development && !qa && !smoke);
       protect();
       w.on("show", protect);
     }
@@ -319,6 +349,7 @@ async function start() {
         }
       });
     }
+    if (["preview", "settings"].includes(kind)) exclusion.register(w);
     w.loadFile(path.join(root, "ui/index.html"), { query: { page: kind } });
     w.webContents.once("did-finish-load", () => {
       emit();
@@ -370,6 +401,33 @@ async function start() {
     state.expanded = true;
     emit();
   });
+  const closePreview = () => {
+    state.preview = null; state.previewID = null;
+    intake.preview(false, Date.now());
+    emit();
+  };
+  const openPreview = (id) => {
+    const item = images.find(image => image.id === id);
+    if (!item) { closePreview(); return; }
+    intake.preview(true, Date.now());
+    state.preview = `data:image/jpeg;base64,${item.base64}`;
+    state.previewID = item.id;
+    if (!previewWin || previewWin.isDestroyed()) {
+      const current = openWindow("preview");
+      previewWin = current;
+      current.setMinimumSize(400, 240);
+      const size = previewSize(item, screen.getDisplayMatching(win.getBounds()).workAreaSize);
+      current.setContentSize(size.width, size.height);
+      current.center();
+      current.once("closed", () => {
+        if (previewWin !== current) return;
+        previewWin = null;
+        closePreview();
+      });
+    } else { previewWin.show(); previewWin.focus(); }
+    previewWin.setTitle(previewLabels(snapshot()).title);
+    emit();
+  };
   const openPage = (page) => {
     if (page === "history") {
       if (!historyWin || historyWin.isDestroyed())
@@ -379,7 +437,7 @@ async function start() {
       state.settingsPage = page;
       if (!settingsWin || settingsWin.isDestroyed())
         settingsWin = openWindow("settings");
-      else settingsWin.show();
+      else { settingsWin.show(); settingsWin.focus(); }
     }
     emit();
     if (page === "account") refreshAccount().catch(() => {});
@@ -402,16 +460,18 @@ async function start() {
     routeBilling(pendingBilling);
     pendingBilling = null;
   }
+  const autoFailureReason = error => settings.channel==='official'&&(error?.status===401||(client.account?.balance_questions!=null&&client.account.balance_questions<=0))?'quotaExhausted':'runFailed';
   const fail = (e) => {
     guide.finished(false);
     saveGuide();
     state.status = "error";
     state.message = e?.message ?? String(e);
     state.expanded = true;
-    auto.stop();
+    auto.stop(autoFailureReason(e));
     emit();
   };
-  function cancel({ guideTransition = true } = {}) {
+  function cancel({ guideTransition = true, userInitiated = false } = {}) {
+    const collecting = state.collecting || Boolean(intake.items.length);
     if (guideTransition) guide.cancel();
     saveGuide();
     flights?.clear();
@@ -422,11 +482,19 @@ async function start() {
     singleDeadline = null;
     removed = null;
     state.collecting = false;
+    state.capturing = false;
     state.undo = false;
     state.preview = null;
     state.remaining = null;
-    auto.stop();
+    auto.stop("stopButton");
+    state.autoReviewPending = false;
     state.status = "canceled";
+    if (userInitiated) {
+      state.message = "";
+      state.answer = ""; state.working = ""; state.explanation = "";
+      state.resultState = null;
+      if (collecting) { images = []; state.images = []; }
+    }
     emit();
   }
   const saveHistory = () => {
@@ -446,6 +514,15 @@ async function start() {
       current = ++generation;
     state.requestStarted = false;
     const frozen = structuredClone(settings);
+    const observationID=crypto.randomUUID(),observationStart=Date.now();
+    let observationOwner=null,observationEnabled=false,observationParser="none",observationResult=null,observationError=null;
+    const observation={capture_id:observationID,trigger:auto.active?'auto':mode==='personality'?'personality_hotkey':batch.length>1?'context_hotkey':'capture_hotkey',mode,operation,channel:frozen.channel==='api'?'custom_key':frozen.channel};
+    const beginObservation=()=>{
+      observationOwner=client.owner();observation.consent_epoch=reliability.data.preference.consent_epoch;
+      observation.config_revision=client.config?.revision??'base';observation.variant=client.config?.objective_result_v1?.variant??'control';
+      observationEnabled=reliability.data.preference.sharing_enabled&&client.config?.telemetry?.enabled!==false;
+      if(observationEnabled)reliability.record('capture_started',observation);
+    };
     const onboardingAttempt =
       guide.active && mode === "tutor" && operation === "solve";
     if (onboardingAttempt) {
@@ -464,6 +541,7 @@ async function start() {
       explanation: state.explanation,
       resultState: state.resultState,
     };
+    state.operation = operation;
     state.status = "running";
     state.personalityNotice = null;
     state.message = "";
@@ -553,6 +631,7 @@ async function start() {
         }
         task.signal.throwIfAborted();
         if (current !== generation) return;
+        beginObservation();
         state.requestStarted = true;
         result = await client.stream(run, {
           signal: task.signal,
@@ -564,6 +643,7 @@ async function start() {
         if (operation !== "solve")
           throw new Error("Capture again to use this channel");
         run = null;
+        beginObservation();
         const options = {
           images: batch,
           settings: frozen,
@@ -597,6 +677,7 @@ async function start() {
           mode === "personality"
             ? completePersona(true, result.raw)
             : compose(result.raw, run?.objective ?? false);
+        if(mode!=="personality"){observationParser=answer.parserPath;observationResult=answer.state;observationError=answer.noResultReason;}
         if (mode === "personality") {
           if (answer.isError)
             throw new Error(personalityStatusText(answer.primary, { language: frozen.language }));
@@ -608,7 +689,7 @@ async function start() {
           if (!state.answer) {
             state.status = answer.state === "retake" ? "retake" : "empty";
             state.message = answer.noResultReason ?? "";
-            auto.stop();
+            auto.stop(autoFailureReason());
             if (onboardingAttempt) {
               guide.finished(false);
               saveGuide();
@@ -647,6 +728,7 @@ async function start() {
               ? client.account?.balance_questions
               : null,
           );
+        state.autoReviewPending = auto.active && state.resultState === "review";
       }
       clearTimeout(expiration);
       expiration = setTimeout(() => {
@@ -658,6 +740,7 @@ async function start() {
         }
       }, product.capture.retentionSeconds * 1000);
     } catch (e) {
+      observationError=e.code??"transport_error";
       if (current !== generation || task.signal.aborted) return;
       if (operation === "explain") {
         Object.assign(state, old);
@@ -676,8 +759,11 @@ async function start() {
           state.message = e.code;
         } else fail(e);
       }
-      auto.stop();
+      auto.stop(autoFailureReason(e));
     } finally {
+      const canceled=task.signal.aborted||current!==generation;
+      if(observationEnabled&&client.owner()===observationOwner) reliability.record('capture_completed',{...observation,...captureObservation({mode,operation,parserPath:observationParser,resultState:observationResult,errorCode:observationError,canceled}),total_ms:Math.min(600000,Date.now()-observationStart)});
+      void reliability.flush();
       if (current === generation) {
         active = null;
         emit();
@@ -685,7 +771,7 @@ async function start() {
     }
   }
   async function take(kind = "single", fromAuto = false, file = false) {
-    if (!fromAuto) auto.stop();
+    if (!fromAuto) auto.stop("captureHotkey");
     if (active) {
       cancel();
       return;
@@ -708,6 +794,9 @@ async function start() {
     const current = generation;
     let token = kind === "multiple" ? intake.begin(Date.now()) : null;
     if (kind === "multiple" && !token) return;
+    state.captureKind = kind;
+    state.capturing = true;
+    emit();
     try {
       let shot;
       if (file) {
@@ -729,6 +818,7 @@ async function start() {
         shot = fromFile(await fs.readFile(result.filePaths[0]));
       } else shot = await captureScreen();
       if (current !== generation) return;
+      state.capturing = false;
       await flights.prepareEvidence();
     flights.add(shot);
       if (kind === "multiple") {
@@ -752,11 +842,16 @@ async function start() {
         });
     } catch (e) {
       if (token) intake.finish(token, null, Date.now());
-      if (/permission|Capture target is unavailable/.test(e.message))
+      if (/permission|Capture target is unavailable/.test(e.message)) {
+        guideTargetLabel = settings.target === "screen" ? null : settings.target;
+        try { guideTargetLabel = (await listTargets()).find(target => target.id === settings.target)?.name ?? guideTargetLabel; } catch {}
+        permissionReturn = guide.multiple ? "multiCapture" : "capture";
         guide.permission();
-      else guide.finished(false);
+      } else guide.finished(false);
       saveGuide();
       throw e;
+    } finally {
+      if (current === generation) { state.capturing = false; emit(); }
     }
   }
   function registerHotkeys(next) {
@@ -788,9 +883,11 @@ async function start() {
     if (failed.length)
       throw new Error("Shortcut unavailable: " + failed.join(", "));
   }
-  async function toggleAuto() {
+  async function toggleAuto(stopReason="userToggled") {
     if (auto.active) {
-      cancel();
+      auto.stop(stopReason);
+      state.autoReviewPending = false;
+      emit();
       return;
     }
     if (guide.active) {
@@ -798,6 +895,7 @@ async function start() {
       emit();
       return;
     }
+    state.autoReviewPending = false;
     auto.start(settings.autoCap);
     await take("single", true);
   }
@@ -834,6 +932,7 @@ async function start() {
             ? "multiCapture"
             : "capture",
       );
+      practiceFailed = Boolean(error);
       state.message = error;
       state.status = "ready";
       state.answer = "";
@@ -855,57 +954,72 @@ async function start() {
     state.expanded = true;
     win.showInactive();
     emit();
+    if (guide.step === "trial") void loadGuideTrial();
+  }
+  function clearGuideAnswer() {
+    state.answer = ""; state.working = ""; state.explanation = "";
+    state.images = []; images = []; state.message = ""; state.status = "ready";
+    state.resultState = null; state.requestStarted = false; state.settlement = null; state.operation = null; run = null;
+  }
+  function finishGuide() {
+    guideTrialRevision++;
+    guide.claiming = false;
+    guide.complete();
+    clearGuideAnswer();
+    state.expanded = false;
+    saveGuide(); emit();
+  }
+  function dismissGuide() {
+    if (!guide.active) return;
+    guideTrialRevision++;
+    guide.claiming = false;
+    const effect = onboardingDismissal(guide.step, guideTrial);
+    if (effect.complete) { finishGuide(); return; }
+    if (effect.cancelCollection) cancel({ guideTransition: false });
+    if (effect.clearAnswer) clearGuideAnswer();
+    guide.dismiss();
+    if (!active && !state.capturing) state.expanded = false;
+    saveGuide(); emit();
+  }
+  function trialState() {
+    return ({ eligible: "available", active: "claimed", expired: "expired", ineligible: "ineligible" })[client.account?.free_trial?.status] ?? "unavailable";
+  }
+  async function loadGuideTrial() {
+    const revision = ++guideTrialRevision;
+    guideTrial = "loading"; emit();
+    let result;
+    try { await client.refresh(); result = trialState(); }
+    catch { result = "failed"; }
+    if (revision !== guideTrialRevision || !guide.active || guide.step !== "trial") return;
+    guideTrial = result; emit();
   }
   async function guidePrimary() {
-    if (!guide.active || guide.claiming) return;
-    if (["welcome", "practice"].includes(guide.step))
-      return openPractice(false);
-    if (["firstAnswer", "multiple"].includes(guide.step))
-      return openPractice(true);
+    const controls = onboardingControls({ ...guide.snapshot, capturing: state.capturing, trial: guideTrial });
+    if (!guide.active || !controls.primary || !controls.primaryEnabled || guide.claiming) return;
+    if (["welcome", "practice"].includes(guide.step)) return openPractice(false);
+    if (["firstAnswer", "multiple"].includes(guide.step)) return openPractice(true);
     if (guide.step === "success") {
-      guide.move("trial");
-      saveGuide();
-      emit();
-      try {
-        await client.refresh();
-        startupError = null;
-      } catch (e) {
-        state.message = e.message;
-      }
+      clearGuideAnswer();
+      guide.move("trial"); guideTrial = "loading";
+      saveGuide(); emit();
+      await loadGuideTrial();
     } else if (guide.step === "trial") {
-      guide.claiming = true;
-      emit();
+      if (["claimed", "expired", "ineligible"].includes(guideTrial)) { finishGuide(); return; }
+      const revision = ++guideTrialRevision;
+      guide.claiming = true; guideTrial = "claiming"; emit();
       try {
         await client.refresh();
-        if (client.account?.free_trial?.status === "eligible")
-          await client.claimTrial();
-        else if (
-          !client.account?.free_trial ||
-          client.account.free_trial.status === "unavailable"
-        )
-          throw new Error("Trial unavailable; check Account or continue later");
-        guide.complete();
-        state.message = "";
-      } catch (e) {
-        state.message = e.message;
-      } finally {
-        guide.claiming = false;
-      }
+        if (client.account?.free_trial?.status === "eligible") await client.claimTrial();
+        if (revision !== guideTrialRevision || !guide.active || guide.step !== "trial") return;
+        guideTrial = trialState(); state.message = "";
+      } catch { if (revision === guideTrialRevision) guideTrial = "failed"; }
+      finally { if (revision === guideTrialRevision) guide.claiming = false; }
     } else if (guide.step === "permission") {
-      if (
-        process.platform === "darwin" &&
-        systemPreferences.getMediaAccessStatus("screen") !== "granted"
-      ) {
-        await shell.openExternal(
-          "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-        );
-      } else {
-        guide.cancel();
-        state.message = "";
-      }
+      if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+        await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+      } else { guide.move(permissionReturn); state.message = ""; }
     }
-    saveGuide();
-    emit();
+    saveGuide(); emit();
   }
   try {
     registerHotkeys(settings.hotkeys);
@@ -944,6 +1058,8 @@ async function start() {
   );
   app.on("before-quit", () => {
     clearInterval(pointerTimer);
+
+    reliability.stop();
     flights.dispose();
     exclusion.dispose();
     active?.abort();
@@ -1091,6 +1207,9 @@ async function start() {
     );
   ipcMain.handle("nspi", async (event, action, payload) => {
     if (!validSender(event)) throw new Error("Untrusted sender");
+    const accountAction=["refresh","trial","restore","purchase","plusCheckout","plusPortal","plusCancel"].includes(action);
+    if (accountAction && state.accountBusy) return {ok:false,error:"Account operation already in progress"};
+    if (accountAction) { state.accountBusy=true; state.accountActionError=null; emit(); }
     try {
       switch (action) {
         case "state":
@@ -1098,6 +1217,63 @@ async function start() {
         case "rendered":
           if (smoke && event.sender === win.webContents && payload === true) {
             console.log("NSPI_RENDERER_READY");
+            if (settingsSmoke) {
+              import("./test/settings-smoke.mjs").then(async ({verifySettings})=>{
+                openPage("general");
+                await new Promise(resolve=>settingsWin.webContents.once("did-finish-load",resolve));
+                await verifySettings({win:settingsWin,root,snapshot,setFixture:async(fixture)=>{
+                  client.account=fixture.account??null; client.plus=fixture.plus??null;
+                  client.accountSync={status:fixture.loading?'loading':'ready',error:null,plusError:null};
+                  client.config={payments:{currency:'CNY',packs:[{id:'test-pack',questions:300,amount_minor:3900}]}};
+                  state.accountBusy=false;state.accountActionError=null;
+                  state.status=fixture.status??'done';
+                  Object.assign(settings,fixture.settings??{});settings.language=fixture.language??'zh';state.settingsPage=fixture.page??'account';emit();
+                }});
+                console.log("NSPI_SETTINGS_SMOKE_OK");app.quit();
+              }).catch(error=>{console.error(error);app.exit(1);});
+              break;
+            }
+            if (dailySmoke) {
+              import("./test/daily-smoke.mjs").then(async ({ verifyDaily }) => {
+                await verifyDaily({ win, root, snapshot, toggleAuto, openPreview, getPreview: () => previewWin, intake, cancel: () => cancel({userInitiated:true}),
+                  setFixture: async (fixture) => {
+                    generation++; guide.complete(); auto.stop(); intake.cancel(); active = null;
+                    clearGuideAnswer();
+                    Object.assign(state,{mode:"tutor",status:"done",collecting:false,capturing:false,preview:null,previewID:null,remaining:null,undo:false,autoReviewPending:false,operation:"solve",expanded:true,answer:"B. 60 km/h"},fixture);
+                    settings.language = fixture.language ?? "zh";
+                    const image = fromFile(await fs.readFile(path.join(root,"test/fixtures/question.jpg")));
+                    images = Array.from({length:fixture.count ?? 1},(_,i)=>({...image,id:`daily-${i}`}));
+                    if (fixture.collecting) { intake.items = [...images]; intake.reset(Date.now()); }
+                    state.images=images.map(({id,thumbnail,width,height})=>({id,thumbnail,width,height}));
+                    if(fixture.autoActive) auto.start(20);
+                    emit();
+                  }});
+                console.log("NSPI_DAILY_SMOKE_OK"); app.quit();
+              }).catch(error=>{console.error(error);app.exit(1);});
+              break;
+            }
+            if (guideSmoke) {
+              import("./test/guide-smoke.mjs").then(async ({ verifyGuide }) => {
+                await verifyGuide({ win, root, snapshot, dismissGuide, guidePrimary,
+                  setFixture: async ({ step, language = "zh", trial = "available", failed = false, count = 0, previewing = false, capturing = false }) => {
+                    guide.active = true; guide.done = false; guide.dismissed = false;
+                    guide.move(step); guide.failed = failed; guide.multiple = ["multiple", "multiCapture", "collecting", "success"].includes(step);
+                    guideTrial = trial; settings.language = language; practiceFailed = false;
+                    clearGuideAnswer(); state.expanded = true; state.capturing = capturing;
+                    state.collecting = step === "collecting";
+                    state.status = step === "working" ? (failed ? "error" : "running") : ["firstAnswer", "success"].includes(step) ? "done" : "ready";
+                    active = state.status === "running" ? new AbortController() : null;
+                    if (state.status === "done") state.answer = "B. 60 km/h";
+                    const fixture = fromFile(await fs.readFile(path.join(root, "test/fixtures/question.jpg")));
+                    state.images = Array.from({ length: count }, (_, i) => ({ ...fixture, id: "guide-" + i }));
+                    state.preview = previewing ? fixture.thumbnail : null;
+                    emit();
+                    return active;
+                  } });
+                console.log("NSPI_GUIDE_SMOKE_OK"); app.quit();
+              }).catch(error => { console.error(error); app.exit(1); });
+              break;
+            }
             if (motionSmoke) {
               verifyMotion().catch((error) => {
                 console.error(error);
@@ -1190,21 +1366,27 @@ async function start() {
             true,
           );
           break;
+        case "confirmAutoReview":
+          if (auto.active && state.autoReviewPending) { state.autoReviewPending = false; emit(); }
+          break;
         case "auto":
-          await toggleAuto();
+          await toggleAuto("stopButton");
           break;
         case "cancel":
-          cancel();
+          cancel({ userInitiated: true });
           break;
         case "submit": {
+          if (state.capturing) break;
           const batch = intake.take(Date.now(), true);
           if (batch) await solve(batch);
           break;
         }
         case "remove": {
+          if (state.capturing) break;
           const index = intake.items.findIndex((x) => x.id === payload);
           const item = intake.remove(index, Date.now());
           if (item) {
+            if (state.previewID === item.id) { state.preview = null; state.previewID = null; intake.preview(false, Date.now()); }
             removed = {
               item,
               index,
@@ -1224,6 +1406,7 @@ async function start() {
           break;
         }
         case "undo":
+          if (state.capturing) break;
           if (
             removed &&
             Date.now() < removed.until &&
@@ -1242,13 +1425,21 @@ async function start() {
             emit();
           }
           break;
-        case "preview": {
-          const item = images.find((x) => x.id === payload);
-          intake.preview(Boolean(item), Date.now());
-          state.preview = item ? `data:image/jpeg;base64,${item.base64}` : null;
-          emit();
+        case "preview":
+          openPreview(payload);
           break;
-        }
+        case "clearQuestion":
+          if (active || state.capturing || guide.active) break;
+          cancel({ guideTransition: false });
+          clearGuideAnswer(); emit();
+          break;
+        case "answerMenu":
+          if (state.status === "done" && canCopyAnswer({ mode: state.mode, resultState: state.resultState, hasAnswer: Boolean(state.answer) })) {
+            const copyGeneration = generation;
+            const text = state.answer.replace(/\*\*|__/g, "");
+            Menu.buildFromTemplate([{label: settings.language === "zh" ? "复制答案" : settings.language === "ja" ? "回答をコピー" : "Copy Answer", click: () => { if (generation === copyGeneration && state.status === "done") clipboard.writeText(text); }}]).popup({window:win});
+          }
+          break;
         case "copy":
           if (state.status === "done" && canCopyAnswer({ mode: state.mode, resultState: state.resultState,
             hasAnswer: Boolean(state.answer) }))
@@ -1257,7 +1448,7 @@ async function start() {
         case "retry":
           if (!run?.status?.can_retry)
             throw new Error("Check settlement before retrying");
-          await take("single");
+          await take(state.captureKind === "multiple" ? "multiple" : "single");
           break;
         case "status":
           if (state.requestStarted && canQueryCapture(run, client.owner(), Date.now(), product.capture.retentionSeconds)) {
@@ -1281,41 +1472,36 @@ async function start() {
           if (payload === true) globalShortcut.unregisterAll();
           else registerHotkeys(settings.hotkeys);
           break;
+        case "setReliability":
+          reliability.setEnabled(payload);
+          void reliability.flush();
+          emit();
+          break;
         case "newPersona":
         case "selectPersona":
+        case "updatePersona":
         case "deletePersona": {
-          if (active || intake.items.length)
-            throw new Error("Finish or cancel the current capture first");
           settings.personas ??= [];
-          if (action === "newPersona")
-            settings.persona = {
-              id: crypto.randomUUID(),
-              name: "",
-              description: "",
-            };
-          if (action === "selectPersona") {
-            const selected = settings.personas.find((x) => x.id === payload);
-            if (selected) settings.persona = { ...selected };
+          if (action === "newPersona") {
+            const created={id:crypto.randomUUID(),name:({zh:'新的人物像',ja:'新しい人物像',en:'New persona'})[settings.language],description:''};
+            Object.assign(settings,changePersona(settings,'add',created));
           }
+          if (action === "selectPersona") Object.assign(settings,changePersona(settings,'activate',payload));
+          if (action === "updatePersona") Object.assign(settings,changePersona(settings,'update',payload));
           if (action === "deletePersona") {
-            const choice = await dialog.showMessageBox({
-              type: "question",
-              message: "删除这个人物像？ / Delete this persona?",
-              buttons: ["取消 / Cancel", "删除 / Delete"],
-              defaultId: 0,
-              cancelId: 0,
+            const selected=settings.personas.find(x=>x.id===payload);
+            if(!selected) break;
+            const lang=settings.language;
+            const choice=await dialog.showMessageBox(settingsWin,{
+              type:'warning',
+              message:lang==='zh'?`删除人物像「${selected.name||'未命名'}」？`:lang==='ja'?`人物像「${selected.name||'無題'}」を削除しますか？`:`Delete persona "${selected.name||'Untitled'}"?`,
+              detail:({zh:'删除后无法恢复。',ja:'この操作は取り消せません。',en:'This cannot be undone.'})[lang],
+              buttons:({zh:['删除','取消'],ja:['削除','キャンセル'],en:['Delete','Cancel']})[lang],defaultId:1,cancelId:1,
             });
-            if (choice.response !== 1) break;
-            settings.personas = settings.personas.filter(
-              (x) => x.id !== settings.persona.id,
-            );
-            settings.persona = settings.personas[0] ?? {
-              id: "",
-              name: "",
-              description: "",
-            };
+            if(choice.response!==0) break;
+            Object.assign(settings,changePersona(settings,'remove',payload));
           }
-          personaSession.reset();
+          if(!active) personaSession.reset();
           local.write("settings", settings);
           emit();
           break;
@@ -1353,29 +1539,23 @@ async function start() {
           await guidePrimary();
           break;
         case "guideDismiss":
-          cancel({ guideTransition: false });
-          guide.dismiss();
-          saveGuide();
-          emit();
+          dismissGuide();
           break;
         case "guideLater":
-          if (guide.active && guide.step === "trial") {
-            guide.complete();
-            saveGuide();
-            emit();
-          }
+          if (guide.active && guide.step === "trial" && !["loading", "claiming"].includes(guideTrial)) finishGuide();
           break;
-        case "guideBack":
-          if (guide.active && !guide.claiming) {
+        case "guideBack": {
+          const next = onboardingBackStep(guide.step, guide.multiple, permissionReturn, guide.failed);
+          if (guide.active && next && !active && !state.capturing && !guide.claiming) {
             const step = guide.step;
-            cancel();
-            if (step !== "permission")
-              guide.move(guide.multiple ? "multiple" : "welcome");
-            state.message = "";
-            saveGuide();
-            emit();
+            if (step === "working") cancel({ guideTransition: false });
+            if (step === "multiple") guide.multiple = false;
+            guide.move(next);
+            practiceFailed = false; state.message = "";
+            saveGuide(); emit();
           }
           break;
+        }
         case "guideResume":
           resumeGuide();
           break;
@@ -1385,16 +1565,19 @@ async function start() {
           const next = { ...settings };
           for (const k of Object.keys(defaults))
             if (Object.hasOwn(payload, k)) next[k] = payload[k];
+          if (Object.hasOwn(payload,'language') && !Object.hasOwn(payload,'languageMode')) next.languageMode=payload.language;
+          if (next.languageMode != null && !['system','zh','ja','en'].includes(next.languageMode)) throw new Error('Invalid language preference');
+          if (Object.hasOwn(payload,'languageMode')) next.language=next.languageMode==='system'?systemLanguage():next.languageMode;
           if (
             !["zh", "en", "ja"].includes(next.language) ||
             !product.reasoningEfforts.includes(next.reasoning) ||
             !["official", "api", "cli"].includes(next.channel) ||
             !product.autoCaps.includes(Number(next.autoCap)) ||
             !Number.isFinite(Number(next.answerSize)) ||
-            Number(next.answerSize) < 10 ||
-            Number(next.answerSize) > 24 ||
+            Number(next.answerSize) < 11 ||
+            Number(next.answerSize) > 19 ||
             !Number.isFinite(Number(next.collapseDelay)) ||
-            Number(next.collapseDelay) < 0 ||
+            Number(next.collapseDelay) < 2 ||
             Number(next.collapseDelay) > 30
           )
             throw new Error("Invalid settings");
@@ -1421,16 +1604,10 @@ async function start() {
             app.setLoginItemSettings({
               openAtLogin: Boolean(next.launchAtLogin),
             });
-          if (next.persona.description.trim()) {
-            next.persona.id ||= crypto.randomUUID();
-            next.personas = [
-              { ...next.persona },
-              ...(settings.personas ?? []).filter(
-                (x) => x.id !== next.persona.id,
-              ),
-            ].slice(0, 100);
-          }
+          if(typeof next.reliabilitySharing!=='boolean')throw new Error('Invalid reliability preference');
+          const sharingChanged=next.reliabilitySharing!==settings.reliabilitySharing;
           settings = next;
+          if(sharingChanged){reliability.setEnabled(next.reliabilitySharing);void reliability.flush();}
           auto.stop();
           personaSession.reset();
           run = null;
@@ -1555,6 +1732,8 @@ async function start() {
         default:
           throw new Error("Unknown action");
       }
+      const diagnosticAction={copy:'copy',retry:'retry',explain:'show_explanation',recover:'recover_answer',confirmReview:'confirm_review'}[action];
+      if(diagnosticAction) reliability.record('answer_action',{action:diagnosticAction,mode:state.mode,channel:settings.channel==='api'?'custom_key':settings.channel});
       return { ok: true };
     } catch (e) {
       if (
@@ -1569,11 +1748,15 @@ async function start() {
         ].includes(action)
       )
         fail(e);
+      if (accountAction) state.accountActionError=e.message;
       if (qa) console.error("QA action", action, e.message);
       return { ok: false, error: e.message };
+    } finally {
+      if (accountAction) {state.accountBusy=false;emit();}
     }
   });
   setInterval(async () => {
+    if (dailySmoke || settingsSmoke) return; // Offline fixtures must never capture or submit.
     if (removed && Date.now() >= removed.until) {
       removed = null;
       state.undo = false;
@@ -1591,7 +1774,10 @@ async function start() {
       const batch = intake.take(Date.now());
       if (batch) solve(batch).catch(fail);
     }
-    if (auto.active && !active && !autoPolling) {
+    if (auto.active && state.autoReviewPending && auto.paused() !== "none") {
+      state.autoReviewPending = false; emit();
+    }
+    if (canPollAutomatic({active:auto.active,busy:active,polling:autoPolling,reviewPending:state.autoReviewPending})) {
       autoPolling = true;
       try {
         const shot = await captureScreen();
@@ -1604,7 +1790,8 @@ async function start() {
       }
     }
   }, 500).unref();
-  if (qa && qa !== "onboarding") {
+  if (guide.active && guide.step === "trial" && !guideSmoke) void loadGuideTrial();
+  if (qa && qa !== "onboarding" && !dailySmoke) {
     state.onboarding = false;
     state.status =
       qa === "waiting" ? "running" : qa === "error" ? "error" : "done";

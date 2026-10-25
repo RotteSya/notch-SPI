@@ -3,6 +3,33 @@ import XCTest
 @testable import NotchSPI
 
 final class NotchOnboardingTests: XCTestCase {
+    @MainActor func testSharedGuideControlsMatchNativeAcrossAllStepsAndStates() throws {
+        let language = L10n.setting
+        defer { L10n.setting = language }
+        L10n.setting = .zhHans
+        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 500))
+        let trials: [(String, OnboardingTrialState)] = [("unavailable", .unavailable), ("loading", .loading), ("claiming", .claiming), ("available", .available), ("failed", .failed), ("claimed", .claimed), ("expired", .expired), ("ineligible", .ineligible)]
+        for step in NotchOnboardingStep.allCases {
+            for (name, trial) in trials {
+                for flags in [(false, false, false, 1), (true, false, false, 4), (false, true, false, 2), (false, false, true, 2)] {
+                    let (failed, capturing, previewing, count) = flags
+                    let args: [String: Any] = ["step": step.rawValue, "failed": failed, "capturing": capturing, "previewing": previewing, "count": count, "trial": name]
+                    let controls = try XCTUnwrap(SharedVisual.call("onboardingControls", [args]).toDictionary())
+                    view.update(step: step, granted: false, denied: false, failed: failed, screenshotCount: count, capturing: capturing, previewing: previewing, trial: trial)
+                    view.layoutSubtreeIfNeeded()
+                    func expected(_ key: String) -> Bool { controls[key] as? Bool ?? false }
+                    XCTAssertEqual(!view.primary.isHidden, expected("primary"), step.rawValue)
+                    XCTAssertEqual(view.primary.isEnabled, expected("primary") && expected("primaryEnabled"), step.rawValue)
+                    XCTAssertEqual(!view.shortcutPrompt.isHidden, expected("shortcut"), step.rawValue)
+                    let buttons = view.subviews.compactMap { $0 as? GlowButton }
+                    XCTAssertEqual(buttons.contains { $0.title == "返回" && !$0.isHidden }, expected("back"), step.rawValue)
+                    XCTAssertEqual(buttons.contains { ["修改快捷键", "稍后领取"].contains($0.title) && !$0.isHidden }, expected("secondary"), step.rawValue)
+                    XCTAssertEqual(view.subviews.compactMap { $0 as? NSPopUpButton }.contains { !$0.isHidden }, expected("language"), step.rawValue)
+                }
+            }
+        }
+    }
+
     @MainActor func testFirstAnswerUsesDailyShelfWithoutChangingGuideActions() {
         let model = TutorModel()
         model.answer = "FINAL: B. 60 km/h"
