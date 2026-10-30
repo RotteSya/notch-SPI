@@ -1,0 +1,42 @@
+{
+  "approved_limit": 3,
+  "actual_calls": 1,
+  "stopped": "quality_gate",
+  "unexecuted": [
+    "Q11:A",
+    "Q11:B"
+  ],
+  "deployed": false,
+  "notchspi_quota_used": 0,
+  "passed": false,
+  "usage": {
+    "inputTokens": 968,
+    "outputTokens": 3468,
+    "finishReason": "stop"
+  },
+  "timing": {
+    "first_content_ms": 16596.793083,
+    "completed_final_line_ms": 17087.861125,
+    "response_complete_ms": 17954.384167
+  },
+  "provider_timing_ms": {
+    "upstreamRequest": 0.5550829999999962,
+    "upstreamHeaders": 235.07079199999998,
+    "upstreamFirstEvent": 236.56008300000002,
+    "upstreamFirstReasoning": 756.185208,
+    "upstreamFirstAnswer": 16596.54275
+  },
+  "violations": [
+    "invalidStateCombination"
+  ],
+  "parser_path": "legacy_fallback",
+  "estimated_rmb_at_2_8_per_million": 0.02968,
+  "invoice": false,
+  "offline_serialization": {
+    "network_calls": 0,
+    "system_role_verified": true,
+    "system_sha256": "c6abdae85061d1491d87abff6ce9a368befdbdb284c9514e12548218e892aeb2",
+    "task_verified": true,
+    "limitation": "Current serializer with frozen plan; not historical wire interception."
+  }
+}

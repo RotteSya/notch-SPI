@@ -1,0 +1,136 @@
+{
+  "scope": "direct_provider_only_not_e2e",
+  "calls": 6,
+  "retries": 0,
+  "samples": [
+    {
+      "ordinal": 1,
+      "id": "Q1",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 924,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 6300.231125,
+        "completed_final_line_ms": 6329.108417,
+        "response_complete_ms": 6422.09575
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 2,
+      "id": "Q2",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 242,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 1911.8232080000007,
+        "completed_final_line_ms": 1932.466042000001,
+        "response_complete_ms": 2075.407333
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 3,
+      "id": "Q8",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 455,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 3130.8642499999987,
+        "completed_final_line_ms": 3210.7205830000003,
+        "response_complete_ms": 3244.0936249999995
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 4,
+      "id": "Q9",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 1624,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 9018.303500000002,
+        "completed_final_line_ms": 9048.671917,
+        "response_complete_ms": 9177.628
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 5,
+      "id": "Q10",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 922,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 4585.648083,
+        "completed_final_line_ms": 4606.300500000001,
+        "response_complete_ms": 4695.685375000001
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 6,
+      "id": "Q11",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1350,
+        "outputTokens": 1117,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 6102.277333000002,
+        "completed_final_line_ms": 6134.33525,
+        "response_complete_ms": 6253.257333000001
+      },
+      "manual_quality_review_required": true
+    }
+  ],
+  "input_tokens": 8100,
+  "output_tokens": 5284,
+  "estimated_peak_usd": 0.008770799999999999,
+  "invoice_verified": false,
+  "manual_reference_matches": 5,
+  "Q1": "D returned; independent correctness not verified",
+  "e2e_goal_met": false,
+  "timing_ms": {
+    "first_content_ms": {
+      "mean": 5174.857916500001,
+      "median": 5343.962708000001,
+      "min": 1911.8232080000007,
+      "max": 9018.303500000002
+    },
+    "completed_final_line_ms": {
+      "mean": 5210.267118166667,
+      "median": 5370.317875000001,
+      "min": 1932.466042000001,
+      "max": 9048.671917
+    },
+    "response_complete_ms": {
+      "mean": 5311.361236000001,
+      "median": 5474.471354000001,
+      "min": 2075.407333,
+      "max": 9177.628
+    }
+  }
+}

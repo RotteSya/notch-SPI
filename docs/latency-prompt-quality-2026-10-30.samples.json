@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-30",
+  "scope": "provider_quality_only_not_e2e",
+  "status": "stopped_quality_gate",
+  "approved_max_calls": 8,
+  "dispatched_calls": 4,
+  "remaining_calls_not_run": 4,
+  "retry_count": 0,
+  "deployment_count": 0,
+  "input_tokens": 5294,
+  "output_tokens": 3148,
+  "estimated_usd_peak": 0.0053658,
+  "estimated_usd_offpeak": 0.0026829,
+  "invoice_verified": false,
+  "parameters": {
+    "model": "deepseek-flash",
+    "reasoning_effort": "low",
+    "max_tokens": 2048
+  },
+  "samples": [
+    {
+      "ordinal": 1,
+      "id": "multiple-targets",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1346,
+        "outputTokens": 332,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "visible_output_bytes": 54
+    },
+    {
+      "ordinal": 2,
+      "id": "multiple-targets",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1346,
+        "outputTokens": 216,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "visible_output_bytes": 54
+    },
+    {
+      "ordinal": 3,
+      "id": "missing-context",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1301,
+        "outputTokens": 552,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "visible_output_bytes": 104
+    },
+    {
+      "ordinal": 4,
+      "id": "missing-context",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1301,
+        "outputTokens": 2048,
+        "finishReason": "length"
+      },
+      "passed": false,
+      "visible_output_bytes": 0
+    }
+  ],
+  "daily_e2e_mean_seconds_unchanged": 8.056,
+  "candidate_quality_passed": false,
+  "candidate_rejected_as_worse": false,
+  "quality_gate_incomplete": true,
+  "baseline_failure": "missing-context: length, zero visible output bytes",
+  "evidence_directory": "/tmp/notchspi-prompt-quality-20261030/run"
+}

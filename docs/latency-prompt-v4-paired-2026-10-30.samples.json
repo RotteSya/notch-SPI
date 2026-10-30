@@ -1,0 +1,357 @@
+{
+  "date": "2026-10-30",
+  "scope": "v4_direct_paired_not_e2e",
+  "calls": 12,
+  "passed": true,
+  "model": "deepseek-flash",
+  "reasoning_effort": "low",
+  "max_tokens": 32768,
+  "profile": "general",
+  "language": "zh",
+  "baseline": {
+    "mean_ms": 4453.443604166667,
+    "median_ms": 4702.011228999999,
+    "max_ms": 6161.799417000002,
+    "min_ms": 1917.1528749999998
+  },
+  "candidate": {
+    "mean_ms": 4802.115264,
+    "median_ms": 4295.236271000002,
+    "max_ms": 7517.2562499999985,
+    "min_ms": 2075.484708
+  },
+  "pairs": [
+    {
+      "id": "Q1",
+      "baseline_ms": 3555.89025,
+      "candidate_ms": 3709.5067090000002,
+      "difference_ms": 153.6164590000003
+    },
+    {
+      "id": "Q2",
+      "baseline_ms": 1917.1528749999998,
+      "candidate_ms": 2075.484708,
+      "difference_ms": 158.3318330000002
+    },
+    {
+      "id": "Q8",
+      "baseline_ms": 4327.422291000001,
+      "candidate_ms": 3699.0825000000004,
+      "difference_ms": -628.3397910000003
+    },
+    {
+      "id": "Q9",
+      "baseline_ms": 6161.799417000002,
+      "candidate_ms": 7517.2562499999985,
+      "difference_ms": 1355.4568329999965
+    },
+    {
+      "id": "Q10",
+      "baseline_ms": 5681.796625000003,
+      "candidate_ms": 4880.965833000002,
+      "difference_ms": -800.8307920000007
+    },
+    {
+      "id": "Q11",
+      "baseline_ms": 5076.600166999997,
+      "candidate_ms": 6930.395583999998,
+      "difference_ms": 1853.7954170000012
+    }
+  ],
+  "samples": [
+    {
+      "ordinal": 1,
+      "id": "Q1",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 369,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 3433.0105,
+        "completed_final_line_ms": 3555.89025,
+        "response_complete_ms": 3591.553625
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.7255000000000109,
+        "upstreamHeaders": 500.419542,
+        "upstreamFirstEvent": 508.17875000000004,
+        "upstreamFirstReasoning": 1067.931417,
+        "upstreamFirstAnswer": 3432.016458
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 2,
+      "id": "Q1",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 539,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 3673.5006670000002,
+        "completed_final_line_ms": 3709.5067090000002,
+        "response_complete_ms": 3804.71825
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.5217090000001008,
+        "upstreamHeaders": 97.90166700000009,
+        "upstreamFirstEvent": 105.87237499999992,
+        "upstreamFirstReasoning": 898.2593749999996,
+        "upstreamFirstAnswer": 3673.484625
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 3,
+      "id": "Q2",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 226,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 2051.080917000001,
+        "completed_final_line_ms": 2075.484708,
+        "response_complete_ms": 2310.3391250000004
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.2776670000002923,
+        "upstreamHeaders": 130.16854200000034,
+        "upstreamFirstEvent": 141.94583300000068,
+        "upstreamFirstReasoning": 748.9029170000013,
+        "upstreamFirstAnswer": 2051.073292000001
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 4,
+      "id": "Q2",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 228,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 1910.093166999999,
+        "completed_final_line_ms": 1917.1528749999998,
+        "response_complete_ms": 2017.385957999999
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.6412919999984297,
+        "upstreamHeaders": 150.94745799999873,
+        "upstreamFirstEvent": 151.36366699999962,
+        "upstreamFirstReasoning": 665.8466669999998,
+        "upstreamFirstAnswer": 1910.0798749999994
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 5,
+      "id": "Q8",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 577,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 4313.376915999999,
+        "completed_final_line_ms": 4327.422291000001,
+        "response_complete_ms": 4440.835999999999
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 1.421249999999418,
+        "upstreamHeaders": 204.0913330000003,
+        "upstreamFirstEvent": 204.97291600000062,
+        "upstreamFirstReasoning": 805.7521250000009,
+        "upstreamFirstAnswer": 4313.352375
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 6,
+      "id": "Q8",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 523,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 3655.3273750000008,
+        "completed_final_line_ms": 3699.0825000000004,
+        "response_complete_ms": 3791.4721250000002
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.8478329999998095,
+        "upstreamHeaders": 133.21116600000096,
+        "upstreamFirstEvent": 133.4789579999997,
+        "upstreamFirstReasoning": 605.7012500000019,
+        "upstreamFirstAnswer": 3655.219083
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 7,
+      "id": "Q9",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 1326,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 7472.174833000001,
+        "completed_final_line_ms": 7517.2562499999985,
+        "response_complete_ms": 7646.953750000001
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.9657499999993888,
+        "upstreamHeaders": 99.57562500000131,
+        "upstreamFirstEvent": 104.58766599999944,
+        "upstreamFirstReasoning": 362.11841600000116,
+        "upstreamFirstAnswer": 7472.157916
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 8,
+      "id": "Q9",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 1005,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 6109.662375,
+        "completed_final_line_ms": 6161.799417000002,
+        "response_complete_ms": 6275.467292000001
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.943583000000217,
+        "upstreamHeaders": 237.09041699999943,
+        "upstreamFirstEvent": 237.4497080000001,
+        "upstreamFirstReasoning": 782.1074169999993,
+        "upstreamFirstAnswer": 6109.640749999999
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 9,
+      "id": "Q10",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 936,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 5648.666834000003,
+        "completed_final_line_ms": 5681.796625000003,
+        "response_complete_ms": 5789.660542000005
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.7040840000045137,
+        "upstreamHeaders": 126.5325840000005,
+        "upstreamFirstEvent": 130.0584170000002,
+        "upstreamFirstReasoning": 657.0654170000053,
+        "upstreamFirstAnswer": 5648.6625420000055
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 10,
+      "id": "Q10",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 852,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 4846.653833000004,
+        "completed_final_line_ms": 4880.965833000002,
+        "response_complete_ms": 4986.354125000005
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.78125,
+        "upstreamHeaders": 130.73387500000536,
+        "upstreamFirstEvent": 130.96583300000202,
+        "upstreamFirstReasoning": 652.2907500000001,
+        "upstreamFirstAnswer": 4846.647667000005
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 11,
+      "id": "Q11",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1409,
+        "outputTokens": 1137,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 6916.641292,
+        "completed_final_line_ms": 6930.395583999998,
+        "response_complete_ms": 7030.9622919999965
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.6177089999982854,
+        "upstreamHeaders": 130.37941699999647,
+        "upstreamFirstEvent": 147.6012499999997,
+        "upstreamFirstReasoning": 607.0148340000014,
+        "upstreamFirstAnswer": 6916.6341669999965
+      },
+      "manual_quality_review_required": true
+    },
+    {
+      "ordinal": 12,
+      "id": "Q11",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 846,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 5028.267916999997,
+        "completed_final_line_ms": 5076.600166999997,
+        "response_complete_ms": 5157.530999999995
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.682874999998603,
+        "upstreamHeaders": 223.2079589999994,
+        "upstreamFirstEvent": 223.4111669999984,
+        "upstreamFirstReasoning": 1005.3691669999971,
+        "upstreamFirstAnswer": 5028.263874999997
+      },
+      "manual_quality_review_required": true
+    }
+  ],
+  "input_tokens": 15690,
+  "output_tokens": 8564,
+  "estimated_peak_cost_cny": 0.099892,
+  "invoice_verified": false,
+  "deployments": 0,
+  "notchspi_debits": 0
+}

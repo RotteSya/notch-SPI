@@ -1,0 +1,160 @@
+{
+  "conditions": {
+    "date": "2026-10-29",
+    "approved_max_requests": 4,
+    "approved_max_question_debits": 4,
+    "budget_reservation_CNY": 12,
+    "order": [
+      "A1",
+      "B1",
+      "B2",
+      "A2"
+    ],
+    "scope": "macOS official service; filter-only A/B in identical instrumented Debug binary",
+    "git_head": "659e6233d369600a60e3c237d4fd0cc6e04a89c0",
+    "fixture_sha256": "d1b7d2c5e4c6becdbc474d6cac517c4fef62c9d049f79fae73577c93d8568cf5",
+    "deployment_id": "dpl_71B75SR3aR6MxeUBF4bQj4hHCNcW",
+    "configured_model": "deepseek-flash",
+    "mode": "brief",
+    "reasoning_effort": "low",
+    "timing_start": "screenshotTapped reached through Carbon hotkey handler",
+    "endpoints": [
+      "feedbackDraw",
+      "firstAnswerDraw",
+      "renderStarted"
+    ],
+    "cold_condition": "new client process for every sample; remote cold state uncontrolled",
+    "credential_transfer": "read-only keychain helper -> anonymous pipe -> ephemeral in-memory vault",
+    "request_count_policy": "reserve before sending; per-process maximum one; cross-process maximum four; no automatic retry",
+    "metrics_must_not_include": [
+      "screenshot",
+      "question",
+      "answer",
+      "credential"
+    ],
+    "test_binary_sha256": "1bb3776f77cb4af07627fb07bc418347c44387b5ecf6eb438c840332042e116c"
+  },
+  "samples": [
+    {
+      "sample": "A1",
+      "variant": "before",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 70.7831250037998,
+        "feedbackDraw": 147.0067084301263,
+        "captureReady": 391.80037507321686,
+        "materialsReady": 398.81095837336034,
+        "submitted": 425.47204170841724,
+        "firstDelta": 5391.060833353549,
+        "firstAnswerDraw": 5444.7057084180415,
+        "receiptApplied": 5634.743625065312,
+        "responseCompleted": 5638.718625064939,
+        "completed": 5644.077000091784,
+        "renderStarted": 5655.0980834290385
+      },
+      "image_sha256": "15deb562afc5b5c3ab27f43b3afa776329962687676938d66f2a655c7ae9493f",
+      "prompt_sha256": "85e29eba828dc1d1f60f7e38876b0a343a45812b84487510f464ebd1157254b7",
+      "success": true,
+      "expected_answer_present": true,
+      "usage": {
+        "input_tokens": 1416,
+        "output_tokens": 223,
+        "questions_charged": 1,
+        "balance": 745
+      },
+      "estimated_CNY": 0.004616
+    },
+    {
+      "sample": "B1",
+      "variant": "after",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 68.73633328359574,
+        "feedbackDraw": 170.10987491812557,
+        "captureReady": 456.65458333678544,
+        "materialsReady": 471.0782916517928,
+        "submitted": 491.91229161806405,
+        "firstDelta": 5645.940874936059,
+        "firstAnswerDraw": 5698.407874908298,
+        "receiptApplied": 5815.259041613899,
+        "responseCompleted": 5816.315291682258,
+        "completed": 5820.223833317868,
+        "renderStarted": 5831.765916664153
+      },
+      "image_sha256": "23bc8f38f370588e53a7b89b906bb512ea4098f53889c7d76ff2bcc925941a14",
+      "prompt_sha256": "85e29eba828dc1d1f60f7e38876b0a343a45812b84487510f464ebd1157254b7",
+      "success": true,
+      "expected_answer_present": true,
+      "usage": {
+        "input_tokens": 1416,
+        "output_tokens": 217,
+        "questions_charged": 1,
+        "balance": 744
+      },
+      "estimated_CNY": 0.004568
+    },
+    {
+      "sample": "B2",
+      "variant": "after",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 77.62895827181637,
+        "feedbackDraw": 149.02912499383092,
+        "captureReady": 428.0681249219924,
+        "materialsReady": 432.53620830364525,
+        "submitted": 447.0514999702573,
+        "firstDelta": 5423.335874918848,
+        "firstAnswerDraw": 5473.442833288573,
+        "receiptApplied": 5656.510374974459,
+        "responseCompleted": 5658.306499943137,
+        "completed": 5662.664250005037,
+        "renderStarted": 5696.553249959834
+      },
+      "image_sha256": "23bc8f38f370588e53a7b89b906bb512ea4098f53889c7d76ff2bcc925941a14",
+      "prompt_sha256": "85e29eba828dc1d1f60f7e38876b0a343a45812b84487510f464ebd1157254b7",
+      "success": true,
+      "expected_answer_present": true,
+      "usage": {
+        "input_tokens": 1416,
+        "output_tokens": 220,
+        "questions_charged": 1,
+        "balance": 743
+      },
+      "estimated_CNY": 0.004592
+    },
+    {
+      "sample": "A2",
+      "variant": "before",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 76.84737490490079,
+        "feedbackDraw": 152.67791657242924,
+        "captureReady": 549.7953332960606,
+        "materialsReady": 553.3006249461323,
+        "submitted": 565.9467083169147,
+        "firstDelta": 3735.1295832777396,
+        "firstAnswerDraw": 3786.0599582782015,
+        "receiptApplied": 3876.339833252132,
+        "responseCompleted": 3878.543083323166,
+        "completed": 3885.148458299227,
+        "renderStarted": 3894.708333304152
+      },
+      "image_sha256": "23bc8f38f370588e53a7b89b906bb512ea4098f53889c7d76ff2bcc925941a14",
+      "prompt_sha256": "85e29eba828dc1d1f60f7e38876b0a343a45812b84487510f464ebd1157254b7",
+      "success": true,
+      "expected_answer_present": true,
+      "usage": {
+        "input_tokens": 1416,
+        "output_tokens": 188,
+        "questions_charged": 1,
+        "balance": 742
+      },
+      "estimated_CNY": 0.004336
+    }
+  ],
+  "notes": [
+    "All four physical hotkeys were pressed by the user.",
+    "A1 titlebar differs; decoded rows 48..933 are identical to B1. B1/B2/A2 JPEG hashes match.",
+    "Internal price valuation, not a vendor invoice."
+  ]
+}
