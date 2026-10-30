@@ -1,3 +1,5 @@
+import { feedbackSnapshot, authorizeFeedback, writeFeedback } from "./core/feedback.mjs";
+import { feedbackText } from "./ui/feedback.mjs";
 import { failureKind } from './core/failure-kind.mjs';
 import { LocalTestReport } from "./core/local-test-report.mjs";
 import { changePersona } from './core/personas.mjs';
@@ -59,13 +61,14 @@ const arg = (name) => {
   return i < 0 ? null : process.argv[i + 1];
 };
 const dailySmoke = process.argv.includes("--daily-smoke");
+const feedbackSmoke = process.argv.includes("--feedback-smoke");
 const guideSmoke = process.argv.includes("--guide-smoke");
 const captureSmoke = process.argv.includes("--capture-smoke");
 const settingsSmoke = process.argv.includes("--settings-smoke");
 const motionSmoke = process.argv.includes("--motion-smoke") || captureSmoke;
 const development = Boolean(arg("--dev-base")),
-  qa = arg("--qa") ?? (settingsSmoke ? "settings" : dailySmoke ? "daily" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
-  smoke = localReportSmoke || process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || settingsSmoke;
+  qa = arg("--qa") ?? (settingsSmoke ? "settings" : dailySmoke ? "daily" : feedbackSmoke ? "feedback" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
+  smoke = localReportSmoke || process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || feedbackSmoke || settingsSmoke;
 if (app.isPackaged && (development || qa || smoke))
   throw new Error("Development flags are unavailable in packaged builds");
 if (development || qa || smoke)
@@ -242,6 +245,8 @@ async function start() {
     settingsWin,
     historyWin,
     previewWin,
+    feedbackWin, feedbackView = null, feedbackReview = null, feedbackTurn = null, feedbackFiles = null, feedbackSaving = false,
+    feedbackSaveDialog = options => dialog.showSaveDialog(feedbackWin,options),
     tray,
     active = null,
     generation = 0,
@@ -252,10 +257,12 @@ async function start() {
     singleDeadline = null,
     expiration = null;
   const windows = () =>
-    [win, settingsWin, historyWin, previewWin].filter((w) => w && !w.isDestroyed());
+    [win, settingsWin, historyWin, previewWin, feedbackWin].filter((w) => w && !w.isDestroyed());
   const snapshot = () => ({
     ...state,
+    canFeedback: state.mode !== "personality" && Boolean(state.working || feedbackTurn),
     onboarding: guide.active,
+    guideDone: guide.done,
     readingTurn: generation,
     guide: { ...guide.snapshot, trial: guideTrial, targetLabel: guideTargetLabel, capturing: Boolean(state.capturing), practiceFailed },
     flying: flights?.ids ?? [],
@@ -284,7 +291,14 @@ async function start() {
     if (!state.preview && previewWin && !previewWin.isDestroyed()) previewWin.close();
     if (!dailySmoke) state.remaining = intake.deadline === null
       ? null : Math.max(0, Math.ceil((intake.deadline - Date.now()) / 1000));
-    for (const w of windows()) w.webContents.send("state", snapshot());
+    if (process.platform === "win32" && win && !win.isDestroyed()) {
+      const focusable = Boolean(guide.active || state.menuOpen);
+      if (win.isFocusable() !== focusable) {
+        win.setFocusable(focusable);
+        exclusion.refresh(win);
+      }
+    }
+    for (const w of windows()) w.webContents.send("state", w === feedbackWin ? { ...snapshot(), feedback: feedbackView } : snapshot());
   };
   const updater = createUpdater(emit);
   const windowsCapture = process.platform === "win32";
@@ -302,7 +316,7 @@ async function start() {
   const position = () => {
     const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()),
       width = Math.min(680, d.workArea.width),
-      height = Math.min(780, d.workArea.height);
+      height = Math.max(28, d.workArea.y + d.workArea.height - d.bounds.y);
     win.setBounds({
       x: Math.round(d.bounds.x + (d.bounds.width - width) / 2),
       y: d.bounds.y,
@@ -312,23 +326,27 @@ async function start() {
   };
   const openWindow = (kind) => {
     const w = new BrowserWindow({
-      width: kind === "notch" ? 680 : 850,
-      height: kind === "notch" ? 780 : 620,
+      width: kind === "notch" ? 680 : kind === "feedback" ? 592 : 850,
+      height: kind === "notch" ? 780 : kind === "feedback" ? Math.min(685,screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea.height) : 620,
+      useContentSize: kind === "feedback",
       show: false,
-      frame: kind !== "notch",
-      titleBarStyle: kind !== "notch" && kind !== "preview" ? "hidden" : undefined,
+      frame: !["notch","feedback"].includes(kind),
+      parent: kind === "feedback" ? win : undefined,
+      modal: kind === "feedback",
+      titleBarStyle: !["notch","preview","feedback"].includes(kind) ? "hidden" : undefined,
       titleBarOverlay:
-        kind !== "notch" && kind !== "preview" && process.platform === "win32"
+        !["notch","preview","feedback"].includes(kind) && process.platform === "win32"
           ? { color: "#282b30", symbolColor: "#eeeeee", height: 30 }
           : undefined,
-      transparent: kind === "notch",
+      transparent: ["notch","feedback"].includes(kind),
+      focusable: kind !== "notch" || process.platform !== "win32" || guide.active,
       backgroundColor:
-        kind === "notch"
+        ["notch","feedback"].includes(kind)
           ? "#00000000"
           : nativeTheme.shouldUseDarkColors
             ? "#202024"
             : "#fafafa",
-      resizable: kind !== "notch" && kind !== "settings",
+      resizable: !["notch","settings","feedback"].includes(kind),
       minimizable: kind !== "preview",
       alwaysOnTop: kind === "notch",
       skipTaskbar: kind === "notch",
@@ -344,7 +362,7 @@ async function start() {
       },
     });
     if (!windowsCapture && !motionSmoke) {
-      const protect = () => w.setContentProtection(["notch", "preview", "settings"].includes(kind) && !development && !qa && !smoke);
+      const protect = () => w.setContentProtection(["notch", "preview", "settings", "feedback"].includes(kind) && !development && !qa && !smoke);
       protect();
       w.on("show", protect);
     }
@@ -369,18 +387,55 @@ async function start() {
         }
       });
     }
-    if (["preview", "settings"].includes(kind)) exclusion.register(w);
+    if (["preview", "settings", "feedback"].includes(kind)) exclusion.register(w);
     w.loadFile(path.join(root, "ui/index.html"), { query: { page: kind } });
     w.webContents.once("did-finish-load", () => {
       emit();
       if (kind === "notch") {
         w.showInactive();
-      } else w.show();
+      } else {
+        w.show();
+        if(kind === 'feedback') w.setContentSize(592,Math.min(685,screen.getDisplayMatching(w.getBounds()).workArea.height));
+      }
     });
     return w;
   };
+  const feedbackScope = () => JSON.stringify([settings.target,settings.channel,settings.persona,client.owner()]);
+  function beginFeedbackTurn(batch) {
+    feedbackTurn = {captureID:crypto.randomUUID(),sessionID:crypto.randomUUID(),scope:feedbackScope(),
+      expiresAt:Date.now()+product.capture.retentionSeconds*1000,images:structuredClone(batch)};
+  }
+  function inspectFeedbackImage(data) {
+    const image = nativeImage.createFromBuffer(data), size = image.getSize();
+    const extension = data.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'png' : data[0]===255&&data[1]===216 ? 'jpg' : null;
+    return !image.isEmpty() && extension ? {...size,extension} : null;
+  }
+  function closeFeedback() { if(feedbackWin && !feedbackWin.isDestroyed()) feedbackWin.close(); }
+  function openFeedback() {
+    if (feedbackWin && !feedbackWin.isDestroyed()) { feedbackWin.focus(); return; }
+    const t=feedbackText(settings.language);
+    if (!feedbackTurn || feedbackTurn.scope!==feedbackScope() || feedbackTurn.expiresAt<=Date.now() || !state.answer || state.mode==='personality') {
+      state.sessionMessage=t[16];emit();return;
+    }
+    try {
+      feedbackReview = {...feedbackSnapshot({...feedbackTurn,answer:state.answer},inspectFeedbackImage),language:settings.language};
+      feedbackView = {id:feedbackReview.id,language:feedbackReview.language,answer:feedbackReview.answer,
+        assets:feedbackReview.assets.map(a=>({id:a.id,role:a.role,url:`data:image/${a.extension === 'jpg' ? 'jpeg' : 'png'};base64,${a.data.toString('base64')}`}))};
+      feedbackWin = openWindow('feedback');
+      const current = feedbackWin;
+      current.on('close',event=>{if(feedbackSaving)event.preventDefault();});
+      current.setTitle(t[0]);
+      current.on('closed',()=>{
+        if(feedbackWin!==current)return;
+        feedbackWin=null;feedbackReview=null;feedbackView=null;feedbackSaving=false;
+        const files=feedbackFiles;feedbackFiles=null;
+        if(files)void fs.rm(files,{recursive:true,force:true});
+      });
+    } catch { feedbackReview=null;state.sessionMessage=t[17];emit(); }
+  }
   win = openWindow("notch");
   position();
+  win.on("blur", () => { if (state.menuOpen) { state.menuOpen = false; emit(); } });
   flights = createFlights({
     root,
     host: () => win,
@@ -579,6 +634,7 @@ async function start() {
     }
     flights.retain(batch.map((x) => x.id));
     images = batch;
+    if(operation === "solve" && !retry) beginFeedbackTurn(batch);
     state.images = batch.map(({ id, thumbnail, width, height }) => ({
       id,
       thumbnail,
@@ -649,6 +705,7 @@ async function start() {
           const pendingRun = await client.freeze(batch, frozen, mode, context);
           if (current !== generation || task.signal.aborted) return;
           run = pendingRun;
+          if(feedbackTurn){feedbackTurn.captureID=run.id;feedbackTurn.scope=feedbackScope();}
           if (
             old.resultState === "retake" &&
             previous?.owner === run.owner &&
@@ -763,6 +820,7 @@ async function start() {
       expiration = setTimeout(() => {
         if (!active) {
           run = null;
+          feedbackTurn = null;
           images = [];
           state.images = [];
           emit();
@@ -802,6 +860,8 @@ async function start() {
     }
   }
   async function take(kind = "single", fromAuto = false, file = false) {
+    state.sessionMessage = null;
+    if(!fromAuto) feedbackTurn=null;
     localReport?.record('capture_attempt',{trigger:fromAuto?'auto':kind==='multiple'?'context_hotkey':kind==='personality'?'personality_hotkey':'capture_hotkey'});
     if (!fromAuto) auto.stop("captureHotkey");
     if (active) {
@@ -890,6 +950,8 @@ async function start() {
     }
   }
   function registerHotkeys(next) {
+    // Offline renderer fixtures must not compete with the user’s running client.
+    if (qa || smoke) return;
     const actions = {
       single: () => take("single"),
       multiple: () => take("multiple"),
@@ -1242,6 +1304,10 @@ async function start() {
     );
   ipcMain.handle("nspi", async (event, action, payload) => {
     if (!validSender(event)) throw new Error("Untrusted sender");
+    if (['feedbackOriginal','feedbackSave','feedbackCancel'].includes(action) && event.sender !== feedbackWin?.webContents)
+      throw new Error('Feedback action requires its review window');
+    if (event.sender === feedbackWin?.webContents && !['state','feedbackOriginal','feedbackSave','feedbackCancel'].includes(action))
+      throw new Error(`Unsupported feedback action: ${action}`);
     if(["capture","preview","remove","undo","submit","cancel","auto","expand","settings","guideNext","guideBack","guideDismiss","retry","copy","explain","confirmReview"].includes(action))localReport?.record("action",{action});
     const accountAction=["refresh","trial","restore","purchase","plusCheckout","plusPortal","plusCancel"].includes(action);
     if (accountAction && state.accountBusy) return {ok:false,error:"Account operation already in progress"};
@@ -1249,7 +1315,7 @@ async function start() {
     try {
       switch (action) {
         case "state":
-          return snapshot();
+          return event.sender === feedbackWin?.webContents ? { ...snapshot(), feedback:feedbackView } : snapshot();
         case "rendered":
           if (smoke && event.sender === win.webContents && payload === true) {
             console.log("NSPI_RENDERER_READY");
@@ -1269,22 +1335,25 @@ async function start() {
               }).catch(error=>{console.error(error);app.exit(1);});
               break;
             }
-            if (dailySmoke) {
-              import("./test/daily-smoke.mjs").then(async ({ verifyDaily }) => {
-                await verifyDaily({ win, root, snapshot, toggleAuto, openPreview, getPreview: () => previewWin, intake, cancel: () => cancel({userInitiated:true}),
+            if (dailySmoke || feedbackSmoke) {
+              import(feedbackSmoke ? "./test/feedback-smoke.mjs" : "./test/daily-smoke.mjs").then(async (test) => {
+                const verify = feedbackSmoke ? test.verifyFeedback : test.verifyDaily;
+                await verify({ win, root, snapshot, getFeedback:()=>feedbackWin, setFeedbackSaveDialog:handler=>{feedbackSaveDialog=handler;}, toggleAuto, openPreview, getPreview: () => previewWin, intake, cancel: () => cancel({userInitiated:true}),
                   setFixture: async (fixture) => {
                     generation++; guide.complete(); auto.stop(); intake.cancel(); active = null;
                     clearGuideAnswer();
                     Object.assign(state,{mode:"tutor",status:"done",collecting:false,capturing:false,preview:null,previewID:null,remaining:null,undo:false,autoReviewPending:false,operation:"solve",expanded:true,answer:"B. 60 km/h"},fixture);
+                    Object.assign(settings, fixture.settings ?? {});
                     settings.language = fixture.language ?? "zh";
                     const image = fromFile(await fs.readFile(path.join(root,"test/fixtures/question.jpg")));
                     images = Array.from({length:fixture.count ?? 1},(_,i)=>({...image,id:`daily-${i}`}));
+                    beginFeedbackTurn(images);
                     if (fixture.collecting) { intake.items = [...images]; intake.reset(Date.now()); }
                     state.images=images.map(({id,thumbnail,width,height})=>({id,thumbnail,width,height}));
                     if(fixture.autoActive) auto.start(20);
                     emit();
                   }});
-                console.log("NSPI_DAILY_SMOKE_OK"); app.quit();
+                console.log(feedbackSmoke ? "NSPI_FEEDBACK_SMOKE_OK" : "NSPI_DAILY_SMOKE_OK"); app.quit();
               }).catch(error=>{console.error(error);app.exit(1);});
               break;
             }
@@ -1379,7 +1448,58 @@ async function start() {
           break;
         case "expand":
           state.expanded = Boolean(payload);
-          if (!state.expanded) flights.clear();
+          if (!state.expanded) { flights.clear(); state.menuOpen = false; }
+          emit();
+          break;
+        case "exportFeedback": openFeedback(); break;
+        case "feedbackCancel": if(!feedbackSaving)closeFeedback(); break;
+        case "feedbackOriginal": {
+          if(feedbackSaving || payload?.session!==feedbackReview?.id || !Number.isInteger(payload.index))throw new Error('Invalid feedback image');
+          const asset=feedbackReview.assets[payload.index];if(!asset)throw new Error('Invalid feedback image');
+          feedbackFiles ??= await fs.mkdtemp(path.join(app.getPath('temp'),'notchspi-feedback-preview-'));
+          const file=path.join(feedbackFiles,`${payload.index+1}.${asset.extension}`);
+          await fs.writeFile(file,asset.data,{mode:0o600});
+          if(!smoke)await shell.openPath(file);
+          return {ok:true};
+        }
+        case "feedbackSave": {
+          if(feedbackSaving)return {ok:false};
+          const review=feedbackReview, t=feedbackText(review?.language);
+          feedbackSaving=true;
+          try {
+            const selection=authorizeFeedback(review,payload);
+            const result=await feedbackSaveDialog({title:t[13],message:t[19],defaultPath:`notchspi-feedback-${review.captureID.toLowerCase()}.json`,filters:[{name:'JSON',extensions:['json']}]});
+            if(!result.canceled && result.filePath){
+              const id=await writeFeedback(review,selection,result.filePath);
+              state.sessionMessage=t[18]+id.slice(0,8).toUpperCase();
+            }
+          }catch{state.sessionMessage=t[17];}
+          finally{feedbackSaving=false;closeFeedback();emit();}
+          return {ok:true};
+        }
+        case "menuOpen":
+          state.menuOpen = payload === true;
+          emit();
+          if (state.menuOpen && process.platform === "win32") win.focus();
+          break;
+        case "quickReasoning":
+          if (!product.reasoningEfforts.includes(payload)) throw new Error("Invalid reasoning effort");
+          settings.reasoning = payload;
+          if (!qa && !smoke && !development) local.write("settings", settings);
+          emit();
+          break;
+        case "quickTarget": {
+          const targets = await listTargets();
+          if (payload !== "screen" && !targets.some(x => x.id === payload)) throw new Error("Capture target is unavailable");
+          settings.target = payload;
+          personaSession.reset();
+          if (!qa && !smoke && !development) local.write("settings", settings);
+          emit();
+          break;
+        }
+        case "newQuestionnaire":
+          personaSession.reset();
+          state.sessionMessage = settings.language === "zh" ? "连续题上下文已清空" : settings.language === "ja" ? "連続質問のコンテキストを消去しました" : "Questionnaire context cleared";
           emit();
           break;
         case "settings":
@@ -1829,7 +1949,7 @@ async function start() {
     }
   }, 500).unref();
   if (guide.active && guide.step === "trial" && !guideSmoke) void loadGuideTrial();
-  if (qa && qa !== "onboarding" && !dailySmoke) {
+  if (qa && qa !== "onboarding" && !dailySmoke && !feedbackSmoke) {
     state.onboarding = false;
     state.status =
       qa === "waiting" ? "running" : qa === "error" ? "error" : "done";
@@ -1867,6 +1987,7 @@ async function start() {
       state.collecting = true;
       state.answer = "";
     }
+    beginFeedbackTurn(images);
     state.images = images.map(({ id, thumbnail, width, height }) => ({
       id,
       thumbnail,

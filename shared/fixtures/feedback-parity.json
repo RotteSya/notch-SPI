@@ -1,0 +1,13 @@
+{
+  "version": "feedback-v2",
+  "days": 90,
+  "externalProcessing": "requires_separate_permission",
+  "contact": "raysyadesu@gmail.com",
+  "cases": [
+    {"purpose":"support_review","rightsConfirmed":true,"ageDays":0,"valid":true},
+    {"purpose":"quality_evaluation","rightsConfirmed":true,"ageDays":0,"valid":true},
+    {"purpose":"support_review","rightsConfirmed":false,"ageDays":0,"valid":false},
+    {"purpose":"quality_evaluation","rightsConfirmed":true,"ageDays":90,"valid":false},
+    {"purpose":"support_review","rightsConfirmed":true,"ageDays":-1,"valid":false}
+  ]
+}

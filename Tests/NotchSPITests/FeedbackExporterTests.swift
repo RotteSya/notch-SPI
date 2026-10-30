@@ -4,6 +4,24 @@ import CryptoKit
 @testable import NotchSPI
 
 final class FeedbackExporterTests: XCTestCase {
+    func testSharedWindowsFeedbackPermissionContract() throws {
+        struct Contract: Decodable {
+            struct Case: Decodable { let purpose: String; let rightsConfirmed: Bool; let ageDays: Int; let valid: Bool }
+            let version: String; let days: Int; let externalProcessing: String; let contact: String; let cases: [Case]
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let contract = try JSONDecoder().decode(Contract.self, from: Data(contentsOf: root.appendingPathComponent("shared/fixtures/feedback-parity.json")))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for item in contract.cases {
+            let permission = FeedbackAuthorization(purpose: try XCTUnwrap(FeedbackPurpose(rawValue: item.purpose)),
+                rightsConfirmed: item.rightsConfirmed, now: now.addingTimeInterval(-Double(item.ageDays) * 86_400))
+            XCTAssertEqual(permission.version, contract.version)
+            XCTAssertEqual(permission.externalProcessing, contract.externalProcessing)
+            XCTAssertEqual(permission.withdrawalContact, contract.contact)
+            XCTAssertEqual(permission.expiresAt.timeIntervalSince(permission.authorizedAt), Double(contract.days) * 86_400)
+            XCTAssertEqual(permission.isValid(at: now), item.valid)
+        }
+    }
     private func fixture(_ body: (URL, QuestionCaptureSnapshot) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("feedback-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

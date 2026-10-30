@@ -1,4 +1,5 @@
 export const words = {
+  setPersona: ["设置人物像", "人物像を設定", "Set persona"],
   shortcutSubtitle:['常用操作，触手可及。','よく使う操作を、すぐ手元に。','Your most-used actions, one shortcut away.'],
   shortcutToggle:['显示 / 隐藏','表示 / 非表示','Show / hide'],
   shortcutAuto:['自动连答（开始 / 停止）','自動連続回答（開始 / 停止）','Auto answers (start / stop)'],

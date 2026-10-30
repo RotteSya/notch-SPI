@@ -20,7 +20,7 @@ process.env.CAPTURE_CONCURRENCY_PER_TOKEN = '1000';
 const { buildApp } = await import('../src/index.ts');
 
 // Scripted provider whose behavior is flipped per test via `mode`.
-let mode: 'throw' | 'empty' | 'ok' | 'slow' | 'answerThenStall' | 'objectiveReady' | 'objectiveRetake' = 'ok';
+let mode: 'throw' | 'empty' | 'ok' | 'slow' | 'answerThenStall' | 'objectiveReady' | 'objectiveRetake' | 'waitForDisconnect' = 'ok';
 
 /** Comfortably past the route's MIN_BILLABLE_CHARS — a complete answer, not a false start. */
 const LONG_ANSWER = 'x'.repeat(400);
@@ -36,9 +36,18 @@ function sleepHonoringAbort(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+let disconnectObserved: Promise<void>;
+let observeDisconnect: () => void;
 const provider: Provider = {
   name: 'scripted',
   async stream(_req: CaptureRequest, onDelta: (t: string) => void, signal: AbortSignal): Promise<Usage> {
+    if (mode === 'waitForDisconnect') {
+      await new Promise<never>((_resolve, reject) => {
+        const canceled = () => { observeDisconnect(); reject(new Error('aborted')); };
+        if (signal.aborted) canceled();
+        else signal.addEventListener('abort', canceled, { once: true });
+      });
+    }
     if (mode === 'throw') throw new Error('vendor exploded');
     if (mode === 'slow') {
       // Hold the quota reservation open long enough for another request to race it.
@@ -171,21 +180,29 @@ test('objective request with no usable result is released', async () => {
   assert.equal(acct.total_questions, 0);
 });
 
-test('a client that hangs up before receiving an answer gets its question back', async () => {
+test('a client that hangs up before receiving an answer gets its question back', { timeout: 5000 }, async () => {
   const token = await register();
-  mode = 'slow';
+  mode = 'waitForDisconnect';
+  disconnectObserved = new Promise(resolve => { observeDisconnect = resolve; });
   const ctrl = new AbortController();
-  const inflight = fetch(`${base}/v1/captures`, {
+  const response = await fetch(`${base}/v1/captures`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ system: 's', task: 't', image_base64: 'QUJD', image_media_type: 'image/jpeg' }),
     signal: ctrl.signal,
   });
-  // Walk away while the vendor is still working. The question was already held at this point,
-  // so the refund path in the route's `finally` is the only thing that gives it back.
-  setTimeout(() => ctrl.abort(), 40);
-  await assert.rejects(inflight);
-  await new Promise((r) => setTimeout(r, 300)); // let the server finish its cleanup
+  // Headers establish the SSE connection before any delta. Hold the provider until
+  // disconnect, so this verifies an actual abandoned reservation without timing races.
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+  assert.equal((await balance(token)).balance_questions, 2, 'one question is held before disconnect');
+  const body = response.text();
+  const rejected = assert.rejects(body, { name: 'AbortError' });
+  ctrl.abort();
+  await rejected;
+  await disconnectObserved;
+  for (let i = 0; i < 100 && (await balance(token)).balance_questions !== 3; i++)
+    await new Promise(resolve => setTimeout(resolve, 10));
 
   const acct = await balance(token);
   assert.equal(acct.balance_questions, 3, 'an abandoned attempt must not cost a question');
@@ -196,9 +213,7 @@ test('a client that hangs up AFTER getting its answer still pays for it', async 
   const token = await register();
   mode = 'answerThenStall';
   const ctrl = new AbortController();
-  // Node flushes the response headers with the FIRST body write, so this resolves as soon as the
-  // answer delta goes out — unlike the no-answer case above, where the promise is still pending
-  // when the abort lands. Read the stream, then walk away mid-answer.
+  // Headers arrive before deltas. Read an actual usable answer before disconnecting.
   const res = await fetch(`${base}/v1/captures`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
@@ -206,6 +221,13 @@ test('a client that hangs up AFTER getting its answer still pays for it', async 
     signal: ctrl.signal,
   });
   assert.equal(res.status, 200);
+  const reader = res.body!.getReader();
+  let received = '';
+  while (!received.includes(LONG_ANSWER)) {
+    const chunk = await reader.read();
+    assert.equal(chunk.done, false, 'a usable answer must arrive before disconnect');
+    received += new TextDecoder().decode(chunk.value);
+  }
   // The answer is already on screen; the client just stops listening. Refunding here would make
   // `curl --max-time 2` in a loop a free-answer tap, since the useful text arrives first.
   ctrl.abort();

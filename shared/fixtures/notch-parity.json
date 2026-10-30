@@ -1,0 +1,12 @@
+{
+  "baseline": "Mac 3.0 build 27, frozen source 3c47cf928e29d931359d87e66ab5d1dd9d8e08cd",
+  "capsules": [
+    {"mode":"tutor","auto":false,"name":"","action":"cycleEffort","kind":"effort"},
+    {"mode":"personality","auto":false,"name":"","action":"settings","kind":"persona"},
+    {"mode":"personality","auto":false,"name":"理想候选人","action":"settings","kind":"persona"},
+    {"mode":"personality","auto":true,"name":"理想候选人","action":"auto","kind":"auto"},
+    {"mode":"tutor","auto":true,"name":"","action":"auto","kind":"auto"}
+  ],
+  "geometry": {"screenWidth":1440,"screenHeight":900,"collapsedX":560,"collapsedWidth":260,"collapsedHeight":28,"cardWidth":600,"shadowH":22,"shadowBottom":28},
+  "compact": [{"status":"ready","mark":""},{"status":"running","mark":"…"},{"status":"streaming","mark":"…"},{"status":"done","mark":""},{"status":"error","mark":"!"}]
+}

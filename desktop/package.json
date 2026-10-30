@@ -15,6 +15,7 @@
     "pack:mac": "electron-builder --mac --arm64 --dir --publish never",
     "smoke": "electron . --smoke",
     "smoke:daily": "electron . --daily-smoke",
+    "smoke:feedback": "electron . --feedback-smoke",
     "smoke:guide": "electron . --guide-smoke",
     "smoke:motion": "electron . --motion-smoke",
     "smoke:capture": "electron . --capture-smoke",
