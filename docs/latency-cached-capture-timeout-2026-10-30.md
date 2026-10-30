@@ -1,0 +1,11 @@
+# 缓存窗口截图超时后的重复工作修复
+
+本轮免费检查，不发模型请求、不部署、不改变系统设置。ScreenCapture.captureUsingScreenCaptureKit的应用窗口缓存命中路径，在captureAppWindow返回captureTimedOut后仍进入SCShareableContent枚举，并再次调用截图。CaptureSystemOperation在底层回调返回前保持占用，所以枚举不能解除卡住的截图操作；如果重新枚举也卡住，会增加另一段等待。全屏缓存路径已对captureTimedOut直接返回。
+
+仅在应用窗口缓存路径补相同的超时返回（ScreenCapture.swift三行，含说明），让既有CaptureRecovery立即选择备用截图方式。取消检查仍优先；权限、普通窗口失效等其他错误仍走原流程；10秒超时阈值、60秒恢复冷却、选择身份校验、图像编码、模型与上下文不变。备用路径仍须通过既有面板隐藏等约束，不使用旧截图代替新截图。
+
+Swift构建通过；CaptureRecoveryTests、CaptureSystemOperationTests、CaptureWindowIdentityTests、CapturePermissionTests共15项通过，无跳过。覆盖取消不触发备用、超时冷却、底层操作持续占用、迟到结果丢弃、独立等待截止、窗口身份与权限拒绝。它们验证相关组件，不等同于在真实WindowServer上制造超时后完成截图的集成实测。git diff --check通过。
+
+预期收益仅限异常路径：移除超时后的一次重新枚举和截图尝试。没有用模拟等待值冒充真实节省秒数，也没有再次复现系统卡顿；正常请求时延不变。首次截图超时本身已到10秒，故此修复不能保证最长10秒的完整目标，更不能解决已测得的上游8.7–13.7秒等待。端到端达标仍未完成。
+
+验证日志：/tmp/notchspi-cached-timeout-tests-20261030.log。未覆盖此前未提交改动，未提交或推送。

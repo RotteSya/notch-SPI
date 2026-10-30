@@ -1,0 +1,65 @@
+{
+  "new_model_calls": 0,
+  "deployments": 0,
+  "rows": [
+    {
+      "source": "latency-six-diagnostic-2026-10-30.samples.json",
+      "path": "official legacy",
+      "output_tokens": 1755,
+      "input_tokens": 1338,
+      "submitted_ms": 438.35537508130074,
+      "usable_ms": 12385.728916735388,
+      "upstream_headers_ms": 784.737798999995,
+      "reasoning_to_answer_ms": 9289.797353999922,
+      "first_reasoning_ms": 1340.2173099999782,
+      "aggregate_output_tokens_per_reasoning_interval_second": 188.91693038323885
+    },
+    {
+      "source": "latency-prompt-v2-e2e-2026-10-30.samples.json",
+      "path": "official legacy",
+      "output_tokens": 1678,
+      "input_tokens": 1338,
+      "submitted_ms": 2535.7237916905433,
+      "usable_ms": 14624.471625080332,
+      "upstream_headers_ms": 784.3480579999741,
+      "reasoning_to_answer_ms": 9560.118683999986,
+      "first_reasoning_ms": 1473.3708490000572,
+      "aggregate_output_tokens_per_reasoning_interval_second": 175.52083352357704
+    },
+    {
+      "source": "latency-runtime-recheck-2026-10-30.samples.json",
+      "path": "official legacy",
+      "output_tokens": 2164,
+      "input_tokens": 1338,
+      "submitted_ms": 507.55158346146345,
+      "usable_ms": 15625.573583412915,
+      "upstream_headers_ms": 843.5756549999933,
+      "reasoning_to_answer_ms": 12366.491203000012,
+      "first_reasoning_ms": 1331.5235329999705,
+      "aggregate_output_tokens_per_reasoning_interval_second": 174.98900573147463
+    },
+    {
+      "source": "legacy-daily-paired/run/8.json",
+      "path": "direct A",
+      "output_tokens": 1549,
+      "input_tokens": 1338,
+      "answer_line_ms": 9013.947542000002,
+      "upstream_headers_ms": 152.70983299999352,
+      "reasoning_to_answer_ms": 8259.381916999999,
+      "first_reasoning_ms": 661.7514159999992,
+      "aggregate_output_tokens_per_reasoning_interval_second": 187.54429999316864
+    },
+    {
+      "source": "legacy-daily-paired/run/7.json",
+      "path": "direct B",
+      "output_tokens": 1827,
+      "input_tokens": 1400,
+      "answer_line_ms": 10971.575541999999,
+      "upstream_headers_ms": 135.94612499999857,
+      "reasoning_to_answer_ms": 10139.783875000001,
+      "first_reasoning_ms": 816.5055829999983,
+      "aggregate_output_tokens_per_reasoning_interval_second": 180.18135519678418
+    }
+  ],
+  "caveat": "Aggregate completion tokens include visible output; ratio is not reasoning token throughput. Existing runs differ in time, network route and client capture. Not a causal benchmark."
+}

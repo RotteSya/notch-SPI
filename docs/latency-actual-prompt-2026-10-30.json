@@ -1,0 +1,11 @@
+{
+  "model_calls": 0,
+  "actual_legacy_system_bytes": 1706,
+  "actual_legacy_task_bytes": 356,
+  "legacy_system_sha256": "6ac1e23b1a409cb5af9d19d57b88e4b55c8fe5ec819749a34408df4e8ebfeba2",
+  "legacy_task_sha256": "709082bcff55add2d55ecc330dcb08331cbaf3ae9d22e823a6b5a01c4d179ef6",
+  "screen_system_sha256": "7ea81449d322335f0d70e732bc4e44f182e42846e9acd78bcd464186cb9b8704",
+  "screen_task_sha256": "154281b7bdd083595e143f31d17912c4aa96894648ba6aee0766c8df40d86c7b",
+  "system_equal": false,
+  "task_equal": false
+}

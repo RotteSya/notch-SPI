@@ -1,0 +1,117 @@
+{
+  "scope": "actual_legacy_provider_screening_not_end_to_end",
+  "approved_limit": 5,
+  "actual_calls": 4,
+  "stopped": "quality_gate",
+  "unexecuted": [
+    "unsupported-essay:B"
+  ],
+  "notchspi_quota_used": 0,
+  "deployed": false,
+  "total_input_tokens": 5052,
+  "total_output_tokens": 3843,
+  "estimated_rmb_at_2_8_per_million": 0.040848,
+  "invoice": false,
+  "samples": [
+    {
+      "ordinal": 1,
+      "id": "Q11",
+      "variant": "A",
+      "passed": true,
+      "timing": {
+        "first_content_ms": 8349.832625000001,
+        "completed_final_line_ms": 8366.179583000001,
+        "response_complete_ms": 8461.435625
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 3.219374999999957,
+        "upstreamHeaders": 368.22929199999993,
+        "upstreamFirstEvent": 374.9357499999999,
+        "upstreamFirstReasoning": 1035.6351670000001,
+        "upstreamFirstAnswer": 8349.75575
+      },
+      "usage": {
+        "inputTokens": 1338,
+        "outputTokens": 1387,
+        "finishReason": "stop"
+      },
+      "result_state": "ready",
+      "result_reason": "none"
+    },
+    {
+      "ordinal": 2,
+      "id": "Q11",
+      "variant": "B",
+      "passed": true,
+      "timing": {
+        "first_content_ms": 6923.842666999999,
+        "completed_final_line_ms": 6946.860417,
+        "response_complete_ms": 7064.699291999999
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.8216249999986758,
+        "upstreamHeaders": 109.07170899999983,
+        "upstreamFirstEvent": 135.72450000000026,
+        "upstreamFirstReasoning": 869.6725420000002,
+        "upstreamFirstAnswer": 6923.816417
+      },
+      "usage": {
+        "inputTokens": 1400,
+        "outputTokens": 1153,
+        "finishReason": "stop"
+      },
+      "result_state": "ready",
+      "result_reason": "none"
+    },
+    {
+      "ordinal": 3,
+      "id": "missing-context",
+      "variant": "B",
+      "passed": true,
+      "timing": {
+        "first_content_ms": 3313.2328750000015,
+        "completed_final_line_ms": null,
+        "response_complete_ms": 3413.568041999999
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.6942080000007991,
+        "upstreamHeaders": 165.35025000000132,
+        "upstreamFirstEvent": 179.64808300000004,
+        "upstreamFirstReasoning": 1676.3960420000003,
+        "upstreamFirstAnswer": 3313.2289579999997
+      },
+      "usage": {
+        "inputTokens": 1493,
+        "outputTokens": 306,
+        "finishReason": "stop"
+      },
+      "result_state": "retake",
+      "result_reason": "missing_context"
+    },
+    {
+      "ordinal": 4,
+      "id": "cropped-options",
+      "variant": "B",
+      "passed": false,
+      "timing": {
+        "first_content_ms": 7109.972834,
+        "completed_final_line_ms": 7143.6602090000015,
+        "response_complete_ms": 7256.7959169999995
+      },
+      "provider_timing_ms": {
+        "upstreamRequest": 0.2791250000009313,
+        "upstreamHeaders": 99.84254200000214,
+        "upstreamFirstEvent": 111.03604199999972,
+        "upstreamFirstReasoning": 1001.9946670000027,
+        "upstreamFirstAnswer": 7109.9671670000025
+      },
+      "usage": {
+        "inputTokens": 821,
+        "outputTokens": 997,
+        "finishReason": "stop"
+      },
+      "result_state": "review",
+      "result_reason": "missing_context"
+    }
+  ]
+}

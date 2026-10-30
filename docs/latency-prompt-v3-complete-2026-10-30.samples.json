@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-30",
+  "approved_calls": 4,
+  "actual_calls": 4,
+  "remaining_authorized_calls": 0,
+  "reserve_cny": 2,
+  "input_tokens": 4521,
+  "output_tokens": 2519,
+  "estimated_peak_cost_cny": 0.029194,
+  "invoice_verified": false,
+  "model": "deepseek-flash",
+  "reasoning_effort": "low",
+  "max_tokens": 32768,
+  "profile": "general",
+  "language": "zh",
+  "samples": [
+    {
+      "file": "run/1.json",
+      "id": "Q11",
+      "variant": "A",
+      "original_passed": true,
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 1104,
+        "finishReason": "stop"
+      },
+      "timing": {
+        "first_content_ms": 7390.878291999999,
+        "completed_final_line_ms": 7416.4013749999995,
+        "response_complete_ms": 7586.57425
+      }
+    },
+    {
+      "file": "run/2.json",
+      "id": "Q11",
+      "variant": "B",
+      "original_passed": false,
+      "usage": {
+        "inputTokens": 1267,
+        "outputTokens": 764,
+        "finishReason": "stop"
+      },
+      "timing": {
+        "first_content_ms": 5369.71725,
+        "completed_final_line_ms": 5431.148292,
+        "response_complete_ms": 5489.849042
+      }
+    },
+    {
+      "file": "run-remaining/1.json",
+      "id": "missing-context",
+      "variant": "B",
+      "original_passed": true,
+      "usage": {
+        "inputTokens": 1360,
+        "outputTokens": 368,
+        "finishReason": "stop"
+      },
+      "timing": {
+        "first_content_ms": 3292.390625,
+        "completed_final_line_ms": null,
+        "response_complete_ms": 3396.396084
+      }
+    },
+    {
+      "file": "run-remaining/2.json",
+      "id": "cropped-options",
+      "variant": "B",
+      "original_passed": false,
+      "usage": {
+        "inputTokens": 688,
+        "outputTokens": 283,
+        "finishReason": "stop"
+      },
+      "timing": {
+        "first_content_ms": 2027.359375,
+        "completed_final_line_ms": 2041.965542,
+        "response_complete_ms": 2145.495083
+      }
+    }
+  ],
+  "semantic_replay_note": "Q11 candidate matches B under the user-approved local label annotation rule; historical raw record retained.",
+  "quality_issue": "cropped-options returned ready despite required missing/cut-off options; no deployment",
+  "e2e_acceptance": false,
+  "deployments": 0,
+  "notchspi_debits": 0
+}

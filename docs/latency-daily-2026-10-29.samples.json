@@ -1,0 +1,547 @@
+{
+  "conditions": {
+    "date": "2026-10-29",
+    "cases": [
+      "Q1",
+      "Q2",
+      "Q8",
+      "Q9",
+      "Q10",
+      "Q11"
+    ],
+    "model": "deepseek-flash",
+    "reasoning_effort": "low",
+    "variant": "current optimized filter; all samples same instrumented Debug binary",
+    "workflow": "physical single hotkey; full passage and one question onscreen",
+    "client_start": "fresh process per sample, account/config read and capture prefetch before hotkey",
+    "server_region_from_runtime_logs": "hnd1",
+    "deployment_id": "dpl_71B75SR3aR6MxeUBF4bQj4hHCNcW",
+    "approved_requests": 6,
+    "consumed_requests": 6,
+    "initial_balance": 742,
+    "final_balance_from_receipts": 736,
+    "source_images": [
+      {
+        "id": 1,
+        "sha256": "8fcaf61fb439c5089e1c306bf93c795663a5fe8bd77c025144cc0954b5cf7e38",
+        "bytes": 176346
+      },
+      {
+        "id": 2,
+        "sha256": "e2214bcb68283b09d6ecdbcaa415fb69176633feb1863331462eb469cf698592",
+        "bytes": 573690
+      },
+      {
+        "id": 3,
+        "sha256": "9ac16cbaf63b3fd8269fdb922558244393a487e4b0194166140c60478845745b",
+        "bytes": 174701
+      },
+      {
+        "id": 4,
+        "sha256": "00dd86f34772aab3a910b4f4de4e15aaf1c33b5b85bca12ed359561813fba569",
+        "bytes": 235704
+      },
+      {
+        "id": 5,
+        "sha256": "a8742847375d0d365b8b33203fbed61952d2f1db8973ad5fdee53c3447dc694d",
+        "bytes": 163441
+      }
+    ],
+    "no_p95_reason": "only six distinct questions, one sample each"
+  },
+  "samples": [
+    {
+      "case": "Q1",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 74.90300002973527,
+        "feedbackDraw": 145.41695837397128,
+        "captureReady": 385.97216666676104,
+        "materialsReady": 394.4595833308995,
+        "submitted": 411.98650002479553,
+        "firstDelta": 6055.589958326891,
+        "firstAnswerDraw": 6112.8983333474025,
+        "receiptApplied": 6289.0563333639875,
+        "responseCompleted": 6289.864333346486,
+        "completed": 6294.08116673585,
+        "renderStarted": 6303.487583412789
+      },
+      "transport": [
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "elapsed_ms": 0.024083303287625313,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "elapsed_ms": 14.531958382576704,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "elapsed_ms": 5638.972374959849,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "platform_request_id": "hnd1::iad1::bnzs2-1793286405510-233b73d68f98",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "elapsed_ms": 5642.392124980688,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.2340078353881836,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.12195110321044922,
+              "response_receive_ms": 3493.675947189331,
+              "response_wait_ms": 2365.8390045166016,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "5e8322f8-a2b5-45c0-8bde-2b0263026fe2",
+          "elapsed_ms": 5882.111708284356,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 402,
+        "charged": 1,
+        "balance": 741
+      },
+      "server_request_ms": 3545.348127000034,
+      "protocol_completed": true,
+      "quality_reference": "no official key supplied; manual review pending",
+      "image_bytes": 73119,
+      "image_only_json_bytes": 97511,
+      "image_only_gzip_bytes": 49631
+    },
+    {
+      "case": "Q2",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 78.86020839214325,
+        "feedbackDraw": 157.15066669508815,
+        "captureReady": 366.9269166421145,
+        "materialsReady": 374.3437500670552,
+        "submitted": 386.68566674459726,
+        "firstDelta": 5120.311333332211,
+        "firstAnswerDraw": 5157.69558341708,
+        "receiptApplied": 5216.086666681804,
+        "responseCompleted": 5221.5077499859035,
+        "completed": 5224.413041723892,
+        "renderStarted": 5234.829208347946
+      },
+      "transport": [
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "elapsed_ms": 0.02620834857225418,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "elapsed_ms": 52.346125012263656,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "elapsed_ms": 4728.837375063449,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "platform_request_id": "hnd1::iad1::kcmms-1793286592930-f663427dccab",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "elapsed_ms": 4731.912958435714,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.20194053649902344,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.1729726791381836,
+              "response_receive_ms": 3754.402995109558,
+              "response_wait_ms": 1010.308027267456,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "cb271c09-dd45-4186-a263-7d13297a56bf",
+          "elapsed_ms": 4837.606916669756,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 463,
+        "charged": 1,
+        "balance": 740
+      },
+      "server_request_ms": 3833.6642569999676,
+      "protocol_completed": true,
+      "quality_reference": "manual category-member relation review passed; official answer key not supplied",
+      "image_bytes": 72691,
+      "image_only_json_bytes": 96943,
+      "image_only_gzip_bytes": 49638
+    },
+    {
+      "case": "Q8",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 95.06270824931562,
+        "feedbackDraw": 175.98529160022736,
+        "captureReady": 461.12949994858354,
+        "materialsReady": 466.40858333557844,
+        "submitted": 477.7640833053738,
+        "firstDelta": 8230.984666617587,
+        "firstAnswerDraw": 8378.360125003383,
+        "receiptApplied": 8417.600874905474,
+        "responseCompleted": 8431.106958305463,
+        "completed": 8433.384874952026,
+        "renderStarted": 8442.963208304718
+      },
+      "transport": [
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "elapsed_ms": 0.024916604161262512,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "elapsed_ms": 40.18966667354107,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "elapsed_ms": 7744.648958323523,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "platform_request_id": "hnd1::iad1::tzw57-1793286815539-f70ff88ee0f6",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "elapsed_ms": 7751.333083375357,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.22208690643310547,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.20694732666015625,
+              "response_receive_ms": 4312.5079870224,
+              "response_wait_ms": 3563.2530450820923,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "227244a3-067f-41c6-a18c-c80998283747",
+          "elapsed_ms": 7955.364666646346,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 470,
+        "charged": 1,
+        "balance": 739
+      },
+      "server_request_ms": 4430.016365000047,
+      "server_log_status": "completion correlated by platform request ID",
+      "protocol_completed": true,
+      "quality_reference": "manual full-passage conjunction review passed; official answer key not supplied",
+      "image_bytes": 209041,
+      "image_only_json_bytes": 278743,
+      "image_only_gzip_bytes": 188120
+    },
+    {
+      "case": "Q9",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 94.99833325389773,
+        "feedbackDraw": 167.28145827073604,
+        "captureReady": 442.89374991785735,
+        "materialsReady": 446.16658333688974,
+        "submitted": 458.55300000403076,
+        "firstDelta": 13332.39687490277,
+        "firstAnswerDraw": 13363.711208337918,
+        "receiptApplied": 13490.828416659497,
+        "responseCompleted": 13496.564083267003,
+        "completed": 13499.892208259553,
+        "renderStarted": 13509.657333255745
+      },
+      "transport": [
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "elapsed_ms": 0.02920837141573429,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "elapsed_ms": 57.958083343692124,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "elapsed_ms": 12868.647333350964,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "platform_request_id": "hnd1::iad1::jbx6q-1793287000482-7f26f49ff889",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "elapsed_ms": 12871.9915417023,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.2980232238769531,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.2510547637939453,
+              "response_receive_ms": 9363.618016242981,
+              "response_wait_ms": 3603.5549640655518,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "06a881d6-e7c7-4ef7-a985-8de7b7fe2616",
+          "elapsed_ms": 13041.329249972478,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 1393,
+        "charged": 1,
+        "balance": 738
+      },
+      "server_request_ms": 9575.69889,
+      "protocol_completed": true,
+      "quality_reference": "manual full-passage word-combination review passed; official answer key not supplied",
+      "image_bytes": 216496,
+      "image_only_json_bytes": 288683,
+      "image_only_gzip_bytes": 195513
+    },
+    {
+      "case": "Q10",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 83.58675008639693,
+        "feedbackDraw": 164.16854166891426,
+        "captureReady": 379.6004167525098,
+        "materialsReady": 389.5522083621472,
+        "submitted": 407.0699167205021,
+        "firstDelta": 11245.579791720957,
+        "firstAnswerDraw": 11282.54787507467,
+        "receiptApplied": 11425.800625002012,
+        "responseCompleted": 11429.939291672781,
+        "completed": 11432.515208376572,
+        "renderStarted": 11445.16050000675
+      },
+      "transport": [
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "elapsed_ms": 0.028374954126775265,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "elapsed_ms": 45.01524998340756,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "elapsed_ms": 10831.407750025392,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "platform_request_id": "hnd1::iad1::kcmms-1793287135988-2843d6b9b213",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "elapsed_ms": 10836.591041646898,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.37598609924316406,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.19097328186035156,
+              "response_receive_ms": 7124.704003334045,
+              "response_wait_ms": 3844.4759845733643,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "733d0cda-d11d-42b0-9530-cf302847db5f",
+          "elapsed_ms": 11025.173333357088,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 981,
+        "charged": 1,
+        "balance": 737
+      },
+      "server_request_ms": 7209.922164000105,
+      "protocol_completed": true,
+      "quality_reference": "manual full-passage reference review passed; official answer key not supplied",
+      "image_bytes": 223590,
+      "image_only_json_bytes": 298139,
+      "image_only_gzip_bytes": 202007
+    },
+    {
+      "case": "Q11",
+      "stages_ms": {
+        "triggered": 0,
+        "feedbackRequested": 90.70266666822135,
+        "feedbackDraw": 173.48958330694586,
+        "captureReady": 361.8083333130926,
+        "materialsReady": 364.5232917042449,
+        "submitted": 384.26199997775257,
+        "firstDelta": 14289.13637495134,
+        "firstAnswerDraw": 14340.02587501891,
+        "receiptApplied": 14478.328208322637,
+        "responseCompleted": 14479.454666608945,
+        "completed": 14481.835291604511,
+        "renderStarted": 14491.07495835051
+      },
+      "transport": [
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "elapsed_ms": 0.029416754841804504,
+          "stage": "runStarted"
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "elapsed_ms": 55.05775008350611,
+          "stage": "requestReady"
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "elapsed_ms": 13898.002875037491,
+          "stage": "responseHeaders"
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "platform_request_id": "hnd1::iad1::jbx6q-1793287282812-b95feef05153",
+          "stage": "responseCorrelation"
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "elapsed_ms": 13902.631791657768,
+          "stage": "firstDeliveredDelta"
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "redirect_count": 0,
+          "stage": "taskMetrics",
+          "transactions": [
+            {
+              "proxy_connection": false,
+              "request_send_ms": 0,
+              "response_receive_ms": 0,
+              "response_wait_ms": 0.2989768981933594,
+              "reused_connection": false
+            },
+            {
+              "proxy_connection": true,
+              "request_send_ms": 0.2460479736328125,
+              "response_receive_ms": 9698.71997833252,
+              "response_wait_ms": 4335.253000259399,
+              "reused_connection": true
+            }
+          ]
+        },
+        {
+          "capture_id": "6c762b1d-da52-4201-bc5f-7e43c6b1a138",
+          "elapsed_ms": 14097.159458324313,
+          "stage": "streamFinished"
+        }
+      ],
+      "usage": {
+        "input": 1338,
+        "output": 1398,
+        "charged": 1,
+        "balance": 736
+      },
+      "server_request_ms": 9802.766557999887,
+      "protocol_completed": true,
+      "quality_reference": "manual full-passage entailment review passed; official answer key not supplied",
+      "image_bytes": 235969,
+      "image_only_json_bytes": 314647,
+      "image_only_gzip_bytes": 216141
+    }
+  ]
+}

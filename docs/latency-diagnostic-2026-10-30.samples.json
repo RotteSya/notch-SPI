@@ -1,0 +1,104 @@
+{
+  "deployment": "dpl_4xWeCnSWfUvA7gyW7WhSjwxRRxVe",
+  "model": "deepseek-flash",
+  "reasoning_effort": "low",
+  "sample_count": 2,
+  "mean_first_answer_ms": 7490.657937538344,
+  "p95": null,
+  "samples": [
+    {
+      "question": "Q2",
+      "client_offsets_ms": {
+        "triggered": 0,
+        "feedbackRequested": 88.73170835431665,
+        "feedbackDraw": 160.5038749985397,
+        "captureReady": 454.3430417543277,
+        "materialsReady": 458.6460000136867,
+        "submitted": 471.0613751085475,
+        "firstDelta": 3952.252875082195,
+        "firstAnswerDraw": 4034.321500104852,
+        "receiptApplied": 4225.790083408356,
+        "responseCompleted": 4234.003083431162,
+        "completed": 4240.4010416939855,
+        "renderStarted": 4250.197416753508
+      },
+      "server": {
+        "capture_id": "c3b549b2-9224-4020-bd0b-475f125f4840",
+        "offsets_ms": {
+          "handlerStarted": 0,
+          "authReady": 1.6328510000021197,
+          "validationReady": 2.3301769999670796,
+          "reapReady": 10.142136999987997,
+          "duplicateCheckReady": 22.815113999997266,
+          "budgetReady": 48.154080000007525,
+          "admissionReady": 133.69626599998446,
+          "providerStarted": 135.058023999969,
+          "upstreamRequest": 135.66635199997108,
+          "upstreamHeaders": 893.5341720000142,
+          "upstreamFirstEvent": 895.8727319999598,
+          "upstreamFirstReasoning": 1466.444978000014,
+          "upstreamFirstAnswer": 2718.5574529999867,
+          "firstDeltaSent": 2718.9544809999643,
+          "providerCompleted": 2866.0252139999648,
+          "handlerFinished": 66491.66214799997
+        },
+        "request_duration_ms": 2984.22686299996,
+        "handlerFinished_valid_for_latency": false,
+        "log_flushed_during_later_account_request": true
+      },
+      "usage": {
+        "input_tokens": 1338,
+        "output_tokens": 245,
+        "charged": 1,
+        "balance": 735
+      }
+    },
+    {
+      "question": "Q11",
+      "client_offsets_ms": {
+        "triggered": 0,
+        "feedbackRequested": 84.15837492793798,
+        "feedbackDraw": 164.5314582856372,
+        "captureReady": 451.4962083194405,
+        "materialsReady": 455.86129161529243,
+        "submitted": 484.68420829158276,
+        "firstDelta": 10896.613999968395,
+        "firstAnswerDraw": 10946.994374971837,
+        "receiptApplied": 10987.789291655645,
+        "responseCompleted": 11000.948916655034,
+        "completed": 11003.855499904603,
+        "renderStarted": 11025.963041582145
+      },
+      "server": {
+        "capture_id": "69381c57-7178-425a-bc1a-1695d1decd3e",
+        "offsets_ms": {
+          "handlerStarted": 0,
+          "authReady": 3.4721539999591187,
+          "validationReady": 4.981930999900214,
+          "reapReady": 21.23239699995611,
+          "duplicateCheckReady": 41.100751999998465,
+          "budgetReady": 67.89878099993803,
+          "admissionReady": 163.11242099991068,
+          "providerStarted": 163.62178599997424,
+          "upstreamRequest": 165.42290299991146,
+          "upstreamHeaders": 951.145322999917,
+          "upstreamFirstEvent": 954.2059769999469,
+          "upstreamFirstReasoning": 1530.6608569999225,
+          "upstreamFirstAnswer": 8470.671247999999,
+          "firstDeltaSent": 8470.719849999994,
+          "providerCompleted": 8474.269816999906,
+          "handlerFinished": 29334.526976999943
+        },
+        "request_duration_ms": 8569.804258999997,
+        "handlerFinished_valid_for_latency": false,
+        "log_flushed_during_later_account_request": true
+      },
+      "usage": {
+        "input_tokens": 1338,
+        "output_tokens": 1338,
+        "charged": 1,
+        "balance": 734
+      }
+    }
+  ]
+}

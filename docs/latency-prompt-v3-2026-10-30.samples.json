@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-30",
+  "scope": "direct_provider_screening_not_e2e",
+  "approved_calls": 4,
+  "actual_calls": 2,
+  "reserve_cny": 2,
+  "estimated_peak_cost_cny": 0.01989,
+  "invoice_verified": false,
+  "model": "deepseek-flash",
+  "reasoning_effort": "low",
+  "max_tokens": 32768,
+  "profile": "general",
+  "language": "zh",
+  "samples": [
+    {
+      "ordinal": 1,
+      "id": "Q11",
+      "variant": "A",
+      "usage": {
+        "inputTokens": 1206,
+        "outputTokens": 1104,
+        "finishReason": "stop"
+      },
+      "passed": true,
+      "timing": {
+        "first_content_ms": 7390.878291999999,
+        "completed_final_line_ms": 7416.4013749999995,
+        "response_complete_ms": 7586.57425
+      },
+      "violations": []
+    },
+    {
+      "ordinal": 2,
+      "id": "Q11",
+      "variant": "B",
+      "usage": {
+        "inputTokens": 1267,
+        "outputTokens": 764,
+        "finishReason": "stop"
+      },
+      "passed": false,
+      "timing": {
+        "first_content_ms": 5369.71725,
+        "completed_final_line_ms": 5431.148292,
+        "response_complete_ms": 5489.849042
+      },
+      "violations": [
+        "finalMismatch"
+      ]
+    }
+  ],
+  "result": "stopped_on_candidate_protocol_mismatch",
+  "remaining_cases_not_sent": [
+    "missing-context",
+    "cropped-options"
+  ],
+  "deployments": 0,
+  "notchspi_debits": 0
+}

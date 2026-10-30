@@ -1,0 +1,40 @@
+{
+  "scope": "actual_legacy_provider_screening_completed_budget",
+  "approved_limit": 5,
+  "actual_calls": 5,
+  "notchspi_quota_used": 0,
+  "deployed": false,
+  "passed": false,
+  "original_summary": "latency-legacy-screening-2026-10-30.samples.json",
+  "remaining_sample": {
+    "id": "unsupported-essay",
+    "variant": "B",
+    "passed": false,
+    "usage": {
+      "inputTokens": 911,
+      "outputTokens": 1869,
+      "finishReason": "stop"
+    },
+    "timing": {
+      "first_content_ms": 9212.975292000001,
+      "completed_final_line_ms": 9702.6735,
+      "response_complete_ms": 10254.696625
+    },
+    "provider_timing_ms": {
+      "upstreamRequest": 0.602374999999995,
+      "upstreamHeaders": 229.74275,
+      "upstreamFirstEvent": 253.28612500000003,
+      "upstreamFirstReasoning": 975.4724170000002,
+      "upstreamFirstAnswer": 9212.887375
+    },
+    "parser_path": "legacy_fallback",
+    "parser_state": "review",
+    "violations": [
+      "invalidStateCombination"
+    ]
+  },
+  "total_input_tokens": 5963,
+  "total_output_tokens": 5712,
+  "estimated_rmb_at_2_8_per_million": 0.057622,
+  "invoice": false
+}
