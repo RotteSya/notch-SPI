@@ -1,3 +1,4 @@
+import type { ProviderTimingStage } from '../capture-timing.ts';
 // A vendor-agnostic contract for the official service's model call. Each provider streams
 // text deltas via `onDelta` and resolves with the metered token usage, which the capture
 // route turns into a charge. Providers throw on failure; the route emits an SSE error event
@@ -10,6 +11,8 @@ export interface CaptureImage {
 
 /** `images` order is meaningful: context shot(s) first, the fresh capture last. */
 export interface CaptureRequest {
+  /** Internal observation only; never serialized or populated from client JSON. */
+  onTiming?: (stage: ProviderTimingStage) => void;
   system: string;
   task: string;
   images: CaptureImage[];

@@ -19,6 +19,12 @@ import QuartzCore
 ///     ride retargetable critically-damped springs, so arriving tokens pour the card open in one
 ///     continuous glide instead of a staircase of `setFrame` jumps.
 final class NotchView: NSView {
+    var feedbackCapture: CaptureLatency? {
+        didSet {
+            (statusText as? CaptureFeedbackLabel)?.capture = feedbackCapture
+            statusText.needsDisplay = true
+        }
+    }
     let onboarding = NotchOnboardingView(frame: .zero)
     var onExplanation: (() -> Void)?
     var onCollapse: (() -> Void)?
@@ -106,7 +112,7 @@ final class NotchView: NSView {
     private let expandedContent = FlippedContainer()
     private let contentMask = CAShapeLayer()
     private let modeLabel = NotchView.makeLabel(size: 12.5, weight: .semibold, color: NotchPalette.primary)
-    private let statusText = NotchView.makeLabel(size: 11, weight: .regular, color: NotchPalette.secondary)
+    private let statusText = NotchView.makeLabel(size: 11, weight: .regular, color: NotchPalette.secondary, feedback: true)
     private let capsule = NotchCapsuleButton()
     /// Screen-space anchor below the actual control, independent of the current pointer.
     var quickMenuAnchor: NSPoint? {
@@ -425,6 +431,7 @@ final class NotchView: NSView {
         answerScroll.isHidden = model.hidesAnswer
         let attr = model.hidesAnswer ? NSAttributedString(string: "")
             : NotchType.answerString(model.displayedAnswer, presentation: NotchType.presentation(for: model), inShelf: model.usesContentShelf)
+        answerStream.streamingCapture = model.hidesAnswer ? nil : model.answerLatency
         answerStream.completedCapture = !model.hidesAnswer && model.status == .idle
             && model.answerLatency?.needsCompletedDraw == true ? model.answerLatency : nil
         let capture = model.answerLatency
@@ -1006,8 +1013,8 @@ final class NotchView: NSView {
 
     // MARK: Factories
 
-    private static func makeLabel(size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {
-        let f = NSTextField(labelWithString: "")
+    private static func makeLabel(size: CGFloat, weight: NSFont.Weight, color: NSColor, feedback: Bool = false) -> NSTextField {
+        let f = feedback ? CaptureFeedbackLabel(labelWithString: "") : NSTextField(labelWithString: "")
         f.font = .systemFont(ofSize: size, weight: weight)
         f.textColor = color
         f.backgroundColor = .clear
@@ -1204,4 +1211,16 @@ final class AnswerShelfView: NSView {
     }
     required init?(coder: NSCoder) { nil }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Local timing observes an actual visible AppKit status draw, not just model mutation.
+private final class CaptureFeedbackLabel: NSTextField {
+    var capture: CaptureLatency?
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        if window?.isVisible == true, !isHiddenOrHasHiddenAncestor,
+           alphaValue > 0, !visibleRect.isEmpty, !stringValue.isEmpty {
+            capture?.mark(.feedbackDraw)
+        }
+    }
 }

@@ -440,6 +440,10 @@ enum ScreenCapture {
             trace("image.begin")
             #endif
             let cg = try await imageCapture.run {
+                #if DEBUG
+                trace("image.system.begin")
+                defer { trace("image.system.end") }
+                #endif
                 #if compiler(>=6.2)
                 if #available(macOS 26.0, *) {
                     let screenshot = screenshotConfiguration(from: config, style: filter.style)

@@ -6,7 +6,7 @@ import Foundation
 final class CaptureLatency {
     enum Entry: String { case single, multiple, direct, automatic }
     enum Stage: String {
-        case triggered, captureReady, materialsReady, submitted, firstDelta, receiptApplied, responseCompleted, completed, renderStarted, failed
+        case triggered, feedbackRequested, feedbackDraw, firstAnswerDraw, captureReady, materialsReady, submitted, firstDelta, receiptApplied, responseCompleted, completed, renderStarted, failed
     }
     let id = UUID()
     let entry: Entry

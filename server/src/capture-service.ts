@@ -1,3 +1,4 @@
+import { CaptureTiming } from './capture-timing.ts';
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from './routes.ts';
@@ -39,6 +40,7 @@ export class CaptureService {
   private ctx:AppContext;
   readonly keys:RequestKeys;
   private active = new Map<string,number>();
+  private timings = new WeakMap<FastifyRequest, CaptureTiming>();
   constructor(ctx:AppContext) {
     this.ctx=ctx;
     this.keys=new RequestKeys(ctx.config.requestHmacKeysJSON,ctx.config.requestHmacKeyVersion,
@@ -62,13 +64,26 @@ export class CaptureService {
     return this.connected(req,reply,abort=>this.solveConnected(req,reply,abort));
   }
   private async connected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {
+    const timing=process.env.NSPI_SERVER_LATENCY_TRACE==='1'?new CaptureTiming():undefined;
+    if(timing)this.timings.set(req,timing);
     const abort=new AbortController(),closed=()=>abort.abort();
     // Observe disconnects before the first authentication, decoding or database await.
     req.raw.once('aborted',closed);reply.raw.once('close',closed);
     if(req.raw.aborted||reply.raw.destroyed)closed();
     try {if(!abort.signal.aborted)await run(abort);} finally {
       req.raw.removeListener('aborted',closed);reply.raw.removeListener('close',closed);abort.abort();
+      this.logTiming(req,'handlerFinished');
     }
+  }
+  private logTiming(req:FastifyRequest,stage:'handlerFinished'|'responseFinishing'):void {
+    const timing=this.timings.get(req);
+    if(!timing)return;
+    timing.mark(stage);
+    // Emit before ending SSE: serverless runtimes may suspend post-response cleanup.
+    // Only a validated UUID may be logged, never arbitrary request text.
+    const id=(req.body as Record<string,unknown>|undefined)?.capture_id;
+    req.log.info({captureTiming:timing.offsets,...(typeof id==='string'&&UUID.test(id)?{captureId:id.toLowerCase()}: {})},'capture timing');
+    this.timings.delete(req);
   }
   private async admitted(req:FastifyRequest,reply:FastifyReply,abort:AbortController,input:Omit<BeginCapture,'requestId'>,
     attempt:Omit<NewAttempt,'attemptId'|'captureId'>,
@@ -83,10 +98,12 @@ export class CaptureService {
     try {
       if(!await store.billing.reserveBudget(token,admission.attemptId,'official',config.modelCostCurrency,
         config.attemptBudgetUpperMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes))throw new ApiError(503,'当前服务预算已用完，请稍后再试','budget_exceeded');
+      this.timings.get(req)?.mark('budgetReady');
       if(abort.signal.aborted)return;
       beginUncertain=true;
       const hold=await store.billing.beginWithAttempt({...input,requestId},{...attempt,attemptId:admission.attemptId,captureId});
       beginUncertain=false;
+      this.timings.get(req)?.mark('admissionReady');
       if(!hold.ok) {
         const code=hold.reason;
         if(code==='service_maintenance') reply.header('Retry-After','60');
@@ -131,6 +148,7 @@ export class CaptureService {
   private async solveConnected(req:FastifyRequest,reply:FastifyReply,abort:AbortController):Promise<void> {
     const {config,store}=this.ctx;
     const {token}=await requireAccount(req,store);
+    this.timings.get(req)?.mark('authReady');
     if(abort.signal.aborted)return;
     const body=(req.body??{}) as Record<string,unknown>;
     if(body.allow_purchased_credits!==undefined && typeof body.allow_purchased_credits!=='boolean') throw new ApiError(400,'allow_purchased_credits 必须是布尔值');
@@ -178,8 +196,11 @@ export class CaptureService {
     const degraded=protocol==='objective_v1'?this.ctx.objectiveProviderDegraded:this.ctx.providerDegraded;
     const model=protocol==='objective_v1'?config.objectiveModel:config.model;
     if(degraded!==null) throw new ApiError(503,'答案生成服务暂时不可用','upstream_error');
+    this.timings.get(req)?.mark('validationReady');
     await store.billing.reap();
+    this.timings.get(req)?.mark('reapReady');
     const previous=await store.billing.capture(token,captureId);
+    this.timings.get(req)?.mark('duplicateCheckReady');
     const keyVersion=previous?.keyVersion??this.keys.current;
     const inputHmac=this.keys.digest('capture-input',JSON.stringify({digests,scope,profileId,profileVersion,promptVersion,language:body.ui_language??null}),keyVersion);
     const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(!allowPurchasedCredits?{allowPurchasedCredits:false}:{}),...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
@@ -326,6 +347,7 @@ export class CaptureService {
           req.log.error({captureId},'auxiliary request requires settlement reconciliation');
           send({type:'error',error:{code:'internal',message:'正在核对本次请求，请查询请求状态'}});
         } finally {
+          this.logTiming(req,'responseFinishing');
           if(!reply.raw.destroyed&&!reply.raw.writableEnded)reply.raw.end();
         }
       }
@@ -356,11 +378,13 @@ export class CaptureService {
       try {
         const generate=async()=>{
           admission.providerStarted=true;
-          return provider.stream(input,chunk=>{
+          const timing=this.timings.get(req);
+          timing?.mark('providerStarted');
+          return provider.stream(timing?{...input,onTiming:stage=>timing.mark(stage)}:input,chunk=>{
             if(!accepting||abort.signal.aborted) return;
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
             if(Buffer.byteLength(raw+chunk)<=64*1024) raw+=chunk; else {overflow=true;abort.abort();}
-            if(!overflow) send({type:'delta',text:chunk});
+            if(!overflow) {send({type:'delta',text:chunk});if(chunk.length)this.timings.get(req)?.mark('firstDeltaSent');}
           },abort.signal,()=>{
             // A thinking model can be healthy before it emits its first visible answer.
             // Keep the absolute 90-second deadline; only retire the startup deadline.
@@ -368,6 +392,7 @@ export class CaptureService {
           });
         };
         usage=await Promise.race([generate(),deadline]);
+        this.timings.get(req)?.mark('providerCompleted');
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}
       const truncated=usage?.finishReason==='length';
       const rejectedFinish=usage?.finishReason!==undefined && usage.finishReason!=='stop';
@@ -410,6 +435,7 @@ export class CaptureService {
       send({type:'error',error:{code:'internal',message:'正在核对本次额度，请查询请求状态'}});
     } finally {
       void initial; accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
+      this.logTiming(req,'responseFinishing');
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.end();
     }
   }

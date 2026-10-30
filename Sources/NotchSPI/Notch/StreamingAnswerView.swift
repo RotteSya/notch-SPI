@@ -17,6 +17,7 @@ final class StreamingAnswerView: NSView {
     /// Other readers continue to paint the standalone answer chip.
     var drawsAnswerCard = true { didSet { if oldValue != drawsAnswerCard { needsDisplay = true } } }
     var completedCapture: CaptureLatency?
+    var streamingCapture: CaptureLatency?
     private var attributed = NSAttributedString()
     private var plain = ""
     private var births: [CFTimeInterval] = []   // one per Character of `plain`
@@ -221,7 +222,11 @@ final class StreamingAnswerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let frame = currentFrame() else { return }
         if !isPlaceholder, window?.isVisible == true, !isHiddenOrHasHiddenAncestor,
-           !visibleRect.isEmpty { completedCapture?.mark(.renderStarted) }
+           !visibleRect.isEmpty {
+            // An answer card contains the parsed conclusion, not a reasoning token or marker.
+            if cardRange != nil { streamingCapture?.mark(.firstAnswerDraw) }
+            completedCapture?.mark(.renderStarted)
+        }
         let now = CACurrentMediaTime()
         // A frame has one motion policy. Reading accessibility (and the QA environment)
         // for every glyph adds main-thread work while the next stream delta is waiting.

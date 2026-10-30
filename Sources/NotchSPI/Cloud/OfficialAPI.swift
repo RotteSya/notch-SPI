@@ -593,6 +593,7 @@ enum OfficialAPI {
         }
         let token = account.token, base = account.baseURL
         let id = captureID ?? UUID()
+        let timing = OfficialTransportTiming.make(captureID: id)
         let operation = auxiliary?.operation ?? "solve"
         let allowPurchased = Settings.shared.allowPurchasedCredits
         if !allowPurchased && operation == "solve" && accountState.value("spendingPolicySupported") as? Bool != true {
@@ -600,6 +601,7 @@ enum OfficialAPI {
             return nil
         }
         return Task.detached(priority: .userInitiated) {
+            defer { timing?.mark(.streamFinished) }
             guard await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else {
                 await MainActor.run { onDone(false, cannotConnectMessage) }; return
             }
@@ -639,9 +641,16 @@ enum OfficialAPI {
             do {
                 try Task.checkCancellation()
                 guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
-                let (bytes, response) = try await environment.session.bytes(for: request)
+                timing?.recordRequestContract(screenQuery: screenQuery != nil, resultProtocol: resultProtocol)
+                timing?.mark(.requestReady)
+                let (bytes, response) = try await environment.session.bytes(for: request, delegate: timing)
+                // AsyncBytes may return only with the first body bytes even when transport
+                // metrics show earlier responseStart. This legacy stage measures API delivery,
+                // not wire-level header arrival (see the delayed-body loopback regression).
+                timing?.mark(.responseHeaders)
                 defer { bytes.task.cancel() }
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                timing?.recordResponse(http)
                 if http.statusCode != 200 {
                     var body = Data()
                     for try await byte in bytes { try Task.checkCancellation(); body.append(byte); if body.count > 65_536 { break } }
@@ -669,7 +678,9 @@ enum OfficialAPI {
                         try Task.checkCancellation()
                         guard environment.account() == account else { throw CancellationError() }
                         switch event {
-                        case .delta(let text): onDelta(text)
+                        case .delta(let text):
+                            if !text.isEmpty { timing?.mark(.firstDeliveredDelta) }
+                            onDelta(text)
                         case .usage(let value):
                             environment.receiveUsage(value)
                             try Task.checkCancellation()
