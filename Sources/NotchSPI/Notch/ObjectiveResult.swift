@@ -89,35 +89,52 @@ enum ObjectiveResultParser {
 struct ObjectiveResultStreamFilter {
     private(set) var rawBuffer = ""
     private var overflow = false
+    private var byteCount = 0
+    private var completedVisible = ""
+    private var visibleLineCount = 0
+    private var tail = ""
+    private var endedWithCR = false
+    private static let markers = [ObjectiveResultParser.marker, "NSPI_NO_RESULT_V1:"]
 
     mutating func append(_ delta: String) -> String {
-        guard !overflow, rawBuffer.utf8.count + delta.utf8.count <= 64 * 1024 else {
-            overflow = true; rawBuffer = ""; return ""
+        let count = delta.utf8.count
+        guard !overflow, count <= 64 * 1024 - byteCount else {
+            overflow = true; rawBuffer = ""; completedVisible = ""; tail = ""
+            return ""
         }
+        byteCount += count
         rawBuffer += delta
-        return visible(streaming: true)
+        // Normalize only new input. A CR/LF pair may straddle network chunks.
+        var input = delta
+        if endedWithCR && input.hasPrefix("\n") { input.removeFirst() }
+        if !delta.isEmpty { endedWithCR = delta.hasSuffix("\r") }
+        input = input.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = input.components(separatedBy: "\n")
+        for (index, line) in lines.enumerated() {
+            tail += line
+            if index < lines.count - 1 {
+                if !Self.markers.contains(where: { tail.contains($0) }) {
+                    if visibleLineCount > 0 { completedVisible += "\n" }
+                    completedVisible += tail
+                    visibleLineCount += 1
+                }
+                tail = ""
+            }
+        }
+        if Self.markers.contains(where: { tail.contains($0) }) { return completedVisible }
+        let candidate = tail.drop(while: { $0 == " " || $0 == "\t" })
+        if !candidate.isEmpty && Self.markers.contains(where: { $0.hasPrefix(String(candidate)) }) {
+            return completedVisible
+        }
+        return completedVisible + (visibleLineCount > 0 ? "\n" : "") + tail
     }
 
     mutating func finish() -> ObjectiveResultComposition {
+        // Validate the original, untouched protocol including hidden lines and duplicates.
         ObjectiveResultParser.compose(raw: rawBuffer)
     }
 
-    private func visible(streaming: Bool) -> String {
-        let normalized = rawBuffer.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        var lines = normalized.components(separatedBy: "\n")
-        let openLast = !normalized.hasSuffix("\n")
-        lines = lines.enumerated().compactMap { index, line in
-            let markers = [ObjectiveResultParser.marker, "NSPI_NO_RESULT_V1:"]
-            if markers.contains(where: { line.contains($0) }) { return nil }
-            if streaming && openLast && index == lines.count - 1 {
-                let candidate = line.drop(while: { $0 == " " || $0 == "\t" })
-                if !candidate.isEmpty && markers.contains(where: { $0.hasPrefix(String(candidate)) }) { return nil }
-            }
-            return line
-        }
-        return lines.joined(separator: "\n")
-    }
 }
 
 

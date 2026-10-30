@@ -92,5 +92,7 @@ export function beginSSE(reply: FastifyReply): (event: StreamEvent) => void {
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no', // disable proxy buffering so deltas flush promptly
   });
+  // Establish the response while the provider is generating, not on its first delta.
+  reply.raw.flushHeaders();
   return (event: StreamEvent) => reply.raw.write(sseFrame(event));
 }

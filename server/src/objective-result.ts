@@ -73,6 +73,24 @@ export function normalizeObjectiveAnswer(value: string): string {
   return /^[a-z]$/i.test(out) ? out.toUpperCase() : out;
 }
 
+/** A single-choice label may carry its option text. Never infer arbitrary prose equivalence. */
+function objectiveAnswersAgree(left: string, right: string, kind: ObjectiveResultV1['kind']): boolean {
+  const a = normalizeObjectiveAnswer(left), b = normalizeObjectiveAnswer(right);
+  if (a === b) return true;
+  if (kind !== 'single_choice') return false;
+  const bare = /^[A-Z]$/u.test(a) ? a : /^[A-Z]$/u.test(b) ? b : null;
+  if (!bare) return false;
+  const annotated = bare === a ? b : a;
+  const match = /^([A-Za-z])(?:[.、:)]\s*|\s+)(\S.*)$/u.exec(annotated);
+  if (!match || match[1]!.toUpperCase() !== bare) return false;
+  const description = match[2]!;
+  // A second label, a choice list, or a correction is not an option annotation.
+  if (/(?:^|[^A-Za-z])[A-Z](?:$|[^A-Za-z])/u.test(description)
+      || /[,，;；\/|→⇒]/u.test(description)
+      || /\b(?:not|instead|rather|or)\b|不是|不选|改选|ではない|じゃない/iu.test(description)) return false;
+  return true;
+}
+
 export function extractFinalAnswer(text: string): string | null {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
@@ -162,7 +180,7 @@ export function composeObjectiveResult(text: string, protocolEnabled = true): Ob
       }
     }
     if (result && result.state !== 'retake') {
-      if (!finalAnswer || normalizeObjectiveAnswer(finalAnswer) !== normalizeObjectiveAnswer(result.answer ?? '')) {
+      if (!finalAnswer || !objectiveAnswersAgree(finalAnswer, result.answer ?? '', result.kind)) {
         pushUnique(violations, 'finalMismatch');
         result = null;
       }

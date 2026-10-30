@@ -205,6 +205,7 @@ enum APIKeyRunner {
 
     /// Stream the answer via the vendor API. Mirrors `CLIRunner.run`'s contract: `onDelta` /
     /// `onDone` fire on the main queue, and a request-level 120s timeout guards a stalled stream.
+    @discardableResult
     static func run(
         proto: APIWireProtocol,
         endpoint: String,
@@ -217,14 +218,15 @@ enum APIKeyRunner {
         prompt: CapturePrompt,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
-    ) {
+    ) -> Task<Void, Never> {
         Task.detached(priority: .userInitiated) {
+            guard !Task.isCancelled else { return }
             // File read + base64 of multi-MB screenshots stays off the main thread.
             let imagesBase64 = imagePaths.compactMap {
                 FileManager.default.contents(atPath: $0)?.base64EncodedString()
             }
             guard imagesBase64.count == imagePaths.count else {
-                await MainActor.run { onDone(false, L10n.t("无法读取截图文件", "スクリーンショットを読み込めません", "Could not read the screenshot file")) }
+                await finish(onDone, ok: false, err: L10n.t("无法读取截图文件", "スクリーンショットを読み込めません", "Could not read the screenshot file"))
                 return
             }
             guard let request = makeRequest(
@@ -233,6 +235,7 @@ enum APIKeyRunner {
                 disableThinking: disableThinking, temperature: temperature, reasoningEffort: reasoningEffort
             ) else {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     onDone(false, L10n.t(
                         "接口地址无效，请在「设置 → 高级」中检查自定义端点。",
                         "エンドポイントURLが不正です。「設定 → 詳細」で確認してください。",
@@ -244,6 +247,7 @@ enum APIKeyRunner {
             print("[NotchSPI] direct API run \(model) → \(request.url?.host ?? "?")")
             #endif
             do {
+                try Task.checkCancellation()
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
                 defer { bytes.task.cancel() }
                 guard let http = response as? HTTPURLResponse else {
@@ -261,9 +265,10 @@ enum APIKeyRunner {
                 }
                 var completion = StreamCompletion()
                 for try await line in bytes.lines {
+                    try Task.checkCancellation()
                     completion.observe(proto: proto, line: line)
                     if let text = parseDelta(proto: proto, line: line) {
-                        await MainActor.run { onDelta(text) }
+                        await MainActor.run { if !Task.isCancelled { onDelta(text) } }
                     }
                     if completion.terminal || parseStreamError(line) != nil { break }
                 }
@@ -281,6 +286,6 @@ enum APIKeyRunner {
     private static func finish(
         _ onDone: @escaping (Bool, String) -> Void, ok: Bool, err: String
     ) async {
-        await MainActor.run { onDone(ok, err) }
+        await MainActor.run { if !Task.isCancelled { onDone(ok, err) } }
     }
 }
