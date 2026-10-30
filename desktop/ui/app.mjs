@@ -226,6 +226,8 @@ function notch() {
       (state.canCheckSettlement ? button("status", t("status"), `title="${t("statusHint")}"`) : "") +
       (state.canRecover ? button("recover", t("recover")) : "") +
       (state.canRetry ? button("retry", t("retry")) : "");
+  if (state.status === "error" && state.failureKind === "quota")
+    actions += button("settings", state.settings.language === "zh" ? "查看额度与免费体验" : state.settings.language === "ja" ? "利用枠と無料体験を確認" : "Check credits and free trial", 'data-value="account"');
   if (state.onboarding && ["retake", "empty"].includes(state.status))
     actions = button("capture", t("single"), 'data-value="single"');
   if (!state.onboarding && ["error", "retake", "empty"].includes(state.status))
@@ -553,7 +555,7 @@ function settings(force = false) {
         ["ja", "日本語"],
         ["en", "English"],
       ],state.settings.languageMode??state.settings.language),
-    )}${check("launchAtLogin")}<p class="muted login-hint">${t("loginHint")}</p>${check("reliabilitySharing")}<p class="muted">${t("reliabilityHint")}</p></div>`;
+    )}${check("launchAtLogin")}<p class="muted login-hint">${t("loginHint")}</p>${state.localTestBuild?'<p class="muted">本地测试版：诊断只保存在本机，退出时自动生成报告包，不上传。</p>':check("reliabilitySharing")}<p class="muted">${t("reliabilityHint")}</p></div>`;
   if (settingsPage === "shortcuts")
     content = [['captureGroup',['single','multiple','personality']],['sessionGroup',['toggle','auto']]].map(([title,keys])=>`<h2>${t(title)}</h2><div class="group shortcut-group">${keys.map(k=>`<div class="shortcut-row"><div><label>${t(k==='toggle'?'shortcutToggle':k==='auto'?'shortcutAuto':k)}</label>${['single','multiple','personality'].includes(k)?`<p>${t('shortcutDetail_'+k)}</p>`:''}</div>${button('record',shortcut(k),`data-value="${k}" aria-label="${t(k)}"`)}</div>`).join('')}</div>`).join('')+`<p class="shortcut-rule">${t('shortcutRule')}</p><p class="shortcut-hint">${t('shortcutHint')} ${state.platform==='darwin'?'⌘ / ⇧ / ⌥ / ⌃':'Ctrl / Shift / Alt / Win'}</p>`;
   if (settingsPage === "account") content = accountHTML(state,{button,escape,check,t});

@@ -28,9 +28,28 @@ export function guidePresentation(state, shortcut) {
       : state.images.length >= 4 ? tr('已达 4 张上限。停顿 4 秒自动查题，或删除一张后按快捷键重截。', '上限の4枚です。4秒後に自動送信します。', 'Four-image limit reached. A 4-second pause sends them; remove an image before recapturing.')
       : tr('停顿 4 秒自动查题。点题图可预览并暂停倒计时，也可以删除重截。', '4秒後に自動送信。画像のプレビューでカウントを一時停止できます。', 'A 4-second pause sends the images. Preview to pause; remove and recapture if needed.');
   }
-  if (g.step === "working" && g.failed) copy.body = g.multiple
-    ? tr('请重新截取“材料”和“问题”两页，每页按一次下方快捷键。', '「資料」と「問題」を開き、各ページを撮り直してください。', 'Capture Passage and Question again. Press the shortcut below once on each page.')
-    : tr('请让题目和选项完整显示，再按下方快捷键重新截图。', '問題と選択肢をすべて表示し、もう一度撮影してください。', 'Show the full question and choices, then press the shortcut below to retry.');
+  if (g.step === "working" && g.failed) {
+    const kind = state.failureKind;
+    copy.body = state.status === 'retake'
+      ? tr('题图缺少必要内容或不够清晰。请补齐题干、材料和所需选项后重新截图。','必要な内容が不足しているか不鮮明です。問題と資料を補って再撮影してください。','Required content is missing or unclear. Include the question and supporting material, then capture again.')
+      : kind === 'network'
+      ? tr('网络连接失败。请检查网络后按下方快捷键重试，无需调整题目。','接続に失敗しました。ネットワークを確認して再試行してください。','Connection failed. Check your network and retry; no need to change the question.')
+      : kind === 'maintenance'
+      ? tr('服务暂时维护中，请稍后重试，无需重新调整题目。','サービスはメンテナンス中です。後ほど再試行してください。','The service is under maintenance. Try again later.')
+      : kind === 'busy'
+      ? tr('此设备还有请求处理中。请先查询本次扣次状态，等待完成后再试。','この端末のリクエストを処理中です。利用状況を確認してお待ちください。','This device has a request in progress. Check its status and wait before retrying.')
+      : kind === 'conflict'
+      ? tr('本次请求状态冲突。请先查询本次扣次状态，确认后再操作。','リクエストの状態が競合しています。先に利用状況を確認してください。','The request state conflicts. Check this question’s charge before proceeding.')
+      : kind === 'rate_limit'
+      ? tr('请求过于频繁，请稍等后重试，不代表额度已用完。','リクエストが多すぎます。少し待って再試行してください。','Too many requests. Wait briefly and retry; this does not mean your credits are exhausted.')
+      : kind === 'quota'
+      ? tr('当前可用额度不足，无法开始查题。请点击“查看额度与免费体验”；如符合条件，可自行领取免费体验后再截图。','利用枠が不足しています。無料体験の対象かアカウントで確認してください。','Not enough available credits. Open credits and free trial; if eligible, claim the trial before capturing again.')
+      : kind === 'account'
+      ? tr('账户或额度暂不可用。请检查账户与订阅后重试。','アカウントまたは利用枠を確認して再試行してください。','Check your account and available credits, then retry.')
+      : state.status === 'empty'
+      ? tr('这次未得到可用答案，不能据此判断题目不完整。请重试，或补充相关材料。','利用可能な回答がありません。再試行するか関連資料を追加してください。','No usable answer was returned. Retry or add supporting material.')
+      : tr('查题服务未能完成请求。请稍后按下方快捷键重试，无需调整题目。','サービスが処理を完了できませんでした。しばらくして再試行してください。','The service could not complete the request. Retry shortly; no need to change the question.');
+  }
   if (g.capturing) copy.body = tr('正在截图…', '撮影中…', 'Capturing…');
   if (g.step === "trial") {
     const terminal = ["claimed", "expired", "ineligible"].includes(trial);

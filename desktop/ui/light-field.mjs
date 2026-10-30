@@ -119,7 +119,7 @@ export class LightField {
   }
   draw(now) {
     if(!this.width||!this.height)return;
-    const gl=this.gl,dpr=devicePixelRatio||1,w=Math.max(1,Math.round(this.width*dpr)),h=Math.max(1,Math.round(this.height*dpr));
+    const gl=this.gl,dpr=Math.min(devicePixelRatio||1,1),w=Math.max(1,Math.round(this.width*dpr)),h=Math.max(1,Math.round(this.height*dpr));
     if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
     gl.viewport(0,0,w,h);gl.useProgram(this.program);
     for(const [k,v] of Object.entries({time:(now-this.start)/1000,energy:this.shown.energy,scan:this.shown.scan,depth:this.depth,flow:this.flow}))gl.uniform1f(this.u[k],v);
