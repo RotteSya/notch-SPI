@@ -52,6 +52,11 @@ config.extraMetadata = {
   version: `${parts[0]}.${parts[1]}.${version.BUILD_NUMBER}`,
 };
 config.buildVersion = version.BUILD_NUMBER;
+if(process.argv.includes("--local-test")){
+  if(process.env.NSPI_WINDOWS_UPDATE_URL||process.env.NSPI_WINDOWS_PUBLISHER||process.env.CSC_LINK)throw new Error("Local test packaging must not use release/signing settings");
+  config.extraMetadata.localTestReport=true;
+  config.win.signAndEditExecutable=false;
+}
 const extra = [];
 if (process.env.NSPI_WINDOWS_UPDATE_URL || process.env.NSPI_WINDOWS_PUBLISHER) {
   const url = new URL(process.env.NSPI_WINDOWS_UPDATE_URL ?? "");

@@ -67,6 +67,7 @@ const result = {
   version: pkg.version,
   platform: "Windows x64",
   executedOnWindows: false,
+  diagnosticsMode: pkg.localTestReport === true ? "local-only-test-report" : "standard",
   zip: path.relative(root, zip),
   bytes: bytes.length,
   sha256: createHash("sha256").update(bytes).digest("hex"),

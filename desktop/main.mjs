@@ -1,3 +1,5 @@
+import { failureKind } from './core/failure-kind.mjs';
+import { LocalTestReport } from "./core/local-test-report.mjs";
 import { changePersona } from './core/personas.mjs';
 import { Reliability, captureObservation } from './core/reliability.mjs';
 import { previewSize, previewLabels } from "./core/image-preview.mjs";
@@ -47,6 +49,11 @@ if (process.platform === "win32") {
   app.commandLine.appendSwitch("disable-features", [disabled, "RemoveRedirectionBitmap"].filter(Boolean).join(","));
 }
 const root = path.dirname(fileURLToPath(import.meta.url));
+const packageInfo=JSON.parse(await fs.readFile(path.join(root,"package.json"),"utf8"));
+const localReportSmoke=process.argv.includes("--local-report-smoke");
+const localTestBuild=packageInfo.localTestReport===true||(!app.isPackaged&&localReportSmoke);
+if(localTestBuild)app.setPath("userData",path.join(app.getPath("appData"),"NotchSPI-LocalTest"));
+let localReport=null, reportTimer=null;
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? null : process.argv[i + 1];
@@ -58,7 +65,7 @@ const settingsSmoke = process.argv.includes("--settings-smoke");
 const motionSmoke = process.argv.includes("--motion-smoke") || captureSmoke;
 const development = Boolean(arg("--dev-base")),
   qa = arg("--qa") ?? (settingsSmoke ? "settings" : dailySmoke ? "daily" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
-  smoke = process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || settingsSmoke;
+  smoke = localReportSmoke || process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || settingsSmoke;
 if (app.isPackaged && (development || qa || smoke))
   throw new Error("Development flags are unavailable in packaged builds");
 if (development || qa || smoke)
@@ -102,6 +109,15 @@ async function start() {
     console.log("NSPI_CAPTURE_PIXELS_SKIPPED: Windows interactive desktop required");
     app.exit(0);
     return;
+  }
+  if(localTestBuild) {
+    const reportDirectory=path.join(app.getPath('userData'),'reports');
+    const consent=smoke?{response:0}:await dialog.showMessageBox({type:'info',title:'NotchSPI 本地测试版',message:'正常使用即可，退出后自动生成测试报告。',detail:'报告只保存在本机，不自动上传，不记录题图、答案、窗口标题或凭证。退出时会打开报告文件夹，把 ZIP 发给邀请你测试的人即可。查题仍会按所选服务发送题图并可能消耗额度。此测试版使用独立账户数据目录。',buttons:['开始测试','退出'],defaultId:0,cancelId:1});
+    if(consent.response===1){app.quit();return;}
+    localReport=new LocalTestReport(reportDirectory,{appVersion:app.getVersion(),source:packageInfo.buildProvenance?.source?.commit,platform:process.platform,arch:process.arch,osRelease:os.release(),electron:process.versions.electron,displays:screen.getAllDisplays().map(d=>({width:d.size.width,height:d.size.height,scale:d.scaleFactor})),gpuCompositing:app.getGPUFeatureStatus().gpu_compositing});
+    reportTimer=setInterval(()=>{try{const metrics=app.getAppMetrics();localReport.record('sample',{cpu_percent:metrics.reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_browser:metrics.filter(m=>m.type==='Browser').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_renderer:metrics.filter(m=>m.type==='Tab').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_gpu:metrics.filter(m=>m.type==='GPU').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),memory_mb:metrics.reduce((n,m)=>n+m.memory.workingSetSize,0)/1024});}catch{}},30000);reportTimer.unref();
+    app.on('render-process-gone',(_e,_wc,details)=>localReport.record('renderer_gone',{reason:details.reason}));
+    app.on('before-quit',()=>{clearInterval(reportTimer);try{const file=localReport.finish();if(file){if(smoke)console.log('NSPI_LOCAL_REPORT',file);else shell.showItemInFolder(file);}}catch{dialog.showErrorBox('测试报告未能生成','请保留测试版数据目录并告知邀请你测试的人。');}});
   }
   const local = new LocalStore(app.getPath("userData")),
     vault = new Vault(
@@ -172,12 +188,15 @@ async function start() {
   } catch (e) {
     startupError = e.message;
   }
-  const reliability=new Reliability({store:local,client,enabled:settings.reliabilitySharing,disabled:Boolean(qa)||smoke||development,onPreference:enabled=>{
+  if(localTestBuild)settings.reliabilitySharing=false;
+  const reliability=new Reliability({store:local,client,enabled:settings.reliabilitySharing,disabled:localTestBuild||Boolean(qa)||smoke||development,onPreference:enabled=>{
     settings.reliabilitySharing=enabled;
     if(!qa&&!smoke&&!development)local.write('settings',settings);
     emit();
   }});
   settings.reliabilitySharing=reliability.data.preference.sharing_enabled;
+  const recordReliability=reliability.record.bind(reliability);
+  reliability.record=(name,metadata)=>{localReport?.record(name,metadata);recordReliability(name,metadata);};
   reliability.start();
   const historyStore = new QuestionHistory(app.getPath("userData"));
   let history = [];
@@ -208,6 +227,7 @@ async function start() {
     undo: false,
     preview: null,
     onboarding: guide.active,
+    localTestBuild,
     qaPinned: Boolean(qa),
     dev: development
       ? "Local mock server"
@@ -454,7 +474,7 @@ async function start() {
     openPage(destination);
     // Opening Account refreshes the server; the URL never grants entitlement.
   };
-  if (app.isPackaged && process.platform === "win32")
+  if (app.isPackaged && process.platform === "win32" && !localTestBuild)
     app.setAsDefaultProtocolClient("notchspi");
   if (pendingBilling) {
     routeBilling(pendingBilling);
@@ -464,8 +484,9 @@ async function start() {
   const fail = (e) => {
     guide.finished(false);
     saveGuide();
+    state.failureKind = failureKind(e);
     state.status = "error";
-    state.message = e?.message ?? String(e);
+    state.message = state.failureKind === "quota" ? (settings.language === "zh" ? "可用额度不足，请查看账户额度或免费体验。" : settings.language === "ja" ? "利用枠が不足しています。アカウントを確認してください。" : "Insufficient credits. Check your account or free trial.") : e?.message ?? String(e);
     state.expanded = true;
     auto.stop(autoFailureReason(e));
     emit();
@@ -509,9 +530,11 @@ async function start() {
     batch,
     { mode = "tutor", operation = "solve", retry = false } = {},
   ) {
+    localReport?.record('solve_attempt',{mode,operation});
     active?.abort();
     const task = (active = new AbortController()),
       current = ++generation;
+    state.failureKind = null;
     state.requestStarted = false;
     const frozen = structuredClone(settings);
     const observationID=crypto.randomUUID(),observationStart=Date.now();
@@ -520,7 +543,7 @@ async function start() {
     const beginObservation=()=>{
       observationOwner=client.owner();observation.consent_epoch=reliability.data.preference.consent_epoch;
       observation.config_revision=client.config?.revision??'base';observation.variant=client.config?.objective_result_v1?.variant??'control';
-      observationEnabled=reliability.data.preference.sharing_enabled&&client.config?.telemetry?.enabled!==false;
+      observationEnabled=localTestBuild||(reliability.data.preference.sharing_enabled&&client.config?.telemetry?.enabled!==false);
       if(observationEnabled)reliability.record('capture_started',observation);
     };
     const onboardingAttempt =
@@ -596,7 +619,11 @@ async function start() {
       emit();
     };
     try {
-      if (startupError) throw new Error(startupError);
+      if (startupError && frozen.channel === "official") {
+        await client.initialize();
+        task.signal.throwIfAborted();
+        startupError = null;
+      }
       if (frozen.channel === "cli") {
         await client.refresh();
         task.signal.throwIfAborted();
@@ -644,6 +671,7 @@ async function start() {
           throw new Error("Capture again to use this channel");
         run = null;
         beginObservation();
+        state.requestStarted = true;
         const options = {
           images: batch,
           settings: frozen,
@@ -687,6 +715,7 @@ async function start() {
           state.answer = answer.finalAnswer ?? "";
           state.working = parseAnswer(result.raw).working;
           if (!state.answer) {
+            localReport?.record('solve_no_answer',{outcome:answer.state==='retake'?'retake':'no_result'});
             state.status = answer.state === "retake" ? "retake" : "empty";
             state.message = answer.noResultReason ?? "";
             auto.stop(autoFailureReason());
@@ -740,6 +769,8 @@ async function start() {
         }
       }, product.capture.retentionSeconds * 1000);
     } catch (e) {
+      state.failureKind=failureKind(e);
+      localReport?.record('solve_failed',{failure_kind:state.failureKind,trial_status:client.account?.free_trial?.status,available_credits:client.account?.balance_questions,error_code:e.code??'unknown_error',http_status:e.status,stage:state.requestStarted?'request':'preparation'});
       observationError=e.code??"transport_error";
       if (current !== generation || task.signal.aborted) return;
       if (operation === "explain") {
@@ -771,12 +802,14 @@ async function start() {
     }
   }
   async function take(kind = "single", fromAuto = false, file = false) {
+    localReport?.record('capture_attempt',{trigger:fromAuto?'auto':kind==='multiple'?'context_hotkey':kind==='personality'?'personality_hotkey':'capture_hotkey'});
     if (!fromAuto) auto.stop("captureHotkey");
     if (active) {
       cancel();
       return;
     }
     if (!guide.startCapture(kind)) {
+      localReport?.record('capture_blocked');
       state.expanded = true;
       emit();
       return;
@@ -817,6 +850,7 @@ async function start() {
         if (st.size > 16 * 1024 * 1024) throw new Error("Image too large");
         shot = fromFile(await fs.readFile(result.filePaths[0]));
       } else shot = await captureScreen();
+      localReport?.record('capture_pixels_ready');
       if (current !== generation) return;
       state.capturing = false;
       await flights.prepareEvidence();
@@ -841,6 +875,7 @@ async function start() {
           mode: kind === "personality" ? "personality" : "tutor",
         });
     } catch (e) {
+      localReport?.record('capture_pixels_failed',{error_code:'capture_failed'});
       if (token) intake.finish(token, null, Date.now());
       if (/permission|Capture target is unavailable/.test(e.message)) {
         guideTargetLabel = settings.target === "screen" ? null : settings.target;
@@ -1207,6 +1242,7 @@ async function start() {
     );
   ipcMain.handle("nspi", async (event, action, payload) => {
     if (!validSender(event)) throw new Error("Untrusted sender");
+    if(["capture","preview","remove","undo","submit","cancel","auto","expand","settings","guideNext","guideBack","guideDismiss","retry","copy","explain","confirmReview"].includes(action))localReport?.record("action",{action});
     const accountAction=["refresh","trial","restore","purchase","plusCheckout","plusPortal","plusCancel"].includes(action);
     if (accountAction && state.accountBusy) return {ok:false,error:"Account operation already in progress"};
     if (accountAction) { state.accountBusy=true; state.accountActionError=null; emit(); }
@@ -1303,7 +1339,7 @@ async function start() {
               (await win.webContents.capturePage()).toPNG(),
             );
             console.log("NSPI_DESKTOP_LAUNCH_OK");
-            app.exit(0);
+            if(localReportSmoke)app.quit();else app.exit(0);
           }
           break;
         case "qaMotion":
@@ -1473,6 +1509,7 @@ async function start() {
           else registerHotkeys(settings.hotkeys);
           break;
         case "setReliability":
+          if(localTestBuild)return {ok:false,error:"本地测试版不上传诊断数据"};
           reliability.setEnabled(payload);
           void reliability.flush();
           emit();
@@ -1605,6 +1642,7 @@ async function start() {
               openAtLogin: Boolean(next.launchAtLogin),
             });
           if(typeof next.reliabilitySharing!=='boolean')throw new Error('Invalid reliability preference');
+          if(localTestBuild)next.reliabilitySharing=false;
           const sharingChanged=next.reliabilitySharing!==settings.reliabilitySharing;
           settings = next;
           if(sharingChanged){reliability.setEnabled(next.reliabilitySharing);void reliability.flush();}
