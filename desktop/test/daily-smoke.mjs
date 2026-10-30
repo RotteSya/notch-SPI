@@ -78,6 +78,29 @@ export async function verifyDaily({win,root,setFixture,snapshot,cancel,toggleAut
  await new Promise(resolve=>preview.webContents.once('did-finish-load',resolve));
  await new Promise(resolve=>{preview.once("closed",resolve);preview.close();});
  assert.equal(snapshot().preview,null);
+ // Actual renderer/IPC regression: capsule modes, scoped settings, menus and collapsed geometry.
+ for (const mode of ['tutor','personality']) {
+  await setFixture({mode,status:'done',settings:{persona:{id:'parity',name:'理想候选人',description:'Fixture'},personas:[{id:'parity',name:'理想候选人',description:'Fixture'}]}});await settle();
+  assert.equal(await run("document.querySelector('.effort').dataset.action"),mode==='personality'?'settings':'cycleEffort');
+  if(mode==='personality')assert.equal(await run("document.querySelector('.effort').dataset.value"),'personas');
+  await run("document.querySelector('[data-action=menu]').click()");await settle();
+  assert.equal(await run("!!document.querySelector('[data-action=newQuestionnaire]')"),mode==='personality');
+  assert.equal(await run("!!document.querySelector('[data-action=quickReasoning]')"),mode==='tutor');
+  assert.equal(await run("!!document.querySelector('[data-action=menuBranch][data-value=target]')"),true);
+  await fs.writeFile(path.join(out,`menu-${mode}.png`),(await win.webContents.capturePage()).toPNG());
+  await run("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await settle();
+  assert.equal(await run("!!document.querySelector('.notch-menu')"),false);
+ }
+ await setFixture({autoActive:true,status:'done',answer:'B'});await settle();
+ await run("window.nspi.call('quickReasoning','high')");await settle();
+ assert.equal(snapshot().auto.active,true,'changing the next effort must not stop the current auto session');
+ assert.equal(snapshot().answer,'B');assert.equal(snapshot().settings.reasoning,'high');
+ await setFixture({status:'error',message:'Offline fixture'});await settle();
+ await run("document.querySelector('[data-action=collapse]').click()");await new Promise(resolve=>setTimeout(resolve,420));
+ const closed=await run("(() => {const r=document.querySelector('.slab').getBoundingClientRect();return {width:r.width,height:r.height,offset:r.x+r.width/2-innerWidth/2,mark:document.querySelector('.compact-status').textContent};})()");
+ assert.deepEqual(closed,{width:260,height:28,offset:-30,mark:'!'});
+ await fs.writeFile(path.join(out,'collapsed-error.png'),(await win.webContents.capturePage()).toPNG());
+ await setFixture({status:'done',mode:'tutor'});await new Promise(resolve=>setTimeout(resolve,420));
  // Reduced motion freezes the light field at the native deterministic instant.
  win.webContents.debugger.attach('1.3');
  try {
@@ -98,5 +121,6 @@ export async function verifyDaily({win,root,setFixture,snapshot,cancel,toggleAut
  await settle();assert.ok(getPreview(),'preview must remain functional after GPU loss');
  assert.equal(snapshot().previewID,'daily-1');
  await new Promise(resolve=>{getPreview().once('closed',resolve);getPreview().close();});
+
  await fs.writeFile(path.join(out,'results.json'),JSON.stringify({host:process.platform,windowsRealDevice:false,records},null,2));
 }

@@ -1,3 +1,5 @@
+import { renderFeedback } from "./feedback.mjs";
+import { capsule, compactStatus, quickMenu } from "./notch-controls.mjs";
 import { LightField } from "./light-field.mjs";
 import { installSurface, surfaceTone } from "./surface.mjs";
 import { accountHTML, accountPresentation } from "./account.mjs";
@@ -13,7 +15,7 @@ import {
 import { guidePresentation } from "./onboarding.mjs";
 import { Ghost } from "../generated/ui/ghost.mjs";
 import { readingHTML, personalityStatusText } from "../generated/ui/reading.mjs";
-import { containsPoint, canCollapseOnLeave, pointerExitDelay } from "../core/window-behavior.mjs";
+import { containsPoint, containsSlab, notchGeometry, canCollapseOnLeave, pointerExitDelay } from "../core/window-behavior.mjs";
 import { translate } from "./i18n.mjs";
 import { product, spring, close, contentOpacity } from "../core/product.mjs";
 import katex from "../node_modules/katex/dist/katex.mjs";
@@ -29,7 +31,8 @@ let lightField,
   readingDetached = false,
   hadFinalAnswer = false,
   hadContentShelf = false,
-  shelfRevealStart = null;
+  shelfRevealStart = null,
+  capsuleTransition = null;
 let state = null,
   settingsPage = "general",
   selectedPersonaID = null,
@@ -39,6 +42,9 @@ let state = null,
   dirty = false,
   recording = null,
   menu = false,
+  menuBranch = null,
+  menuTargets = [],
+  menuHoverTimer = null,
   hover = false,
   pointerModal = false,
   manualCollapse = false,
@@ -48,7 +54,7 @@ let state = null,
   scrollPositions = {},
   expanded = null,
   animation = null,
-  geometry = { width: 200, height: 28, alpha: 0, expansion: 0, depth: 0 };
+  geometry = { ...notchGeometry(false), alpha: 0, expansion: 0, depth: 0 };
 const escape = (x) =>
   String(x ?? "").replace(
     /[&<>"']/g,
@@ -142,10 +148,52 @@ function renderMath(root) {
 function guide() {
   return `<div class="shortcut-guide">${["single", "multiple", "personality", "auto"].map((key) => button(key === "auto" ? "auto" : "capture", `<span class="keycaps">${shortcut(key)}</span><span>${t(key)}</span>`, key === "auto" ? "" : `data-value="${key}"`)).join("")}</div>`;
 }
+async function closeMenu() {
+  clearTimeout(menuHoverTimer);
+  menu = false; menuBranch = null;
+  await call("menuOpen", false);
+  notch();
+}
+function menuHTML() {
+  const tr = (zh, ja, en) => state.settings.language === 'zh' ? zh : state.settings.language === 'ja' ? ja : en;
+  const item = (action, label, value, extra = '') => button(action, label, ` ${extra.includes("role=") ? "" : 'role="menuitem"'} ${value == null ? '' : `data-value="${escape(value)}"`} ${extra}`);
+  let submenu = '';
+  const choices = (branch, label, rows) => {
+    if(menuBranch===branch) submenu=`<div class="notch-submenu" role="menu" aria-label="${escape(label)}" data-branch="${branch}">${rows}</div>`;
+    return item('menuBranch', `${escape(label)}<span class="menu-arrow">›</span>`, branch, `aria-expanded="${menuBranch===branch}" aria-haspopup="menu"`);
+  };
+  const labels = {history:tr('最近查题…','最近の問題…','Recent Questions…'),settings:tr('设置…','設定…','Settings…'),quit:tr('退出 NotchSPI','NotchSPI を終了','Quit NotchSPI'),exportFeedback:tr('导出问题反馈','問題フィードバックをエクスポート','Export problem feedback'),newQuestionnaire:tr('开始新问卷 / 清空连续题上下文','新しい質問票を開始 / 連続コンテキストを消去','Start new questionnaire / clear context'),guideResume:state.guideDone ? tr('重新体验新手引导','ガイドをもう一度','Replay welcome guide') : tr('继续新手引导','ガイドを続ける','Continue welcome guide')};
+  const balance = state.account?.balance_questions;
+  const main = `<div class="notch-menu" role="menu">${quickMenu(state).map(key => {
+    if (key === 'separator') return '<hr role="separator">';
+    if (['single','multiple','personality'].includes(key)) return item('capture', `${t(key)}<span class="menu-shortcut">${shortcut(key)}</span>`, key);
+    if (key === 'effort') return '<div class="menu-caption">'+tr('思考强度','思考の強さ','Reasoning effort')+'</div>';
+    if (product.reasoningEfforts.includes(key)) return item('quickReasoning', `<span class="menu-check">${state.settings.reasoning === key ? '✓' : ''}</span>${t(key)}`, key, `role="menuitemradio" aria-checked="${state.settings.reasoning === key}"`);
+    if (key === 'balance') return item('settings', balance == null ? tr('额度待同步','残高を同期','Sync credits') : tr(`剩余 ${balance} 题`,`残り ${balance} 問`,`${balance} questions left`), 'account');
+    if (key === 'topUp') return item('settings', tr('充值…','チャージ…','Top up…'), 'account');
+    if (key === 'target') return choices('target', tr('截图目标：','撮影対象：','Capture target: ') + (menuTargets.find(x=>x.id===state.settings.target)?.name || (state.settings.target==='screen'?t('screen'):state.settings.target)), [{id:'screen',name:t('screen')},...menuTargets.filter(x=>x.id!=='screen'&&!x.id.startsWith('screen:'))].map(x=>item('quickTarget',`<span class="menu-check">${state.settings.target===x.id?'✓':''}</span>${escape(x.name)}`,x.id)).join(''));
+    if (key === 'personas') return choices('personas',tr('切换人物像','人物像を切替','Switch persona'),state.settings.personas.map(x=>item('quickPersona',`<span class="menu-check">${state.settings.persona.id===x.id?'✓':''}</span>${escape(x.name||t('personaUntitled'))}`,x.id)).join(''));
+    if (key === 'confirmAutoReview') return item(key, escape(dailyLabels(state).reviewContinue));
+    return item(key, labels[key] || t(key), key === 'settings' ? 'general' : null, key === 'guideResume' && (state.capturing || state.collecting || ['running','streaming'].includes(state.status)) ? 'disabled' : '');
+  }).join('')}</div>`;
+  return main + submenu;
+}
+function positionSubmenu() {
+  const child=document.querySelector('.notch-submenu'),parent=document.querySelector(`.notch-menu [data-action=menuBranch][data-value="${menuBranch}"]`);
+  if(!child||!parent)return;
+  const row=parent.getBoundingClientRect(),main=document.querySelector('.notch-menu').getBoundingClientRect();
+  const width=child.getBoundingClientRect().width;
+  child.style.left=`${main.right+width+4<=innerWidth ? main.right : Math.max(4,main.left-width)}px`;
+  child.style.top=`${Math.max(4,Math.min(row.top-8,innerHeight-child.getBoundingClientRect().height-4))}px`;
+}
+function changeMenuBranch(branch,focusChild=false) {
+  clearTimeout(menuHoverTimer); menuBranch=branch; notch();
+  if(focusChild)document.querySelector('.notch-submenu button:not(:disabled)')?.focus();
+}
 function notch() {
   if (!document.querySelector(".slab"))
     app.innerHTML =
-      '<div class="slab"><div class="slab-face"><div class="slab-background"></div><div class="slab-content"></div><button class="collapsed-ghost" data-action="expand" aria-label="Expand notch"></button></div></div><div id="overlays"></div>';
+      '<div class="slab"><div class="slab-face"><div class="slab-background"></div><div class="slab-content"></div><button class="collapsed-ghost" data-action="expand" aria-label="Expand notch"></button><span class="compact-status" aria-hidden="true"></span></div></div><div id="overlays"></div>';
   const surface = document.querySelector(".slab-background");
   if (!surface.firstChild) { installSurface(surface); lightField = new LightField(surface); }
   const lightStatus = state.status === "done" ? "ready" : state.status;
@@ -154,10 +202,13 @@ function notch() {
   previousLightStatus = lightStatus;
   const content = document.querySelector(".slab-content");
   const daily = dailyLabels(state);
+  const cap = capsule(state);
+  const capLabel = cap.kind === "auto" ? daily.auto : cap.kind === "persona" ? (state.settings.persona.name || t("setPersona")) : t(state.settings.reasoning);
   const newReadingTurn = readingTurn !== state.readingTurn;
   if (newReadingTurn) { readingDetached = false; hadFinalAnswer = false; }
   readingTurn = state.readingTurn;
   const oldHeading = content.querySelector(".status")?.textContent;
+  const previousCapsule = content.querySelector(".effort")?.title;
   const priorGuideStep = content.dataset.guideStep;
   const guideUI = state.onboarding ? guidePresentation(state, name => {
     const parts = state.settings.hotkeys[name].split("+");
@@ -241,7 +292,18 @@ function notch() {
   const outsideActions = !state.onboarding && !state.collecting && Boolean(actions);
   const trayHeader = state.collecting ? `<div class="capture-toolbar"><span>${escape(daily.count)}</span><span class="spacer"></span>${button("submit", t("submit"), daily.canSubmit ? "" : "disabled")}${button("cancel", daily.cancel)}</div>` : "";
   const trayFooter = state.collecting ? `<div class="capture-progress" ${daily.progress === null ? 'hidden' : ''}><span style="width:${(daily.progress ?? 0)*100}%"></span></div><div class="capture-hint"><span>${escape(daily.hint)}</span>${state.undo ? button("undo", t("undo"), daily.canEditImages ? "" : "disabled") : ""}</div>` : "";
-  content.innerHTML = `${guideUI?.header ?? `<div class="slab-header"><span class="ghost-slot"></span><div><div class="brand">NotchSPI</div><div class="status" role="status">${escape(daily.heading ?? t(state.status))}</div></div><span class="spacer"></span>${button(state.auto.active ? "auto" : "cycleEffort", state.auto.active ? escape(daily.auto) : t(state.settings.reasoning), 'class="effort"')}${button("collapse", icon("down"), `aria-label="${t("collapse")}"`)}${button("menu", icon("gear"), `aria-label="${t("settings")}"`)}</div>`}<div class="shelf ${state.collecting ? "capture-shelf" : ""}">${trayHeader}${body}${material}${trayFooter}${actions && !outsideActions ? `<div class="actions">${actions}</div>` : ""}${guideFooter}</div>${outsideActions ? `<div class="actions daily-actions">${actions}</div>` : ""}`;
+  content.innerHTML = `${guideUI?.header ?? `<div class="slab-header"><span class="ghost-slot"></span><div class="brand">NotchSPI</div><div class="status" role="status">${escape(state.sessionMessage ?? daily.heading ?? t(state.status))}</div><span class="spacer"></span>${button(cap.action, escape(capLabel), `class="effort" title="${escape(capLabel)}" ${cap.value ? `data-value="${cap.value}"` : ""}`)}${button("collapse", icon("down"), `aria-label="${t("collapse")}"`)}${button("menu", icon("gear"), `aria-label="${t("settings")}"`)}</div>`}<div class="shelf ${state.collecting ? "capture-shelf" : ""}">${trayHeader}${body}${material}${trayFooter}${actions && !outsideActions ? `<div class="actions">${actions}</div>` : ""}${guideFooter}</div>${outsideActions ? `<div class="actions daily-actions">${actions}</div>` : ""}`;
+  if (!guideUI && previousCapsule && previousCapsule !== capLabel) capsuleTransition = {from:previousCapsule,to:capLabel,start:performance.now()};
+  if (capsuleTransition && !matchMedia("(prefers-reduced-motion:reduce)").matches) {
+    const elapsed = performance.now() - capsuleTransition.start, pill = content.querySelector('.effort');
+    if (pill && elapsed < 280 && capsuleTransition.to === capLabel) {
+      pill.innerHTML = `<span class="capsule-previous" aria-hidden="true">${escape(capsuleTransition.from)}</span><span class="capsule-title">${escape(capLabel)}</span>`;
+      pill.setAttribute('aria-label',capLabel);
+      for (const [selector,frames] of [['.capsule-previous',[{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(-7px)'}]],['.capsule-title',[{opacity:0,transform:'translateY(7px)'},{opacity:1,transform:'translateY(0)'}]]]) {
+        const animation = pill.querySelector(selector).animate(frames,{duration:280,fill:'forwards',easing:'ease-out'});animation.currentTime=elapsed;
+      }
+    }
+  }
   if (!guideUI && oldHeading && oldHeading !== (daily.heading ?? t(state.status)) && !matchMedia("(prefers-reduced-motion:reduce)").matches)
     content.querySelector(".status")?.animate([{opacity:0},{opacity:1}],{duration:160,easing:"ease-in-out"});
   if (!guideUI) guideTransitionStart = null;
@@ -332,9 +394,19 @@ function notch() {
       state.status === "done" && ["running", "streaming"].includes(lastStatus),
   });
   const overlays = document.querySelector("#overlays");
-  overlays.innerHTML = menu
-      ? `<div class="notch-menu" role="menu">${["single", "multiple", "personality"].map((k) => button("capture", t(k), `data-value="${k}"`)).join("")}${state.auto.reviewPending ? button("confirmAutoReview", daily.reviewContinue) : ""}${button("auto", t("auto"))}${button("import", t("import"))}${button("history", t("history"))}${button("settings", t("settings"), 'data-value="general"')}${button("guideResume", state.settings.language === "zh" ? "使用引导" : state.settings.language === "ja" ? "使い方" : "Start guide")}${button("quit", t("quit"))}</div>`
-      : "";
+  const focusedMenu = overlays.querySelector(':focus');
+  const focusAction=focusedMenu?.dataset.action,focusValue=focusedMenu?.dataset.value;
+  const menuScroll=overlays.querySelector('.notch-menu')?.scrollTop ?? 0;
+  overlays.innerHTML = menu ? menuHTML() : "";
+  if(menu){
+    overlays.querySelector('.notch-menu').scrollTop=menuScroll;
+    positionSubmenu();
+    if(focusAction)[...overlays.querySelectorAll('button')].find(x=>x.dataset.action===focusAction&&x.dataset.value===focusValue)?.focus({preventScroll:true});
+    overlays.querySelector('.notch-menu').onscroll=positionSubmenu;
+  }
+  const statusMark = document.querySelector(".compact-status");
+  statusMark.textContent = compactStatus(state.status);
+  statusMark.classList.toggle("error", state.status === "error");
   if (state.dev)
     overlays.insertAdjacentHTML(
       "beforeend",
@@ -403,6 +475,7 @@ function layoutCaptureCards() {
 }
 let targetSignature = "";
 function reportFlightTargets() {
+  if(page !== "notch") return;
   const targets = [...document.querySelectorAll("[data-flight-id]")].map(
     (node) => {
       const r = node.getBoundingClientRect();
@@ -424,17 +497,17 @@ function reportFlightTargets() {
 window.addEventListener("resize", () => {
   layoutCaptureCards();
   reportFlightTargets();
+  positionSubmenu();
 });
 function morph(open, height) {
   const targetWidth = Math.min(product.layout.cardWidth, innerWidth - 44),
     target = {
-      width: open ? targetWidth : product.layout.collapsedWidth,
-      height: open ? height : product.layout.collapsedHeight,
+      ...notchGeometry(open, targetWidth, height),
       alpha: open ? 1 : 0,
       expansion: open ? 1 : 0,
       depth: open ? 1 : 0,
     };
-  if (expanded === open && Math.abs(geometry.height - target.height) < 1)
+  if (expanded === open && Math.abs(geometry.height - target.height) < 1 && Math.abs(geometry.width - target.width) < 1 && Math.abs(geometry.offset - target.offset) < 1)
     return;
   cancelAnimationFrame(animation);
   const origin = { ...geometry },
@@ -448,6 +521,7 @@ function morph(open, height) {
       p = t === 1 ? 1 : open ? spring(t) : close(t);
     geometry = {
       width: origin.width + (target.width - origin.width) * p,
+      offset: origin.offset + (target.offset - origin.offset) * p,
       height: origin.height + (target.height - origin.height) * p,
       alpha: t === 1 ? target.alpha : contentOpacity(t, origin.alpha, open),
       expansion: origin.expansion + (target.expansion - origin.expansion) * p,
@@ -475,6 +549,7 @@ function morph(open, height) {
       h = geometry.height,
       r = 6 + 2 * gr,
       b = Math.min(14 + 8 * gr, h - r);
+    slab.style.left = `calc(50% + ${geometry.offset}px)`;
     slab.style.width = w + "px";
     slab.style.height = h + "px";
     const contour = `M 0 0 Q ${r} 0 ${r} ${r} L ${r} ${h - b} Q ${r} ${h} ${r + b} ${h} L ${w - r - b} ${h} Q ${w - r} ${h} ${w - r} ${h - b} L ${w - r} ${r} Q ${w - r} 0 ${w} 0 Z`;
@@ -493,6 +568,10 @@ function morph(open, height) {
     content.inert = geometry.alpha < 0.01;
     content.setAttribute("aria-hidden", String(geometry.alpha < 0.01));
     const collapsed = document.querySelector(".collapsed-ghost");
+    const mark = document.querySelector(".compact-status");
+    const fade = Math.max(0, Math.min(1, geometry.depth / .35));
+    mark.style.opacity = 1 - fade * fade * (3 - 2 * fade);
+    mark.style.visibility = fade >= 1 ? "hidden" : "visible";
     collapsed.style.opacity = 1;
     collapsed.style.left = 14 + 2.2 * Math.min(1, g) + "px";
     collapsed.style.top = 4 + 10 * Math.min(1.1, g) + "px";
@@ -545,7 +624,7 @@ function settings(force = false) {
       "autoCap",
       select(
         "autoCap",
-        product.autoCaps.map((n) => [n, n === -1 ? t("unlimited") : String(n)]),
+        product.autoCaps.map((n) => [n, n === -1 ? t("unlimited") : state.settings.language === "zh" ? `${n} 题` : state.settings.language === "ja" ? `${n} 問` : `${n} questions`]),
       ),
     )}<p class="muted">${t("capHint")}</p>${check("autoCopy")}</div><h2>${t("presentation")}</h2><div class="group">${row("answerSize", `<input id="answerSize" name="answerSize" type="range" min="11" max="19" step="1" value="${state.settings.answerSize}"><span class="value">${state.settings.answerSize} pt</span>`)}<p class="answer-preview" style="font-size:${state.settings.answerSize+4}px !important">${t("answer")} A = −30</p>${check("showReasoning")}${check("keepExpanded")}${row("collapseDelay", `<input id="collapseDelay" name="collapseDelay" type="range" min="2" max="30" value="${state.settings.collapseDelay}" ${state.settings.keepExpanded ? "disabled" : ""}><span class="value">${state.settings.collapseDelay} ${t("secondsUnit")}</span>`)}</div><h2>${t("preferences")}</h2><div class="group">${row(
       "languageMode",
@@ -638,6 +717,7 @@ function imagePreview() {
   app.innerHTML = `<main class="image-preview"><img src="${escape(state.preview ?? "")}" alt="${escape(labels.title)}"><p>${escape(labels.hint)}</p></main>`;
 }
 function receive(next) {
+  if (next.menuOpen === false) { menu = false; menuBranch = null; }
   if (
     next.settingsPage &&
     next.settingsPage !== state?.settingsPage &&
@@ -651,6 +731,7 @@ function receive(next) {
   if (page === "notch") notch();
   else if (page === "history") history();
   else if (page === "preview") imagePreview();
+  else if (page === "feedback") renderFeedback(app,state,call);
   else settings();
 }
 async function save() {
@@ -695,11 +776,26 @@ for (const eventName of ["wheel", "pointerdown", "keydown"]) document.addEventLi
     });
   }
 });
+document.addEventListener('pointerover',event=>{
+  if(!menu)return;
+  const child=event.target.closest('.notch-submenu');
+  const parent=event.target.closest('.notch-menu [data-action=menuBranch]');
+  clearTimeout(menuHoverTimer);
+  if(child)return;
+  const branch=parent?.dataset.value ?? null;
+  if(branch!==menuBranch && event.target.closest('.notch-menu'))
+    menuHoverTimer=setTimeout(()=>changeMenuBranch(branch),180);
+});
 document.addEventListener("click", async (event) => {
   const node = event.target.closest("[data-action]");
-  if (!node) return;
+  if (!node) { if (menu && !event.target.closest(".notch-menu,.notch-submenu")) await closeMenu(); return; }
   const action = node.dataset.action,
     value = node.dataset.value;
+  if (action === "menuBranch") { changeMenuBranch(menuBranch === value ? null : value); return; }
+  if (node.closest(".notch-menu,.notch-submenu")) await closeMenu();
+  if (action === "quickReasoning") { await call("quickReasoning", value); return; }
+  if (action === "quickTarget") { await call("quickTarget", value); return; }
+  if (action === "quickPersona") { await call("selectPersona", value); return; }
   if (action === "page") {
     if (dirty) {
       const result = await save();
@@ -747,17 +843,16 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (action === "cycleEffort") {
-    await call("saveSettings", {
-      reasoning:
-        product.reasoningEfforts[
-          (product.reasoningEfforts.indexOf(state.settings.reasoning) + 1) % 3
-        ],
-    });
+    await call("quickReasoning", product.reasoningEfforts[(product.reasoningEfforts.indexOf(state.settings.reasoning) + 1) % 3]);
     return;
   }
   if (action === "menu") {
-    menu = !menu;
+    if (menu) { await closeMenu(); return; }
+    menu = true; menuBranch = null;
+    await call("menuOpen", true);
     notch();
+    const targets = await call("targets");
+    if (menu) { menuTargets = Array.isArray(targets) ? targets : []; notch(); }
     return;
   }
   if (action === "expand") {
@@ -767,7 +862,7 @@ document.addEventListener("click", async (event) => {
   }
   if (action === "collapse") {
     manualCollapse = true;
-    menu = false;
+    if (menu) await closeMenu();
     await call("expand", false);
     return;
   }
@@ -844,6 +939,7 @@ document.addEventListener("change", async (event) => {
     await save();
 });
 document.addEventListener("keydown", async (event) => {
+  if(page === "feedback") return;
   if (page === "settings" && !recording) {
     if (document.querySelector('dialog[open]')) return;
     const personaRow=event.target.closest('[data-action="editPersona"]');
@@ -901,6 +997,28 @@ document.addEventListener("keydown", async (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && event.target.closest?.(".reading") && !String(window.getSelection())) {
     event.preventDefault(); await call("copy"); return;
   }
+  if (menu && ["ArrowDown", "ArrowUp", "ArrowRight", "Home", "End", "Escape", "ArrowLeft", "Tab"].includes(event.key)) {
+    event.preventDefault();
+    const focused=document.activeElement;
+    if(event.key==='ArrowRight'){
+      if(focused?.dataset.action==='menuBranch')changeMenuBranch(focused.dataset.value,true);
+      return;
+    }
+    if(['Escape','ArrowLeft','Tab'].includes(event.key)) {
+      if(menuBranch && event.key!=='Tab') {
+        const previous=menuBranch;changeMenuBranch(null);
+        document.querySelector(`.notch-menu [data-action=menuBranch][data-value="${previous}"]`)?.focus();
+      } else await closeMenu();
+      return;
+    }
+    const container=focused?.closest('.notch-submenu') ?? document.querySelector('.notch-menu');
+    const nodes=[...container.querySelectorAll('button:not(:disabled)')];
+    const i=nodes.indexOf(focused);
+    const next=event.key==='Home'?0:event.key==='End'?nodes.length-1:i<0?(event.key==='ArrowDown'?0:nodes.length-1):(i+(event.key==='ArrowDown'?1:nodes.length-1))%nodes.length;
+    if(container.classList.contains('notch-menu') && menuBranch){changeMenuBranch(null);document.querySelectorAll('.notch-menu button:not(:disabled)')[next]?.focus();}
+    else nodes[next]?.focus();
+    return;
+  }
   if (event.key === "Tab" && page === "notch" && state.onboarding && !state.preview) {
     const selectors = [".guide-primary", ".material-strip button", ".guide-secondary", ".guide-target", ".guide-back", ".guide-dismiss", ".guide-language"];
     const controls = selectors.flatMap(selector => [...document.querySelectorAll(selector)]).filter(node => !node.disabled && node.getClientRects().length);
@@ -920,8 +1038,7 @@ document.addEventListener("keydown", async (event) => {
     if (state.preview) {
       await call("preview", "");
     } else if (menu) {
-      menu = false;
-      notch();
+      await closeMenu();
     } else if (["running", "streaming", "collecting"].includes(state.status)) {
       await call("cancel");
     } else if (page === "notch") {
@@ -941,7 +1058,9 @@ document.addEventListener("keydown", async (event) => {
 });
 function updatePointer(point) {
   if (page !== "notch" || !state) return;
-  const inside = [...document.querySelectorAll(".slab,.notch-menu,.preview")].some(node => containsPoint(node.getBoundingClientRect(), point));
+  const g = geometry.expansion, gr = g <= 1 ? g : 1 + (g - 1) * 6;
+  const slab = document.querySelector(".slab");
+  const inside = Boolean(slab && containsSlab(slab.getBoundingClientRect(), point, 6 + 2 * gr, 14 + 8 * gr)) || [...document.querySelectorAll(".notch-menu,.notch-submenu,.preview")].some(node => containsPoint(node.getBoundingClientRect(), point));
   const modal = Boolean(state.onboarding || state.preview || menu);
   const left = hover && !inside, released = pointerModal && !modal;
   pointerModal = modal;

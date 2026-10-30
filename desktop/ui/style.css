@@ -1176,3 +1176,69 @@ body.preview { overflow: hidden; }
 .notch .slab-header button[data-action="menu"]:active svg,
 .notch .slab-header button[data-action="collapse"]:active svg { transform:scale(.94);opacity:.72; }
 .light-field { position:absolute;inset:0;width:100%;height:100%;pointer-events:none; }
+
+/* Mac 3.0 (27), ordinary display: one header row and the same optical spacing. */
+.notch .slab-header { gap: 6px; }
+.notch .slab-header .brand { font-size: 12px; font-weight: 500; letter-spacing: .2px; color: #ffffffd1; white-space: nowrap; }
+.notch .slab-header .status { margin-top: 0; margin-left: 6px; font-size: 11px; font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notch .slab-header .spacer { min-width: 2px; }
+.notch .slab-header .effort { max-width: 200px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notch .slab-header button[data-action="menu"], .notch .slab-header button[data-action="collapse"] { width: 28px; height: 24px; flex-shrink: 0; padding: 0; }
+.compact-status { position: absolute; z-index: 2; left: 39px; top: 7px; width: 17px; height: 15px; font-size: 10px; font-weight: 500; color: #ffffff99; pointer-events: none; }
+.compact-status.error { color: #f7524a; }
+.notch-menu { width: 268px; max-height: calc(100vh - 64px); overflow-y: auto; scrollbar-width: thin; }
+.notch-menu button { min-height: 27px; padding: 5px 8px; display: flex; align-items: center; gap: 6px; }
+.notch-menu hr { border: 0; border-top: 1px solid #ffffff22; margin: 6px 8px; }
+.menu-caption { color: #ffffff60; padding: 5px 8px; }
+.menu-check { display: inline-block; width: 14px; flex-shrink: 0; }
+.menu-arrow, .menu-shortcut { margin-left: auto; white-space: nowrap; }
+.menu-shortcut kbd { background: none; border: 0; padding: 0 1px; font: inherit; }
+.menu-children { margin-left: 12px; border-left: 1px solid #ffffff22; padding-left: 4px; }
+.notch .ghost-slot { width: 18px; }
+.notch .slab-header .effort { position: relative; font-size: 11px; font-weight: 400; background: #ffffff1a; color: #ffffff99; }
+.capsule-title { display: block; overflow: hidden; text-overflow: ellipsis; }
+.capsule-previous { position: absolute; left: 8px; right: 8px; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.settings-main[data-settings-page="general"] > header { min-height: 72px; flex-shrink: 0; }
+.settings-main[data-settings-page="general"] .settings-scroll > h2:first-child { margin-top: 0; }
+.settings-main[data-settings-page="general"] .group:has(.reasoning-options) > p { margin: 0; min-height: 20px; font-size: 11px; }
+.settings-main[data-settings-page="general"] .answer-preview { margin-top: 0; margin-bottom: 0; padding: 0; height: 30px; line-height: 30px; width: 284px; }
+/* FeedbackPreview: the same 560 × 418 review surface and consent order as Mac. */
+body:has(.feedback-dialog) { background: transparent; color: #eeeeef; overflow: hidden; }
+.feedback-dialog { background:#808080; border-radius:26px; padding: 26px 16px 16px; height: 100vh; display: flex; flex-direction: column; font: 13px/16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.feedback-icon { width: 52px; height: 52px; margin: 0 10px 22px; }
+.feedback-dialog h1 { font: 600 13px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0 6px 9px; }
+.feedback-info { white-space: pre-line; margin: 0 6px 16px; font: 400 13px/16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.feedback-scroll { overflow-y: auto; flex: 1; min-height: 180px; max-height: 418px; }
+.feedback-content { position: relative; width: 560px; height: 418px; margin: 0 auto; }
+.feedback-image { position: absolute; left:0; top:0; width:560px; height:160px; object-fit:contain; }
+.feedback-selector { position:absolute;left:0;top:169px;width:360px;height:27px;display:flex; }
+.feedback-selector button { flex:1; padding:0; border-radius:4px; }
+.feedback-selector [aria-pressed=true] { background:#087fff; }
+.feedback-full { position:absolute;left:385px;top:169px;width:175px;height:27px;padding:0; }
+.feedback-assets { position:absolute;top:205px;left:0;display:flex;height:25px;align-items:center; }
+.feedback-assets label { width:140px;display:flex;align-items:center;gap:6px; }
+.feedback-dialog input[type=checkbox] { appearance:auto; width:14px;height:14px;accent-color:#087fff;margin:0; }
+.feedback-answer-label { position:absolute;left:0;top:237px;height:20px; }
+#feedback-answer { min-height:0; border-radius:0; outline:none; position:absolute;left:0;top:260px;width:560px;height:46px;resize:none;padding:3px 4px;background:#202020;color:#eee;border:1px solid #999;font:12px/16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.feedback-standard { position:absolute;left:0;top:317px;width:560px;height:24px;padding:2px 6px;border-radius:5px; }
+.feedback-purpose { position:absolute;left:0;top:350px;width:560px;height:27px;padding:2px 6px; }
+.feedback-permission { position:absolute;left:0;top:385px;height:30px;display:flex;align-items:center;gap:7px; }
+.feedback-buttons { display:flex;justify-content:center;gap:8px;margin-top:16px; }
+.feedback-buttons button { width:110px;height:28px;padding:0;border-radius:16px; }
+.feedback-save:enabled { background:#087fff; }
+.notch-submenu { position: fixed; z-index: 5; width: 252px; max-height: calc(100vh - 8px); overflow-y: auto; padding: 8px; background: #292a2bee; backdrop-filter: blur(24px); border:1px solid #ffffff22; border-radius:12px; box-shadow:0 12px 30px #0008; }
+.notch-submenu button { width:100%; min-height:27px; padding:5px 8px; display:flex; align-items:center; gap:6px; border:0; background:transparent; text-align:left; }
+.notch-menu button[aria-expanded=true], .notch-menu button:focus, .notch-submenu button:hover, .notch-submenu button:focus { background:#ffffff20; outline:none; }
+.notch-menu button, .notch-submenu button { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.feedback-dialog input[type=checkbox]::before { display:none; }
+.feedback-icon,.feedback-dialog h1,.feedback-info,.feedback-buttons { flex-shrink:0; }
+.feedback-selector button,.feedback-full,.feedback-purpose,.feedback-buttons button { border:0;background:#ffffff12; }
+.feedback-selector [aria-pressed=true],.feedback-save:enabled { background:#087fff; }
+
+.feedback-selector button { align-self:center;height:20px; }
+.feedback-full { top:172.5px;height:20px; }
+.feedback-purpose { top:353.5px;height:20px;padding-top:0;padding-bottom:0; }
+.feedback-dialog input[type=checkbox] { appearance:none;border:0;border-radius:4px;background:#ffffff12;padding:0; }
+.feedback-dialog input[type=checkbox]:checked { background:#087fff; }
+.feedback-dialog input[type=checkbox]:checked::after { content:"";position:absolute;left:4px;top:1px;width:5px;height:9px;border:solid white;border-width:0 2px 2px 0;transform:rotate(45deg); }
