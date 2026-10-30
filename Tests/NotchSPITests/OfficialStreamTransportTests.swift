@@ -9,14 +9,18 @@ private final class LocalStreamServer: @unchecked Sendable {
     private var connections: [NWConnection] = []
     private let chunks: [Data]
     private let complete: Bool
+    private let holdOpen: Bool
+    private let bodyDelay: TimeInterval
     private var bodyBytes = 0
     var receivedBodyBytes: Int { queue.sync { bodyBytes } }
 
-    init(bytes: Data, complete: Bool) throws {
+    init(bytes: Data, complete: Bool, holdOpen: Bool = false, bodyDelay: TimeInterval = 0) throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
         self.complete = complete
+        self.holdOpen = holdOpen
+        self.bodyDelay = bodyDelay
         chunks = stride(from: 0, to: bytes.count, by: 3).map { Data(bytes[$0..<min($0 + 3, bytes.count)]) }
     }
     func start() async throws -> URL {
@@ -57,7 +61,10 @@ private final class LocalStreamServer: @unchecked Sendable {
                 self.bodyBytes = bodyLength
                 let header = Data("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".utf8)
                 connection.send(content: header, completion: .contentProcessed { [weak self] error in
-                    if error != nil { connection.cancel() } else { self?.send(connection, index: 0) }
+                    if error != nil { connection.cancel() }
+                    else if let self {
+                        self.queue.asyncAfter(deadline: .now() + self.bodyDelay) { self.send(connection, index: 0) }
+                    }
                 })
             } else if ended { connection.cancel() }
             else { self.receive(connection, accumulated: request) }
@@ -65,6 +72,7 @@ private final class LocalStreamServer: @unchecked Sendable {
     }
     private func send(_ connection: NWConnection, index: Int) {
         if index == chunks.count {
+            if holdOpen { return }
             // Finish the TCP write side rather than cancelling queued bytes. The incomplete
             // case still omits the HTTP terminator and DONE, while delivering its usage event.
             connection.send(content: complete ? Data("0\r\n\r\n".utf8) : nil,
@@ -99,7 +107,8 @@ final class OfficialStreamTransportTests: XCTestCase {
         var request = URLRequest(url: try await server.start()); request.httpMethod = "POST"
         request.httpBody = Data(repeating: 32, count: 32_768); request.timeoutInterval = 5
         let session = URLSession(configuration: .ephemeral); defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.bytes(for: request)
+        let timing = OfficialTransportTiming.make(captureID: id)
+        let (bytes, response) = try await session.bytes(for: request, delegate: timing)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         var text = "", receipts = 0
         let outcome = try await OfficialStreamDecoder.consume(bytes, captureID: id, screenQuery: true) { event in
@@ -124,6 +133,27 @@ final class OfficialStreamTransportTests: XCTestCase {
 }
 
 final class DirectAPIStreamTransportTests: XCTestCase {
+    @MainActor func testCancelStopsAnOpenHTTPStreamWithoutLateCallbacks() async throws {
+        let bytes = Data((#"data: {"choices":[{"delta":{"content":"FINAL: B"}}]}"# + "\n\n").utf8)
+        let server = try LocalStreamServer(bytes: bytes, complete: false, holdOpen: true)
+        let url = try await server.start()
+        defer { server.stop() }
+        let first = expectation(description: "first delta")
+        let stopped = expectation(description: "canceled task returned")
+        var task: Task<Void, Never>?
+        var deltas = 0
+        task = APIKeyRunner.run(proto: .openai, endpoint: url.absoluteString, apiKey: "offline", model: "offline",
+            imagePaths: [], prompt: .init(system: "offline", task: "offline"),
+            onDelta: { _ in deltas += 1; task?.cancel(); first.fulfill() },
+            onDone: { _, _ in XCTFail("Canceled request delivered completion") })
+        await fulfillment(of: [first], timeout: 5)
+        let running = try XCTUnwrap(task)
+        Task { await running.value; stopped.fulfill() }
+        await fulfillment(of: [stopped], timeout: 2)
+        XCTAssertTrue(running.isCancelled)
+        XCTAssertEqual(deltas, 1)
+    }
+
     @MainActor func testRealHTTPTruncationAndEOFRejectPlausibleFinalWhileNormalStopCompletes() async throws {
         for proto in [APIWireProtocol.openai, .anthropic] {
             for reason in ["length", "stop", "missing"] {

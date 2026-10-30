@@ -40,3 +40,39 @@ test('splitSSEChunk buffers a payload split across two chunks', () => {
   const second = splitSSEChunk(first.rest + 'true}\n');
   assert.deepEqual(second.lines, ['{"partial":true}']);
 });
+
+test('SSE headers reach the client before provider output and deltas do not wait for completion', async () => {
+  const {default:Fastify}=await import('fastify');
+  const {get}=await import('node:http');
+  const {beginSSE}=await import('../src/http.ts');
+  const app=Fastify();
+  let send:ReturnType<typeof beginSSE>|undefined;
+  let end:(()=>void)|undefined;
+  app.get('/stream',(_req,reply)=>{
+    reply.hijack();send=beginSSE(reply);end=()=>reply.raw.end(SSE_DONE);
+  });
+  await app.listen({host:'127.0.0.1',port:0});
+  const address=app.server.address();assert.ok(address&&typeof address!=='string');
+  try {
+    await new Promise<void>((resolve,reject)=>{
+      const request=get(`http://127.0.0.1:${address.port}/stream`,response=>{
+        assert.equal(response.statusCode,200);
+        assert.equal(response.headers['content-type'],'text/event-stream; charset=utf-8');
+        let text='';let sawDelta=false;
+        response.setEncoding('utf8');
+        response.on('data',chunk=>{
+          text+=chunk;
+          if(!sawDelta&&text.includes('answer')){sawDelta=true;end!();}
+        });
+        response.on('end',()=>{
+          try{assert.equal(text,sseFrame({type:'delta',text:'answer'})+SSE_DONE);resolve();}catch(error){reject(error);}
+        });
+        response.on('error',reject);
+        // No model output was sent until the client received the response headers.
+        send!({type:'delta',text:'answer'});
+      });
+      request.setTimeout(1000,()=>request.destroy(new Error('headers were buffered until first delta')));
+      request.on('error',reject);
+    });
+  } finally {app.server.closeAllConnections();await app.close();}
+});

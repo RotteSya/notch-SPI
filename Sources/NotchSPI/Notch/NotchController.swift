@@ -1202,7 +1202,7 @@ final class NotchController: NSObject {
                             environment: .connected(to: .live, expectedAccount: run.binding.officialAccount), onDelta: onDelta, onDone: onDone)
         case .customKey(let key):
             model.statusText = L10n.t("解释将使用所选 API 服务及其计费。", "選択した API の料金が適用されます。", "Explanation uses your selected API service and its billing.")
-            APIKeyRunner.run(proto: run.provider.proto, endpoint: run.apiEndpoint, apiKey: key, model: run.apiModel,
+            officialTask = APIKeyRunner.run(proto: run.provider.proto, endpoint: run.apiEndpoint, apiKey: key, model: run.apiModel,
                              disableThinking: run.provider.disablesThinking, temperature: run.provider.temperature,
                              reasoningEffort: run.provider.id == "deepseek" ? run.reasoningEffort : nil,
                              imagePaths: capture.imagePaths, prompt: prompt, onDelta: onDelta, onDone: onDone)
@@ -2937,7 +2937,7 @@ final class NotchController: NSObject {
                     onDelta: onDelta, onDone: onDone
                 )
             case .customKey(let apiKey):
-                APIKeyRunner.run(
+                self.officialTask = APIKeyRunner.run(
                     proto: snapshot.provider.proto, endpoint: snapshot.apiEndpoint,
                     apiKey: apiKey, model: snapshot.apiModel,
                     disableThinking: snapshot.provider.disablesThinking,

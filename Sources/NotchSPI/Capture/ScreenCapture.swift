@@ -237,6 +237,9 @@ enum ScreenCapture {
             let result = await captureAppWindow(cachedWindow, maxLongEdge: maxLongEdge, context: context)
             if case .success = result { return result }
             if Task.isCancelled { return .failure(.captureFailed) }
+            // A stalled image operation still owns its gate. Re-enumerating cannot
+            // recover it; preserve the timeout so CaptureRecovery can use its fallback.
+            if case .failure(.captureTimedOut) = result { return result }
         }
 
         // Visible targets avoid the substantially slower all-Spaces/minimized enumeration.
