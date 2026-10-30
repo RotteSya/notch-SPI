@@ -184,6 +184,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const html = renderLandingPage({
       packs: config.packs,
       trialQuestions: config.trialQuestions,
+      freeTrialEnabled: config.freeTrialEnabled,
+      plusEnabled: config.plusEnabled,
       currency: config.currency,
       lang,
       aiProvider: config.provider,

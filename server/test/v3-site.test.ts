@@ -32,7 +32,7 @@ test('Plus payment return opens Plus settings without claiming payment succeeded
    const visible=html.replace(/<style>[\s\S]*?<\/style>|<script>[\s\S]*?<\/script>/g,'');
    assert.match(visible,/<button[^>]*windows-download[^>]*disabled[^>]*>[^<]*Windows[^<]*<span class="coming-soon">Coming soon<\/span><\/button>/);
    assert.match(visible,/NotchSPI 3\.0/);
-   assert.doesNotMatch(visible,/href="#demo"|30 free questions|先试 30 题|まずは 30 問|Settings → Account,|アカウントと残高/);
+   assert.doesNotMatch(visible,/30 free questions|先试 30 题|まずは 30 問|Settings → Account,|アカウントと残高/);
    assert.match(visible,lang==='zh'?/恢复码/:lang==='ja'?/復元コード/:/recovery code/);
    assert.match(visible,/2\.17/);
   }
@@ -40,9 +40,9 @@ test('Plus payment return opens Plus settings without claiming payment succeeded
 
  test('Ghost is used throughout the site including the favicon',()=>{
   const html=renderLandingPage({lang:'zh',packs:[],currency:'CNY',trialQuestions:30,aiProvider:'mock'});
-  assert.equal((html.match(/class="ghost-mark"/g)??[]).length,4);
+  assert.equal((html.match(/class="ghost-mark"/g)??[]).length,3);
   assert.match(html,/<link rel="icon" type="image\/png" href="data:image\/png;base64,/);
-  assert.match(html,/真实 App 画面 · 首次查题引导/);
+  assert.match(html,/真实 App 答案面板 · 离线示例/);
   const source=readFileSync(new URL('../src/site.ts',import.meta.url),'utf8');
   assert.doesNotMatch(source,/roseSVGPath|idleScreenshot|\$\{rose\}/);
  });

@@ -15,6 +15,8 @@ process.env.PACKS_JSON = JSON.stringify([
   { id: 'pack1000', questions: 1000, amount_cents: 2200 },
 ]);
 process.env.LOG_LEVEL = 'silent';
+process.env.FREE_TRIAL_ENABLED = '1';
+process.env.PLUS_ENABLED = '1';
 
 const { buildApp } = await import('../src/index.ts');
 const { renderLandingPage, resolveSiteLang } = await import('../src/site.ts');
@@ -61,7 +63,7 @@ test('the site never links a visitor to where the app is hosted or built', async
 
 test('?lang switches the site language; the JP disclosure stays present', async () => {
   const zh = await (await fetch(`${base}/?lang=zh`)).text();
-  assert.match(zh, /题目在眼前/);
+  assert.match(zh, /题目留在原处/);
   assert.match(zh, /特定商取引法に基づく表記/);
   const en = await (await fetch(`${base}/?lang=en`)).text();
   assert.match(en, /Keep your focus./);
@@ -70,7 +72,7 @@ test('?lang switches the site language; the JP disclosure stays present', async 
 
 test('Accept-Language negotiation picks zh/en; unknown falls back to ja', async () => {
   const zh = await (await fetch(`${base}/`, { headers: { 'accept-language': 'zh-CN,zh;q=0.9' } })).text();
-  assert.match(zh, /题目在眼前/);
+  assert.match(zh, /题目留在原处/);
   const en = await (await fetch(`${base}/`, { headers: { 'accept-language': 'en-US,en;q=0.9' } })).text();
   assert.match(en, /Keep your focus./);
   const fr = await (await fetch(`${base}/`, { headers: { 'accept-language': 'fr-FR' } })).text();
@@ -89,6 +91,7 @@ test('the site is browser-cacheable and varies on Accept-Language', async () => 
   assert.match(res.headers.get('cache-control') ?? '', /max-age=300/);
   assert.ok(!(res.headers.get('cache-control') ?? '').includes('s-maxage'));
   assert.match(res.headers.get('vary') ?? '', /Accept-Language/i);
+  await res.text(); // Drain the page before Fastify closes its keep-alive connections.
 });
 
 test('the privacy disclosure names the configured AI provider', () => {
@@ -136,7 +139,7 @@ test('beta reading scope remains explicit and pack pricing renders from the curr
   const html = renderLandingPage(input);
   assert.match(html, /Reading practice is in internal testing/);
   assert.match(html, /No public support combinations have completed independent evaluation/);
-  assert.match(html, /72-hour free trial/); assert.match(html, /class="price">\$5<\/div>/); assert.match(html, /class="price">\$0<\/div>/);
+  assert.match(html, /72-hour free trial/); assert.match(html, /data-amount-cents="500"/); assert.match(html, /USD <span class="price">5<\/span>/); assert.match(html, /class="price">\$0<\/span>/);
   assert.doesNotMatch(html, /¥0|180 free questions|\{\{TRIAL\}\}|invisible|notarized|Most popular/i);
   for (const lang of ['zh', 'ja', 'en'] as const) {
     const page = renderLandingPage({...input, lang});
@@ -152,12 +155,12 @@ test('pack recommendations match the app purchase entry, with precise fractional
   assert.match(formatUnitPrice(packs[2]!, 'JPY', 'en'), /2\.67/);
   assert.match(formatUnitPrice({id:'usd',questions:30,amountCents:500},'USD','en'), /0\.17/);
   const page=renderLandingPage({packs,trialQuestions:30,currency:'JPY',lang:'en',aiProvider:'deepseek'});
-  assert.match(page, /class="pack recommended" data-pack-id="daily"/);
+  assert.match(page, /value="daily" data-questions="300" checked/);
   assert.match(page, /offers all packs and selects 300 questions by default/);
-  assert.doesNotMatch(page, /href="#purchase"/);
-  const cards=page.match(/<article class="pack[\s\S]*?<\/article>/g)??[];
-  assert.equal(cards.length,4);
-  for(const card of cards) assert.match(card,/href="\/dl"/);
+  assert.match(page, /href="#purchase"/);
+  const choices=page.match(/<label class="pack-choice"[\s\S]*?<\/label>/g)??[];
+  assert.equal(choices.length,3);
+  assert.match(page, /data-purchase="pack"/);
   assert.doesNotMatch(page, /buy\.stripe\.com|checkout\.stripe\.com|device_token/);
   assert.equal((page.match(/ · One-time payment/g)??[]).length,3);
 });
@@ -166,7 +169,7 @@ test('demo is accessible without scripts and reduced motion is included in all l
   for(const lang of ['zh','ja','en'] as const){
     const page=renderLandingPage({packs:[],trialQuestions:30,currency:'JPY',lang,aiProvider:'deepseek'});
     assert.equal((page.match(/type="radio"/g)??[]).length,3);
-    assert.match(page,/id="demo-question"[^>]*checked/);
+    assert.match(page,/id="demo-answer"[^>]*checked/);
     assert.match(page,/<fieldset><legend>/);
     assert.match(page,/prefers-reduced-motion:reduce/);
     assert.match(page,/href="#main"/);
@@ -175,4 +178,23 @@ test('demo is accessible without scripts and reduced motion is included in all l
     assert.equal(new Set(ids).size,ids.length);
     for(const [,id] of page.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.includes(id),`missing ${id}`);
   }
+});
+
+ test('disabled trial and Plus do not advertise unavailable offers',()=>{
+  for(const lang of ['zh','ja','en'] as const){
+   const page=renderLandingPage({lang,packs:[],currency:'JPY',trialQuestions:30,aiProvider:'mock',freeTrialEnabled:false,plusEnabled:false});
+   assert.doesNotMatch(page, /class="plan"|72 小时|72 時間|72-hour|CNY \/|69 CNY/);
+   assert.match(page, /href="\/dl"/);
+  }
+ });
+
+
+test('hero uses the native AppKit answer capture and desktop chrome without the demo banner', () => {
+  const page = renderLandingPage({lang:'zh', packs:[], currency:'JPY', trialQuestions:30, aiProvider:'mock'});
+  const menu = page.match(/<div class="menu-bar"[\s\S]*?<div class="notch">/)?.[0] ?? '';
+  assert.match(menu, /Finder/);
+  assert.doesNotMatch(menu, /交互演示/);
+  assert.match(page, /class="native-shot"><img src="data:image\/webp;base64,/);
+  assert.match(page, /真实 Mac App 答案面板，离线示例/);
+  assert.match(page, /D. 120 km\/h/);
 });
