@@ -67,22 +67,26 @@ export class OpenAIProvider implements Provider {
       ],
     };
 
+    const serialized = JSON.stringify(body);
+    req.onTiming?.('upstreamRequest');
     const res = await fetch(this.endpoint, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify(body),
+      body: serialized,
       signal,
     });
 
+    req.onTiming?.('upstreamHeaders');
     if (!res.ok || !res.body) {
       throw new Error(await vendorErrorMessage(res));
     }
 
     const usage: Usage = { inputTokens: null, outputTokens: null };
     await readVendorSSE(res.body, (payload) => {
+      req.onTiming?.('upstreamFirstEvent');
       const ev = payload as OpenAIChunk;
       // An OpenAI-compatible endpoint can emit `{"error":{...}}` on an HTTP-200 stream. Throw so
       // the capture route treats it as a failure and never charges (mirrors the Anthropic
@@ -92,9 +96,9 @@ export class OpenAIProvider implements Provider {
       if (typeof finishReason === 'string') usage.finishReason = finishReason;
       const reasoning = ev.choices?.[0]?.delta?.reasoning_content;
       // Reasoning is activity, not answer text. Never forward its contents to clients.
-      if (typeof reasoning === 'string' && reasoning.length > 0) onProgress?.();
+      if (typeof reasoning === 'string' && reasoning.length > 0) {req.onTiming?.('upstreamFirstReasoning');onProgress?.();}
       const text = ev.choices?.[0]?.delta?.content;
-      if (typeof text === 'string' && text.length > 0) onDelta(text);
+      if (typeof text === 'string' && text.length > 0) {req.onTiming?.('upstreamFirstAnswer');onDelta(text);}
       if (ev.usage) {
         usage.inputTokens = typeof ev.usage.prompt_tokens === 'number' ? ev.usage.prompt_tokens : usage.inputTokens;
         usage.outputTokens = typeof ev.usage.completion_tokens === 'number' ? ev.usage.completion_tokens : usage.outputTokens;

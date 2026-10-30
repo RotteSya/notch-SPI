@@ -1,9 +1,11 @@
 type Sample = { id: string; channel: string; mode: string; entry: string; stages: Record<string, number> };
-const stages = ['triggered', 'captureReady', 'materialsReady', 'submitted', 'firstDelta',
+const pipelineStages = ['triggered', 'captureReady', 'materialsReady', 'submitted', 'firstDelta',
   'receiptApplied', 'responseCompleted', 'completed', 'renderStarted', 'failed'];
+const stages = [...pipelineStages, 'feedbackRequested', 'feedbackDraw', 'firstAnswerDraw'];
 
 /** Only the explicit, content-free QA records are accepted. Missing draws stay missing. */
 export function captureLatencyReport(logs: string[], targetMS = 2000) {
+  if (!Number.isFinite(targetMS) || targetMS <= 0) throw new Error('Invalid latency target');
   const samples = new Map<string, Sample>();
   for (const log of logs) for (const line of log.split('\n')) {
     if (!line.startsWith('[CaptureLatency] ')) continue;
@@ -23,10 +25,14 @@ export function captureLatencyReport(logs: string[], targetMS = 2000) {
   for (const sample of samples.values()) {
     const values = sample.stages;
     if (values.triggered !== 0) throw new Error('Missing trigger origin');
-    const ordered = stages.filter(s => s !== 'failed').flatMap(s => values[s] === undefined ? [] : [values[s]!]);
+    const ordered = pipelineStages.filter(s => s !== 'failed').flatMap(s => values[s] === undefined ? [] : [values[s]!]);
     if (ordered.some((n, i) => i > 0 && n < ordered[i - 1]!)) throw new Error('Non-monotonic latency record');
     if (values.renderStarted !== undefined && (values.completed === undefined || values.failed !== undefined))
       throw new Error('Render cannot succeed without a completed answer');
+    for (const [start, end] of [['feedbackRequested', 'feedbackDraw'], ['firstDelta', 'firstAnswerDraw']]) {
+      if (values[start!] !== undefined && values[end!] !== undefined && values[end!]! < values[start!]!)
+        throw new Error('Draw precedes its input');
+    }
     const key = `${sample.channel}/${sample.mode}/${sample.entry}`;
     groups.set(key, [...(groups.get(key) ?? []), sample]);
   }
@@ -39,7 +45,22 @@ export function captureLatencyReport(logs: string[], targetMS = 2000) {
       const missing = rows.length - completed.length - failed;
       const percentile = (p: number) => completed[Math.max(0, Math.ceil(completed.length * p) - 1)] ?? null;
       const maximum = completed.at(-1) ?? null;
-      return { group, triggered: rows.length, rendered: completed.length, failed, missing,
+      const summarize = (stage: string) => {
+        const values = rows.flatMap(r => r.stages[stage] === undefined ? [] : [r.stages[stage]!]).sort((a, b) => a - b);
+        const n = values.length;
+        return { n, missing: rows.length - n, raw_ms: values,
+          mean_ms: n ? values.reduce((sum, value) => sum + value, 0) / n : null,
+          median_ms: n ? (values[Math.floor((n - 1) / 2)]! + values[Math.floor(n / 2)]!) / 2 : null,
+          p95_ms: n >= 20 ? values[Math.ceil(n * 0.95) - 1]! : null,
+          min_ms: values[0] ?? null, max_ms: values.at(-1) ?? null };
+      };
+      const firstAnswer = summarize('firstAnswerDraw');
+      return { metrics: { feedback: summarize('feedbackDraw'), first_answer: firstAnswer,
+          complete_answer: summarize('renderStarted') },
+        // Timing eligibility only: fixture quality/coverage must still be reviewed separately.
+        first_answer_mean_target_met_in_sample: firstAnswer.mean_ms !== null && firstAnswer.mean_ms < targetMS
+          && firstAnswer.missing === 0 && failed === 0 && missing === 0,
+        group, triggered: rows.length, rendered: completed.length, failed, missing,
         p50_ms: percentile(0.5), p95_ms: percentile(0.95), max_ms: maximum,
         over_target: completed.filter(n => n > targetMS).length,
         target_met_in_sample: maximum !== null && maximum <= targetMS && failed === 0 && missing === 0,

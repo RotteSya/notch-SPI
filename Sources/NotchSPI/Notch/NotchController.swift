@@ -1752,6 +1752,8 @@ final class NotchController: NSObject {
         model.screenshotRoundActive = true
         model.screenshotStatus = L10n.t("正在捕获目标…", "画像をキャプチャ中…", "Capturing target…")
         if multiple { updateScreenshotRound() }
+        notchView.feedbackCapture = latency
+        latency?.mark(.feedbackRequested)
         notchView.screenshotLanded() // Immediate lightweight acknowledgment, separate from image arrival.
         #if DEBUG
         ScreenCapture.trace("intake.begin")
@@ -2549,6 +2551,8 @@ final class NotchController: NSObject {
         model.statusText = L10n.statusPreparing
         refreshCLILabel()
         setExpanded(true) // expands to a small empty panel; grows as the answer streams
+        notchView.feedbackCapture = latency
+        latency.mark(.feedbackRequested)
 
         capturePreparation.start { [self] in
             guard self.accepts(snapshot, generation: generation) else { return }

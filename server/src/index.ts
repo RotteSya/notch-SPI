@@ -12,6 +12,7 @@ import { StubPaymentProvider, type PaymentProvider } from './payments.ts';
 import { StripePaymentProvider, retrieveStripeRefund, reconcileStripeRefund, retrieveStripeCheckout } from './stripe.ts';
 import type { RefundSnapshot } from './payment-ledger.ts';
 import { registerRoutes } from './routes.ts';
+import { captureRuntimePolicy } from './capture-timing.ts';
 
 // Compose the app so it can also be built in-process by tests (no listen). `overrides.provider`
 // is a test-only seam for exercising vendor-failure paths (the real provider is chosen by config).
@@ -52,6 +53,9 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
     : overrides.provider
       ? { provider: overrides.provider, degraded: null }
       : makeObjectiveProvider(config, (msg) => app.log.warn(msg));
+  if (process.env.NSPI_SERVER_LATENCY_TRACE === '1' && !overrides.provider && !overrides.objectiveProvider) {
+    app.log.info({ captureRuntimePolicy: captureRuntimePolicy(config) }, 'capture runtime policy');
+  }
   const payment: PaymentProvider =
     config.paymentProvider === 'stripe' && config.stripeSecretKey !== ''
       ? new StripePaymentProvider()

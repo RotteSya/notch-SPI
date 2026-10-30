@@ -94,6 +94,56 @@ private final class LocalStreamServer: @unchecked Sendable {
 }
 
 final class OfficialStreamTransportTests: XCTestCase {
+    /// Separates AsyncBytes response delivery from the first body byte without an external service.
+    func testRequestContractDiagnosticsDistinguishLegacyAndRedactUnknownValues() {
+        XCTAssertEqual(OfficialTransportTiming.requestContract(screenQuery: false, resultProtocol: "objective_v1"),
+                       ["response_contract": "legacy", "result_protocol": "objective_v1"])
+        XCTAssertEqual(OfficialTransportTiming.requestContract(screenQuery: true, resultProtocol: "objective_v1"),
+                       ["response_contract": "screen_query_v1", "result_protocol": "objective_v1"])
+        XCTAssertEqual(OfficialTransportTiming.requestContract(screenQuery: false, resultProtocol: nil)["result_protocol"], "absent")
+        XCTAssertEqual(OfficialTransportTiming.requestContract(screenQuery: false, resultProtocol: "private content")["result_protocol"], "other")
+    }
+
+    func testDelayedBodyIsDeliveredBeforeConnectionClosesWithAndWithoutTiming() async throws {
+        for traced in [false, true] {
+            let server = try LocalStreamServer(bytes: Data("data: first\n\n".utf8), complete: false,
+                                               holdOpen: true, bodyDelay: 1)
+            defer { server.stop() }
+            var request = URLRequest(url: try await server.start()); request.timeoutInterval = 4
+            let session = URLSession(configuration: .ephemeral)
+            defer { session.invalidateAndCancel() }
+            let timing = traced ? OfficialTransportTiming.make(captureID: UUID()) : nil
+            if traced { try XCTSkipIf(timing == nil, "Enable local QA latency tracing to test the actual timing delegate") }
+            let start = ProcessInfo.processInfo.systemUptime
+            let (bytes, response) = try await session.bytes(for: request, delegate: timing)
+            let headers = ProcessInfo.processInfo.systemUptime - start
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            var iterator = bytes.makeAsyncIterator()
+            let first = try await iterator.next()
+            let delivered = ProcessInfo.processInfo.systemUptime - start
+            bytes.task.cancel()
+            XCTAssertEqual(first, UInt8(ascii: "d"))
+            XCTAssertGreaterThanOrEqual(delivered, 0.9)
+            XCTAssertLessThan(delivered, 2.5, "A held-open stream must not wait for EOF")
+            print("[LoopbackDelivery] traced=\(traced) response_ms=\(headers * 1000) first_byte_ms=\(delivered * 1000)")
+        }
+    }
+
+    func testTransportCorrelationAcceptsOnlyBoundedPlatformIdentifiers() {
+        XCTAssertNil(OfficialTransportTiming.platformRequestID(nil))
+        XCTAssertNil(OfficialTransportTiming.platformRequestID("Bearer secret\n"))
+        XCTAssertNil(OfficialTransportTiming.platformRequestID(String(repeating: "a", count: 161)))
+        XCTAssertEqual(OfficialTransportTiming.platformRequestID("hnd1::sample-123"), "hnd1::sample-123")
+    }
+
+    func testTransportIntervalsDoNotInventMissingOrNegativeDurations() {
+        let start = Date(timeIntervalSince1970: 100)
+        XCTAssertNil(OfficialTransportTiming.milliseconds(nil, start))
+        XCTAssertNil(OfficialTransportTiming.milliseconds(start, nil))
+        XCTAssertNil(OfficialTransportTiming.milliseconds(start, start.addingTimeInterval(-1)))
+        XCTAssertEqual(OfficialTransportTiming.milliseconds(start, start.addingTimeInterval(0.25)), 250)
+    }
+
     private func response(id: UUID, done: Bool) throws -> Data {
         let usage: [String: Any] = ["type": "usage", "input_tokens": 2, "output_tokens": 1, "questions_charged": 1,
             "capture_id": id.uuidString, "operation": "solve", "terminal_state": "usable", "settlement_status": "settled",

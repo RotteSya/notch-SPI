@@ -24,16 +24,23 @@ final class CaptureLatencyTests: XCTestCase {
         for iteration in 0..<3 {
             let trace = CaptureLatency(entry: .single)
             model.answerLatency = trace
+            view.feedbackCapture = trace
             model.answer = ""
             model.status = .running
+            model.statusText = L10n.statusPreparing
             model.expanded = true
             view.refreshScreenshotTray()
             view.qaAdvanceMorph(by: 0.5)
             model.status = .streaming
             model.answer = "Reasoning.\nFINAL: C"
-            try await Task.sleep(for: .milliseconds(25))
+            for _ in 0..<100 where trace.offsets[.firstAnswerDraw] == nil {
+                try await Task.sleep(for: .milliseconds(5))
+                view.displayIfNeeded()
+            }
             view.displayIfNeeded()
             XCTAssertNil(trace.offsets[.renderStarted])
+            XCTAssertNotNil(trace.offsets[.firstAnswerDraw])
+            XCTAssertNotNil(trace.offsets[.feedbackDraw])
             // The completed response need not change the text already drawn by streaming.
             model.status = .idle
             trace.complete(success: true)
