@@ -18,6 +18,16 @@ export const demoScript = `(() => {
   let manualStage = false;
   let explicitlyStarted = false;
   function positionFlight() {
+    const controls = demo.querySelector('.stage-controls');
+    const selected = stages.find(stage => stage.checked)?.closest?.('label');
+    if (controls?.style && controls.getBoundingClientRect && selected) {
+      const rail = controls.getBoundingClientRect();
+      const tab = selected.getBoundingClientRect();
+      controls.style.setProperty('--step-x', (tab.left - rail.left - (controls.clientLeft || 0)) + 'px');
+      controls.style.setProperty('--step-width', tab.width + 'px');
+      controls.style.setProperty('--step-height', tab.height + 'px');
+      controls.classList.add('has-indicator');
+    }
     const flight = demo.querySelector('.flying-capture');
     const panel = demo.querySelector('.notch');
     const screen = demo.querySelector('.desktop');

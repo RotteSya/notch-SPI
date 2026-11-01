@@ -9,6 +9,7 @@ function setup(reduced = false, geometry?: Record<string, any>, noToggle = false
   let selected = 2;
   let now = 0;
   const stages = [0, 1, 2].map(index => ({
+    closest: () => geometry?.labels?.[index],
     get checked() { return selected === index; },
     set checked(value: boolean) { if (value) selected = index; },
   }));
@@ -26,7 +27,7 @@ function setup(reduced = false, geometry?: Record<string, any>, noToggle = false
     constructor(fn: () => void) { events.set('intersection', fn); }
     observe() {}
   }
-  runInNewContext(demoScript, { Date: {now: () => now}, document, window: { matchMedia: () => motion, IntersectionObserver }, IntersectionObserver,
+  runInNewContext(demoScript, { Date: {now: () => now}, document, window: { matchMedia: () => motion, IntersectionObserver, addEventListener: (name: string, fn: () => void) => events.set(name, fn) }, IntersectionObserver,
     setTimeout: (fn: () => void, ms: number) => { pending = fn; delay = ms; return 1; },
     clearTimeout: () => { pending = undefined; } });
   return { stages, toggle, document, motion, element: demo,
@@ -138,4 +139,21 @@ test('the hero finishes autoplay when the replay control is absent', () => {
   demo.tick();
   assert.equal(demo.selected, 2);
   assert.equal(demo.running, false);
+});
+
+
+test('step indicator follows measured labels and recomputes after resize', () => {
+  const values = new Map<string,string>();
+  let offset = 0;
+  const controls = {style:{setProperty:(key: string, value: string) => values.set(key, value)},
+    clientLeft:1, classList:{add(){}}, getBoundingClientRect:() => ({left:100})};
+  const labels = [0,1,2].map(i => ({getBoundingClientRect:() => ({left:105 + i * 110 + offset,width:100 + i,height:40})}));
+  const demo = setup(false, {'.stage-controls':controls, labels});
+  assert.equal(values.get('--step-x'), '4px');
+  demo.tick();
+  assert.equal(values.get('--step-x'), '114px');
+  assert.equal(values.get('--step-width'), '101px');
+  offset = 20;
+  demo.fire('resize');
+  assert.equal(values.get('--step-x'), '134px');
 });

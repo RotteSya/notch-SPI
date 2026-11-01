@@ -213,5 +213,38 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #78
 @media(max-width:700px){.hero-band:before{height:230px}.hero-band:after{height:96px}.protection{padding-top:32px}.scenic-footer:before{height:80px}.chapter-arrival.is-waiting{transform:translateY(10px);filter:blur(3px)}}
 @media(prefers-reduced-motion:reduce){.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
 @media print{.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
+/* Motion follows the product story: lift, travel, receive, then read. */
+.stage-controls.has-indicator{isolation:isolate}
+.stage-controls.has-indicator:before{content:'';position:absolute;left:0;top:4px;width:var(--step-width);height:var(--step-height);transform:translateX(var(--step-x));border-radius:24px;background:#d4e1f3;box-shadow:0 1px 3px #0003,inset 0 1px #ffffff90;transition:transform .5s cubic-bezier(.22,1,.36,1),width .5s cubic-bezier(.22,1,.36,1),height .3s ease;pointer-events:none;z-index:-1}
+.stage-controls.has-indicator label:has(input:checked){background:transparent;box-shadow:none}
+.demo:has(#demo-capture:checked) .flying-capture{animation:fly-in 2.52s linear .48s both}
+@keyframes fly-in{
+0%{opacity:0;transform:translate(4px,16px) rotate(3deg) scale(.94);animation-timing-function:cubic-bezier(.16,1,.3,1)}
+12%{opacity:1;transform:translate(0,0) rotate(-2deg) scale(1.025)}
+28%{opacity:1;transform:translate(0,-4px) rotate(-2deg) scale(1.025);animation-timing-function:cubic-bezier(.4,0,.35,1)}
+55%{opacity:1;transform:translate(calc(var(--flight-x,-230px)*.42),calc(var(--flight-y,-150px)*.76)) rotate(2deg) scale(.65);animation-timing-function:cubic-bezier(.16,1,.3,1)}
+79%{opacity:.9;transform:translate(var(--flight-x,-230px),var(--flight-y,-150px)) rotate(0) scale(.18)}
+86%,100%{opacity:0;transform:translate(var(--flight-x,-230px),var(--flight-y,-150px)) rotate(0) scale(.16)}}
+.demo:has(#demo-capture:checked) .capture-thumb{animation:thumbnail-receive 3s linear both}
+.demo[data-paused="true"] .capture-thumb{animation-play-state:paused}
+@keyframes thumbnail-receive{0%,70%{opacity:0;transform:scale(.8)}80%{opacity:1;transform:scale(1.12);box-shadow:0 0 18px #a8caff90}92%,100%{opacity:1;transform:scale(1);box-shadow:0 0 0 #a8caff00}}
+.demo:has(#demo-answer:checked) .native-answer{animation:answer-settle .52s cubic-bezier(.16,1,.3,1) both}
+@keyframes answer-settle{from{opacity:0;transform:translateY(-6px) scale(.985)}to{opacity:1;transform:none}}
+/* Copy stays anchored; imagery and related objects arrive in a measured sequence. */
+.chapter-arrival{transition:opacity .65s ease;transform:none;filter:none}
+.chapter-arrival.is-waiting{transform:none;filter:none}
+.chapter-arrival>:is(h2,h3,p,figure,.concept-plan){transition:opacity .65s ease,transform .85s cubic-bezier(.16,1,.3,1);transition-delay:0s}
+.chapter-arrival>p{transition-delay:.06s}
+.chapter-arrival>figure{transition-delay:.12s;transform-origin:50% 80%}
+.chapter-arrival.is-waiting>:is(h2,h3,p){transform:translateY(10px)}
+.chapter-arrival.is-waiting>figure{transform:translateY(26px) scale(.985)}
+.concept-plans.chapter-arrival{opacity:1}
+.concept-plans.chapter-arrival.is-waiting>.concept-plan{opacity:0;transform:translateY(20px)}
+.concept-plans.chapter-arrival>.concept-plan:nth-child(2){transition-delay:.07s}
+.concept-plans.chapter-arrival>.concept-plan:nth-child(3){transition-delay:.14s}
+@media(hover:hover) and (pointer:fine){.button:not([disabled]):hover{transform:translateY(-2px);box-shadow:inset 0 1px #ffffff70,0 5px 16px #4f82c329}.button:not([disabled]):active{transform:translateY(0) scale(.98);transition-duration:.1s}}
+@media(max-width:700px){.stage-controls.has-indicator:before{top:3px}.chapter-arrival.is-waiting>figure{transform:translateY(16px) scale(.99)}}
+@media(prefers-reduced-motion:reduce){.chapter-arrival.is-waiting>:is(h2,h3,p,figure,.concept-plan){opacity:1;transform:none}.stage-controls.has-indicator:before{transition:none}}
+@media print{.chapter-arrival.is-waiting>:is(h2,h3,p,figure,.concept-plan){opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}html{scroll-behavior:auto}.native-product-image:hover,.button:hover,.button:active{transform:none}.demo:has(#demo-capture:checked) .flying-capture{display:none}}
 `;
