@@ -213,6 +213,18 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #78
 @media(max-width:700px){.hero-band:before{height:230px}.hero-band:after{height:96px}.protection{padding-top:32px}.scenic-footer:before{height:80px}.chapter-arrival.is-waiting{transform:translateY(10px);filter:blur(3px)}}
 @media(prefers-reduced-motion:reduce){.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
 @media print{.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
+/* Automatic mode is explained as a workflow, not a simulated app panel. */
+.continuation-features article.auto-feature{grid-template-columns:.8fr 1.2fr}
+.continuation-features .auto-feature h2,.continuation-features .auto-feature p,.continuation-features .auto-feature>.feature-caption{grid-column:1}
+.continuation-features .auto-feature p strong{font-weight:500;color:var(--ink);display:inline-block;margin-bottom:8px}
+.continuation-features .auto-feature figure.auto-flow{display:block;grid-column:2;padding:32px 36px;background:linear-gradient(125deg,#edf3fb,#f6f8fb 75%);border-radius:18px}
+.auto-flow ol{list-style:none;padding:0;margin:0;display:grid;gap:24px}
+.auto-flow li{position:relative;display:flex;gap:20px;align-items:center;font-size:16px;font-weight:500;color:#263b59}
+.auto-step{position:relative;display:grid;place-items:center;flex:none;width:64px;height:44px;border-radius:10px;background:#fff;box-shadow:0 2px 8px #29466b0b,inset 0 0 0 1px #d5dfec;color:#4d78ad;font-size:13px;font-weight:600;letter-spacing:.04em}
+.auto-flow li:not(:last-child) .auto-step:after{content:'';position:absolute;top:100%;left:50%;height:24px;width:1px;background:linear-gradient(#b9cce3,#dce6f1)}
+.auto-flow figcaption{font-size:12px;line-height:1.7;color:#69758a;margin-top:24px;padding-top:18px;border-top:1px solid #d7e2ef}
+@media(min-width:701px) and (max-width:1100px){.continuation-features .auto-feature figure.auto-flow{padding:26px}.auto-flow li{font-size:14px;gap:14px}}
+@media(max-width:700px){.continuation-features .auto-feature figure.auto-flow{padding:24px;border-radius:14px;margin-top:18px}.auto-flow li{font-size:14px;gap:16px}.auto-step{width:60px;height:42px}.auto-flow figcaption{font-size:11px}}
 /* Motion follows the product story: lift, travel, receive, then read. */
 .stage-controls.has-indicator{isolation:isolate}
 .stage-controls.has-indicator:before{content:'';position:absolute;left:0;top:4px;width:var(--step-width);height:var(--step-height);transform:translateX(var(--step-x));border-radius:24px;background:#d4e1f3;box-shadow:0 1px 3px #0003,inset 0 1px #ffffff90;transition:transform .5s cubic-bezier(.22,1,.36,1),width .5s cubic-bezier(.22,1,.36,1),height .3s ease;pointer-events:none;z-index:-1}
