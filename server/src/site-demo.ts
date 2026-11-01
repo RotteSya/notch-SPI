@@ -115,5 +115,5 @@ export const demoScript = `(() => {
   schedule();
 })();` + continuationScript;
 
-export const siteCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; script-src 'sha256-" +
+export const siteCSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; script-src 'sha256-" +
   createHash('sha256').update(demoScript).digest('base64') + "'";

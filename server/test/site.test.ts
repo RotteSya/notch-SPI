@@ -198,3 +198,45 @@ test('hero uses the native AppKit answer capture and desktop chrome without the 
   assert.match(page, /真实 Mac App 答案面板，离线示例/);
   assert.match(page, /D. 120 km\/h/);
 });
+
+test('single-image demo precedes multi-image mode and waits for user playback', () => {
+  for (const lang of ['zh','ja','en'] as const) {
+    const html = renderLandingPage({lang,packs:[],currency:'JPY',trialQuestions:30,aiProvider:'mock'});
+    assert.ok(html.indexOf('id="single-mode"') < html.indexOf('id="automatic-mode"'));
+    assert.match(html, /<video controls playsinline preload="none" poster="\/media\/single-mode-poster.jpg"/);
+    assert.doesNotMatch(html, /<video[^>]*autoplay/);
+  }
+});
+
+test('demo media supports seeking and HEAD; rejects invalid paths and ranges', async () => {
+  const head = await app.inject({method:'HEAD',url:'/media/single-mode.mp4'});
+  assert.equal(head.statusCode,200);
+  assert.equal(head.headers['content-type'],'video/mp4');
+  assert.equal(head.body,'');
+  const size = Number(head.headers['content-length']);
+  assert.ok(size > 0);
+  const part = await app.inject({url:'/media/single-mode.mp4',headers:{range:'bytes=0-31'}});
+  assert.equal(part.statusCode,206);
+  assert.equal(part.rawPayload.length,32);
+  assert.equal(part.headers['content-range'],`bytes 0-31/${size}`);
+  const suffix = await app.inject({url:'/media/single-mode.mp4',headers:{range:'bytes=-16'}});
+  assert.equal(suffix.rawPayload.length,16);
+  assert.equal(suffix.statusCode,206);
+  const invalid = await app.inject({url:'/media/single-mode.mp4',headers:{range:`bytes=${size}-`}});
+  assert.equal(invalid.statusCode,416);
+  assert.equal((await app.inject('/media/not-a-demo.mp4')).statusCode,404);
+  assert.equal((await app.inject('/media/single-mode-poster.jpg')).headers['content-type'],'image/jpeg');
+});
+
+test('automatic-mode recording is seekable and served from the same origin', async () => {
+  const media = await app.inject({url:'/media/automatic-mode.mp4',headers:{range:'bytes=0-31'}});
+  assert.equal(media.statusCode,206);
+  assert.equal(media.headers['content-type'],'video/mp4');
+  assert.equal(media.rawPayload.length,32);
+  const html = renderLandingPage({lang:'zh',packs:[],currency:'JPY',trialQuestions:30,aiProvider:'mock'});
+  assert.match(html, /画面变化，自动查题/);
+  assert.doesNotMatch(html, /data-auto-caption|auto-video-badge|data-auto-cues/);
+  assert.match(html, /默认快捷键 ⌘⇧0 · 再按一次即可停止（真实 App 操作演示）/);
+  assert.match(html, /按下 ⌘⇧0 ，检测到画面变化自动查题，无需重复按快捷键。/);
+  assert.match(html, /source src="\/media\/automatic-mode.mp4"/);
+});

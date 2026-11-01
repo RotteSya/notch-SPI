@@ -213,6 +213,13 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #78
 @media(max-width:700px){.hero-band:before{height:230px}.hero-band:after{height:96px}.protection{padding-top:32px}.scenic-footer:before{height:80px}.chapter-arrival.is-waiting{transform:translateY(10px);filter:blur(3px)}}
 @media(prefers-reduced-motion:reduce){.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
 @media print{.chapter-arrival,.chapter-arrival.is-waiting{opacity:1;transform:none;filter:none;transition:none}}
+.continuation-features #single-mode{grid-template-columns:.8fr 1.2fr}
+.continuation-features #single-mode p strong{font-weight:500;color:var(--ink);display:inline-block;margin-bottom:8px}
+.single-demo video{display:block;width:100%;height:auto;aspect-ratio:1920/1136;background:#101925;border-radius:12px;box-shadow:0 6px 24px #182c4612}
+.single-demo video:focus-visible{outline:3px solid #78a9ef;outline-offset:5px}
+@media(max-width:700px){.single-demo video{border-radius:8px}}
+.continuation-features .auto-feature figure.auto-demo{display:block;grid-column:2}
+.auto-demo video{aspect-ratio:3024/1784}
 /* Automatic mode is explained as a workflow, not a simulated app panel. */
 .continuation-features article.auto-feature{grid-template-columns:.8fr 1.2fr}
 .continuation-features .auto-feature h2,.continuation-features .auto-feature p,.continuation-features .auto-feature>.feature-caption{grid-column:1}

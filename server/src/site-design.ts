@@ -5,7 +5,7 @@ import type { PageLang } from './payments.ts';
 export const designCopy = {
   zh: {
     eyebrow: 'NOTCHSPI / 你的屏幕顶部 AI 助手', title: '题目留在原处，', accent: '答案抬眼就见。',
-    sub: '按下 ⌘⇧1，截取屏幕上的题目。在顶部面板查看 AI 答案与解释。',
+    sub: '按下快捷键，截取屏幕上的题目。在顶部面板查看 AI 答案与解释。',
     experience: '产品体验', pricing: '价格', faq: '常见问题', windowsDownload: '下载 Windows 版', release: 'NotchSPI 3.0 已发布', skip: '跳到主要内容',
     free: ()=> '72 小时免费体验 · 每日 400 次 · 无需绑卡', trialAmount: '每日 400 次', download: '下载 Mac 版', requirements: 'macOS 14+ · Apple Silicon',
     demoLabel: '交互演示', demoNote: 'Mac 原生界面 · 离线示例',
