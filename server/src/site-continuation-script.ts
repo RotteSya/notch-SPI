@@ -61,5 +61,37 @@ export const continuationScript = `(() => {
   }));
   const hashTarget = document.getElementById(location.hash.slice(1));
   if (hashTarget?.tagName === 'DETAILS') hashTarget.open = true;
+  // AboutMe's section rhythm, adapted to native page scrolling without a runtime dependency.
+  const chapters = [...document.querySelectorAll('.protection > h2, #capture-comparison, .continuation-features article, .pricing-header, .concept-plans, .faq-section > div, .scenic-footer .closing')];
+  if ('IntersectionObserver' in window) {
+    const pending = new Set();
+    const reveal = (node, immediate = false) => {
+      if (immediate) node.classList.remove('chapter-arrival');
+      node.classList.remove('is-waiting');
+      pending.delete(node);
+      arrivals.unobserve(node);
+    };
+    const arrivals = new IntersectionObserver(entries => {
+      entries.forEach(entry => { if (entry.isIntersecting) reveal(entry.target); });
+    }, {rootMargin:'0px 0px -24px 0px', threshold:0.02});
+    chapters.forEach(node => {
+      node.classList.add('chapter-arrival');
+      if (!motion.matches && node.getBoundingClientRect().top > window.innerHeight) {
+        node.classList.add('is-waiting');
+        pending.add(node);
+        arrivals.observe(node);
+      }
+    });
+    document.addEventListener('focusin', event => {
+      pending.forEach(node => { if (node.contains(event.target)) reveal(node, true); });
+    });
+    motion.addEventListener('change', () => { if (motion.matches) [...pending].forEach(node => reveal(node, true)); });
+    const showHash = () => {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target) pending.forEach(node => { if (node.contains(target) || target.contains(node)) reveal(node, true); });
+    };
+    window.addEventListener('hashchange', showHash);
+    showHash();
+  }
   render();
 })();`;
