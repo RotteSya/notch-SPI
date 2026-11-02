@@ -1241,15 +1241,14 @@ async function start() {
         height: 400,
       },
     };
+    // Cold compositor readback can block this process beyond the 680 ms flight.
+    // Prepare empty surfaces before starting its clock, only in the smoke path.
+    await flights.prepareEvidence();
     flights.add(shot);
     emit();
     for (let i = 0; i < 80 && flights.diagnostics.frames.length === 0; i++)
       await wait(10);
     const started = flights.diagnostics;
-    await fs.writeFile(
-      path.join(directory, "started.json"),
-      JSON.stringify(started, null, 2),
-    );
     if (!started.frames.length)
       throw new Error("Flight did not start on the real desktop");
     if (started.frames.some(frame => frame.reduced))
@@ -1290,6 +1289,7 @@ async function start() {
       await Promise.all(continuity);
     } finally {
       clearInterval(visibilityMonitor);
+      await fs.writeFile(path.join(directory, "started.json"), JSON.stringify(started, null, 2));
       await fs.writeFile(path.join(directory, "continuity.json"), JSON.stringify(captureContinuity, null, 2));
     }
     if (!captureContinuity.some(sample => sample.before != null && sample.after != null))
