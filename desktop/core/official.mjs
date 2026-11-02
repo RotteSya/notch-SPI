@@ -296,7 +296,7 @@ export class OfficialClient {
   }
   async stream(
     run,
-    { signal, onDelta, operation = "solve", finalAnswer } = {},
+    { signal, onDelta, onResponse, operation = "solve", finalAnswer } = {},
   ) {
     signal?.throwIfAborted();
     this.assertOwner(run);
@@ -341,6 +341,7 @@ export class OfficialClient {
         },
         body: JSON.stringify(body),
       });
+      onResponse?.();
       if (!response.ok) {
         const v = await readJSON(response);
         signal?.throwIfAborted();

@@ -13,6 +13,7 @@
 | audience | method | path |
 | --- | --- | --- |
 | public | GET | / |
+| public | GET | /media/:name |
 | public | GET | /healthz |
 | internal | GET | /readyz |
 | public | GET | /spi |
@@ -121,6 +122,12 @@ DeepSeek 视觉候选通过独立 treatment slot 配置：
 | `x-client-event` | `hotkey` | 热键按下计数（预热 ping；截图失败也算） |
 
 `store.recordHotkeyPress` **只**由 `x-client-event: hotkey` 触发。
+
+## GET /media/:name — 官网演示媒体
+
+无需账户认证，仅提供服务端白名单中的内置演示视频和封面，不接受任意文件路径。
+完整资源返回 `200`；合法单段 `Range` 返回 `206` 及 `Content-Range`，无效或越界范围返回 `416`；未列入白名单的名称返回 `404`。
+资源声明 `Accept-Ranges: bytes`、对应媒体类型及 `Cache-Control: public, max-age=3600`。此路由不创建查题请求或消耗额度。
 
 ## GET /healthz — 无状态预热与健康检查
 

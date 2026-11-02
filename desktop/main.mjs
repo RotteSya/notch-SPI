@@ -1,3 +1,7 @@
+import {translate} from './ui/i18n.mjs';
+import {createWaitTiming} from './core/wait-timing.mjs';
+import { observeWindow, windowState } from './core/window-diagnostics.mjs';
+import { enqueueCaptureFlight } from './core/capture-flight.mjs';
 import { feedbackSnapshot, authorizeFeedback, writeFeedback } from "./core/feedback.mjs";
 import { feedbackText } from "./ui/feedback.mjs";
 import { failureKind } from './core/failure-kind.mjs';
@@ -119,7 +123,7 @@ async function start() {
     if(consent.response===1){app.quit();return;}
     localReport=new LocalTestReport(reportDirectory,{appVersion:app.getVersion(),source:packageInfo.buildProvenance?.source?.commit,platform:process.platform,arch:process.arch,osRelease:os.release(),electron:process.versions.electron,displays:screen.getAllDisplays().map(d=>({width:d.size.width,height:d.size.height,scale:d.scaleFactor})),gpuCompositing:app.getGPUFeatureStatus().gpu_compositing});
     reportTimer=setInterval(()=>{try{const metrics=app.getAppMetrics();localReport.record('sample',{cpu_percent:metrics.reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_browser:metrics.filter(m=>m.type==='Browser').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_renderer:metrics.filter(m=>m.type==='Tab').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),cpu_gpu:metrics.filter(m=>m.type==='GPU').reduce((n,m)=>n+m.cpu.percentCPUUsage,0),memory_mb:metrics.reduce((n,m)=>n+m.memory.workingSetSize,0)/1024});}catch{}},30000);reportTimer.unref();
-    app.on('render-process-gone',(_e,_wc,details)=>localReport.record('renderer_gone',{reason:details.reason}));
+    app.on('child-process-gone',(_event,details)=>{if(details.type==='GPU')localReport.record('gpu_gone',{reason:details.reason});});
     app.on('before-quit',()=>{clearInterval(reportTimer);try{const file=localReport.finish();if(file){if(smoke)console.log('NSPI_LOCAL_REPORT',file);else shell.showItemInFolder(file);}}catch{dialog.showErrorBox('测试报告未能生成','请保留测试版数据目录并告知邀请你测试的人。');}});
   }
   const local = new LocalStore(app.getPath("userData")),
@@ -361,6 +365,8 @@ async function start() {
         backgroundThrottling: kind !== "notch",
       },
     });
+    if (localReport) observeWindow(w, kind, (name, metadata) => localReport.record(name, metadata),
+      () => kind === 'notch' ? state.visible : undefined);
     if (!windowsCapture && !motionSmoke) {
       const protect = () => w.setContentProtection(["notch", "preview", "settings", "feedback"].includes(kind) && !development && !qa && !smoke);
       protect();
@@ -438,6 +444,8 @@ async function start() {
   win.on("blur", () => { if (state.menuOpen) { state.menuOpen = false; emit(); } });
   flights = createFlights({
     root,
+    failed: () => localReport?.record("flight_failed"),
+    observe: localReport ? w => observeWindow(w, "flight", (name, metadata) => localReport.record(name, metadata)) : undefined,
     host: () => win,
     changed: emit,
     protection: !development && !qa && !smoke,
@@ -471,6 +479,7 @@ async function start() {
       routeBilling?.(callback);
       return;
     }
+    localReport?.record("window_intent", {window_role:"notch", window_intent:"second_instance_show", ...windowState(win), expected_visible:state.visible});
     state.visible = true;
     win.show();
     state.expanded = true;
@@ -551,6 +560,8 @@ async function start() {
     if (guideTransition) guide.cancel();
     saveGuide();
     flights?.clear();
+    waitTiming = null; state.paintTiming = null;
+    state.sessionMessage = null;
     generation++;
     active?.abort();
     active = null;
@@ -581,11 +592,22 @@ async function start() {
         "The answer is complete, but local history could not be saved.";
     }
   };
+  let waitTiming = null;
+  function revealNotch() {
+    state.visible = true;
+    if (!win.isVisible()) win.showInactive();
+    state.expanded = true;
+  }
   async function solve(
     batch,
     { mode = "tutor", operation = "solve", retry = false } = {},
   ) {
     localReport?.record('solve_attempt',{mode,operation});
+    revealNotch();
+    state.sessionMessage = null;
+    const timing = localReport ? createWaitTiming((name, metadata) => localReport.record(name, metadata)) : null;
+    waitTiming = timing;
+    state.paintTiming = timing ? {id:timing.id,phase:'waiting_frame'} : null;
     active?.abort();
     const task = (active = new AbortController()),
       current = ++generation;
@@ -662,6 +684,7 @@ async function start() {
     }, { once: true });
     const update = (delta) => {
       if (current !== generation || task.signal.aborted) return;
+      if (delta) {timing?.mark('first_delta');state.sessionMessage = null;}
       raw += delta;
       state.status = "streaming";
       if (operation === "explain") state.explanation = raw;
@@ -671,6 +694,10 @@ async function start() {
         const p = parseAnswer(raw, true);
         state.answer = p.final ?? "";
         state.working = p.working;
+      }
+      if (state.answer || state.working || state.explanation) {
+        timing?.mark('first_content');
+        if (timing) state.paintTiming = {id:timing.id,phase:'content_frame'};
       }
       emit();
     };
@@ -716,10 +743,12 @@ async function start() {
         task.signal.throwIfAborted();
         if (current !== generation) return;
         beginObservation();
+        timing?.mark('request_sent');
         state.requestStarted = true;
         result = await client.stream(run, {
           signal: task.signal,
           onDelta: update,
+          onResponse: () => {if (current === generation && !task.signal.aborted) timing?.mark('response_headers');},
           operation,
           finalAnswer: old.answer,
         });
@@ -728,6 +757,7 @@ async function start() {
           throw new Error("Capture again to use this channel");
         run = null;
         beginObservation();
+        timing?.mark('request_sent');
         state.requestStarted = true;
         const options = {
           images: batch,
@@ -850,10 +880,16 @@ async function start() {
       }
       auto.stop(autoFailureReason(e));
     } finally {
+      if (current === generation && !task.signal.aborted && (state.answer || state.working || state.explanation)) {
+        timing?.mark('first_content');
+        if (timing) state.paintTiming = {id:timing.id,phase:'content_frame'};
+      }
+      timing?.mark(task.signal.aborted || current !== generation ? 'canceled' : 'finished');
       const canceled=task.signal.aborted||current!==generation;
       if(observationEnabled&&client.owner()===observationOwner) reliability.record('capture_completed',{...observation,...captureObservation({mode,operation,parserPath:observationParser,resultState:observationResult,errorCode:observationError,canceled}),total_ms:Math.min(600000,Date.now()-observationStart)});
       void reliability.flush();
       if (current === generation) {
+        state.sessionMessage = null;
         active = null;
         emit();
       }
@@ -861,9 +897,16 @@ async function start() {
   }
   async function take(kind = "single", fromAuto = false, file = false) {
     state.sessionMessage = null;
-    if(!fromAuto) feedbackTurn=null;
     localReport?.record('capture_attempt',{trigger:fromAuto?'auto':kind==='multiple'?'context_hotkey':kind==='personality'?'personality_hotkey':'capture_hotkey'});
     if (!fromAuto) auto.stop("captureHotkey");
+    if (active && kind === 'single') {
+      revealNotch();
+      state.sessionMessage = translate('answeringWait', settings.language);
+      localReport?.record('capture_waiting');
+      emit();
+      return;
+    }
+    if (state.capturing && kind === 'single') return;
     if (active) {
       cancel();
       return;
@@ -874,6 +917,7 @@ async function start() {
       emit();
       return;
     }
+    if(!fromAuto) feedbackTurn=null;
     saveGuide();
     if (kind === "personality" && !settings.persona.description.trim()) {
       openPage("personas");
@@ -913,8 +957,7 @@ async function start() {
       localReport?.record('capture_pixels_ready');
       if (current !== generation) return;
       state.capturing = false;
-      await flights.prepareEvidence();
-    flights.add(shot);
+      enqueueCaptureFlight(flights, shot, (name, metadata) => localReport?.record(name, metadata));
       if (kind === "multiple") {
         intake.finish(token, shot, Date.now());
         images = intake.items;
@@ -958,6 +1001,7 @@ async function start() {
       personality: () => take("personality"),
       auto: () => toggleAuto(),
       toggle: () => {
+        localReport?.record("window_intent", {window_role:"notch", window_intent:state.visible ? "hotkey_hide" : "hotkey_show", ...windowState(win), expected_visible:state.visible});
         state.visible = !state.visible;
         state.visible ? win.showInactive() : win.hide();
         emit();
@@ -1133,6 +1177,8 @@ async function start() {
       {
         label: "NotchSPI",
         click: () => {
+          localReport?.record("window_intent", {window_role:"notch", window_intent:"tray_show", ...windowState(win), expected_visible:state.visible});
+          state.visible = true;
           win.show();
           state.expanded = true;
           emit();
@@ -1314,6 +1360,11 @@ async function start() {
     if (accountAction) { state.accountBusy=true; state.accountActionError=null; emit(); }
     try {
       switch (action) {
+        case 'timingPainted':
+          if (event.sender === win.webContents && win.isVisible() && payload?.id === waitTiming?.id &&
+              state.paintTiming?.id === payload.id && state.paintTiming?.phase === payload.phase &&
+              ['waiting_frame','content_frame'].includes(payload.phase)) waitTiming.mark(payload.phase);
+          break;
         case "state":
           return event.sender === feedbackWin?.webContents ? { ...snapshot(), feedback:feedbackView } : snapshot();
         case "rendered":
@@ -1338,9 +1389,33 @@ async function start() {
             if (dailySmoke || feedbackSmoke) {
               import(feedbackSmoke ? "./test/feedback-smoke.mjs" : "./test/daily-smoke.mjs").then(async (test) => {
                 const verify = feedbackSmoke ? test.verifyFeedback : test.verifyDaily;
-                await verify({ win, root, snapshot, getFeedback:()=>feedbackWin, setFeedbackSaveDialog:handler=>{feedbackSaveDialog=handler;}, toggleAuto, openPreview, getPreview: () => previewWin, intake, cancel: () => cancel({userInitiated:true}),
+                await verify({ win, root, snapshot, verifySolveVisibility: async () => {
+                  const savedFreeze = client.freeze, savedStartup = startupError, savedChannel = settings.channel;
+                  let release;
+                  client.freeze = () => new Promise((_resolve,reject) => {release=()=>reject(new Error('Offline visibility fixture'));});
+                  startupError = null; settings.channel = 'official';
+                  try {
+                    guide.complete(); state.visible=false;win.hide();
+                    const pending = solve(images);
+                    const shown = win.isVisible() && state.visible;
+                    state.visible=false;win.hide(); // A later deliberate hide must remain effective.
+                    release();await pending;
+                    return {shown, staysHidden:!win.isVisible() && !state.visible};
+                  } finally {client.freeze=savedFreeze;startupError=savedStartup;settings.channel=savedChannel;}
+                }, verifyBusyCapture: async () => {
+                  guide.complete(); auto.stop();
+                  const task = active = new AbortController();
+                  state.visible = false; win.hide();
+                  await take('single');
+                  await new Promise(resolve=>setTimeout(resolve,100));
+                  await fs.writeFile(path.join(root,'test-output/daily-parity',`busy-wait-${settings.language}.png`),(await win.webContents.capturePage()).toPNG());
+                  const result = {aborted:task.signal.aborted, sameTask:active===task, visible:win.isVisible(), expanded:state.expanded, message:state.sessionMessage};
+                  cancel({userInitiated:true});
+                  return {...result, explicitCancelAborted:task.signal.aborted};
+                }, getFeedback:()=>feedbackWin, setFeedbackSaveDialog:handler=>{feedbackSaveDialog=handler;}, toggleAuto, openPreview, getPreview: () => previewWin, intake, cancel: () => cancel({userInitiated:true}),
                   setFixture: async (fixture) => {
                     generation++; guide.complete(); auto.stop(); intake.cancel(); active = null;
+                    state.visible = true; win.showInactive();
                     clearGuideAnswer();
                     Object.assign(state,{mode:"tutor",status:"done",collecting:false,capturing:false,preview:null,previewID:null,remaining:null,undo:false,autoReviewPending:false,operation:"solve",expanded:true,answer:"B. 60 km/h"},fixture);
                     Object.assign(settings, fixture.settings ?? {});
@@ -1408,7 +1483,23 @@ async function start() {
               (await win.webContents.capturePage()).toPNG(),
             );
             console.log("NSPI_DESKTOP_LAUNCH_OK");
-            if(localReportSmoke)app.quit();else app.exit(0);
+            if(localReportSmoke) {
+              try {
+                const {verifyWindowDiagnostics} = await import('./test/window-diagnostics-smoke.mjs');
+                await verifyWindowDiagnostics(win, localReport);
+                waitTiming = createWaitTiming((name, metadata) => localReport.record(name, metadata));
+                state.paintTiming = {id:waitTiming.id,phase:'waiting_frame'};
+                emit();
+                const deadline = Date.now() + 1500;
+                while (!localReport.data.events.some(e => e.timing_id === waitTiming.id && e.phase === 'waiting_frame')) {
+                  if (Date.now() > deadline) throw new Error('Renderer did not acknowledge the waiting frame');
+                  await new Promise(resolve => setTimeout(resolve, 20));
+                }
+                console.log('NSPI_WAIT_FRAME_OK');
+                console.log('NSPI_WINDOW_DIAGNOSTICS_OK');
+                app.quit();
+              } catch (error) { console.error(error); app.exit(1); }
+            } else app.exit(0);
           }
           break;
         case "qaMotion":

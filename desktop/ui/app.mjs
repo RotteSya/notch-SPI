@@ -716,6 +716,7 @@ function imagePreview() {
   document.title = labels.title;
   app.innerHTML = `<main class="image-preview"><img src="${escape(state.preview ?? "")}" alt="${escape(labels.title)}"><p>${escape(labels.hint)}</p></main>`;
 }
+let lastPaintTiming = "";
 function receive(next) {
   if (next.menuOpen === false) { menu = false; menuBranch = null; }
   if (
@@ -733,6 +734,15 @@ function receive(next) {
   else if (page === "preview") imagePreview();
   else if (page === "feedback") renderFeedback(app,state,call);
   else settings();
+  if (page === 'notch' && state.paintTiming) {
+    const token = {...state.paintTiming}, key = JSON.stringify(token);
+    if (key !== lastPaintTiming) {
+      lastPaintTiming = key;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (JSON.stringify(state.paintTiming) === key) call('timingPainted', token);
+      }));
+    }
+  }
 }
 async function save() {
   const form = document.querySelector("#settings-form"),

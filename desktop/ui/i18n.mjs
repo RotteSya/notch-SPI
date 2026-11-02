@@ -1,4 +1,5 @@
 export const words = {
+  answeringWait:["正在作答，请稍候","回答中です。お待ちください","Answering, please wait"],
   setPersona: ["设置人物像", "人物像を設定", "Set persona"],
   shortcutSubtitle:['常用操作，触手可及。','よく使う操作を、すぐ手元に。','Your most-used actions, one shortcut away.'],
   shortcutToggle:['显示 / 隐藏','表示 / 非表示','Show / hide'],

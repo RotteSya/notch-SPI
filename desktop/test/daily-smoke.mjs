@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-export async function verifyDaily({win,root,setFixture,snapshot,cancel,toggleAuto,openPreview,getPreview,intake}) {
+export async function verifyDaily({win,root,setFixture,snapshot,cancel,toggleAuto,openPreview,getPreview,intake,verifyBusyCapture,verifySolveVisibility}) {
  const out=path.join(root,'test-output','daily-parity');await fs.mkdir(out,{recursive:true});
  const run=code=>win.webContents.executeJavaScript(code);
  const settle=()=>new Promise(resolve=>setTimeout(resolve,180));
@@ -23,6 +23,16 @@ export async function verifyDaily({win,root,setFixture,snapshot,cancel,toggleAut
   ...[0,1,2,4].map(count=>({name:`collecting-${count}`,status:'collecting',collecting:true,count,remaining:count>=2?3:null,answer:''})),
   {name:'capturing',status:'collecting',collecting:true,capturing:true,count:2,remaining:null,answer:''},
  ];
+ for (const language of ['zh','ja','en']) {
+  await setFixture({language,status:'running'});
+  const result=await verifyBusyCapture();
+  assert.equal(result.aborted,false);assert.equal(result.sameTask,true);
+  assert.equal(result.visible,true);assert.equal(result.expanded,true);
+  assert.equal(result.message,({zh:'正在作答，请稍候',ja:'回答中です。お待ちください',en:'Answering, please wait'})[language]);
+  assert.equal(result.explicitCancelAborted,true);
+ }
+ const visibility=await verifySolveVisibility();
+ assert.equal(visibility.shown,true);assert.equal(visibility.staysHidden,true);
  const records=[];
  for(const language of ['zh','ja','en']) for(const fixture of cases){
   const message = fixture.name === 'error' ? ({zh:'网络连接中断，未能完成本次查题。请检查网络后重新查题。',ja:'接続が切れました。接続を確認して再度お試しください。',en:'The connection was interrupted. Check your network and try again.'})[language] : fixture.message;
