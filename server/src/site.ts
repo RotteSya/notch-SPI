@@ -1,14 +1,18 @@
+import {polishCSS} from './site-polish.ts';
+import {continuationCopy, protectionSection, featureSection, continuationCSS} from './site-continuation.ts';
+import {checkIcon} from './site-continuation-assets.ts';
+import {nativeAnswer, macSymbols} from './site-native-assets.ts';
 import {PLUS} from './plus.ts';
 import type { QuestionPack } from './pricing.ts';
 import { designCopy, siteCSS } from './site-design.ts';
 import { demoScript } from './site-demo.ts';
-import { idleScreenshot } from './site-assets.ts';
+import { ghostAvatar } from './site-assets.ts';
 import { formatMoney, escapeHtml, type PageLang } from './payments.ts';
 
 // The public product site, served at GET / — the "company website" for app users, curious
 // visitors, and payment-provider review (Stripe activation requires a real product page with
 // pricing, contact, and — for Japan — the 特定商取引法に基づく表記 disclosure, all included
-// below). One self-contained page: inline CSS, inline SVG logo, zero external assets.
+// below). Inline CSS and logos; product-demo video is served from the same origin.
 // Pricing renders from the LIVE pack catalog so the site can never drift from checkout.
 
 // Every download button targets our own /dl endpoint, which tallies the click and then streams
@@ -24,6 +28,8 @@ export interface SiteInput {
   currency: string;
   lang: PageLang;
   aiProvider: string;
+  freeTrialEnabled?: boolean;
+  plusEnabled?: boolean;
   entry?: 'spi' | 'reading_practice';
   entryStatus?: 'beta' | 'disabled';
 }
@@ -44,20 +50,6 @@ export function resolveSiteLang(query: string, acceptLanguage: string): PageLang
   return 'ja';
 }
 
-/** The Rose (r = a·cos 2θ) as an inline SVG path — the app's signature mark. */
-function roseSVGPath(): string {
-  const pts: string[] = [];
-  const steps = 240;
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const r = 42 * Math.cos(2 * t);
-    const x = 50 + Math.cos(t) * r;
-    const y = 50 + Math.sin(t) * r;
-    pts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
-  }
-  return pts.join('');
-}
-
 // Existing support, privacy and refund policies are preserved verbatim.
 const S = {
   "zh": {
@@ -67,6 +59,7 @@ const S = {
     },
     "priceNote": "一次请求交付可用答案扣 1 题；没有可用答案的失败不扣。可用不等于保证答对，重新执行是新请求。支付由 Stripe 处理。",
     "faqs": [
+      {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
         "q": "截图会被保存吗？",
         "a": "默认服务端不保存图片和答案正文。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
@@ -77,7 +70,7 @@ const S = {
       },
       {
         "q": "换电脑后余额怎么办？",
-        "a": "额度与设备凭证绑定；如需迁移请邮件联系支持。"
+        "a": "在旧 Mac 的设置 →「账户与订阅」保存恢复码，再在新 Mac 恢复原账户。恢复不会合并两个账户的余额；恢复码是账户凭证，请妥善保管。"
       },
       {
         "q": "可以退款吗？",
@@ -112,6 +105,7 @@ const S = {
     },
     "priceNote": "一つの依頼で利用可能な回答を受け取ると 1 問分を消費。回答なしの失敗は消費しません。利用可能は正解保証ではありません。別の再実行は新しい依頼です。決済は Stripe が処理します。",
     "faqs": [
+      {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
         "q": "スクリーンショットは保存されますか？",
         "a": "サーバーは通常、画像・回答を保存しません。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
@@ -122,7 +116,7 @@ const S = {
       },
       {
         "q": "機種変更したら残高は？",
-        "a": "残高はデバイス認証情報に紐づきます。移行はメールでサポートにご相談ください。"
+        "a": "旧 Mac の設定 →「アカウントとプラン」で復元コードを保存し、新しい Mac で元のアカウントを復元できます。残高の統合は行いません。復元コードは大切に保管してください。"
       },
       {
         "q": "返金はできますか？",
@@ -157,6 +151,7 @@ const S = {
     },
     "priceNote": "One request delivering a usable answer costs one question. Failures without a usable answer are not charged. Usable does not guarantee correct; running it again is a new request. Stripe processes payments.",
     "faqs": [
+      {"q": "How do I upgrade to 3.0?", "a": "From 2.17, download the Mac version and install it manually once. From 3.0 onward, updates can download, verify, install and restart within the app."},
       {
         "q": "Are my screenshots stored?",
         "a": "The server does not store images or answers by default. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
@@ -167,7 +162,7 @@ const S = {
       },
       {
         "q": "What about my balance on a new Mac?",
-        "a": "Credits are tied to the device credential. Contact support by email about migration."
+        "a": "Save your recovery code in Settings → Account & plan on your old Mac, then restore that account on your new Mac. Recovery does not merge account balances. Keep your recovery code private."
       },
       {
         "q": "Can I get a refund?",
@@ -207,8 +202,8 @@ function tokushohoTable(): string {
     ['販売価格', '各チャージページに表示の金額（消費税込み）'],
     ['商品代金以外の必要料金', 'なし（通信料はお客様負担）'],
     ['お支払い方法', 'クレジットカード等（Stripe 決済）'],
-    ['支払時期', 'ご購入手続き完了時'],
-    ['商品の引渡時期', '決済完了後、ただちに質問数残高へ反映'],
+    ['支払時期', '問題パックは購入時。Plus は申込時および毎月の更新時に自動決済'],
+    ['商品の引渡時期', '決済確認後、問題数残高または Plus の利用権に反映'],
     ['返品・キャンセル', 'デジタル商品の性質上、チャージ後の返金は原則不可。当方の不具合による場合は全額返金いたします（返金ポリシー参照）'],
     ['動作環境', 'Apple Silicon Mac / macOS 14 以降、Intel Mac / macOS 12.3 以降（ノッチのない画面では上部パネル）'],
   ];
@@ -257,32 +252,37 @@ export function formatUnitPrice(pack: QuestionPack, currency: string, lang: Page
 }
 
 export function renderLandingPage(input: SiteInput): string {
+  const trialEnabled = input.freeTrialEnabled !== false;
+  const plusEnabled = input.plusEnabled !== false;
   const s = S[input.lang], d = designCopy[input.lang], entry = entryCopy(input);
   const pagePath = input.entry === 'spi' ? '/spi' : input.entry === 'reading_practice' ? '/reading-practice' : '/';
   const e = escapeHtml;
   const lines = (v:string) => e(v).replaceAll('\n','<br>');
-  const rose = `<svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="${roseSVGPath()}" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>`;
+  const ui = {
+    zh: {watch:'看一次完整演示',platforms:'其他平台与系统要求',plus:'适合每天使用',trial:'先试试看',packs:'偶尔用，按需补充。',packSub:'一次性题包，与 Plus 分开购买。',purchase:'查看购买方式',protect:'关于窗口捕获保护',protectBody:'正式版设有窗口截图排除机制。具体共享或录屏效果取决于系统与软件，尚不提供覆盖所有环境的保证。请先在自己的使用环境中验证。',plain:'下载后，在 App 中查看可用额度与购买选项。',off:'当前暂未开放',history:'回到思路发生的地方。',historyBody:'成功查题的题图和答案保存在本机「最近查题」。需要复习时，再看一次。',planIntro:'同一官方服务，按使用频率选择。免费体验、订阅和一次性题包分别计额。'},
+    ja: {watch:'操作デモを見る',platforms:'その他の環境・動作条件',plus:'毎日使う方へ',trial:'まずは体験',packs:'必要な分だけ、追加。',packSub:'Plus とは別に購入できる一回払いの問題パック。',purchase:'購入方法を見る',protect:'ウィンドウのキャプチャ保護について',protectBody:'正式版にはウィンドウをキャプチャから除外する仕組みがあります。共有・録画の結果は OS とソフトによって異なり、すべての環境での動作は保証していません。ご利用環境で先に確認してください。',plain:'ダウンロード後、アプリで利用可能な枠と購入方法を確認できます。',off:'現在受付停止中',history:'考え方を、もう一度。',historyBody:'解答できた問題の画像と回答は、この Mac の「最近の問題」に保存されます。復習したい時に振り返れます。',planIntro:'同じ公式サービスを、使う頻度に合わせて。体験・月額・問題パックはそれぞれ別の利用枠です。'},
+    en: {watch:'Watch the full demo',platforms:'Other platforms & requirements',plus:'For daily practice',trial:'Start with a trial',packs:'A little help, as needed.',packSub:'One-time question packs, purchased separately from Plus.',purchase:'How to purchase',protect:'About window capture protection',protectBody:'Release builds include window capture exclusion. Sharing and recording behavior depends on the OS and capture software; coverage of every environment is not guaranteed. Verify in your own setup first.',plain:'Download to check available credits and purchase options in the app.',off:'Currently unavailable',history:'Return to your train of thought.',historyBody:'Successful question images and answers stay in Recent Questions on this Mac, ready when you want to review.',planIntro:'The same official service, matched to your routine. Trial, subscription and one-time packs have separate allowances.'}
+  }[input.lang];
+  const trialLine = trialEnabled ? d.free() : ui.plain;
+  const ghost = `<img class="ghost-mark" src="${ghostAvatar}" alt="" width="100" height="100" aria-hidden="true">`;
   const packs = [...input.packs].sort((a,b)=>a.questions-b.questions);
   // Same selection as MainSettingsWindow.topUpTapped; never invent an unbound checkout.
   const appPack = packs[1] ?? packs[0];
   const providerName = input.aiProvider === 'deepseek' ? 'DeepSeek' : input.aiProvider === 'anthropic' ? 'Anthropic' : input.aiProvider === 'openai' ? 'OpenAI' : 'AI';
   const langLink = (lang:PageLang,label:string) => `<a class="lang${lang===input.lang?' on':''}" href="${pagePath}?lang=${lang}" lang="${lang}"${lang===input.lang?' aria-current="page"':''}>${label}</a>`;
-  const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}"><span aria-hidden="true">↓</span> ${d.download}</a>`;
+  const symbol = (name: keyof typeof macSymbols, c='') => `<img class="mac-symbol ${c}" src="${macSymbols[name]}" alt="" aria-hidden="true" width="20" height="20">`;
+  const desktopMenu = ({zh:['文件','编辑','显示','前往','窗口','帮助'],ja:['ファイル','編集','表示','移動','ウインドウ','ヘルプ'],en:['File','Edit','View','Go','Window','Help']})[input.lang];
+  const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}">${symbol("arrow.down.to.line")} ${d.download}</a>`;
   const intelCopy = {
     zh: {label:'下载 Intel 老 Mac 兼容版', note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.0 build 28 · 手动更新'},
     ja: {label:'Intel Mac 互換版をダウンロード', note:'Intel プロセッサ · macOS 12.3 以降 · 3.0 build 28 · 手動更新'},
     en: {label:'Download for older Intel Macs', note:'Intel processor · macOS 12.3 or later · 3.0 build 28 · Manual updates'},
   }[input.lang];
   const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${intelCopy.label}</a><p class="requirements">${intelCopy.note}</p></div>`;
-  const packCards = packs.map((p,i)=>{
-    const recommended=p.id===appPack?.id, slot=packs.length===1?1:i===0?0:i===packs.length-1?2:1;
-    return `<article class="pack${recommended?' recommended':''}" data-pack-id="${e(p.id)}">
-      ${recommended?`<div class="badge">${d.recommended}</div>`:''}<h3 class="pack-name">${d.packNames[slot]}</h3>
-      <div class="q">${d.questions(p.questions)}</div><div class="price">${e(formatMoney(p.amountCents,input.currency))}</div>
-      <div class="unit">${e(input.currency)} · ${d.oneTime}</div><p class="per">${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>
-      <p class="pack-caption">${d.packReasons[slot]}<br>${d.sameFeatures}</p>
-      <a class="button secondary" href="${'#purchase'}">${d.buy} <span aria-hidden="true">↗</span></a></article>`;
-  }).join('');
+  const c=continuationCopy[input.lang];
+  const check = `<img class="plan-check" src="${checkIcon}" alt="" aria-hidden="true">`;
+  const amount = (cents:number,currency:string) => e(formatMoney(cents,currency).replace(/^[^0-9-]+/,''));
+  const packChoices = packs.map(p=>`<label class="pack-choice" data-pack-id="${e(p.id)}" data-amount-cents="${p.amountCents}"><input type="radio" name="purchase-pack" value="${e(p.id)}" data-questions="${p.questions}"${p.id===appPack?.id?' checked':''}><strong>${e(input.currency)} <span class="price">${amount(p.amountCents,input.currency)}</span></strong><span>/ ${d.questions(p.questions)}</span></label>`).join('');
   const privacy=s.privacyBody.map(p=>`<p>${e(p.replaceAll('{{AI_PROVIDER}}',providerName))}</p>`).join('');
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');
   const plusCopy = {
@@ -290,41 +290,44 @@ export function renderLandingPage(input: SiteInput): string {
     ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日400回の解答。解説・失敗は追加消費なし。北京時間00:00リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。問題パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72時間・毎日400回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
     en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Question packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
   }[input.lang];
-  const plusCard = `<article class="feature" style="margin-top:28px"><h3>${plusCopy.title} · ${formatMoney(PLUS.priceCents,PLUS.currency)} CNY / ${input.lang==='zh'?'月':input.lang==='ja'?'月':'month'}</h3><p>${plusCopy.period} · ${plusCopy.benefit}</p><p>${plusCopy.cancel}</p><p>${plusCopy.buy}</p><p>${plusCopy.trial}</p></article>`;
-  const faqItems=s.faqs.map(f=>`<details><summary>${e(f.q)}</summary><p>${e(f.a)}</p></details>`).join('');
+  const plusCard = plusEnabled ? `<article class="concept-plan plus-plan" aria-label="${plusCopy.title}"><span class="plan-badge">${c.daily}</span><h3>Plus</h3><p>${c.plusSub}</p><div class="price-line">CNY <span class="price">${amount(PLUS.priceCents,PLUS.currency)}</span> / ${c.month}</div><ul>${c.plusFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#purchase" data-purchase="plus">${c.plusCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
+  const trialCard = trialEnabled ? `<article class="concept-plan trial-plan"><h3>${s.freeCard.name}</h3><p>${c.trialSub}</p><div class="price-line"><span class="price">${e(formatMoney(0,input.currency))}</span></div><ul>${c.trialFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="${DOWNLOAD}">${symbol('arrow.down.to.line')} ${c.trialCTA}</a></article>` : '';
+  const packCard = packs.length ? `<article class="concept-plan pack-plan"><h3>${c.packTitle}</h3><p>${c.packSub}</p><fieldset class="pack-choices"><legend>${c.packLegend}</legend>${packChoices}</fieldset><p class="pack-once">${check}${d.oneTime}</p><a class="button" href="#purchase" data-purchase="pack">${c.packCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
+  const platforms = `<details class="platforms"><summary>${ui.platforms}</summary><div>${intelDownload()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">Coming soon</span></button></div></details>`;
+  const faqDetail=(q:string,a:string,open=false)=>`<details${open?' open':''}><summary>${e(q)}</summary><p>${e(a)}</p></details>`;
+  const faqItems=faqDetail(c.captureQ,input.lang==='zh'?'不会。':ui.protectBody)+faqDetail(c.scopeQ,c.scopeA)+faqDetail(s.faqs[5]!.q,input.lang==='zh'?'正式版：Apple Silicon Mac，macOS 14 及以上。Windows 版尚未正式发布。':s.faqs[5]!.a)+faqDetail(s.faqs[2]!.q,s.faqs[2]!.a)+faqDetail(c.cancelQ,c.cancelA);
+  const extraFAQ=[s.faqs[1]!,s.faqs[3]!,s.faqs[4]!,s.faqs[0]!].map(f=>faqDetail(f.q,f.a)).join('');
   const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
 <html lang="${input.lang==='zh'?'zh-CN':input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#f8f7f3">
-<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}</style></head><body>
+<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" href="${ghostAvatar}">
+<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}${continuationCSS}${polishCSS}</style></head><body>
 <a class="skip" href="#main">${d.skip}</a>
-<header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${rose}NotchSPI</a>
+<div class="theater"><header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>
-<nav class="languages" aria-label="Language">${langLink('ja','日本語')}${langLink('zh','中文')}${langLink('en','EN')}</nav><a class="button small" href="${DOWNLOAD}">${s.navDownload} <span aria-hidden="true">↗</span></a></header>
-<main id="main"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
+<nav class="languages" aria-label="Language">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}</nav><a class="button small" href="${DOWNLOAD}">${symbol("arrow.down.to.line")} ${d.download}</a></header>
+</div><main id="main"><div class="hero-band"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}<br><span>${e(d.accent)}</span>`}</h1>
-<p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<a class="button secondary" href="#demo">${d.demoCTA} <span aria-hidden="true">↘</span></a></div>
-<p class="trial-line">${d.free(input.trialQuestions)}</p><p class="requirements">${d.requirements}</p>${intelDownload()}
+<p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">${input.lang==='zh'?'（Coming soon）':'Coming soon'}</span></button></div>
+<p class="trial-line">${trialLine}</p><p class="requirements"><span class="release-label">${d.release}</span>${d.requirements}</p>
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
-<div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===0?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
-<div class="desktop" id="demo-screen"><div class="menu-bar" aria-hidden="true"><span>NotchSPI &nbsp; · &nbsp; ${d.demoLabel}</span><span>⌘ &nbsp; ◉ &nbsp; 9:41</span></div>
-<div class="notch"><div class="notch-head">${rose}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
-<div class="pending"><span class="capture-thumb" aria-hidden="true"></span>${d.collected}</div><div class="notch-body"><div class="answer-label">${d.answerLabel}</div><div class="answer-value">${d.answer}</div><div class="answer-work">${e(d.explanation)}</div></div></div>
-<div class="question-window"><div class="window-chrome" aria-hidden="true"><i></i><i></i><i></i><span>practice / 01</span></div><div class="question-content"><p class="question-tag">${d.problemTag}</p><h3>${d.question}</h3><div class="options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div></div>
-<div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
-</fieldset><div class="demo-playback"><button type="button" class="demo-toggle" hidden aria-controls="demo-screen" data-play="${({zh:'播放演示',ja:'デモを再生',en:'Play demo'})[input.lang]}" data-pause="${({zh:'暂停轮播',ja:'一時停止',en:'Pause demo'})[input.lang]}"></button></div><p class="demo-note">${d.demoNote}</p></div></section>
-<div class="rail">${d.rail.map(t=>`<span>${t}</span>`).join('')}</div>
-<section id="how" class="section how" aria-labelledby="how-title"><div><p class="eyebrow">${d.howEyebrow}</p><h2 id="how-title">${lines(d.howTitle)}</h2></div><ol class="how-list">${d.steps.map(([t,p],i)=>`<li><span class="step-number">0${i+1}</span><div><h3>${t}</h3><p>${p}</p></div></li>`).join('')}</ol></section>
-<section id="features" class="features" aria-labelledby="features-title"><div class="feature-intro"><p class="eyebrow">${d.featureEyebrow}</p><h2 id="features-title">${lines(d.featureTitle)}</h2></div><div class="feature-grid">
-<article class="feature"><div class="multi-visual" aria-hidden="true">${d.multiLabels.map((t,i)=>`<div class="mini-page"><b>0${i+1}</b><div class="mini-lines"></div><span>${t}</span></div>`).join('')}</div><h3>${d.multiTitle}</h3><p>${d.multiBody}</p></article>
-<article class="feature"><div class="app-photo"><img src="${idleScreenshot}" alt="${e(d.actual)}" width="644" height="202" loading="lazy" decoding="async"><small>${d.actual}</small></div><h3>${d.quietTitle}</h3><p>${d.quietBody}</p></article></div></section></div>
-<section id="pricing" class="pricing-band section" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><p class="eyebrow">${d.priceEyebrow}</p><h2 id="pricing-title">${lines(d.priceTitle)}</h2><p>${d.priceIntro}</p></div>
-${plusCard}<div class="packs"><article class="pack"><h3 class="pack-name">${d.trial}</h3><div class="q">${d.questions(input.trialQuestions)}</div><div class="price">${e(formatMoney(0,input.currency))}</div><div class="unit">${e(input.currency)} · ${s.freeCard.name}</div><p class="per">${d.trialNote}</p><p class="pack-caption">${d.free(input.trialQuestions)}</p>${download('secondary')}</article>${packCards}</div>
-<div class="price-notes"><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p></div><div class="purchase" id="purchase"><div><h3>${d.purchaseTitle}</h3><p>${d.purchaseBody}</p></div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></div></section>
-<div class="wrap"><section id="faq" class="section faq-section" aria-labelledby="faq-title"><div><p class="eyebrow">FAQ</p><h2 id="faq-title">${d.faqTitle}</h2></div><div class="faq">${faqItems}</div></section>
-<section class="closing">${rose}<h2>${lines(d.finalTitle)}</h2><p>${d.finalSub}</p>${download()}<p>${d.free(input.trialQuestions)}<br>${d.requirements}</p>${intelDownload()}</section>
+<div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
+<div class="desktop" id="demo-screen"><div class="menu-bar" aria-hidden="true"><span class="finder-menu">${symbol("apple.logo")}<b>Finder</b>${desktopMenu.map(t=>`<span>${t}</span>`).join('')}</span><span class="system-menu"><img class="menu-ghost" src="${ghostAvatar}" alt="">${symbol("wifi")}${symbol("magnifyingglass")}${symbol("switch.2")}<span>09:41</span></span></div>
+<div class="notch"><div class="native-answer"><div class="native-shot"><img src="${nativeAnswer}" alt="${({zh:"真实 Mac App 答案面板，离线示例：B. 60 km/h",ja:"Mac アプリの実際の画面。オフライン例：B. 60 km/h",en:"Actual Mac app panel, offline example: B. 60 km/h"})[input.lang]}"></div></div><div class="notch-head">${ghost}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
+<p class="ready-instruction">${({zh:"⌘ ⇧ 1　截取题目，开始查题",ja:"⌘ ⇧ 1　問題をキャプチャ",en:"⌘ ⇧ 1　Capture a question"})[input.lang]}</p><div class="pending"><span class="capture-thumb" aria-hidden="true">120 km<br>2 h</span>${d.collected}</div><div class="notch-body"><div class="answer-label">${d.answerLabel}</div><div class="answer-value">${d.answer}</div><div class="answer-work">${e(d.explanation)}</div></div></div>
+<div class="question-window"><div class="window-chrome" aria-hidden="true"><span class="window-tools"><span class="traffic-lights"><i></i><i></i><i></i></span>${symbol("sidebar.left")}${symbol("doc")}${symbol("signature")}${symbol("viewfinder")}</span><span class="window-tools">${symbol("ellipsis.circle")}${symbol("doc")}${symbol("square.and.arrow.up")}</span></div><div class="question-content"><p class="question-tag">${d.problemTag}</p><div class="numbered-question"><span aria-hidden="true">1.</span><h3>${lines(d.question)}</h3></div><div class="options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div></div>
+<div class="flying-capture" aria-hidden="true"><div class="snapshot-label">${d.problemTag}</div><p>${d.question}</p><div class="snapshot-options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div><div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
+</fieldset></div></section></div></div>
+<div class="continuation"><div class="wrap">${protectionSection(input.lang)}${featureSection(input.lang)}</div>
+<section id="pricing" class="pricing-band" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><h2 id="pricing-title">${c.pricing}</h2></div>
+<div class="concept-plans">${trialCard}${plusCard}${packCard}</div>
+<details class="pricing-details"><summary>${c.more}</summary><p>${ui.planIntro}</p><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p>${plusEnabled?`<p>${plusCopy.title}: ${plusCopy.period} · ${plusCopy.benefit} ${plusCopy.cancel}</p>`:''}${trialEnabled?`<p>${d.trialNote}</p><p>${plusCopy.trial}</p>`:''}${packs.map(p=>`<p>${d.questions(p.questions)} · ${e(formatMoney(p.amountCents,input.currency))} ${e(input.currency)} · ${d.oneTime} · ${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>`).join('')}</details>
+<details class="purchase" id="purchase"><summary>${d.purchaseTitle}</summary><div class="purchase-content"><div><p>${ui.plain}</p><p class="selected-purchase" aria-live="polite"></p>${download()}</div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></details></div></section>
+<div class="wrap"><section id="faq" class="faq-section" aria-labelledby="faq-title"><div><h2 id="faq-title">${input.lang==='zh'?'开始前，你可能想知道。':d.faqTitle}</h2><p class="faq-lead">${lines(c.faqSub)}</p></div><div class="faq">${faqItems}</div></section></div>
+<div class="scenic-footer"><section class="closing wrap"><h2>${c.final}${input.lang==='en'?' ':''}<span>${c.finalAccent}</span></h2>${download()}<div class="footer-platforms"><a href="${INTEL_DOWNLOAD}">${c.intel}</a><button type="button" disabled>${c.windows}</button></div></section>
+<footer class="footer wrap"><div class="footer-brand"><a class="brand" href="/?lang=${input.lang}">${ghost}NotchSPI</a><small>© 2026 NotchSPI.</small></div><div class="footer-meta"><nav aria-label="${d.legal}">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}<a href="#privacy" data-disclosure>${c.privacy}</a><a href="#refund" data-disclosure>${c.refund}</a><a href="#tokushoho" data-disclosure>${c.legal}</a><a href="#usage-details" data-disclosure>${input.lang==='zh'?'使用说明':input.lang==='ja'?'使い方':'Usage'}</a></nav></div></footer></div>
+<div class="legal-drawer" id="legal-drawer"><div class="wrap"><details id="usage-details"><summary>${c.moreFAQ}</summary><div class="faq">${extraFAQ}${faqDetail(d.multiTitle,d.multiBody)}${faqDetail(d.quietTitle,d.quietBody)}</div><p>${d.release} · ${d.requirements}</p>${platforms}</details>
 <aside class="scope-links"><p>${d.scope}</p><nav class="entrylinks" aria-label="${d.scope}"><a href="/spi?lang=${input.lang}"${input.entry==='spi'?' aria-current="page"':''}>${d.spi}</a><a href="/reading-practice?lang=${input.lang}"${input.entry==='reading_practice'?' aria-current="page"':''}>${d.reading}</a></nav></aside>
-<section class="legal" id="legal" aria-label="${d.legal}"><details id="tokushoho"><summary>${s.legalTitle}</summary><table>${tokushohoTable()}</table></details><details id="privacy"><summary>${s.privacyTitle}</summary>${privacy}</details><details id="refund"><summary>${s.refundTitle}</summary>${refund}</details></section></div></main>
-<footer class="footer wrap"><a class="brand" href="/?lang=${input.lang}">${rose}NotchSPI</a><div>© 2026 NotchSPI · SHE LINGZHAO</div><div class="footer-contact"><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><a href="#legal">${d.legal}</a></div></footer><script>${demoScript}</script></body></html>`;
+<section class="legal" id="legal" aria-label="${d.legal}"><details id="tokushoho"><summary>${s.legalTitle}</summary><table>${tokushohoTable()}</table></details><details id="privacy"><summary>${s.privacyTitle}</summary>${privacy}</details><details id="refund"><summary>${s.refundTitle}</summary>${refund}</details></section></div></div></div></main><script>${demoScript}</script></body></html>`;
 }

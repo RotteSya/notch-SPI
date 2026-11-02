@@ -1,3 +1,4 @@
+import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
 import {trialSnapshot, FREE_TRIAL_POLICY} from './free-trial.ts';
@@ -178,12 +179,19 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // GET / — the public product site (also the "company website" for payment-provider review).
   // Language: ?lang wins, then Accept-Language, defaulting to Japanese. Cacheable at the CDN;
   // Vary keeps the language negotiation honest.
+  app.get('/media/:name', (req, reply) => {
+    const media = siteMedia('/media/' + (req.params as {name:string}).name, req.headers.range);
+    if (!media) return reply.code(404).send();
+    return reply.code(media.status).headers(media.headers).send(media.body);
+  });
   for(const [path,entry] of [['/',undefined],['/spi','spi'],['/reading-practice','reading_practice']] as const)app.get(path, async (req, reply) => {
     const q = (req.query ?? {}) as { lang?: unknown };
     const lang = resolveSiteLang(str(q.lang), str(req.headers['accept-language']));
     const html = renderLandingPage({
       packs: config.packs,
       trialQuestions: config.trialQuestions,
+      freeTrialEnabled: config.freeTrialEnabled,
+      plusEnabled: config.plusEnabled,
       currency: config.currency,
       lang,
       aiProvider: config.provider,

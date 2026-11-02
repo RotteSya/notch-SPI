@@ -93,14 +93,16 @@ enum DesignVisualQA {
             image.lockFocus()
             NSColor(white: 0.96, alpha: 1).setFill()
             NSRect(origin: .zero, size: size).fill()
-            let titles = ["READING / 01", "QUESTION / 02", "CHOICES / 03", "DETAIL / 04"]
+            let titles = scenario == "history" ? ["题目 / 01", "题目 / 02", "选项 / 03", "解析 / 04"] : ["READING / 01", "QUESTION / 02", "CHOICES / 03", "DETAIL / 04"]
             (titles[index] as NSString).draw(at: NSPoint(x: 30, y: size.height - 60),
                 withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 22, weight: .medium), .foregroundColor: NSColor.darkGray])
             let contents = ["A train travels 120 km in 2 hours.\nIts speed is constant throughout the journey.",
                 "What is the train’s average speed?\nExpress your answer in km/h.",
                 "A. 40 km/h\nB. 60 km/h\nC. 80 km/h\nD. 120 km/h",
                 "Average speed = distance ÷ time\nDistance: 120 km\nTime: 2 hours"]
-            (contents[index] as NSString).draw(in: NSRect(x: 30, y: 25, width: size.width - 60, height: size.height - 110),
+            let historyContents = ["一辆汽车在 2 小时内行驶了 120 km，\n这辆汽车的平均速度是多少？\n\nA. 30 km/h   B. 60 km/h\nC. 90 km/h   D. 120 km/h",
+                "一辆汽车在 2 小时内行驶了 120 km，\n这辆汽车的平均速度是多少？", "A. 30 km/h\nB. 60 km/h\nC. 90 km/h\nD. 120 km/h", "平均速度 = 路程 ÷ 时间\n120 km ÷ 2 h = 60 km/h"]
+            ((scenario == "history" ? historyContents[index] : contents[index]) as NSString).draw(in: NSRect(x: 30, y: 25, width: size.width - 60, height: size.height - 110),
                 withAttributes: [.font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.black])
             image.unlockFocus()
             if let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),

@@ -1,0 +1,529 @@
+{
+  "date": "2026-11-02",
+  "website_commit": "3ec5692",
+  "project": "notchspi-api",
+  "baseline_deployment": "dpl_6SdECThsrbnkc7mxYDXVWMwUNS5p",
+  "deployment": "dpl_7PkZBDpDQezj65VHVq8sGiSNsuXb",
+  "url": "https://notchspi-api.vercel.app",
+  "strategy": "Frozen production source plus website-only overlay; routes.ts adds media handler and passes website feature flags. No other API source, dependencies or environment changes.",
+  "verification": [
+    {
+      "path": "/?lang=zh",
+      "status": 200,
+      "type": "text/html; charset=utf-8",
+      "bytes": 1221961,
+      "copy_ok": true,
+      "commentary_absent": true
+    },
+    {
+      "path": "/?lang=ja",
+      "status": 200,
+      "type": "text/html; charset=utf-8",
+      "bytes": 1225143
+    },
+    {
+      "path": "/?lang=en",
+      "status": 200,
+      "type": "text/html; charset=utf-8",
+      "bytes": 1223102
+    },
+    {
+      "path": "/media/single-mode.mp4",
+      "status": 206,
+      "type": "video/mp4",
+      "bytes": 32
+    },
+    {
+      "path": "/media/automatic-mode.mp4",
+      "status": 206,
+      "type": "video/mp4",
+      "bytes": 32
+    },
+    {
+      "path": "/media/single-mode-poster.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "bytes": 109215
+    },
+    {
+      "path": "/media/automatic-mode-poster.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "bytes": 70653
+    },
+    {
+      "path": "/healthz",
+      "status": 200,
+      "type": "application/json; charset=utf-8",
+      "bytes": 222
+    }
+  ],
+  "source_files": [
+    {
+      "file": "server/.gitignore",
+      "sha": "d2d072e4404d3a2eb2efc55cc70bc95049d4515e",
+      "size": 32
+    },
+    {
+      "file": "server/api/index.ts",
+      "sha": "185ca3258257e13dc69af11bdee31be1b9defb94",
+      "size": 579
+    },
+    {
+      "file": "server/package-lock.json",
+      "sha": "27a8b35175bbda198bbf87b4131e71cdd2de72a8",
+      "size": 49009
+    },
+    {
+      "file": "server/package.json",
+      "sha": "d61dd29037db4122b5af69914cbd890526ce610b",
+      "size": 519
+    },
+    {
+      "file": "server/public/media/automatic-mode-poster.jpg",
+      "sha": "1eb2e307a6f2265eb8877b1a00ea2b966a6246cd",
+      "size": 70653
+    },
+    {
+      "file": "server/public/media/automatic-mode.mp4",
+      "sha": "ae07c6d6ba020b82306f62b878a9ed96371a4971",
+      "size": 2133249
+    },
+    {
+      "file": "server/public/media/single-mode-poster.jpg",
+      "sha": "2fc952abcb09c90e099184b546851c64abe1fadc",
+      "size": 109215
+    },
+    {
+      "file": "server/public/media/single-mode.mp4",
+      "sha": "b9c13a8991514c80799733699cd99cf6af9e5a23",
+      "size": 1390517
+    },
+    {
+      "file": "server/public/robots.txt",
+      "sha": "ce03d4745cef50dd4d490c063591d1f0130022d0",
+      "size": 99
+    },
+    {
+      "file": "server/src/admin-quality.ts",
+      "sha": "7b7704e1eaa1d9dd4138f018a7bb63822e5eff46",
+      "size": 13847
+    },
+    {
+      "file": "server/src/admin-reports.ts",
+      "sha": "6e7134e7025902ed064b6e447b210ac6a9114783",
+      "size": 26654
+    },
+    {
+      "file": "server/src/admin.ts",
+      "sha": "3c7c93876bd7408f6ad07ba20c25855731ba310b",
+      "size": 13386
+    },
+    {
+      "file": "server/src/auth.ts",
+      "sha": "82450db402de73ca4f22afd07d18b3b3e22ecb22",
+      "size": 3075
+    },
+    {
+      "file": "server/src/billing-memory.ts",
+      "sha": "d7e674f9ea51002dbd871598b0a048a2795051e7",
+      "size": 23697
+    },
+    {
+      "file": "server/src/billing-sql.ts",
+      "sha": "140e1535bfd0df1ec923ecd600733789ad3c776f",
+      "size": 40334
+    },
+    {
+      "file": "server/src/billing.ts",
+      "sha": "6b07224deebdb2246469742dce77fa37f36ab1e7",
+      "size": 11722
+    },
+    {
+      "file": "server/src/capture-service.ts",
+      "sha": "e3590d64dfefa8cf79bfbd42ae41e61d38259aad",
+      "size": 35117
+    },
+    {
+      "file": "server/src/capture-timing.ts",
+      "sha": "88db687301b953b7f9c133c247a323cf26105e51",
+      "size": 1894
+    },
+    {
+      "file": "server/src/checkout-memory.ts",
+      "sha": "4e3fd1a4499569d2d2bddef371f2da66958a8acf",
+      "size": 6670
+    },
+    {
+      "file": "server/src/checkout-reconciliation.ts",
+      "sha": "86a531b92c1ae884ca04ad4de4870c6836c6054e",
+      "size": 13981
+    },
+    {
+      "file": "server/src/checkout-service.ts",
+      "sha": "9281803f12115928ae2309195b6f2c2fd436784d",
+      "size": 858
+    },
+    {
+      "file": "server/src/checkout-sql.ts",
+      "sha": "0efffa11a7e5ae51f11aacc7e124b37aa25f9329",
+      "size": 10950
+    },
+    {
+      "file": "server/src/config.ts",
+      "sha": "286b318769326545f1cd29e9e43a25d726fa7446",
+      "size": 15388
+    },
+    {
+      "file": "server/src/db-memory.ts",
+      "sha": "b2398c9a51205d5021a98453575d6eb132829484",
+      "size": 19365
+    },
+    {
+      "file": "server/src/db-postgres.ts",
+      "sha": "748e0caf20655ef7fe581e3c2b8b050ae649f3eb",
+      "size": 26286
+    },
+    {
+      "file": "server/src/db-sqlite.ts",
+      "sha": "b243a6a34b79d6425268b68808306f7da02e7938",
+      "size": 22853
+    },
+    {
+      "file": "server/src/db.ts",
+      "sha": "7a2ad197185d3263e77705f3495abecde7492e69",
+      "size": 12551
+    },
+    {
+      "file": "server/src/free-trial.ts",
+      "sha": "59531d92701a50b9e570a8fe0a8d5c31e4723e4d",
+      "size": 1670
+    },
+    {
+      "file": "server/src/http.ts",
+      "sha": "600963a686d84a14785887cc0328cf6a4888741c",
+      "size": 4169
+    },
+    {
+      "file": "server/src/image-validation.ts",
+      "sha": "3c4bcce3e890bcc306db8f3d745d903d1337eb18",
+      "size": 4077
+    },
+    {
+      "file": "server/src/index.ts",
+      "sha": "c628aab5185ea672ec7fd9411308b4c044207529",
+      "size": 7714
+    },
+    {
+      "file": "server/src/month-pass-page.ts",
+      "sha": "545791912e9716f8b9e2a5ec3d354832f7080e69",
+      "size": 16456
+    },
+    {
+      "file": "server/src/objective-eval-scoring.ts",
+      "sha": "fb8e58cd4904bdaecaac26253f58041759f6db7a",
+      "size": 1230
+    },
+    {
+      "file": "server/src/objective-result.ts",
+      "sha": "855d866b90c18910e033e0e9f7c110a1e9237b26",
+      "size": 8476
+    },
+    {
+      "file": "server/src/observation-sql.ts",
+      "sha": "2185772ef0ba794ec148d2da8a4db54b69fb67f6",
+      "size": 9077
+    },
+    {
+      "file": "server/src/observation.ts",
+      "sha": "055a2b232ef465c91503f250f68ec855c5f2cecd",
+      "size": 12308
+    },
+    {
+      "file": "server/src/payment-finance-memory.ts",
+      "sha": "6f1e52a97d2b2635d8ba27dbf89c47d7146f611d",
+      "size": 5460
+    },
+    {
+      "file": "server/src/payment-finance-sql.ts",
+      "sha": "eaa4dff6337ec80f47d0ed033d906d45324aee42",
+      "size": 12455
+    },
+    {
+      "file": "server/src/payment-finance.ts",
+      "sha": "0b5a169a4693ab5c49d17c366db4af8c63866706",
+      "size": 10632
+    },
+    {
+      "file": "server/src/payment-ledger-memory.ts",
+      "sha": "5f9f58c8b1029944e662197f95c29af243b4db34",
+      "size": 10927
+    },
+    {
+      "file": "server/src/payment-ledger-sql.ts",
+      "sha": "1d5447362722936633d49629b4ad6e5a3da9293b",
+      "size": 18286
+    },
+    {
+      "file": "server/src/payment-ledger.ts",
+      "sha": "68a6dc5f39ef92d91ec823422e52e83297e620d2",
+      "size": 8884
+    },
+    {
+      "file": "server/src/payments.ts",
+      "sha": "76ad0fcec201a33553aae4bd00f244dac873becd",
+      "size": 14323
+    },
+    {
+      "file": "server/src/plus-memory.ts",
+      "sha": "44bcb22a6bec98e74b9ee085075df98e9599ba88",
+      "size": 1966
+    },
+    {
+      "file": "server/src/plus-routes.ts",
+      "sha": "db4d3c4d7fb657af79d660569ab89abacfbc4daa",
+      "size": 7291
+    },
+    {
+      "file": "server/src/plus-schema.ts",
+      "sha": "87ea4b8c2e065312227736ba0095573d288353d9",
+      "size": 696
+    },
+    {
+      "file": "server/src/plus-sql.ts",
+      "sha": "4460068c8c2a47f3ff320fb306e5f27b7265e59d",
+      "size": 5173
+    },
+    {
+      "file": "server/src/plus-stripe.ts",
+      "sha": "67d47944e04058d7db20da2f426d7889f936b8be",
+      "size": 6493
+    },
+    {
+      "file": "server/src/plus.ts",
+      "sha": "401a2e2efe83c845ccb44acce1491bec99c7333f",
+      "size": 3137
+    },
+    {
+      "file": "server/src/pricing.ts",
+      "sha": "a6083a4c662f8363a640cedfbf7a862e0b5c9c85",
+      "size": 3440
+    },
+    {
+      "file": "server/src/providers/anthropic.ts",
+      "sha": "f88d36f4a3f92f245423b5b68757c398ed76cb78",
+      "size": 3375
+    },
+    {
+      "file": "server/src/providers/index.ts",
+      "sha": "6c1ab614bef043861213a8a44ab382f418cd8fc8",
+      "size": 5184
+    },
+    {
+      "file": "server/src/providers/mock.ts",
+      "sha": "2c0d0588bb0f951945d5a7c1d4ab415a3027999a",
+      "size": 1546
+    },
+    {
+      "file": "server/src/providers/openai.ts",
+      "sha": "5aa08cbe091a9e17f8ed48c723f6cbe47984819d",
+      "size": 4532
+    },
+    {
+      "file": "server/src/providers/types.ts",
+      "sha": "dd16cba3200a93818be2c6d19aa0cd89a9703faa",
+      "size": 4278
+    },
+    {
+      "file": "server/src/purchase-page.ts",
+      "sha": "b766296de1ccab1cf316682963fb64eb5956c143",
+      "size": 7676
+    },
+    {
+      "file": "server/src/purchase-progress.ts",
+      "sha": "31b04e60df5b7ef958fcf233ab260f5bee147f36",
+      "size": 2628
+    },
+    {
+      "file": "server/src/purchase-session-sql.ts",
+      "sha": "655dbdd93094e8b3a20459d33ff3e7a329ea180c",
+      "size": 5269
+    },
+    {
+      "file": "server/src/purchase-session.ts",
+      "sha": "dca7368fa1383988c8a61d36b94c12911305f982",
+      "size": 2180
+    },
+    {
+      "file": "server/src/quality-memory.ts",
+      "sha": "a0a79ba1d677b38aa5262de478674f083d98757b",
+      "size": 3033
+    },
+    {
+      "file": "server/src/quality-sql.ts",
+      "sha": "9c633c72e09c5352beccf326b3f3927e00a40441",
+      "size": 5993
+    },
+    {
+      "file": "server/src/quality.ts",
+      "sha": "ff827395dd93b16cea7e8bd496587eefa18946fb",
+      "size": 21840
+    },
+    {
+      "file": "server/src/quota-migration-schema.ts",
+      "sha": "40dccc255cd7dcaf013e8af2eea9f6df63a7b622",
+      "size": 1103
+    },
+    {
+      "file": "server/src/quota-migration.ts",
+      "sha": "e9e031134d997851ee0cc7e8ae59ac37b08033e9",
+      "size": 11152
+    },
+    {
+      "file": "server/src/rateLimit.ts",
+      "sha": "f1603bcad4034fa504c80a9a899b5099a33becfe",
+      "size": 3679
+    },
+    {
+      "file": "server/src/report-archive-sql.ts",
+      "sha": "593184a6f97afe0a8c97d45327aefb9181ad817f",
+      "size": 2344
+    },
+    {
+      "file": "server/src/report-archive.ts",
+      "sha": "2fc0628bfe7a3c40701d9f6dbe5612f91ba0b813",
+      "size": 5911
+    },
+    {
+      "file": "server/src/reporting-finance.ts",
+      "sha": "0badc0f9358a458465028d5e22ce8ee9733ae23e",
+      "size": 1355
+    },
+    {
+      "file": "server/src/reporting-memory.ts",
+      "sha": "3f55c92534ff959f6faf16ea2dec3bd642a14e5a",
+      "size": 2808
+    },
+    {
+      "file": "server/src/reporting-receipts.ts",
+      "sha": "c3501d99a2ded40c0f1a5f75ed26ba82cfa605e9",
+      "size": 6071
+    },
+    {
+      "file": "server/src/reporting-sql.ts",
+      "sha": "622c30f41c6bee358c30c704764e44f43a1a7158",
+      "size": 21439
+    },
+    {
+      "file": "server/src/reporting.ts",
+      "sha": "329d870980a944e3ce759312c8913e0d6d0aa375",
+      "size": 32652
+    },
+    {
+      "file": "server/src/routes.ts",
+      "sha": "35f630795e715ab440a13a4bb3cacd0cb7765d1f",
+      "size": 65441
+    },
+    {
+      "file": "server/src/screen-query.ts",
+      "sha": "26b73c8c6f04e1f4751ff45d10ad08ee7ad27cf8",
+      "size": 8385
+    },
+    {
+      "file": "server/src/site-assets.ts",
+      "sha": "f8eaf81b96df868ad45796ecc92446972ddaddea",
+      "size": 78493
+    },
+    {
+      "file": "server/src/site-continuation-assets.ts",
+      "sha": "888533a9ce72443b329a69ea8a058e62c187612c",
+      "size": 51306
+    },
+    {
+      "file": "server/src/site-continuation-script.ts",
+      "sha": "f860d82adfe6939a4be2d1c4100066b6f30f8a7b",
+      "size": 5344
+    },
+    {
+      "file": "server/src/site-continuation.ts",
+      "sha": "d21515defa5bf1f6abae6c0076d1f018ff067a3b",
+      "size": 33774
+    },
+    {
+      "file": "server/src/site-demo.ts",
+      "sha": "071b66ebe3bf3c10ab65b0a7993e6fa42ecdd035",
+      "size": 6128
+    },
+    {
+      "file": "server/src/site-design.ts",
+      "sha": "85042557ed4f5c9ebb0f2a42d747c22e4b7bbaa1",
+      "size": 53328
+    },
+    {
+      "file": "server/src/site-media.ts",
+      "sha": "1da49fbfc0addfc2d948a0d59153ad4b9181b365",
+      "size": 1796
+    },
+    {
+      "file": "server/src/site-native-assets.ts",
+      "sha": "221cdea6dd303e9a8f16d18bd5ce5d093ba58367",
+      "size": 280770
+    },
+    {
+      "file": "server/src/site-native-captures.ts",
+      "sha": "dc392cbd78d97f0fd6b0f85339bf3f71f3308f51",
+      "size": 806532
+    },
+    {
+      "file": "server/src/site-polish.ts",
+      "sha": "a6fb719a244b44ccf100c6aa8d247ffc24deb53a",
+      "size": 46728
+    },
+    {
+      "file": "server/src/site-theater-asset.ts",
+      "sha": "9b5404ce30d7e2bbf9c5ef53e5347a7334e60104",
+      "size": 79703
+    },
+    {
+      "file": "server/src/site.ts",
+      "sha": "d9dd95bff5292d5c26fa74bcdf7f0e9f4bbb3eb4",
+      "size": 39440
+    },
+    {
+      "file": "server/src/storage.ts",
+      "sha": "280c791bba1b6d26938eb1e7ea7f62bd723dca5c",
+      "size": 2030
+    },
+    {
+      "file": "server/src/stripe-finance.ts",
+      "sha": "426ab46ea71452b3ac14151cc185d0c0ceec5324",
+      "size": 5816
+    },
+    {
+      "file": "server/src/stripe.ts",
+      "sha": "b55a852810fbfee8a0c9396bfb875b87c58ba777",
+      "size": 9632
+    },
+    {
+      "file": "server/src/telemetry.ts",
+      "sha": "85c10bdae5e0e5edd264bb082891eb57fb2169e5",
+      "size": 14288
+    },
+    {
+      "file": "server/tools/settings-preview.ts",
+      "sha": "4c4f79f2c5a41f471aad8b2016753e254a4e63bb",
+      "size": 6365
+    },
+    {
+      "file": "server/tsconfig.json",
+      "sha": "a53ea7e4705fb212e9075f7cbabd600f13826ba9",
+      "size": 570
+    },
+    {
+      "file": "server/vercel.json",
+      "sha": "5681d39655a03f7a1789a2ed66418808dabf3205",
+      "size": 560
+    }
+  ],
+  "upload_note": "All deployed file hashes match frozen source except server/.gitignore, normalized by Vercel CLI."
+}
