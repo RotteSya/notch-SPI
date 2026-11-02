@@ -8,7 +8,7 @@ import {
 import path from "node:path";
 import fs from "node:fs/promises";
 import { FlightQueue } from "../core/flights.mjs";
-export function createFlights({ root, host, changed, protection, exclusion,
+export function createFlights({ root, host, changed, protection, exclusion, observe = () => {}, failed = () => {},
   reducedMotion = () => systemPreferences.getAnimationSettings().prefersReducedMotion }) {
   const overlays = new Map();
   let suspended = 0;
@@ -47,8 +47,9 @@ export function createFlights({ root, host, changed, protection, exclusion,
             backgroundThrottling: false,
           },
         });
+        try {
+        observe(w);
         const entry = { w, display: d, ready: false, images: new Set() };
-        overlays.set(d.id, entry);
         w.setIgnoreMouseEvents(true);
         w.setAlwaysOnTop(true, "screen-saver");
         if (!exclusion?.enabled) {
@@ -64,7 +65,17 @@ export function createFlights({ root, host, changed, protection, exclusion,
           overlays.delete(d.id);
           queue.clear();
         });
-        w.loadFile(path.join(root, "ui/flight.html"));
+        // Publish only after protection and passthrough initialization succeeds.
+        overlays.set(d.id, entry);
+        void w.loadFile(path.join(root, "ui/flight.html")).catch(() => {
+          failed();
+          if (!w.isDestroyed()) w.close();
+        });
+        } catch (error) {
+          exclusion?.unregister(w);
+          if (!w.isDestroyed()) w.close();
+          throw error;
+        }
       }
   };
   const send = () => {

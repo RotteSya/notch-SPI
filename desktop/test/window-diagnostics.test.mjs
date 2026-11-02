@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import unzipper from 'unzipper';
+import {observeWindow} from '../core/window-diagnostics.mjs';
+import {LocalTestReport} from '../core/local-test-report.mjs';
+test('window lifecycle and renderer exits survive ZIP export with state and role, never titles or errors', async () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nspi-window-report-'));
+  try {
+    const report=new LocalTestReport(dir,{}),win=new EventEmitter();win.webContents=new EventEmitter();
+    let visible=true,minimized=false,focused=false,destroyed=false;
+    Object.assign(win,{isDestroyed:()=>destroyed,isVisible:()=>{assert.equal(destroyed,false);return visible;},isMinimized:()=>minimized,isFocused:()=>focused,getTitle:()=>{throw Error('must not read title');}});
+    observeWindow(win,'notch',(name,metadata)=>report.record(name,metadata),()=>true);
+    minimized=true;visible=false;win.emit('minimize');
+    win.emit('unresponsive');win.emit('responsive');
+    minimized=false;visible=true;win.emit('restore');
+    focused=true;win.emit('focus');focused=false;win.emit('blur');
+    visible=false;win.emit('hide');visible=true;win.emit('show');
+    win.webContents.emit('render-process-gone',{}, {reason:'crashed',message:'SECRET'});
+    report.record('gpu_gone',{reason:'crashed',name:'SECRET'});
+    report.record('window_intent',{window_role:'notch',window_intent:'hotkey_hide',visible:true,expected_visible:true});
+    report.record('window_state',{window_role:'SECRET',window_event:'SECRET',visible:'SECRET',minimized:'SECRET',title:'SECRET',url:'SECRET'});
+    destroyed=true;win.emit('closed');
+    const zip=await unzipper.Open.file(report.finish());const raw=(await zip.files[0].buffer()).toString();assert.ok(!raw.includes('SECRET'));
+    const events=JSON.parse(raw).events;
+    const mini=events.find(e=>e.window_event==='minimize');assert.equal(mini.minimized,true);assert.equal(mini.visible,false);assert.equal(mini.expected_visible,true);
+    assert.equal(events.find(e=>e.window_event==='restore').minimized,false);
+    assert.equal(events.find(e=>e.window_event==='closed').destroyed,true);
+    assert.equal(events.find(e=>e.event==='renderer_gone').window_role,'notch');
+    for(const event of ['show','hide','focus','blur','unresponsive','responsive'])assert.ok(events.some(e=>e.window_event===event));
+    assert.equal(events.find(e=>e.event==='gpu_gone').reason,'crashed');
+    assert.equal(events.find(e=>e.event==='window_intent').window_intent,'hotkey_hide');
+  } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('silent native state changes are logged once and sampling stops on close', t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  const win=new EventEmitter();win.webContents=new EventEmitter();let visible=true,destroyed=false;
+  Object.assign(win,{isDestroyed:()=>destroyed,isVisible:()=>visible,isMinimized:()=>false,isFocused:()=>false});
+  const events=[];observeWindow(win,'notch',(name,fields)=>events.push({name,...fields}),()=>true);
+  t.mock.timers.tick(1000);assert.equal(events.length,1,'stable state must not generate writes');
+  visible=false;t.mock.timers.tick(250);
+  assert.equal(events.at(-1).window_event,'state_changed');assert.equal(events.at(-1).visible,false);assert.equal(events.at(-1).expected_visible,true);
+  t.mock.timers.tick(1000);assert.equal(events.length,2);
+  visible=true;win.emit('show');t.mock.timers.tick(250);assert.equal(events.length,3,'native event must not be duplicated by polling');
+  destroyed=true;win.emit('closed');const count=events.length;
+  t.mock.timers.tick(1000);assert.equal(events.length,count);
+});

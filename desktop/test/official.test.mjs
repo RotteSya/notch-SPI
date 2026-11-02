@@ -143,7 +143,10 @@ test("Actual server solve, multi-image ordering, full receipt, one debit, duplic
   assert.equal(run.body.images_base64.at(-1), run.body.image_base64);
   const before = providerCalls;
   let shown = "";
-  const result = await c.stream(run, { onDelta: (x) => (shown += x) });
+  let headersReceived = false;
+  const result = await c.stream(run, { onResponse: () => {headersReceived = true;},
+    onDelta: (x) => {assert.equal(headersReceived,true); shown += x;} });
+  assert.equal(headersReceived,true);
   assert.equal(result.raw, shown);
   assert.equal(compose(result.raw).finalAnswer, "B");
   assert.equal(result.receipt.questions_charged, 1);
