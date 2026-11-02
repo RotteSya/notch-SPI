@@ -22,3 +22,9 @@
 `scripts/migrate-quota.mjs` 的 `status` 也会初始化 schema，不能当作只读探针。禁止用提交 `7ba96db` 的旧表定义直接改已经迁移的库。流程见 [quota-migration.md](quota-migration.md)。
 
 旧 `depth` 原值保留。`reasoningEffort` 独立默认 `low`，不把旧讲解档映射成高思考档。
+
+## 冻结平台发行来源
+
+主树仅支持 Apple Silicon/macOS 14+。历史 Intel build 28 为 x86_64/macOS 12.3+，Catalina build 29 为 x86_64/macOS 10.15.7+；它们由独立冻结源码构建，不能从当前主树重制。
+Intel SHA-256 为 b365a4e5f5afe40b40870220b709ac81175e58e0b2fdafa33126ffbbb919bc8f；Catalina 为 48ef38436629ee0f9a9ff94fb18ea7320efb3914805ce6559bf95506ece507ce。签名、公证记录和旧系统未完成的硬件验收见[历史索引](history/index.json)，不代表本轮重新验证。
+现有下载行为、冻结源码、原安装包和原始证据保持；旧版手动更新/登录启动限制不因主树整理改变。

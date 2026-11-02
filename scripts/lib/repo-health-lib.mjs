@@ -169,6 +169,20 @@ export function checkHistoricalArchives(root) {
       }
       const digest = createHash('sha256').update(fs.readFileSync(path.join(dir, manifest.archive))).digest('hex');
       if (digest !== manifest.sha256) throw new Error('archive SHA-256 mismatch');
+      if (Array.isArray(manifest.files)) {
+        const archive = path.join(dir, manifest.archive);
+        const members = execFileSync('tar', ['-tzf', archive], {encoding:'utf8'}).trim().split('\n');
+        const expected = manifest.files.map(file => file.path);
+        if (new Set(expected).size !== expected.length || members.length !== expected.length
+            || members.some(member => !expected.includes(member))) throw new Error('archive member list mismatch');
+        for (const file of manifest.files) {
+          if (typeof file.path !== 'string' || file.path.startsWith('/') || file.path.split('/').includes('..')
+              || file.path.includes('\\') || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('invalid archive member');
+          const bytes = execFileSync('tar', ['-xOzf', archive, file.path], {maxBuffer:16*1024*1024});
+          if (createHash('sha256').update(bytes).digest('hex') !== file.sha256
+              || (file.bytes !== undefined && bytes.length !== file.bytes)) throw new Error(`archive member mismatch: ${file.path}`);
+        }
+      }
     } catch (error) {
       errors.push(`docs/history/${name}: ${error.message}`);
     }
@@ -217,6 +231,32 @@ function destinationPath(raw) {
   }
 }
 
+// GitHub-style heading ids, including Unicode and repeated headings. Fenced examples
+// are not headings; explicit HTML ids remain valid link targets.
+export function documentAnchors(text) {
+  const anchors = new Set();
+  let fence = null;
+  for (const line of text.split('\n')) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    for (const match of line.matchAll(/\b(?:id|name)=["']([^"']+)["']/g)) anchors.add(match[1]);
+    const heading = line.match(/^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (!heading) continue;
+    const base = heading[1].replace(/<[^>]*>/g, '').replace(/!?\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .toLowerCase().replace(/[^\p{L}\p{N}\p{M}_\-\s]/gu, '').replace(/\s/g, '-');
+    let slug=base, suffix=0;
+    while (anchors.has(slug)) slug=`${base}-${++suffix}`;
+    anchors.add(slug);
+  }
+  return anchors;
+}
+
 function classifyTarget(root, fromFile, decoded) {
   const rootAbs = path.resolve(root);
   const lexical = path.resolve(rootAbs, path.dirname(fromFile), decoded);
@@ -248,6 +288,19 @@ export function checkDocumentLinks(root, files) {
     if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
     const text = readText(root, file);
     for (const raw of destinations(text)) {
+      const destination = raw.startsWith('<') ? raw.slice(1, raw.indexOf('>')) : raw.split(/\s/)[0];
+      const hash = destination.indexOf('#');
+      if (hash !== -1 && !/^[a-z][a-z0-9+.-]*:/i.test(destination)) {
+        try {
+          const anchor=decodeURIComponent(destination.slice(hash+1));
+          const target=path.resolve(root,path.dirname(file),decodeURIComponent(destination.slice(0,hash)) || path.basename(file));
+          const relative=path.relative(path.resolve(root),target);
+          if (anchor && !relative.startsWith('..') && !path.isAbsolute(relative) && target.endsWith('.md')
+              && fs.existsSync(target) && !documentAnchors(fs.readFileSync(target,'utf8')).has(anchor)) {
+            errors.push(`${file}: broken heading anchor ${raw}`);
+          }
+        } catch { errors.push(`${file}: broken relative link ${raw}`); }
+      }
       const decoded = destinationPath(raw);
       if (!decoded) continue;
       if (typeof decoded === 'object') {
@@ -328,6 +381,54 @@ export function checkGovernance(root) {
     const nonempty = text.split('\n').filter((line) => line.trim() !== '');
     if (nonempty.length > 5) errors.push(`${file} must stay a short pointer (≤ 5 non-empty lines)`);
     if (!text.includes('HANDOVER.md')) errors.push(`${file} must point at HANDOVER.md`);
+  }
+  return errors;
+}
+
+export function checkGuideMap(root, files) {
+  const errors=[];
+  let map;
+  try { map=JSON.parse(readText(root,'docs/guide-map.json')); }
+  catch(error) { return [`docs/guide-map.json: ${error.message}`]; }
+  if(map.schema_version!==1 || map.entry!=='HANDOVER.md' || !Array.isArray(map.documents)) return ['docs/guide-map.json: invalid schema or entry'];
+  const available=new Set(files.filter(file=>fs.existsSync(path.join(root,file)))), classified=new Map();
+  const kinds=new Set(['entry','pointer','reference','evidence','fixture','vendor']);
+  const validPath=value=>typeof value==='string' && value && !path.isAbsolute(value) && !value.split('/').includes('..') && !value.includes('\\');
+  for(const item of map.documents) {
+    const name=item.path;
+    if(!validPath(name) || !available.has(name)) errors.push(`guide-map: document is outside delivery: ${name}`);
+    if(classified.has(name)) errors.push(`guide-map: duplicate document ${name}`);
+    classified.set(name,item);
+    if(!kinds.has(item.kind) || !Array.isArray(item.scope) || !item.scope.length || !item.scope.every(s=>typeof s==='string' && s)
+        || typeof item.purpose!=='string' || !item.purpose.trim()) errors.push(`guide-map: invalid metadata for ${name}`);
+    for(const field of ['sources','checks']) {
+      if(!Array.isArray(item[field]) || !item[field].length) { errors.push(`guide-map: missing ${field} for ${name}`); continue; }
+      for(const rel of item[field]) if(!validPath(rel) || !available.has(rel)) errors.push(`guide-map: missing ${field} target ${rel} for ${name}`);
+    }
+    if(item.kind==='evidence' && (!Object.hasOwn(item,'source_commit') || !Object.hasOwn(item,'as_of')
+        || !(item.source_commit===null || /^[a-f0-9]{40}$/.test(item.source_commit))
+        || !(item.as_of===null || /^\d{4}-\d{2}-\d{2}$/.test(item.as_of)))) errors.push(`guide-map: missing evidence identity for ${name}`);
+  }
+  if(map.documents.filter(item=>item.kind==='entry').length!==1 || classified.get(map.entry)?.kind!=='entry') errors.push('guide-map: HANDOVER.md must be the single entry');
+  for(const file of available) if(file.endsWith('.md') && !classified.has(file)) errors.push(`guide-map: unclassified Markdown ${file}`);
+  const reached=new Set(), queue=[map.entry];
+  while(queue.length) {
+    const file=queue.pop(); if(reached.has(file)) continue; reached.add(file);
+    if(!file.endsWith('.md') || !available.has(file) || !fs.existsSync(path.join(root,file))) continue;
+    for(const raw of destinations(readText(root,file))) {
+      const rel=destinationPath(raw);
+      if(typeof rel!=='string') continue;
+      const target=path.relative(path.resolve(root),path.resolve(root,path.dirname(file),rel));
+      if(available.has(target) && !reached.has(target)) queue.push(target);
+    }
+  }
+  for(const item of map.documents) {
+    if(item.kind!=='reference') continue;
+    if(!reached.has(item.path)) errors.push(`guide-map: reference is unreachable from HANDOVER.md: ${item.path}`);
+    const file=path.join(root,item.path); if(!fs.existsSync(file)) continue;
+    const text=readText(root,item.path);
+    if(/`(?:\.\/scripts\/(?:bootstrap|dev|run-local|onboarding-qa)\.sh|npm --prefix desktop run dev)\b/.test(text)) errors.push(`${item.path}: startup command belongs in HANDOVER.md`);
+    if(/`(?:\.\/)?(?:open\s+)?output\/[^`\n]+\.(?:command|sh)`/.test(text)) errors.push(`${item.path}: runnable local output is not a portable entry`);
   }
   return errors;
 }

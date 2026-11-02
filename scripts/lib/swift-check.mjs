@@ -25,6 +25,8 @@ export function checkSwiftCheckouts(root) {
       }
       const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
       if (head !== revision) errors.push(`${pin.identity}: Swift checkout revision does not match Package.resolved`);
+      const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: checkout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      if (status.trim()) errors.push(`${pin.identity}: Swift checkout has local modifications; preserve them and prepare a clean pinned checkout`);
     }
     return errors;
   } catch (error) {

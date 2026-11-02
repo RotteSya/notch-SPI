@@ -68,3 +68,8 @@ node scripts/upload-quality-report.mjs --file .release-evidence/2026-09-06/quali
 ## 尚未具备的评测条件
 
 新 manifest 的完整执行、原始响应归档、离线重算及答案/解释独立复核入口已实现，见 [阅读评测操作说明](reading-evaluation.md)。授权留出集、独立家族/真值审查、隔离候选设备凭证和价格上界证据尚未取得；当前未执行真实新范围模型评测。此工具链不能生成这些证据，旧 240 题不能改名代替新增留出集。正式材料收取/撤回流程随 B21 完成，生产启用与真实评测分别记录。
+
+## 直接供应商诊断的核销
+
+`scripts/reconcile-evaluation-budget.mjs` 默认按明确 ledger/policy/batch/review 及其摘要做本地核对；只有显式 apply 才落账。直接 provider 收据不能伪造官方 HTTP/SSE 完成状态；需要独立逐条审核、原执行脚本/价格/计划/日志的摘要绑定，异常、空输出及缺少计量时保留最高预留。追加核销不能改写原派发、原预算或历史 outcome。
+历史批次数值与审批保存于[历史索引](history/index.json)。本工具不处理用户题数、真实支付或生产账务，旧审批不授权新模型调用。对应回归为 evaluation-settlement/evaluation-budget 测试。

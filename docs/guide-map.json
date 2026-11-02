@@ -1,0 +1,579 @@
+{
+  "schema_version": 1,
+  "entry": "HANDOVER.md",
+  "documents": [
+    {
+      "path": "AGENTS.md",
+      "kind": "pointer",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "AGENTS",
+      "sources": [
+        "HANDOVER.md"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ]
+    },
+    {
+      "path": "CLAUDE.md",
+      "kind": "pointer",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "CLAUDE",
+      "sources": [
+        "HANDOVER.md"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ]
+    },
+    {
+      "path": "HANDOVER.md",
+      "kind": "entry",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "NotchSPI 工程交接",
+      "sources": [
+        "Package.swift",
+        "VERSION.env"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ]
+    },
+    {
+      "path": "README.md",
+      "kind": "pointer",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "NotchSPI",
+      "sources": [
+        "HANDOVER.md"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ]
+    },
+    {
+      "path": "Tests/Fixtures/Personality/RUNBOOK.md",
+      "kind": "fixture",
+      "scope": [
+        "shared"
+      ],
+      "purpose": "Personality 付费评测协议",
+      "sources": [
+        "Tests/Fixtures/Personality/manifest.json"
+      ],
+      "checks": [
+        "Tests/NotchSPITests/PersonalityEvaluationTests.swift"
+      ]
+    },
+    {
+      "path": "Tests/Fixtures/objective-v1/RUNBOOK.md",
+      "kind": "fixture",
+      "scope": [
+        "shared"
+      ],
+      "purpose": "Objective Result V1 发版评测与灰度 Runbook",
+      "sources": [
+        "Tests/Fixtures/objective-v1/manifest.json"
+      ],
+      "checks": [
+        "server/test/objective-attestation.test.ts"
+      ]
+    },
+    {
+      "path": "Vendor/BotAvatarsKit/README.md",
+      "kind": "vendor",
+      "scope": [
+        "license"
+      ],
+      "purpose": "BotAvatarsKit core",
+      "sources": [
+        "Vendor/BotAvatarsKit/LICENSE"
+      ],
+      "checks": [
+        "scripts/cross-platform/generate.mjs"
+      ]
+    },
+    {
+      "path": "desktop/THIRD_PARTY_NOTICES.md",
+      "kind": "vendor",
+      "scope": [
+        "license"
+      ],
+      "purpose": "Third-party notices",
+      "sources": [
+        "shared/ui/vendor/bot-avatars/LICENSE"
+      ],
+      "checks": [
+        "scripts/cross-platform/generate.mjs"
+      ]
+    },
+    {
+      "path": "desktop/generated/ui/vendor/bot-avatars/README.md",
+      "kind": "vendor",
+      "scope": [
+        "license"
+      ],
+      "purpose": "Pinned Ghost renderer",
+      "sources": [
+        "shared/ui/vendor/bot-avatars/LICENSE"
+      ],
+      "checks": [
+        "scripts/cross-platform/generate.mjs"
+      ]
+    },
+    {
+      "path": "docs/client-behavior.md",
+      "kind": "reference",
+      "scope": [
+        "mac"
+      ],
+      "purpose": "客户端行为",
+      "sources": [
+        "Sources/NotchSPI/Notch/NotchController.swift",
+        "Sources/NotchSPI/Settings/MainSettingsWindow.swift"
+      ],
+      "checks": [
+        "Tests/NotchSPITests/CaptureFlowStabilityTests.swift",
+        "Tests/NotchSPITests/SettingsNavigationAccessibilityTests.swift"
+      ]
+    },
+    {
+      "path": "docs/cloudflare-scheduler.md",
+      "kind": "reference",
+      "scope": [
+        "scheduler"
+      ],
+      "purpose": "Cloudflare recovery scheduler",
+      "sources": [
+        "scheduler/src/index.ts",
+        "scheduler/wrangler.jsonc"
+      ],
+      "checks": [
+        "scheduler/test/reaper.test.mjs",
+        "scheduler/test/runtime.test.mjs"
+      ]
+    },
+    {
+      "path": "docs/compatibility.md",
+      "kind": "reference",
+      "scope": [
+        "mac",
+        "server"
+      ],
+      "purpose": "兼容账本",
+      "sources": [
+        "Sources/NotchSPI/Settings/Settings.swift",
+        "server/src/quota-migration.ts"
+      ],
+      "checks": [
+        "Tests/NotchSPITests/UpgradeCompatibilityTests.swift",
+        "server/test/quota-migration.test.ts"
+      ]
+    },
+    {
+      "path": "docs/feedback-operations.md",
+      "kind": "reference",
+      "scope": [
+        "mac",
+        "desktop",
+        "server"
+      ],
+      "purpose": "自愿反馈的收件、审核与删除",
+      "sources": [
+        "scripts/lib/feedback-vault.mjs",
+        "Sources/NotchSPI/Capture/FeedbackExporter.swift"
+      ],
+      "checks": [
+        "server/test/feedback-vault.test.ts",
+        "desktop/test/feedback.test.mjs"
+      ]
+    },
+    {
+      "path": "docs/history/README.md",
+      "kind": "reference",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "历史归档",
+      "sources": [
+        "docs/history/index.json"
+      ],
+      "checks": [
+        "scripts/test/repo-health.test.mjs"
+      ]
+    },
+    {
+      "path": "docs/latency.md",
+      "kind": "reference",
+      "scope": [
+        "mac",
+        "server"
+      ],
+      "purpose": "延迟诊断与实验边界",
+      "sources": [
+        "Sources/NotchSPI/Capture/CaptureLatency.swift",
+        "scripts/run-latency-prompt-quality.mjs"
+      ],
+      "checks": [
+        "scripts/fixtures/latency-prompt-quality.test.mjs",
+        "server/test/capture-timing.test.ts"
+      ]
+    },
+    {
+      "path": "docs/linux-runtime-verification.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "Linux 运行环境验证",
+      "sources": [
+        "scripts/verify-linux-runtime.mjs",
+        ".github/workflows/ci.yml"
+      ],
+      "checks": [
+        "server/test/image-validation.test.ts"
+      ]
+    },
+    {
+      "path": "docs/official-api.md",
+      "kind": "reference",
+      "scope": [
+        "server",
+        "shared"
+      ],
+      "purpose": "NotchSPI 官方服务 — 客户端 HTTP 契约",
+      "sources": [
+        "server/src/routes.ts",
+        "server/src/plus-routes.ts"
+      ],
+      "checks": [
+        "server/test/route-inventory.test.ts"
+      ]
+    },
+    {
+      "path": "docs/prototypes.md",
+      "kind": "reference",
+      "scope": [
+        "mac",
+        "server"
+      ],
+      "purpose": "预览与 QA 边界",
+      "sources": [
+        "Sources/NotchSPI/Notch/DesignVisualQA.swift",
+        "server/tools/settings-preview.ts"
+      ],
+      "checks": [
+        "Tests/NotchSPITests/AnswerReadingTests.swift"
+      ]
+    },
+    {
+      "path": "docs/quality-evidence.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "独立质量记录操作说明",
+      "sources": [
+        "server/src/quality.ts",
+        "scripts/lib/evaluation-settlement.mts"
+      ],
+      "checks": [
+        "server/test/quality.test.ts",
+        "server/test/evaluation-settlement.test.ts"
+      ]
+    },
+    {
+      "path": "docs/quota-migration.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "额度账本迁移与兼容回退",
+      "sources": [
+        "server/src/quota-migration.ts",
+        "scripts/migrate-quota.mjs"
+      ],
+      "checks": [
+        "server/test/quota-migration.test.ts"
+      ]
+    },
+    {
+      "path": "docs/reading-evaluation.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "阅读练习执行与独立复核",
+      "sources": [
+        "scripts/lib/reading-evaluation.mts",
+        "scripts/run-reading-eval.mjs"
+      ],
+      "checks": [
+        "server/test/reading-evaluation.test.ts"
+      ]
+    },
+    {
+      "path": "docs/release-3.0-execution-2026-10-20.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "3.0 发布执行记录（2026-10-20）",
+      "sources": [
+        "docs/history/index.json"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ],
+      "as_of": "2026-10-20",
+      "source_commit": null
+    },
+    {
+      "path": "docs/test-network-isolation.md",
+      "kind": "reference",
+      "scope": [
+        "mac"
+      ],
+      "purpose": "测试网络隔离",
+      "sources": [
+        "Package.swift",
+        "Tests/NetworkIsolation/TestNetworkIsolation.c",
+        "Sources/NotchSPI/App/DevelopmentIsolation.swift"
+      ],
+      "checks": [
+        "Tests/NotchSPITests/NetworkIsolationTests.swift",
+        "Tests/NotchSPITests/DevelopmentIsolationTests.swift"
+      ]
+    },
+    {
+      "path": "docs/vercel-bundle-verification.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "Vercel 函数包核验",
+      "sources": [
+        "scripts/verify-vercel-output.mjs",
+        "server/vercel.json"
+      ],
+      "checks": [
+        "server/test/image-validation.test.ts"
+      ]
+    },
+    {
+      "path": "docs/website.md",
+      "kind": "reference",
+      "scope": [
+        "server"
+      ],
+      "purpose": "官网与本地预览",
+      "sources": [
+        "server/src/site.ts",
+        "server/src/site-media.ts"
+      ],
+      "checks": [
+        "server/test/site.test.ts",
+        "server/test/v3-site.test.ts"
+      ]
+    },
+    {
+      "path": "docs/windows/README.md",
+      "kind": "pointer",
+      "scope": [
+        "governance"
+      ],
+      "purpose": "Windows 实现与验收入口",
+      "sources": [
+        "HANDOVER.md"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ]
+    },
+    {
+      "path": "docs/windows/architecture.md",
+      "kind": "reference",
+      "scope": [
+        "shared",
+        "desktop",
+        "mac"
+      ],
+      "purpose": "共享架构与渐进迁移",
+      "sources": [
+        "scripts/cross-platform/generate.mjs",
+        "desktop/main.mjs",
+        "shared/product.json"
+      ],
+      "checks": [
+        "desktop/test/notch-parity.test.mjs",
+        "Tests/NotchSPITests/CrossPlatformNotchParityTests.swift"
+      ]
+    },
+    {
+      "path": "docs/windows/closure-plan.md",
+      "kind": "reference",
+      "scope": [
+        "mac",
+        "desktop"
+      ],
+      "purpose": "Win/Mac 开发闭环验收",
+      "sources": [
+        ".github/workflows/desktop.yml",
+        "scripts/cross-platform/prove-shared-change.mjs"
+      ],
+      "checks": [
+        "scripts/test/provenance.test.mjs",
+        "desktop/test/notch-parity.test.mjs"
+      ]
+    },
+    {
+      "path": "docs/windows/mac-provenance.md",
+      "kind": "reference",
+      "scope": [
+        "mac"
+      ],
+      "purpose": "Mac 候选包追溯",
+      "sources": [
+        "scripts/cross-platform/mac-provenance.mjs",
+        "scripts/package.sh"
+      ],
+      "checks": [
+        "scripts/test/provenance.test.mjs"
+      ]
+    },
+    {
+      "path": "docs/windows/manual-acceptance.md",
+      "kind": "reference",
+      "scope": [
+        "desktop"
+      ],
+      "purpose": "Windows 实机验收清单（照着做版）",
+      "sources": [
+        "desktop/platform/capture.mjs",
+        "desktop/platform/updater.mjs"
+      ],
+      "checks": [
+        "desktop/test/capture-exclusion.test.mjs",
+        "desktop/test/window-behavior.test.mjs"
+      ]
+    },
+    {
+      "path": "objective-eval-output/2026-08-30T17-03-15.896Z-summary.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "Objective V1 evaluation",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-30",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z-summary.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "Objective V1 evaluation",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-31",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T10-04-29.595Z-thinking-diagnostic.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "DeepSeek thinking-low diagnostic",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-31",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-06-26.590Z-legacy-summary.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "Objective evaluation — legacy",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-31",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-20-54.674Z-summary.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "Objective V1 evaluation",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-31",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "objective-eval-output/2026-08-31T13-25-50.386Z-r5-vs-legacy-comparison.md",
+      "kind": "evidence",
+      "scope": [
+        "evidence"
+      ],
+      "purpose": "Objective V1 r5 vs fixed legacy baseline",
+      "sources": [
+        "scripts/fixtures/immutable-evidence.json"
+      ],
+      "checks": [
+        "scripts/lib/immutable-evidence.mjs"
+      ],
+      "as_of": "2026-08-31",
+      "source_commit": "b89630b33ea70ef541b4031a82fb512812987d67"
+    },
+    {
+      "path": "shared/ui/vendor/bot-avatars/README.md",
+      "kind": "vendor",
+      "scope": [
+        "license"
+      ],
+      "purpose": "Pinned Ghost renderer",
+      "sources": [
+        "shared/ui/vendor/bot-avatars/LICENSE"
+      ],
+      "checks": [
+        "scripts/cross-platform/generate.mjs"
+      ]
+    }
+  ]
+}

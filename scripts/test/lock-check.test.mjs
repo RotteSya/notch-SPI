@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkProject } from '../lib/lock-check.mjs';
+import { checkProject, checkNodeVersion } from '../lib/lock-check.mjs';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 
@@ -31,6 +31,16 @@ function lockWith(rootDeps, packages, extraRoot = {}) {
     },
   };
 }
+
+test('development preflight checks each declared Node floor without installing', t => {
+  const dir=tempProject();t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({engines:{node:'>=24.16.0'}}));
+  assert.match(checkNodeVersion(dir,'22.18.0').join('\n'),/24.16.0.*22.18.0/);
+  assert.deepEqual(checkNodeVersion(dir,'24.16.0'),[]);
+  assert.deepEqual(checkNodeVersion(dir,'24.20.0'),[]);
+  assert.deepEqual(checkNodeVersion(dir,'25.0.0'),[]);
+  assert.equal(fs.existsSync(path.join(dir,'node_modules')),false);
+});
 
 test('manifest 2.0.0 against lock and install 1.0.0 fails', () => {
   const dir = tempProject();

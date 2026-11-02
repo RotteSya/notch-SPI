@@ -26,6 +26,13 @@ test('offline Swift preflight checks an existing checkout against its pinned rev
   const stateFile = path.join(root, '.build/workspace-state.json');
   fs.writeFileSync(stateFile, JSON.stringify(state));
   assert.deepEqual(checkSwiftCheckouts(root), []);
+  fs.appendFileSync(path.join(checkout, 'Package.swift'), '// modified\n');
+  assert.match(checkSwiftCheckouts(root).join('\n'), /local modifications/);
+  fs.writeFileSync(path.join(checkout, 'Package.swift'), '// fixture\n');
+  fs.writeFileSync(path.join(checkout, 'untracked.swift'), '// new\n');
+  assert.match(checkSwiftCheckouts(root).join('\n'), /local modifications/);
+  fs.unlinkSync(path.join(checkout, 'untracked.swift'));
+  assert.deepEqual(checkSwiftCheckouts(root), []);
   state.object.dependencies[0].state.checkoutState.revision = '0'.repeat(40);
   fs.writeFileSync(stateFile, JSON.stringify(state));
   assert.match(checkSwiftCheckouts(root).join('\n'), /does not match/);

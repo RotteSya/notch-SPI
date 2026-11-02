@@ -18,9 +18,9 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 | `shared/protocol/auto-session.mjs` | 生成的 desktop 状态机 + Mac JavaScriptCore 适配 | 自动连答停止条件、暂停/超时、画面差异和稳定判定只改一次；截图与轮询仍由平台提供 |
 | `shared/protocol/persona-session.mjs` | 生成的 desktop 会话 + Mac JavaScriptCore 类型适配 | 人物像 generation/token、上下文裁剪、失败屏障、过期及完成提交策略只改一次；异步请求和界面效果仍分别适配 |
 | `shared/protocol/free-trial.mjs` | desktop 账户/回执校验 + Mac JavaScriptCore 快照校验 | 免费体验回执的策略版本、额度与时间不变量只改一次；不授予本地权益，服务端仍为计费权威 |
-| `shared/protocol/settlement.mjs` | desktop 流/状态校验 + Mac `SettlementSnapshot` 的 JavaScriptCore 适配 | 终态、收费/可用结果组合、额度与累计用量校验只改一次；Swift 保留字段解码，SSE 顺序规则仍待迁移 |
+| `shared/protocol/settlement.mjs` | desktop 流/状态校验 + Mac `SettlementSnapshot` 的 JavaScriptCore 适配 | 终态、收费/可用结果组合、额度与累计用量校验只改一次；Swift 保留字段解码，SSE 顺序由 shared/protocol/official-stream.mjs 定义 |
 | `shared/protocol/official-stream.mjs` | desktop `OfficialStream` + Mac `OfficialStreamDecoder` 的 JavaScriptCore 适配 | SSE 事件顺序、回执/错误约束、内容字节上限与完成判定只改一次；字节分帧、异步缓冲及取消仍由平台适配 |
-| `Tests/Fixtures/ObjectiveResult/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
+| `Tests/Fixtures/objective-result-v1/` | 既有 Swift/服务端测试 + 桌面测试 | 同一协议用例跨端回归 |
 | `VERSION.env` | 既有 Mac 包；生成 JS app_version；Windows 打包元数据 | 同一提交/版本源；Windows semver 用 major.minor.build |
 | `shared/ui/ghost-engine.mjs`、`ghost-motion.mjs` | Mac JavaScriptCore + Electron Canvas | 完整随机仿真、姿态、眨眼、思考与完成编排一次修改 |
 | `shared/ui/flight.mjs`、`capture.mjs` | Mac ScreenshotFlight/Tray + Windows 多窗口飞入层 | 轨迹、裁切避让、尺寸、落地/重排参数一次修改；窗口系统分别适配 |
@@ -47,7 +47,7 @@ Windows 使用 Electron 主进程 + sandbox preload + HTML/CSS/ES modules。当�
 
 证明开始时删除旧 `result.json`，每一步执行前删除对应旧日志，只有所有检查通过且主工作区源码摘要未变才写入新结果。结果绑定 Git 提交、源码摘要、dirty 状态及每步日志摘要；脏工作区证据不能当作干净提交证据。
 
-2026-10-19 四项检查 exit 0，结果 `output/shared-change-proof/result.json`，不是只比较生成文本。原生 Mac 全量 585 项测试也通过，原有答案解析 fixtures 覆盖 JavaScriptCore 迁移。
+历史运行结果和平台基线原文从[历史索引](../history/index.json)回读；每次新运行必须重新生成结果，不能沿用旧日志。
 
 ## 已完成的渐进迁移与边界
 
@@ -75,3 +75,10 @@ Windows 打包入口将每次产物保存在 `desktop/dist/candidates/<candidate
 这些记录证明源码与候选包的绑定，不证明整个安装、截图、签名或升级流程通过。
 
 已有 Electron 缓存可通过单次命令的 `NSPI_ELECTRON_DIST` 指向锁定版本的 Windows x64 ZIP；入口核对文件名并记录文件摘要，不安装运行时或修改全局环境。无缓存时不能把联网下载当作已获安装授权。
+
+## 行为基线与证据来源
+
+单图成功接收即提交，多图/删除撤销/预览暂停按 shared/product.json 和共用用例执行。官方链路冻结账户与请求身份；401 保留凭据，断流不自动重放可能已计费的 POST，ready/review 成功计费，retake/空结果/失败释放预扣。
+Mac 原生的五页设置、历史、人物像和三通道以[客户端契约](../client-behavior.md)及当前源码为准。几何、动效和字号从 shared/product.json、shared/ui 及原生设计类型读取，日期基线中的数值不覆盖源码。
+`evidence/mac-build27-*` 等为原生隔离 QA 截图，`evidence/desktop-macos-*` 为 Mac 宿主 Electron；均不是 Windows 实机证据。原始截图保留，历史 baseline/motion 报告归档。
+本地报告包的 pack:win -- --local-test 开关由 package.mjs 实现，正常退出生成测试电脑本地 ZIP，不自动上传；正式包不启用该模式。报告字段与窗口等待诊断见 desktop/core/local-test-report.mjs、window-diagnostics.mjs 及对应测试。

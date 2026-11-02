@@ -7,6 +7,7 @@ import {
   checkDocumentLinks,
   checkDelivery,
   checkGovernance,
+  checkGuideMap,
   checkHistoricalArchives,
   checkPortableDocs,
   checkTrackedSymlinks,
@@ -251,6 +252,7 @@ for (const message of checkDocumentLinks(REPO_ROOT, governed)) fail(message);
 for (const message of checkTrackedSymlinks(REPO_ROOT, governed)) fail(message);
 for (const message of checkPortableDocs(REPO_ROOT, governed)) fail(message);
 for (const message of checkGovernance(REPO_ROOT)) fail(message);
+for (const message of checkGuideMap(REPO_ROOT, governed)) fail(message);
 for (const message of checkHistoricalArchives(REPO_ROOT)) fail(message);
 
 // --- Env var parity --------------------------------------------------------------

@@ -6,27 +6,39 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MODE="prepare"
-NO_INSTALL=0
+NO_INSTALL=1
+INSTALL_REQUESTED=0
+NO_INSTALL_REQUESTED=0
 for arg in "$@"; do
 case "$arg" in
   --check) MODE="check" ;;
   --run) MODE="run" ;;
-  --no-install) NO_INSTALL=1 ;;
+  --no-install) NO_INSTALL_REQUESTED=1 ;;
+  --install) NO_INSTALL=0; INSTALL_REQUESTED=1 ;;
   -h|--help)
-    echo "Usage: $0 [--check|--run] [--no-install]"
-    echo "  (default)  check the toolchain, reuse or install locked dependencies, build, smoke, then exit"
+    echo "Usage: $0 [--check|--run] [--install|--no-install]"
+    echo "  (default)  check existing dependencies, build offline, smoke, then exit"
     echo "  --check    toolchain and lock consistency only"
     echo "  --run      prepare, then launch the isolated mock client"
-    echo "  --no-install  require existing locked npm dependencies and Swift checkouts; never download"
+    echo "  --install  explicitly allow project-local server npm ci and Swift dependency resolution"
+    echo "  --no-install  compatibility alias for the default offline preparation"
     exit 0
     ;;
   *)
     echo "bootstrap: unknown argument: $arg" >&2
-    echo "Usage: $0 [--check|--run] [--no-install]" >&2
+    echo "Usage: $0 [--check|--run] [--install|--no-install]" >&2
     exit 2
     ;;
 esac
 done
+if [[ "$INSTALL_REQUESTED" == 1 && "$NO_INSTALL_REQUESTED" == 1 ]]; then
+  echo "bootstrap: --install and --no-install are mutually exclusive" >&2
+  exit 2
+fi
+if [[ "$MODE" == "check" && "$INSTALL_REQUESTED" == 1 ]]; then
+  echo "bootstrap: --check never installs; remove --install" >&2
+  exit 2
+fi
 
 fail() {
   echo "bootstrap: $*" >&2
@@ -80,13 +92,6 @@ require_no_running_client() {
 
 if [[ "$MODE" == "run" && "$(uname -s)" == "Darwin" ]]; then
   require_no_running_client
-fi
-
-if [[ "$MODE" != "check" ]]; then
-  need_cmd node "Install Node.js from https://nodejs.org (the minimum is server/package.json engines.node). This script will not install it."
-  echo "==> Repository health"
-  node "$REPO_ROOT/scripts/repo-health.mjs"
-  node --test "$REPO_ROOT"/scripts/test/*.test.mjs
 fi
 
 echo "==> Checking prerequisites"
@@ -148,14 +153,21 @@ fi
 
 echo "    macOS $os_ver ($arch), Swift $swift_ver, Node v$node_ver (minimum $node_floor)"
 
+if [[ "$MODE" != "check" ]]; then
+  need_cmd node "Install Node.js from https://nodejs.org (the minimum is server/package.json engines.node). This script will not install it."
+  echo "==> Repository health"
+  node "$REPO_ROOT/scripts/repo-health.mjs"
+  node "$REPO_ROOT/scripts/cross-platform/generate.mjs" --check
+fi
+
 [[ -f "$REPO_ROOT/Package.resolved" ]] || fail "Package.resolved is missing; Swift dependencies stay pinned to that file"
 
 if [[ "$MODE" == "check" ]]; then
   echo "==> Checking locked dependencies"
   check_ok=0
   node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/server" || check_ok=1
-  node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/scheduler" || check_ok=1
-  [[ "$check_ok" -eq 0 ]] || fail "locked dependencies are not installed; run ./scripts/bootstrap.sh"
+  node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT" || check_ok=1
+  [[ "$check_ok" -eq 0 ]] || fail "locked dependencies need preparation; obtain project-local installation authorization, then use --install"
   echo "bootstrap: check passed"
   exit 0
 fi
@@ -167,12 +179,12 @@ if [[ "$MODE" == "run" ]]; then
   port_busy "$RUN_PORT"
 fi
 
-for project in server scheduler; do
+for project in server; do
   if node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/$project" >/dev/null 2>&1; then
     echo "==> Reusing locked $project dependencies"
   elif [[ "$NO_INSTALL" -eq 1 ]]; then
     node "$REPO_ROOT/scripts/lib/lock-check.mjs" "$REPO_ROOT/$project" || true
-    fail "$project dependencies need preparation; --no-install stopped before installation or build"
+    fail "$project dependencies need preparation; offline mode stopped before installation or build (authorize --install separately)"
   else
     echo "==> Installing $project dependencies (npm ci)"
     ( cd "$REPO_ROOT/$project" && npm ci --include=optional )
@@ -182,7 +194,7 @@ done
 
 SWIFT_ARGS=()
 if [[ "$NO_INSTALL" -eq 1 ]]; then
-  node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT" || fail "Swift dependencies need preparation; --no-install stopped before build"
+  node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT" || fail "Swift dependencies need preparation; offline mode stopped before build (authorize --install separately)"
   SWIFT_ARGS=(--disable-automatic-resolution --skip-update)
 fi
 
@@ -192,7 +204,7 @@ if [[ "$NO_INSTALL" -eq 1 ]]; then
 else
   swift build
 fi
-bin_dir="$(swift build --show-bin-path)"
+bin_dir="$(swift build ${SWIFT_ARGS[@]+"${SWIFT_ARGS[@]}"} --show-bin-path)"
 [[ -d "$bin_dir/SwiftMath_SwiftMath.bundle" ]] || fail "SwiftMath resources missing from $bin_dir"
 
 echo "==> Isolated local-server smoke"
@@ -201,7 +213,7 @@ PORT="$SMOKE_PORT" "$REPO_ROOT/scripts/dev.sh" --smoke
 if [[ "$MODE" != "run" ]]; then
   echo
   echo "bootstrap: ready"
-  echo "Next: ./scripts/bootstrap.sh --run"
+  echo "Next: ./scripts/bootstrap.sh --run (offline by default)"
   exit 0
 fi
 

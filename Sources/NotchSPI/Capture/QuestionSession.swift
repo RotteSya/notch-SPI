@@ -5,10 +5,27 @@ import CryptoKit
 /// The last owner removes the file. In-flight snapshots retain owners after a session clears.
 final class QuestionAssetFile: @unchecked Sendable {
     let url: URL
+    #if DEBUG
+    private static let pendingRemovals = DispatchGroup()
+    /// A test can release the last owner and await actual I/O without racing utility scheduling.
+    static func finishPendingRemovals() async {
+        await withCheckedContinuation { continuation in
+            pendingRemovals.notify(queue: .global(qos: .utility)) { continuation.resume() }
+        }
+    }
+    #endif
     init(url: URL) { self.url = url }
     deinit {
         let path = url
-        DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: path) }
+        #if DEBUG
+        QuestionAssetFile.pendingRemovals.enter()
+        #endif
+        DispatchQueue.global(qos: .utility).async {
+            #if DEBUG
+            defer { QuestionAssetFile.pendingRemovals.leave() }
+            #endif
+            try? FileManager.default.removeItem(at: path)
+        }
     }
 }
 struct ContextAsset: Identifiable, Equatable, Sendable {

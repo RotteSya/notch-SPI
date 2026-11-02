@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'nspi-bootstrap-'));
@@ -80,7 +81,6 @@ for (const relative of sourceFiles) {
 }
 execFileSync('git', ['init', '-q', base]);
 execFileSync('git', ['add', '-f', '--', ...sourceFiles.filter(file => fs.existsSync(path.join(base, file)))], { cwd: base });
-fs.rmSync(path.join(base, 'scripts/test/bootstrap.test.mjs'), { force: true });
 after(() => {
   fs.rmSync(work, { recursive: true, force: true });
 });
@@ -149,201 +149,150 @@ function invoke(dir, args, extra = {}) {
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', order: fs.readFileSync(log, 'utf8') };
 }
 
-function governanceIndex(out) {
-  const spec = out.indexOf('ℹ tests');
-  if (spec >= 0) return spec;
-  return out.indexOf('# tests');
-}
-
-function assertReachedInstall(result) {
-  const out = result.stdout;
-  const tests = governanceIndex(out);
-  const install = out.indexOf('==> Installing server dependencies');
-  const checked = out.indexOf('matches package.json and package-lock.json');
-  const build = out.indexOf('==> Building client');
-  assert.equal(result.stderr.includes('skipping running files'), false, result.stderr);
-  assert.ok(tests >= 0 && install > tests, out);
-  assert.match(out.slice(tests, install), /(?:ℹ|#) fail 0/);
-  assert.ok(checked > install && build > checked, `${out}\n${result.stderr}`);
-  assert.equal((out.match(/matches package.json and package-lock.json/g) ?? []).length, 2);
-  const server = result.order.indexOf('npm-ci ');
-  const scheduler = result.order.indexOf('npm-ci ', server + 1);
-  const swift = result.order.indexOf('swift build');
-  const dev = result.order.indexOf('dev.sh --smoke');
-  assert.ok(server >= 0 && scheduler > server && swift > scheduler && dev > swift, result.order);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}\n${result.order}`);
+function prepareSwift(dir) {
+  const checkout = path.join(dir, '.build/checkouts/fixture');
+  fs.mkdirSync(checkout, {recursive:true});
+  fs.writeFileSync(path.join(checkout, 'Package.swift'), '// fixture\n');
+  const git = args => execFileSync('git', args, {cwd:checkout,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  git(['init','-q']); git(['add','.']);
+  git(['-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-qm','fixture']);
+  const revision=git(['rev-parse','HEAD']);
+  fs.writeFileSync(path.join(dir,'Package.resolved'),JSON.stringify({pins:[{identity:'fixture',state:{revision}}]}));
+  fs.writeFileSync(path.join(dir,'.build/workspace-state.json'),JSON.stringify({object:{dependencies:[{packageRef:{identity:'fixture'},subpath:'fixture',state:{checkoutState:{revision}}}]}}));
+  return checkout;
 }
 
 const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
-
-describe('bootstrap install recovery', { concurrency: 1 }, () => {
+describe('bootstrap offline defaults and explicit install', {concurrency:1}, () => {
   if (!appleSilicon) {
-    test('a non-Apple host stops after repository checks and before npm ci', () => {
-      const dir = scenario();
-      const result = invoke(dir, []);
-      assert.notEqual(result.status, 0);
-      assert.match(`${result.stdout}\n${result.stderr}`, /macOS 14\+ on Apple Silicon is required/);
-      assert.ok(governanceIndex(result.stdout) >= 0, result.stdout);
-      assert.match(result.stdout, /(?:ℹ|#) fail 0/);
-      assert.equal(result.order.includes('npm-ci '), false);
-      assert.equal(result.order.includes('swift build'), false);
-      assert.equal(result.order.includes('dev.sh'), false);
-      assert.equal(result.stdout.includes('==> Building client'), false);
-    });
-
-    test('check on a non-Apple host does not install', () => {
-      const dir = scenario();
-      const result = invoke(dir, ['--check']);
-      assert.notEqual(result.status, 0);
-      assert.match(`${result.stdout}\n${result.stderr}`, /macOS 14\+ on Apple Silicon is required/);
-      assert.equal(result.order.includes('npm'), false);
-      assert.equal(result.stdout.includes('Installing server'), false);
+    test('unsupported host stops without installation or build', () => {
+      for(const args of [[],['--check'],['--install']]) {
+        const result=invoke(scenario(),args);
+        assert.notEqual(result.status,0);
+        assert.match(result.stdout+result.stderr,/macOS 14\+ on Apple Silicon is required/);
+        assert.equal(result.order.includes('npm-ci '),false);
+        assert.equal(result.order.includes('swift build'),false);
+      }
     });
     return;
   }
 
-  test('a missing install reaches npm ci and the post-install check', () => {
-    const dir = scenario();
-    assert.equal(fs.existsSync(path.join(dir, 'server/node_modules')), false);
-    assertReachedInstall(invoke(dir, []));
+  for(const args of [[],['--no-install'],['--check']]) {
+    test(`${args.join(' ') || 'default'} refuses absent dependencies without installing`, () => {
+      const result=invoke(scenario(),args);
+      assert.notEqual(result.status,0);
+      assert.match(result.stdout+result.stderr,/not installed|dependencies need preparation/);
+      assert.equal(result.order.includes('npm-ci '),false);
+      assert.equal(result.order.includes('swift build'),false);
+    });
+  }
+
+  test('explicit install prepares only server, then builds and smokes', () => {
+    const result=invoke(scenario(),['--install']);
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.equal((result.order.match(/npm-ci /g)||[]).length,1);
+    assert.match(result.order,/npm-ci .*server/);
+    assert.equal(result.order.includes('scheduler'),false);
+    assert.ok(result.order.indexOf('swift build')>result.order.indexOf('npm-ci '));
+    assert.ok(result.order.indexOf('dev.sh --smoke')>result.order.indexOf('swift build'));
+    assert.equal(result.stdout.includes('ℹ tests'),false,'bootstrap must not recursively run the governance suite');
   });
 
-  test('run refuses an existing client before installation without stopping it', () => {
-    const result = invoke(scenario(), ['--run'], { NSPI_STUB_RUNNING_CLIENT_PID: '54321' });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /NotchSPI is already running.*54321/);
-    assert.match(result.stderr, /No existing process was stopped/);
-    assert.equal(result.order, '');
+  for(const prepare of [partialInstall,breakVersion]) {
+    test(`explicit install repairs ${prepare.name}`, () => {
+      const dir=scenario();prepare(dir);
+      const result=invoke(dir,['--install']);
+      assert.equal(result.status,0,result.stdout+result.stderr);
+      assert.equal((result.order.match(/npm-ci /g)||[]).length,1);
+    });
+  }
+
+  test('failed explicit npm ci stops before build', () => {
+    const result=invoke(scenario(),['--install'],{NSPI_NPM_CI_FAIL:'1'});
+    assert.equal(result.status,1);
+    assert.match(result.stderr,/npm ci failed: simulated/);
+    assert.equal(result.order.includes('swift build'),false);
   });
 
-  test('run fails closed when process discovery fails', () => {
-    const result = invoke(scenario(), ['--run'], { NSPI_STUB_PGREP_ERROR: '1' });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /could not check existing NotchSPI processes/);
-    assert.equal(result.order, '');
+  test('existing server dependencies and Swift checkout need no scheduler install', () => {
+    const dir=scenario();installLocked(dir,'server');prepareSwift(dir);
+    const result=invoke(dir,[]);
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.equal(result.order.includes('npm-ci '),false);
+    const builds=result.order.split('\n').filter(x=>x.startsWith('swift build'));
+    assert.equal(builds.length,2);
+    for(const line of builds)assert.match(line,/--disable-automatic-resolution --skip-update/);
+    assert.match(result.stdout,/Shared product sources are synchronized/);
+    assert.equal(fs.existsSync(path.join(dir,'scheduler/node_modules')),false);
   });
 
-  test('prepare remains available while another client is running', () => {
-    assertReachedInstall(invoke(scenario(), [], { NSPI_STUB_RUNNING_CLIENT_PID: '54321' }));
+  test('check includes Swift checkout and remains read-only', () => {
+    const dir=scenario();installLocked(dir,'server');
+    let result=invoke(dir,['--check']);
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Swift checkout preflight failed/);
+    const checkout=prepareSwift(dir);
+    result=invoke(dir,['--check']);assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.equal(result.order.includes('npm'),false);assert.equal(result.order.includes('swift build'),false);
+    fs.appendFileSync(path.join(checkout,'Package.swift'),'// local change\n');
+    result=invoke(dir,['--check']);assert.notEqual(result.status,0);assert.match(result.stderr,/local modifications/);
+    assert.match(fs.readFileSync(path.join(checkout,'Package.swift'),'utf8'),/local change/);
   });
 
-  test('run with no existing client reaches dependency installation', () => {
-    const result = invoke(scenario(), ['--run'], { NSPI_NPM_CI_FAIL: '1' });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /npm ci failed: simulated/);
-    assert.equal(result.stderr.includes('already running'), false);
-    assert.equal(result.order.includes('npm-ci '), true);
+  test('default refuses missing Swift checkout before build', () => {
+    const dir=scenario();installLocked(dir,'server');const result=invoke(dir,[]);
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Swift dependencies need preparation/);
+    assert.equal(result.order.includes('swift build'),false);
   });
 
-  test('run rechecks for a client started during preparation', () => {
-    const result = invoke(scenario(), ['--run'], { NSPI_STUB_RUNNING_AFTER_BUILD: '1' });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /NotchSPI is already running.*54321/);
-    assert.equal(result.order.includes('swift build'), true);
-    assert.equal(result.order.includes('dev.sh --smoke'), true);
-    assert.equal(result.stdout.includes('==> Launching isolated development app'), false);
+  test('stale dependencies are named without implicit repair', () => {
+    const dir=scenario();breakVersion(dir);const result=invoke(dir,['--check']);
+    assert.notEqual(result.status,0);assert.match(result.stderr,/fastify lock .+ installed 0\.0\.1/);
+    assert.equal(result.order.includes('npm'),false);
   });
 
-  test('a partial install reaches npm ci and the post-install check', () => {
-    const dir = scenario();
-    partialInstall(dir);
-    assertReachedInstall(invoke(dir, []));
+  test('run refuses existing clients without stopping them', () => {
+    const result=invoke(scenario(),['--run'],{NSPI_STUB_RUNNING_CLIENT_PID:'54321'});
+    assert.equal(result.status,1);assert.match(result.stderr,/already running.*54321/);
+    assert.match(result.stderr,/No existing process was stopped/);assert.equal(result.order,'');
   });
-
-  test('a stale installed version reaches npm ci and the post-install check', () => {
-    const dir = scenario();
-    breakVersion(dir);
-    const result = invoke(dir, []);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.equal((result.order.match(/npm-ci /g) ?? []).length, 1);
-    assert.match(result.stdout, /Reusing locked scheduler dependencies/);
-    assert.ok(result.order.indexOf('swift build') > result.order.indexOf('npm-ci '));
+  test('run fails closed on process discovery error', () => {
+    const result=invoke(scenario(),['--run'],{NSPI_STUB_PGREP_ERROR:'1'});
+    assert.equal(result.status,1);assert.match(result.stderr,/could not check existing/);assert.equal(result.order,'');
   });
-
-  test('a consistent install is reused without npm ci before the build', () => {
-    const dir = scenario();
-    installLocked(dir, 'server');
-    installLocked(dir, 'scheduler');
-    const result = invoke(dir, []);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(result.stdout, /Reusing locked server dependencies/);
-    assert.equal(result.order.includes('npm-ci '), false);
-    assert.equal(result.order.includes('swift build'), true);
+  test('prepare does not reject another running client', () => {
+    const dir=scenario();installLocked(dir,'server');prepareSwift(dir);
+    const result=invoke(dir,[],{NSPI_STUB_RUNNING_CLIENT_PID:'54321'});
+    assert.equal(result.status,0,result.stdout+result.stderr);
   });
-
-  test('no-install refuses absent dependencies before npm or Swift build', () => {
-    const result = invoke(scenario(), ['--no-install']);
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /--no-install stopped/);
-    assert.equal(result.order.includes('npm-ci '), false);
-    assert.equal(result.order.includes('swift build'), false);
+  test('run rechecks after building', () => {
+    const dir=scenario();installLocked(dir,'server');prepareSwift(dir);
+    const result=invoke(dir,['--run'],{NSPI_STUB_RUNNING_AFTER_BUILD:'1'});
+    assert.equal(result.status,1);assert.match(result.stderr,/already running.*54321/);
+    assert.match(result.order,/dev.sh --smoke/);assert.equal(result.stdout.includes('Launching isolated'),false);
   });
-
-  test('no-install refuses missing Swift checkouts after reusing npm dependencies', () => {
-    const dir = scenario();
-    installLocked(dir, 'server');
-    installLocked(dir, 'scheduler');
-    const result = invoke(dir, ['--no-install']);
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Swift dependencies need preparation/);
-    assert.equal(result.order.includes('npm-ci '), false);
-    assert.equal(result.order.includes('swift build'), false);
+  test('contradictory install flags and install check are rejected', () => {
+    for(const args of [['--install','--no-install'],['--check','--install']]) {
+      const result=invoke(scenario(),args);assert.equal(result.status,2);assert.equal(result.order,'');
+    }
   });
-
-  test('a failed npm ci stops before the Swift build and the client', () => {
-    const dir = scenario();
-    partialInstall(dir);
-    const result = invoke(dir, [], { NSPI_NPM_CI_FAIL: '1' });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /npm ci failed: simulated/);
-    assert.equal(result.stderr.includes('skipping running files'), false, result.stderr);
-    const tests = governanceIndex(result.stdout);
-    const install = result.stdout.indexOf('==> Installing server dependencies');
-    assert.ok(tests >= 0 && tests < install, result.stdout);
-    assert.match(result.stdout.slice(tests, install), /(?:ℹ|#) fail 0/);
-    assert.equal(result.order.includes('npm-ci '), true);
-    assert.equal(result.order.includes('swift build'), false);
-    assert.equal(result.order.includes('dev.sh'), false);
-    assert.equal(result.stdout.includes('==> Building client'), false);
+  test('a busy smoke port preserves the listener and stops before installation', async t => {
+    const listener=net.createServer();
+    await new Promise((resolve,reject)=>listener.once('error',reject).listen(18787,'127.0.0.1',resolve));
+    t.after(()=>new Promise(resolve=>listener.close(resolve)));
+    const result=invoke(scenario(),['--install']);
+    assert.equal(result.status,1);assert.match(result.stderr,/port 18787 is already in use/);
+    assert.equal(listener.listening,true);assert.equal(result.order.includes('npm-ci '),false);
   });
-
-  test('check does not install when node_modules is missing', () => {
-    const dir = scenario();
-    const result = invoke(dir, ['--check']);
-    assert.notEqual(result.status, 0);
-    assert.match(`${result.stdout}\n${result.stderr}`, /not installed/);
-    assert.equal(result.order.includes('npm'), false);
-    assert.equal(result.stdout.includes('Installing server'), false);
-  });
-
-  test('check names a missing package and does not install', () => {
-    const dir = scenario();
-    partialInstall(dir);
-    const result = invoke(dir, ['--check']);
-    assert.notEqual(result.status, 0);
-    assert.match(`${result.stdout}\n${result.stderr}`, /node_modules\/fastify is not installed|node_modules\/fastify lock/);
-    assert.match(`${result.stdout}\n${result.stderr}`, /not installed/);
-    assert.equal(result.order.includes('npm'), false);
-  });
-
-  test('check names a version mismatch and does not install', () => {
-    const dir = scenario();
-    breakVersion(dir);
-    const result = invoke(dir, ['--check']);
-    assert.notEqual(result.status, 0);
-    assert.match(`${result.stdout}\n${result.stderr}`, /node_modules\/fastify lock .+ installed 0\.0\.1/);
-    assert.equal(result.order.includes('npm'), false);
-  });
-
-  test('check passes for a consistent tree without installing', () => {
-    const dir = scenario();
-    installLocked(dir, 'server');
-    installLocked(dir, 'scheduler');
-    const result = invoke(dir, ['--check']);
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    assert.match(result.stdout, /bootstrap: check passed/);
-    assert.equal((result.stdout.match(/matches package.json and package-lock.json/g) ?? []).length, 2);
-    assert.equal(result.order.includes('npm'), false);
-    assert.equal(result.order.includes('swift build'), false);
+  test('unsupported Node stops before importing the generator or running checks', () => {
+    const nodeStub=path.join(stubDir,'node');
+    fs.writeFileSync(nodeStub,'#!/bin/bash\nif [[ "${1:-}" == "-v" ]]; then echo v20.0.0; exit 0; fi\nprintf "node %s\\n" "$*" >> "$NSPI_STUB_LOG"\nexec "$NSPI_REAL_NODE" "$@"\n');
+    fs.chmodSync(nodeStub,0o755);
+    try {
+      const result=invoke(scenario(),[],{NSPI_REAL_NODE:process.execPath});
+      assert.equal(result.status,1);assert.match(result.stderr,/Node.js >= 22.18.0 is required/);
+      assert.equal(result.order.includes('repo-health.mjs'),false);
+      assert.equal(result.order.includes('generate.mjs'),false);
+      assert.equal(result.order.includes('npm-ci '),false);
+    } finally { fs.unlinkSync(nodeStub); }
   });
 });

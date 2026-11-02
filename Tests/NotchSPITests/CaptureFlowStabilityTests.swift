@@ -6,7 +6,9 @@ import XCTest
 /// Real controller intake/composition, with only image acquisition and provider transport gated.
 /// No model, user credentials, system sleep or real network configuration is involved.
 final class CaptureFlowStabilityTests: XCTestCase {
-    @MainActor private func withController(questionNow: @escaping () -> Date = Date.init, _ body: (NotchController, StreamGate) async throws -> Void) async throws {
+    @MainActor private func withController(questionNow: @escaping () -> Date = Date.init,
+                                          recentQuestions: RecentQuestionStore? = nil,
+                                          _ body: (NotchController, StreamGate) async throws -> Void) async throws {
         let settings = Settings.shared
         let service = settings.serviceMode, provider = settings.apiProvider, mode = settings.mode
         let oldKey = settings.apiKey(for: APIProvider.byID("openai").storageKey)
@@ -14,7 +16,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
         settings.serviceMode = ServiceMode.customKey; settings.apiProvider = "openai"; settings.mode = "tutor"
         settings.setAPIKey("offline-test-key", for: settings.activeProvider.storageKey)
         Appearance.autoCopyAnswer = false
-        let controller = NotchController(activateServices: false, questionNow: questionNow)
+        let controller = NotchController(activateServices: false, recentQuestions: recentQuestions, questionNow: questionNow)
         let gate = StreamGate()
         controller.qaAnswerStream = { delta, done in gate.callbacks.append((delta, done)) }
         controller.qaScreenshotCapture = {
@@ -34,7 +36,9 @@ final class CaptureFlowStabilityTests: XCTestCase {
             settings.serviceMode = service; settings.apiProvider = provider; settings.mode = mode
             Appearance.autoCopyAnswer = copy
         }
-        try await body(controller, gate)
+        do { try await body(controller, gate) }
+        catch { await recentQuestions?.flush(); throw error }
+        await recentQuestions?.flush()
     }
     @MainActor private final class StreamGate {
         var callbacks: [((String) -> Void, (Bool, String) -> Void)] = []
@@ -43,27 +47,41 @@ final class CaptureFlowStabilityTests: XCTestCase {
             callbacks[index].1(success, error)
         }
     }
-    @MainActor private func waitFor(_ predicate: () -> Bool) async throws {
+    private enum WaitFailure: Error { case timeout }
+    @MainActor private func waitFor(_ stage: String = "capture state", file: StaticString = #filePath,
+                                    line: UInt = #line, state: () -> String = { "" },
+                                    _ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTFail("Capture flow did not reach expected state")
+        XCTFail("Capture flow did not reach \(stage). \(state())", file: file, line: line)
+        throw WaitFailure.timeout
     }
 
     @MainActor func testIdleExpiryPreservesCompletedReadingAndNextShortcutUsesFreshCapture() async throws {
         var now = Date()
-        try await withController(questionNow: { now }) { controller, gate in
+        let history = RecentQuestionStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("notchspi-expiry-history-\(UUID())"))
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+        try await withController(questionNow: { now }, recentQuestions: history) { controller, gate in
             // Exercise the first capture after a full day without any existing question.
             now.addTimeInterval(24 * 3600)
             controller.qaMaintainIdleState()
             controller.qaPressScreenshot(multiple: false)
-            try await waitFor { gate.callbacks.count == 1 }
+            try await waitFor("first callback", state: {
+                "callbacks=\(gate.callbacks.count), running=\(controller.qaRequestRunning), status=\(controller.model.status), images=\(controller.model.screenshots.count)"
+            }) { gate.callbacks.count == 1 }
             gate.finish(0, answer: "A")
+            // The history writer intentionally owns this snapshot until its independent copy
+            // is committed. File-expiry assertions must not race that legitimate owner.
+            await history.flush()
             controller.model.explanation = "Completed explanation stays readable."
             controller.model.explanationAvailable = true
             let answer = controller.model.answer
             let paths = controller.model.screenshots.map { $0.file.url.path }
+            weak var fileOwner = controller.model.screenshots.first?.file
+            defer { fileOwner = nil }
             XCTAssertFalse(paths.isEmpty)
             now.addTimeInterval(QuestionSessionStore.lifetime + 1)
             controller.qaMaintainIdleState()
@@ -87,9 +105,15 @@ final class CaptureFlowStabilityTests: XCTestCase {
             XCTAssertEqual(controller.model.answer, answer)
             // The transport test double owns the old callback lease until released.
             gate.callbacks[0] = ({ _ in }, { _, _ in })
-            try await waitFor { paths.allSatisfy { !FileManager.default.fileExists(atPath: $0) } }
+            try await waitFor("last expired file owner released", state: {
+                "remaining=\(paths.filter { FileManager.default.fileExists(atPath: $0) }.count), ownerAlive=\(fileOwner != nil), running=\(controller.qaRequestRunning), images=\(controller.model.screenshots.count)"
+            }) { fileOwner == nil }
+            await QuestionAssetFile.finishPendingRemovals()
+            XCTAssertTrue(paths.allSatisfy { !FileManager.default.fileExists(atPath: $0) }, "Completed deletion must remove every expired file")
             controller.qaPressScreenshot(multiple: false)
-            try await waitFor { gate.callbacks.count == 2 }
+            try await waitFor("fresh callback", state: {
+                "callbacks=\(gate.callbacks.count), running=\(controller.qaRequestRunning), status=\(controller.model.status), images=\(controller.model.screenshots.count)"
+            }) { gate.callbacks.count == 2 }
             gate.finish(1, answer: "B")
             XCTAssertEqual(controller.model.status, .idle)
             XCTAssertTrue(controller.model.answer.contains("B"))

@@ -13,6 +13,7 @@ import {
   checkDelivery,
   checkHistoricalArchives,
   checkGovernance,
+  checkGuideMap,
   checkPortableDocs,
   checkTrackedSymlinks,
   forbiddenTrackedReason,
@@ -92,7 +93,7 @@ test('a link that leaves the repository fails', () => {
 
 test('a URL-encoded escape and a heading anchor are classified separately', () => {
   const root = fixture();
-  write(root, 'docs/here.md', '# Here\n');
+  write(root, 'docs/here.md', '# Here\n## Section\n');
   write(root, 'docs/links.md', 'Stay [here](here.md#section) and leave [out](%2e%2e/%2e%2e/secret).\n');
   write(root, 'docs/spaced.md', 'See [space](<my file.md>).\n');
   write(root, 'docs/my file.md', 'present\n');
@@ -233,4 +234,59 @@ test('historical archives fail if their bytes are changed or missing', () => {
   assert.match(checkHistoricalArchives(root).join('\n'), /SHA-256 mismatch/);
   fs.unlinkSync(path.join(root, archive));
   assert.equal(checkHistoricalArchives(root).length, 1);
+});
+
+test('heading anchors support Unicode, duplicates and same-document links', () => {
+  const root=fixture();
+  write(root,'docs/guide.md','# 指南\n## 重复标题\n## 重复标题\n```md\n## 假标题\n```\n[本节](#重复标题-1)\n');
+  write(root,'HANDOVER.md','[有效](docs/guide.md#重复标题) [编码](docs/guide.md#%E9%87%8D%E5%A4%8D%E6%A0%87%E9%A2%98-1)\n');
+  assert.deepEqual(checkDocumentLinks(root,governedPaths(root)),[]);
+  write(root,'HANDOVER.md','[失效](docs/guide.md#重复标题-2) [代码块](docs/guide.md#假标题)\n');
+  assert.equal(checkDocumentLinks(root,governedPaths(root)).filter(x=>x.includes('broken heading anchor')).length,2);
+});
+
+function guideFixture() {
+  const root=fixture();
+  write(root,'owner.mjs','// owner\n');
+  write(root,'HANDOVER.md','# 入口\n[契约](docs/reference.md)\n');
+  write(root,'docs/reference.md','# 契约\n');
+  const item=(file,kind)=>({path:file,kind,scope:['governance'],purpose:'fixture',sources:['owner.mjs'],checks:['owner.mjs']});
+  const map={schema_version:1,entry:'HANDOVER.md',documents:[item('HANDOVER.md','entry'),item('docs/reference.md','reference')]};
+  const save=()=>write(root,'docs/guide-map.json',JSON.stringify(map));save();
+  return {root,map,save,item};
+}
+
+test('guide map rejects unclassified docs, unreachable references and missing owners',()=>{
+  const {root,map,save}=guideFixture();
+  assert.deepEqual(checkGuideMap(root,governedPaths(root)),[]);
+  write(root,'docs/orphan.md','# 遗漏\n');
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/unclassified Markdown.*orphan/);
+  fs.unlinkSync(path.join(root,'docs/orphan.md'));
+  write(root,'HANDOVER.md','# 入口\n');
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/unreachable/);
+  map.documents[1].sources=['missing.mjs'];save();
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/missing sources target/);
+});
+
+test('guide map enforces one entry, portable commands and dated evidence identity',()=>{
+  const {root,map,save,item}=guideFixture();
+  map.documents[1].kind='entry';save();
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/single entry/);
+  map.documents[1].kind='reference';
+  write(root,'docs/reference.md','Use `./scripts/bootstrap.sh --run` or `output/local/启动.command`.\n');save();
+  let errors=checkGuideMap(root,governedPaths(root)).join('\n');
+  assert.match(errors,/startup command belongs/);assert.match(errors,/runnable local output/);
+  write(root,'docs/evidence.md','# 历史\n');map.documents.push(item('docs/evidence.md','evidence'));save();
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/missing evidence identity/);
+  Object.assign(map.documents.at(-1),{as_of:null,source_commit:null});save();
+  assert.equal(checkGuideMap(root,governedPaths(root)).some(x=>x.includes('missing evidence identity')),false);
+});
+
+test('archive members are checked against their individual digests',()=>{
+  const root=fixture();write(root,'old.md','original\n');
+  fs.mkdirSync(path.join(root,'docs/history'),{recursive:true});
+  execFileSync('tar',['-czf',path.join(root,'docs/history/unit-retired.tar.gz'),'-C',root,'old.md']);
+  const bytes=fs.readFileSync(path.join(root,'docs/history/unit-retired.tar.gz'));
+  write(root,'docs/history/unit-retired.json',JSON.stringify({archive:'unit-retired.tar.gz',sha256:createHash('sha256').update(bytes).digest('hex'),files:[{path:'old.md',sha256:'0'.repeat(64)}]}));
+  assert.match(checkHistoricalArchives(root).join('\n'),/archive member mismatch/);
 });

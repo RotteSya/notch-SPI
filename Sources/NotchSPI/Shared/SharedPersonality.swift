@@ -26,8 +26,4 @@ enum SharedPersonality {
     static func choice(_ source: String) -> String {
         call("normalizePersonalityChoice", [source])?.toString() ?? ""
     }
-    static func isTerminal(_ code: String?) -> Bool {
-        guard let code else { return false }
-        return call("isPersonalityTerminalError", [code])?.toBool() ?? false
-    }
 }

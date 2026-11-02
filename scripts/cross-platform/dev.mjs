@@ -1,11 +1,18 @@
 // Both clients use the existing Fastify server in an explicitly isolated mock configuration.
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { checkNodeVersion, checkProject } from "../lib/lock-check.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url)),
   port = 18878,
   base = `http://127.0.0.1:${port}`;
+for (const project of ["server", "desktop"]) {
+  const directory = path.join(root, project);
+  const errors = [...checkNodeVersion(directory), ...checkProject(directory)];
+  if (errors.length) throw new Error(errors.join("\n") + "\nDependencies must be prepared separately with authorization; dev never installs.");
+}
+execFileSync(process.execPath, [path.join(root, "scripts/cross-platform/generate.mjs"), "--check"], { stdio: "inherit" });
 const available = await new Promise((resolve) => {
   const s = net.createServer();
   s.once("error", () => resolve(false));

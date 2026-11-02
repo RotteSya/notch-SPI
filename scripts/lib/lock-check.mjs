@@ -68,6 +68,20 @@ function declarationErrors(name, manifest, lockRoot) {
   return errors;
 }
 
+export function checkNodeVersion(dir, version = process.versions.node) {
+  const pkg = readJson(path.join(dir, 'package.json'));
+  if (pkg.error) return [`${path.basename(dir)}: package.json is unreadable: ${pkg.error}`];
+  const floor = pkg.value.engines?.node?.match(/^>=(\d+)\.(\d+)\.(\d+)$/);
+  if (!floor) return [`${path.basename(dir)}: engines.node must declare an exact minimum`];
+  const actual = version.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (!Number.isInteger(actual[i])) return [`Invalid Node version ${version}`];
+    if (actual[i] > Number(floor[i + 1])) return [];
+    if (actual[i] < Number(floor[i + 1])) return [`${path.basename(dir)}: Node ${floor[0]} is required (found ${version})`];
+  }
+  return [];
+}
+
 export function checkProject(dir, options = {}) {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;

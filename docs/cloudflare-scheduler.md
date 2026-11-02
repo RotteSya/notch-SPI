@@ -4,10 +4,9 @@
 
 The production cron is `*/15 * * * *` (UTC), verified in the Cloudflare dashboard on 2026-10-19. Serverless HTTP instances do not start an internal timer. Normal request completion and Stripe webhooks remain immediate; fallback compensation can wait up to 15 minutes. Whether a deployed Worker has a schedule is a deployment fact, recorded with the schedule and the invocation evidence. Public and preview URLs are disabled in the source config. The production entry and the candidate entry keep separate targets; environment variables do not point one entry at the other.
 
-Tool versions and overrides are owned by `scheduler/package.json` and `scheduler/package-lock.json`. From `scheduler/`:
+Tool versions and overrides are owned by `scheduler/package.json` and `scheduler/package-lock.json`. Dependency preparation is authorized separately; startup is owned by [HANDOVER](../HANDOVER.md). With existing dependencies, from `scheduler/`:
 
 ```sh
-npm ci --include=optional
 npm run typecheck
 npm test
 npm run build

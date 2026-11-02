@@ -9,3 +9,8 @@
 在仓库根目录查看目录用 `tar -tzf docs/history/2026-10-21-retired.tar.gz`；读取某个原文用 `tar -xOzf docs/history/2026-10-21-retired.tar.gz <清单内路径>`。如需解包，选择项目临时目录，避免覆盖当前源码。
 
 发布工作树、签名安装包、Intel/Catalina 源码与原始发布证据保持原位置。`objective-eval-output/` 的十七份固定证据继续按既有清单校验，未转移或改写。
+
+## 2026-11-02 知识归档
+
+[本轮清单](2026-11-02-governance-34b85d5-retired.json)与[原始字节归档](2026-11-02-governance-34b85d5-retired.tar.gz)保存 94 份日期报告、样本和旧交接材料。来源提交为 34b85d5bf9effa0892725ebd2449119c46d1a612；逐文件大小和 SHA-256 均已回读核验。日期授权、预算和未发布状态只属于原记录时点。
+同一路径可能被再次用于不同材料，例如 design-qa.md；必须同时核对 baseline_commit 和摘要。索引中的 replacement 是当前参考导航，原文从 archive 指定成员读取。

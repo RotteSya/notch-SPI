@@ -49,5 +49,4 @@ enum PersonalityAnswer {
     }
     static func normalizeOrdinal(_ source: String) -> String? { SharedPersonality.ordinal(source) }
     static func normalizeChoice(_ source: String) -> String { SharedPersonality.choice(source) }
-    static func isTerminalError(_ code: String?) -> Bool { SharedPersonality.isTerminal(code) }
 }

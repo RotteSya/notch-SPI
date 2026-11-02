@@ -23,6 +23,7 @@ RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 OUT="$REPO_ROOT/output/verification/$RUN_ID"
 mkdir -p "$OUT"
 fail_required=0
+node "$REPO_ROOT/scripts/lib/verification-report.mjs" init "$OUT" "$QUICK" || exit 1
 
 env_base() {
   ENV_ARGS=()
@@ -36,7 +37,9 @@ env_base() {
 
 write_result() {
   local name="$1" status="$2" dur="$3" code="$4" count="$5" reason="$6" log="$7"
+  shift 7
   local rel="${log#$REPO_ROOT/}"
+  node "$REPO_ROOT/scripts/lib/verification-report.mjs" step "$OUT" "$name" "$status" "$dur" "$code" "$reason" "$log" "$@" || fail_required=1
   {
     echo "name: $name"
     echo "status: $status"
@@ -48,7 +51,7 @@ write_result() {
   } | tee "$OUT/$name.result"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$status" "$dur" "$code" "$count" "$reason" "$rel" >> "$OUT/summary.tsv"
   echo
-  if [[ "$status" == "failed" ]]; then
+  if [[ "$status" == "failed" || ( "$status" == "blocked" && "$name" == "postgres" ) ]]; then
     fail_required=1
   fi
 }
@@ -65,15 +68,19 @@ run_step() {
     shift
   fi
   local log="$OUT/$name.log"
-  local start end dur code count="" status
+  local start end dur code count="" status timeout=120
+  case "$name" in
+    swift-tests|release-arm64) timeout=600 ;;
+    desktop-check|server-tests|postgres) timeout=180 ;;
+  esac
   start="$(node -e 'process.stdout.write(String(Date.now()))')"
   env_base
   set +e
   # Bash 3.2 treats an empty "${array[@]}" as unbound when set -u is on.
   if [[ ${#extra[@]} -gt 0 ]]; then
-    env -i "${ENV_ARGS[@]}" "${extra[@]}" "$@" >"$log" 2>&1
+    env -i "${ENV_ARGS[@]}" "${extra[@]}" node "$REPO_ROOT/scripts/lib/run-check.mjs" "$timeout" "$@" >"$log" 2>&1
   else
-    env -i "${ENV_ARGS[@]}" "$@" >"$log" 2>&1
+    env -i "${ENV_ARGS[@]}" node "$REPO_ROOT/scripts/lib/run-check.mjs" "$timeout" "$@" >"$log" 2>&1
   fi
   code=$?
   set +e
@@ -85,7 +92,7 @@ run_step() {
   else
     status="failed"
   fi
-  write_result "$name" "$status" "$dur" "$code" "$count" "" "$log"
+  write_result "$name" "$status" "$dur" "$code" "$count" "" "$log" "$@"
 }
 
 note_step() {
@@ -100,7 +107,7 @@ run_step repo-health -- node "$REPO_ROOT/scripts/repo-health.mjs"
 run_step repo-health-tests -- node --test "$REPO_ROOT"/scripts/test/*.test.mjs
 run_step shared-generated -- node "$REPO_ROOT/scripts/cross-platform/generate.mjs" --check
 run_step server-typecheck -- npm --prefix "$REPO_ROOT/server" run typecheck
-run_step scheduler-typecheck WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run typecheck
+run_step scheduler-typecheck WRANGLER_SEND_METRICS=false WRANGLER_HIDE_BANNER=true -- npm --prefix "$REPO_ROOT/scheduler" run typecheck
 run_step isolated-smoke \
   HOST=0.0.0.0 \
   OFFICIAL_PROVIDER=anthropic \
@@ -115,11 +122,12 @@ run_step isolated-smoke \
   -- "$REPO_ROOT/scripts/dev.sh" --smoke
 
 if [[ "$QUICK" -eq 0 ]]; then
+  run_step latency-tools -- node --test "$REPO_ROOT/scripts/fixtures/latency-prompt-quality.test.mjs"
   run_step dependency-lock -- bash -c 'for project in server scheduler desktop; do node scripts/lib/lock-check.mjs "$project" || exit 1; done'
   run_step desktop-check -- npm --prefix "$REPO_ROOT/desktop" run check
   run_step server-tests -- npm --prefix "$REPO_ROOT/server" test
   run_step scheduler-tests -- npm --prefix "$REPO_ROOT/scheduler" test
-  run_step scheduler-build WRANGLER_SEND_METRICS=false -- npm --prefix "$REPO_ROOT/scheduler" run build
+  run_step scheduler-build WRANGLER_SEND_METRICS=false WRANGLER_HIDE_BANNER=true -- npm --prefix "$REPO_ROOT/scheduler" run build
   run_step swift-checkouts -- node "$REPO_ROOT/scripts/lib/swift-check.mjs" "$REPO_ROOT"
   if grep -q 'status: passed' "$OUT/swift-checkouts.result"; then
     run_step swift-tests NSPI_QA_EPHEMERAL=1 -- swift test --disable-automatic-resolution --skip-update -Xswiftc -warnings-as-errors
@@ -129,7 +137,7 @@ if [[ "$QUICK" -eq 0 ]]; then
     note_step release-arm64 blocked "Existing pinned Swift checkouts are required; no dependencies were downloaded"
   fi
   if [[ -f "$OUT/release-arm64.result" ]] && grep -q 'status: passed' "$OUT/release-arm64.result"; then
-    run_step client-resources -- bash -c 'bin="$(swift build -c release --arch arm64 --show-bin-path)" && test -d "$bin/SwiftMath_SwiftMath.bundle" && test -d Resources/ThirdParty'
+    run_step client-resources -- bash -c 'bin="$(swift build --disable-automatic-resolution --skip-update -c release --arch arm64 --show-bin-path)" && test -d "$bin/SwiftMath_SwiftMath.bundle" && test -d Resources/ThirdParty'
   else
     note_step client-resources blocked "arm64 Release build did not pass"
   fi
@@ -149,6 +157,7 @@ if [[ "$QUICK" -eq 0 ]]; then
   note_step signing skipped "This command builds the arm64 Release binary and does not sign or notarize"
 fi
 
+node "$REPO_ROOT/scripts/lib/verification-report.mjs" finish "$OUT" || fail_required=1
 echo "verify: results in output/verification/$RUN_ID"
 if [[ "$fail_required" -ne 0 ]]; then
   echo "verify: failed"

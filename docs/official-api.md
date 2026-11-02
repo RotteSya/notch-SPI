@@ -893,18 +893,10 @@ cohort 收入归属，不能将没有已记账订单解读成没有收款。
 
 客户端「前往下载」打开此地址；服务端流式代理内部产物源。
 
-## 客户端行为摘要
+## 客户端行为与提示策略
 
-- 额度拦截只作用于官方模式：本地已知题数 ≤ 0 时在截图前拦下；题数未知时放行，以服务端 `402` 为准。
-- 自定义 API Key / 本机 CLI 不经过官方服务。
-- 新安装引导内静默注册；老安装保持原通道。
-
-
-### 2026-10-04：隔离延迟候选
-
-`SCREEN_QUERY_BRIEF_CALCULATION` 缺省为 `0`。设为 `1` 时，协商 `screen_query_v1` 的主查题与恢复提示词要求最多三行简短计算/条件核对，再输出原 `FINAL` 和 `NSPI_RESULT_V1`；选择与排序只输出标签。它不改变 HTTP/SSE、usage、计费、解释或原 legacy 提示词，客户端请求字段不能覆盖开关。更改该策略或模型思考强度必须同时更新 `CLIENT_CONFIG_REVISION`，不同 revision 的父请求仍按既有规则拒绝恢复/解释。
-
-这是默认关闭的评测候选。初版出现缺正文和多题范围判断退化；当时的 r2 先判断范围与可读性，再生成计算摘要。有限样本里仍有排序题数值读取错误，正常钥匙串与生产公网当时未验收。实测记录留在 Git 历史，索引见 [docs/history/index.json](history/index.json)。
+客户端布局、更新和交互见[客户端行为](client-behavior.md)。HTTP/SSE、计费、恢复及兼容字段由本文和服务端测试定义。
+SCREEN_QUERY_BRIEF_CALCULATION 仍由服务端配置控制；其当前默认与提示逻辑见 config.ts/screen-query.ts，客户端不能覆盖。更改策略或思考强度须同步 CLIENT_CONFIG_REVISION，不同 revision 的父请求继续拒绝不兼容恢复/解释。历史候选质量和授权从[历史索引](history/index.json)查询，不作为上线事实。
 
 ## GET /v1/plus — Plus 账户状态
 

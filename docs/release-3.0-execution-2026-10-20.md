@@ -1,3 +1,5 @@
+> 历史发布证据；执行步骤、授权及状态属于记录时点。当前工程入口为 [HANDOVER](../HANDOVER.md)。
+
 # 3.0 发布执行记录（2026-10-20）
 
 > 历史记录时点：2026-10-20。本文的“当前”“最新”、部署状态、测试计数与待办均指对应记录时点，不代表 2026-10-23 的线上状态；本次整理未重新核对生产。
@@ -48,4 +50,4 @@ GitHub Release 已非草稿、非预发布，标签 v3.0。公开 `/update` 返�
 
 若新购异常：将 `PLUS_ENABLED=0` 并重新部署当前兼容后端；保留 webhook、已付权益同步与取消/门户。不要回退到不识别 Plus 的旧后端，不要通过恢复数据库覆盖付款记录。
 
-无密钥执行证据在 `output/release-3.0-execution/`；QA 凭证文件仅存于受限的 ignored `recovery/private/`。历史检查见 [发版审计](release-3.0-preflight-2026-10-20.md)。
+无密钥执行证据在 `output/release-3.0-execution/`；QA 凭证文件仅存于受限的 ignored `recovery/private/`。历史检查见 [发版审计](history/index.json)。

@@ -715,5 +715,851 @@
     "sha256": "ed60548d64b9f8deb51f4f92397147bbbf7be38fea9fd5ef7b65f476ef4e9742",
     "replacement": "HANDOVER.md",
     "reason": "归档清理前工作区原始字节；旧月票原型已退役，历史指令不代表当前工程状态。"
+  },
+  {
+    "path_at_baseline": "design-qa.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "eb70d32eff22b74496641e53134b92581b62b66113b963d31856613a0876d91a",
+    "replacement": "docs/website.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/catalina-compatibility.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "b99e823fb91a8d068cc176b796c6a7c71288e27d61dda889984f718c0494c2ec",
+    "replacement": "docs/compatibility.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/evaluation-direct-provider-settlement.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "e26c47ca854cef96591a26b12ad88f3350a29ca195ee80a43d41887a87fd1ffe",
+    "replacement": "docs/quality-evidence.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/governance-acceptance-2026-10-21.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "89abdcd1a0dab4b4281a8b47568bf90d88a78da4c445f3481c50faed812bae7d",
+    "replacement": "HANDOVER.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/handover-acceptance.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "eb33601ec4368c256f3ec4e00a7b016a94386956447b9f6166f0fa8bf7954270",
+    "replacement": "HANDOVER.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/handover-evidence.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "9272c39093e2a71f35651372f6235680b8fe1755c38977b333cb72da91eecd11",
+    "replacement": "HANDOVER.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/intel-compatibility.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "b337dd00dfd06c72e1a9dc97975f7dda248a0bf429b38fcff431ae4400b3e03e",
+    "replacement": "docs/compatibility.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/intel-release-2026-10-21.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "85b2c57538438b81a2187228b2c9766c39404e4b05277693193f81021d902c2b",
+    "replacement": "docs/compatibility.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/intel-retirement-2026-10-22.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "51c9b39042ab712f0e931b559b7d1998326b32aaf6035323fb63eee8afabbf9e",
+    "replacement": "docs/compatibility.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-baseline-boundary-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "a3f69b459c4c999214bf0cc61231e2d8ce455137da5db6dc92bcfb6385ebaa74",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-baseline-boundary-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "157e8abb32ecaa1ac05da791cea5f2dfe6cb9f2ebc207e23f6d21fb6802b5285",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-breakdown-2026-10-29.logs.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "67609c0f75962aac3dd4e207a2ca527ffc846cd9e356184d1fa878fef3e04450",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-breakdown-2026-10-29.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "904d0bbd5d34b6fed45e991514b9388c82f8584b0721e7aab9b129c2b00bb8c8",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-cached-capture-timeout-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "858280a12bb84e543233c4697736bea7cd111cf6331d5f194ee3b8e56aaa57b0",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-choice-semantics-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "a228e5647db8b3b3d9e3a3cecb3ac11cacbebd70ea97990e23558f717c437b0d",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-daily-2026-10-29.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "a980e600aea7058eb73b946ee94e1fb72dd1189524b82196e8fbeed9cbf0a15a",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-daily-2026-10-29.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "003cef5b0e39124b7ccf649a6b4cf64d5a58204f0d751b539b14b59f370edc05",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-diagnostic-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "1b33ccaba56e3ddcd6b770e7cb44e1b679c33334c8ba0f988695ad9e062d380b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-diagnostic-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "d68cfffe17584f8d49c4d6a6913bb2b147f47a9243782b784ad2139187a4f673",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-diagnostic-deployment-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "1c8133511e9db8ab55cbf7d13b82c4df363240197e32cff065e5ede96faf52a0",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-free-diagnosis-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "13782fc753f04d6f5bdcd0bf4514b58d21ab305a68fdd4f528fa8e9292bb9c01",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-candidate-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "6966fb54c83b1f4378de13a38ce2f9027df4ca60d7717be0d94c9064882858c0",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-daily-paired-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "3ed3742e49de784d5cc4d8ad7ad9f0bff5dd96fa73d392701200ef603f973c3b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-daily-paired-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "8e554aca5b211405a7fd64dec4d7ccfda51ed2ffad800de045de02dddbb7c147",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-protocol-v2-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "32e406d0fb3d42f4f400e40e1075529bb7b55bfb13041ed08c0ed57897963167",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-protocol-v2-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "71482fb31750b782819c838fbc3ab5ab9a9271019b80ebe69c5283302717100b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-screening-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "2690215e1fcfc998e11e3481b594c051bb487f6e077509ae7fc07feb5a04d4bb",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-screening-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "5667c77e5c7190d670d4e6a304b782a7617fbe2e0bdf5f12ff87bc543c6285b9",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-legacy-screening-complete-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "39fd6178760afa2194a9f833cd57856193bff74c2f6b29305b35a087facfcdd2",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-live-2026-10-29.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "9aa972332ad654e514efbbe20e229bcd2c7250f18708568ff1070bd4670541cb",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-live-2026-10-29.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "6599d20870b0fd552611611716d1afe428a6539bb85cee07a6b8c7a73b069df1",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-local-commits-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "9e01908d734b81d0765a3a32a9d6f47683c90d7e6a2f02a8e29c8ba776954ff2",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-local-ocr-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "6c1f2ceb98fd73b86c7a5c2b1efed27946fa701511ff8dd59834296c217a0b83",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-local-ocr-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "f0adb3e9b21da946575c943a7f350b405195dfd1a0371dd45febd3e63dfccc55",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-optimization-2026-10-29.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "57bb2bc4a4f558fe7fab1c33489d232ee275269cd4745044d8c37fc803155de8",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-candidate-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "4ff2760cc821a2f193600afadc20b0eb23c8564e310ba2b1ac4fa686f65189d8",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-quality-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "e95930e0ee7b98a178f7ffad9f608dee6abc6072fa49f722f1c58d5dbce3a621",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-quality-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "d8fc21bfbd95e1ec82daa649a0686fe9f3d42893c15941a840524aac1a7abe2f",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-quality-remaining-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "e3d86d1061052aceeef7b58ecdf8491bc24321b4a2612d29217b0860b1ea0111",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "5d2bebd0d1468d282150bde1d019a7a5e93a152a824958c3ef728141c3e2b911",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-daily-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "c356a7e6cff4885f842771c8bcd67b976c7e7b890c11c8f1f67b0c1ebbea3bbd",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-e2e-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "90330859f579ea613b0fadb934b0829847966e11055800a2bffc6aa1a03e0ec1",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-e2e-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "27506a54d22bc5fc5dff207bb7390232b42b166f6774b23eaeb2349e0fbb6e45",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-paired-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "c50ad3de1642a8f695b8c6e426a715c21d67cf8884905cb2ab25fb3ccdc80d0f",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v2-quality-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "738f575064777bee08959411713249cf5a7f271451e935582bb34afa7fea9e1b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v3-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "9edb29352451ae0a133af157225f81e2924adbc5e6d2bb09a3b3616848356470",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v3-complete-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "2007f137d8d939a0d622beb00dbd79b47c47db480e99d34645056fb90cb6157f",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v3-plan-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "dc0b5ea2d53ea6eac26d04a9053837f2c299e45e16f1794791e005e602461402",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v3-semantic-replay-2026-10-30.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "2013970288c74428d217d1b86569aa27b580019253dbdeff96781314fd31037e",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v4-boundaries-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "13abd58f4b1c58c899a12c97ed6dd3f29f5c1dd550bc0253ec4eef8dd83a598b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v4-daily-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "3f12ab7790e5f9b9bc0852e16c875adce367fa55d30352208414f14adb240912",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v4-paired-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "db6e8bffffae6e65199a4d09bd1f1509cbf5e92fdee1d67c1807a11295b70359",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-prompt-v4-plan-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "7d2f9fc4c8c618040c346eb3d1df705ab9062c99f8d3916f5229fadf063d1296",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-provider-options-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "7156e2556b6931c13b9068b3938f644ed9eafdec2f5b30ac1e09ddc9943124d9",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-q9-tail-audit-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "f67344ed5195ae7a3a1f45f5615ed99afb24728074bce7bac0c41d9c8f33e2a1",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-q9-tail-audit-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "8c34b84a18f72086f8dc39d6849da3b98345fea441f7b67ec456f0add7ebf7ef",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-request-parity-2026-10-30.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "38618b292072d68d5488214c507c8a156e8d9450ad1b794cae6d48bfefa775b4",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-request-parity-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "81fbeaf45ca5978cbcd97d0b808c3b4956a0056aac232815a4d9ffd24c0b5e6a",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-runtime-recheck-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "a7ffce66aea78d2b093d3a6f42037210086b8e00247b499837f4c4b246a2c81d",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-runtime-recheck-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "5058d410b60f2c23508168fc2ba96bc553ef4055df179f0829ccba5c27277356",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-six-diagnostic-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "7527bd6081dddd1356db6d4abbd96115e4736b1faca0fe2b2e116b66f3a368d4",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-six-diagnostic-2026-10-30.samples.json",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "65c30cab9d539cac47e21977f5eaca653d71708316eca88e8d64d0313469bd1b",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/latency-upstream-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "d9a844d9d54d8f4dec5998fcc00ad551ce2c78f1df8ff4be978723b6af279823",
+    "replacement": "docs/latency.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/neon-compute-recovery-2026-10-19.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "ce50c1965a4fd93953a900bf78cd70889526740e39fa87d75b7ce4a15ed7166a",
+    "replacement": "docs/cloudflare-scheduler.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/release-3.0-build27.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "597f65961e966af327eb77d648b1778aadb6f5951faa3e2db6ff3ff634dff447",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/release-3.0-final-checks.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "85b6c38783bf13d846720806eb92f7ab184976342db9c6e2516f2e12c47b8227",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/release-3.0-preflight-2026-10-20.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "0fe1588cd6493b10e309eb48da2babd5b17a90cd36d223cfb42b748c6f8c90db",
+    "replacement": "docs/release-3.0-execution-2026-10-20.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/settings-iteration-history-2026-10-17.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "208579cae74e7c043274db78dbd5f00df2616c9a59141791db0e83ee57d959cc",
+    "replacement": "docs/client-behavior.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/stripe-plus-sandbox-2026-10-17.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "fb0ff4b999327b5d10969bd7c752180edfc115e2c89798f4080517abd94e9295",
+    "replacement": "docs/prototypes.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/test-network-isolation-2026-10-21.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "3838d1298dc104ae51491a6d0c5a8e92572e2e8df24586cb6f7663e67f01870e",
+    "replacement": "docs/test-network-isolation.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/update-acceptance-2.18.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "594206f3f2e56dede5031a424dc5dd0750a08fe2393a113d0455ac20e07e33ea",
+    "replacement": "docs/client-behavior.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/website-3.0-2026-10-20.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "24cf5b986dbfc002cc8ee522004ca2fa189370472d8912ea8fa3e88502eabddd",
+    "replacement": "docs/website.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/website-interaction-polish-2026-10-31.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "fd5ff8dd0640ba600f1a88fdf44569f55b363571dd3eeba986f54b4beb1c3f5b",
+    "replacement": "docs/website.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/website-polish-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "93c38eb576d5ce4be186187f7291fa0dc9677fcad793c08f8cbc446c9a29dca9",
+    "replacement": "docs/website.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/baseline.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "646fcbad495e073ae2b783a3325db85a8f3de50bb5fd1937fb69dbd25a7d580a",
+    "replacement": "docs/windows/architecture.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/bugfix-2026-10-20.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "81c506a31e56275171e2042964df6fc8f543d617c1cb3556b74299dc7162ec2e",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/capture-busy-and-wait-timing-2026-11-02.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "037a77652c882c1b6cfafd62110d2c056edefd9d7d96feecb862a6f9aa7c4ff5",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/daily-parity-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "f1ae0af1fbe4ead7a6db34a3c0448052228bc21dacdabad46dce9858517e5f5b",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/diagnostics-parity-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "3adae56020a045306e0b50f8471c1259b18000f3ff85c09870c4646fc20d560c",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/feedback-and-submenus-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "cc0691823088eed0e49522af827b691414881c4cbce603a931d709eff02af196",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/final-regression-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "40ae85a5bb4a48ef9fce5c7910873e6ce8466c60d2476dab575211bd76baeab2",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/guide-parity-2026-10-24.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "d97a964b43849fa3b822e7cefa2c389d4589cf789cd3d004dfd43a665e07dbad",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/local-commit-index-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "128e400ebdc8930d0fb34f8485ea0d129991d314901ab3bf17a1435220f80abe",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/local-test-package-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "863d2667bd20f6d444285f43fdcb949c600bd5f6c5e3e05aa64cbdcc729388a3",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/main-delivery-2026-11-02.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "6af49e182c09846414ee41d6dec73f7f4c17de8ecdc68d92ee5434c7ea000c91",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/material-parity-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "0cb80114ea3d706f59a8c4f385dd79b2ae2ba20ec706f760c953c4e538d4f54e",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/motion-and-shared-ui.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "86a15c413f736fe9657f0e2392cd27fb82a1b1150a5514b367ccfc73427c00d4",
+    "replacement": "docs/windows/architecture.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/overall-regression-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "b7740c54fdffd0fe4a3b634eef10d02a4663e8137f9de4a65f6258679e03201b",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/parity-closeout-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "43991bf9e971e06c1622d9f51f9273a24dc05173f5d1ef44590b277bcbcfff07",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/settings-parity-2026-10-25.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "48534bd95b2aa3f615aa42474e936228894d3b61eae456afe8b691153ac13eb9",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/ux-parity-2026-10-30.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "7748b60c04f0cb7ea3567a7d8fe9950a77a36ee61e0c1881ffd39dd32c233012",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/validation.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "b24b1527bf7390fbe177f776e51c0256818745e490137112c5a66474603aabfc",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/visible-capture-2026-10-21.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "f8748668bd7de24f3fa3416c76abbd92e8239549a27174efa60a74fd5f273a47",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/window-diagnostics-and-flight-isolation-2026-10-31.md",
+    "baseline_commit": "34b85d5bf9effa0892725ebd2449119c46d1a612",
+    "status": "historical",
+    "archive": "docs/history/2026-11-02-governance-34b85d5-retired.tar.gz",
+    "sha256": "a625a398564ac632b80787cb34e722a3af1805f9348828b436693e17e0c9ee67",
+    "replacement": "docs/windows/closure-plan.md",
+    "reason": "原始字节归档；日期记录不是当前行为或新授权。"
   }
 ]

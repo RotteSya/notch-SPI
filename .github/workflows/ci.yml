@@ -262,6 +262,7 @@ jobs:
           mkdir -p output/verification/ci
           node scripts/repo-health.mjs --delivery | tee output/verification/ci/repo-health.log
           node --test scripts/test/*.test.mjs | tee output/verification/ci/repo-health-test.log
+          node --test scripts/fixtures/latency-prompt-quality.test.mjs | tee output/verification/ci/latency-tools.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
