@@ -304,7 +304,7 @@ export function renderLandingPage(input: SiteInput): string {
 <main id="main"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}<br><span>${e(d.accent)}</span>`}</h1>
 <p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<a class="button secondary" href="#demo">${d.demoCTA} <span aria-hidden="true">↘</span></a></div>
-<p class="trial-line">${d.free(input.trialQuestions)}</p><p class="requirements">${d.requirements}</p>
+<p class="trial-line">${d.free(input.trialQuestions)}</p><p class="requirements">${d.requirements}</p>${intelDownload()}
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
 <div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===0?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
