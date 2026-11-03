@@ -10,7 +10,7 @@
 
 `node scripts/verify-vercel-output.mjs .vercel/output` 在 Linux x86_64 上检查：
 
-- 静态输出恰好为已审核的 robots.txt，内容与源码相同；函数仅一个，入口、Node 24 runtime、架构及 300 秒时限匹配。
+- 静态输出恰好为已审核的 robots.txt 和官网的四个演示资源（`media/automatic-mode.mp4`、`media/single-mode.mp4` 及对应的 `-poster.jpg`），逐文件内容与源码相同；额外文件、缺失文件、内容变化和符号链接均拒绝。函数仅一个，入口、Node 24 runtime、架构及 300 秒时限匹配。
 - standalone 包无外部符号链接、环境文件、应用测试文件或数据库；原生 .node 为 x86_64 ELF；函数大小在平台上限内；逐文件记录字节数与 SHA-256。
 - 从包内导入 sharp、完整图片校验、SQLite/Postgres 动态模块；SQLite 使用内存库，不连接外部数据库。
 - 通过打包后的 api/index.js 启动真实 loopback HTTP：健康状态、三语页面、源码路径 404、reaper 拒绝无凭证、授权恢复空队列、fixed30 注册、旧协议 SSE 单次结算及余额刷新。

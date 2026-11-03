@@ -22,6 +22,26 @@ async function files(directory) {
   return entries;
 }
 
+export async function verifyStaticOutput(directory) {
+  // Explicitly reviewed website assets, not a wildcard over public/.
+  const expected = [
+    'media/automatic-mode-poster.jpg',
+    'media/automatic-mode.mp4',
+    'media/single-mode-poster.jpg',
+    'media/single-mode.mp4',
+    'robots.txt',
+  ];
+  const actual = await files(directory);
+  assert.deepEqual(actual.map(file => relative(directory, file.path).split('\\').join('/')), expected,
+    'Unexpected public source, test or asset');
+  for (const file of actual) {
+    const name = relative(directory, file.path).split('\\').join('/');
+    const source = new URL('../server/public/' + name, import.meta.url);
+    assert.ok((await readFile(file.path)).equals(await readFile(source)), 'Static asset differs from reviewed source: ' + name);
+  }
+  return expected;
+}
+
 async function smoke(functionDirectory) {
   // The parent starts this process with an allowlisted environment and no credentials.
   assert.equal(process.env.NODE_ENV, 'test');
@@ -93,7 +113,7 @@ async function smoke(functionDirectory) {
 
 if (process.argv[2] === '--smoke') {
   console.log(JSON.stringify(await smoke(resolve(process.argv[3]))));
-} else {
+} else if (process.argv[1] && resolve(process.argv[1]) === self) {
   const args = process.argv.slice(2), allowHost = args.includes('--allow-host-platform');
   const paths = args.filter(arg => arg !== '--allow-host-platform');
   assert.equal(paths.length, 1, 'Usage: node scripts/verify-vercel-output.mjs <output-directory> [--allow-host-platform]');
@@ -102,10 +122,7 @@ if (process.argv[2] === '--smoke') {
   const output = resolve(paths[0]), outputConfig = JSON.parse(await readFile(join(output, 'config.json'), 'utf8'));
   assert.equal(outputConfig.version, 3);
   assert.ok(outputConfig.routes.some(route => route.dest === '/api'), 'The Fastify rewrite must be present');
-  const staticFiles = await files(join(output, 'static'));
-  assert.deepEqual(staticFiles.map(file => relative(join(output, 'static'), file.path)), ['robots.txt'], 'Unexpected public source, test or asset');
-  const robots = await readFile(new URL('../server/public/robots.txt', import.meta.url));
-  assert.deepEqual(await readFile(staticFiles[0].path), robots, 'Static asset differs from reviewed source');
+  const staticFiles = await verifyStaticOutput(join(output, 'static'));
   const functionDirectory = join(output, 'functions/api/index.func');
   const outputFiles = await files(join(output, 'functions'));
   const configs = outputFiles.filter(file => file.path.endsWith('/.vc-config.json'));
@@ -136,6 +153,6 @@ if (process.argv[2] === '--smoke') {
   console.log(JSON.stringify({schema_version: 1, passed: true, recorded_at: new Date().toISOString(),
     node: process.versions.node, platform: process.platform, architecture: process.arch,
     scope: allowHost ? 'host diagnostic; not a Linux release artifact' : 'native Linux packaged function verification; not a deployed Vercel runtime',
-    static_files: ['robots.txt'], function_bytes: totalBytes, function_file_count: manifest.length,
+    static_files: staticFiles, function_bytes: totalBytes, function_file_count: manifest.length,
     output_config_sha256: sha256(await readFile(join(output, 'config.json'))), smoke: result, files: manifest}));
 }
