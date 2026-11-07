@@ -27,6 +27,8 @@ final class NotchController: NSObject {
     private(set) var qaScreenRefreshCount = 0
     // Exercise the real intake, composition and completion path without a paid provider.
     var qaAnswerStream: ((@escaping (String) -> Void, @escaping (Bool, String) -> Void) -> Void)?
+    var qaCaptureRunID: UUID? { currentCaptureID }
+    var qaRunReasoningEffort: String? { currentRunSnapshot?.reasoningEffort }
     var qaRequestRunning: Bool { running }
     func qaSuspendCaptureWork() { suspendCaptureWork() }
     func qaMaintainIdleState() { maintainIdleState() }
@@ -1686,7 +1688,15 @@ final class NotchController: NSObject {
         let triggeredAt = screenshotNow
         guard !terminating else { return }
         synchronizeMaterialScope()
-        // Repeated presses during capture must not create a second capture or completion. Flights and an earlier tutor request do not block intake.
+        // Only the single-question hotkey replaces an active single-question run.
+        // Invalidate its generation before taking a fresh screenshot: cancellation is best
+        // effort, and late transport callbacks must not mutate the replacement question.
+        if fromHotkey, !multiple, mode == "tutor", running,
+           model.answerLatency?.entry == .single, model.answerLatency?.mode == "tutor" {
+            invalidateQuestionContext(clearAnswer: true)
+        }
+        // Repeated presses during image acquisition remain coalesced. Multi-image intake
+        // can still queue behind an earlier answer without canceling it.
         guard intakeTask == nil else { return }
         guard !running || multiple && Settings.shared.mode == "tutor" else {
             visible = true; panel.orderFrontRegardless(); setExpanded(true)
@@ -3133,7 +3143,7 @@ final class NotchController: NSObject {
 
     /// Hard deadline for one capture, comfortably past the 120 s request timeout.
     ///
-    /// `running` makes the hotkey a deliberate no-op while a capture is in flight, so any await
+    /// `running` serializes pipeline entry (the single hotkey explicitly invalidates first), so any await
     /// in the pipeline that never returns — a ScreenCaptureKit enumeration blocked on a busy
     /// WindowServer, a CLI probe, a stream held open by URLSession's week-long resource timeout —
     /// used to disable the app silently and permanently. The user sees nothing at all: no panel,

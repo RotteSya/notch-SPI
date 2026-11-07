@@ -23,7 +23,8 @@ final class CaptureFlowStabilityTests: XCTestCase {
             let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 160, pixelsHigh: 100,
                 bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
                 colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-            memset(bitmap.bitmapData!, 180, bitmap.bytesPerRow * bitmap.pixelsHigh)
+            gate.captures += 1
+            memset(bitmap.bitmapData!, Int32(180 + gate.captures % 50), bitmap.bytesPerRow * bitmap.pixelsHigh)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
             try! bitmap.representation(using: .jpeg, properties: [:])!.write(to: url)
             return .success(.init(path: url.path, blank: false, targetFingerprint: "stability-window"))
@@ -41,6 +42,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
         await recentQuestions?.flush()
     }
     @MainActor private final class StreamGate {
+        var captures = 0
         var callbacks: [((String) -> Void, (Bool, String) -> Void)] = []
         func finish(_ index: Int, answer: String = "A", success: Bool = true, error: String = "") {
             callbacks[index].0("FINAL: \(answer)")
@@ -216,22 +218,69 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
     }
 
-    @MainActor func testRepeatedSingleShortcutDuringAnswerDoesNotDuplicateAndOldStreamCannotOverwriteNext() async throws {
+    @MainActor func testSingleShortcutReplacesThinkingAndStreamingRunsAndRejectsLateCallbacks() async throws {
         try await withController { controller, gate in
+            let effort = Settings.shared.reasoningEffort
+            defer { Settings.shared.reasoningEffort = effort }
+            Settings.shared.reasoningEffort = "low"
             controller.qaPressScreenshot(multiple: false)
             try await waitFor { gate.callbacks.count == 1 }
+            XCTAssertEqual(controller.qaRunReasoningEffort, "low")
+            Settings.shared.reasoningEffort = "high"
+            XCTAssertEqual(controller.model.status, .running)
+            let firstID = controller.qaCaptureRunID
+            let firstImage = try Data(contentsOf: XCTUnwrap(controller.model.screenshots.first).file.url)
             controller.qaPressScreenshot(multiple: false)
-            XCTAssertEqual(gate.callbacks.count, 1)
-            gate.finish(0)
-            controller.qaPressScreenshot(multiple: false)
-            try await waitFor { gate.callbacks.count == 2 }
-            gate.callbacks[0].0("STALE")
-            gate.callbacks[0].1(false, "STALE")
-            XCTAssertTrue(controller.qaRequestRunning)
+            // The old provider deliberately never acknowledges cancellation.
+            gate.finish(0, answer: "STALE BEFORE CAPTURE")
             XCTAssertFalse(controller.model.answer.contains("STALE"))
-            gate.finish(1, answer: "B")
+            try await waitFor { gate.callbacks.count == 2 }
+            XCTAssertEqual(gate.captures, 2)
+            XCTAssertEqual(controller.qaRunReasoningEffort, "high")
+            XCTAssertNotEqual(controller.qaCaptureRunID, firstID)
+            XCTAssertEqual(controller.model.screenshots.count, 1)
+            XCTAssertNotEqual(try Data(contentsOf: XCTUnwrap(controller.model.screenshots.first).file.url), firstImage)
+            gate.callbacks[0].0("STALE DELTA")
+            gate.callbacks[0].1(false, "STALE ERROR")
+            XCTAssertTrue(controller.qaRequestRunning)
+            XCTAssertEqual(controller.model.status, .running)
+            XCTAssertFalse(controller.model.answer.contains("STALE"))
+            gate.callbacks[1].0("partial second answer")
+            XCTAssertEqual(controller.model.status, .streaming)
+            controller.qaPressScreenshot(multiple: false)
+            try await waitFor { gate.callbacks.count == 3 }
+            XCTAssertEqual(gate.captures, 3)
+            XCTAssertEqual(controller.model.answer, "")
+            gate.finish(1, answer: "STALE SECOND")
+            XCTAssertTrue(controller.qaRequestRunning)
+            gate.finish(2, answer: "C")
+            let answer = controller.model.answer
+            gate.finish(0, answer: "STALE AFTER COMPLETION")
+            gate.callbacks[1].1(false, "STALE ERROR")
             XCTAssertFalse(controller.qaRequestRunning)
-            XCTAssertTrue(controller.model.answer.contains("B"))
+            XCTAssertEqual(controller.model.status, .idle)
+            XCTAssertEqual(controller.model.answer, answer)
+            XCTAssertTrue(answer.contains("C"))
+            XCTAssertFalse(answer.contains("STALE"))
+        }
+    }
+
+    @MainActor func testSingleShortcutDoesNotInterruptActiveMultipleImageAnswer() async throws {
+        try await withController { controller, gate in
+            for count in 1...2 {
+                controller.qaPressScreenshot(multiple: true)
+                try await waitFor { controller.model.screenshots.count == count && !controller.model.screenshotCapturing }
+            }
+            controller.qaSubmitScreenshotRound()
+            try await waitFor { gate.callbacks.count == 1 }
+            let id = controller.qaCaptureRunID
+            controller.qaPressScreenshot(multiple: false)
+            XCTAssertEqual(controller.qaCaptureRunID, id)
+            XCTAssertTrue(controller.qaRequestRunning)
+            XCTAssertEqual(gate.captures, 2)
+            gate.finish(0)
+            XCTAssertEqual(controller.model.status, .idle)
+            XCTAssertEqual(gate.callbacks.count, 1)
         }
     }
 
