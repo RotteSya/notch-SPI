@@ -1775,7 +1775,7 @@ final class NotchController: NSObject {
             @MainActor func valid() -> Bool {
                 !Task.isCancelled && self.intakeGeneration == generation && binding == self.makeRequestBinding(mode: Settings.shared.mode)
             }
-            @MainActor func failed(_ message: String?) {
+            @MainActor func failed(_ message: String?, discardAnswer: Bool = false) {
                 guard self.intakeGeneration == generation else { return }
                 self.intakeTask = nil
                 if !multiple { latency?.complete(success: false) }
@@ -1787,6 +1787,11 @@ final class NotchController: NSObject {
                     if self.model.screenshots.isEmpty { self.model.screenshotRoundActive = false }
                 } else {
                     self.model.screenshotRoundActive = false
+                }
+                if discardAnswer {
+                    self.invalidateQuestionContext(clearAnswer: true)
+                    self.model.resultState = .retake
+                    self.model.resultReason = .cropped
                 }
                 if self.model.screenshots.isEmpty, !self.running {
                     self.model.status = message == nil ? .idle : .error
@@ -1812,6 +1817,14 @@ final class NotchController: NSObject {
             }
             guard !shot.blank else { failed(Self.message(for: .captureFailed)); return }
             latency?.mark(.captureReady)
+            if !multiple, mode == "tutor", case .official = self.currentChannel() {
+                let cropped = await OptionCropGuard.shouldRetake(path: shot.path)
+                guard valid() else { return }
+                if cropped {
+                    failed(L10n.t("选项被截断，请完整截取题目和全部选项。", "選択肢が切れています。問題とすべての選択肢を撮り直してください。", "Options are cut off. Capture the question and all answer choices."), discardAnswer: true)
+                    return
+                }
+            }
             #if DEBUG
             ScreenCapture.trace("intake.capture.ready")
             #endif
