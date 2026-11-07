@@ -3,7 +3,7 @@ import Foundation
 /// Opt-in local QA only. Does not change the session, connection pool, request or response.
 /// Server wait includes transit/queueing/model work; it is deliberately NOT named model time.
 final class OfficialTransportTiming: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    enum Stage: String { case runStarted, requestReady, responseHeaders, firstDeliveredDelta, streamFinished }
+    enum Stage: String { case runStarted, requestReady, responseHeaders, firstEvent, firstDeliveredDelta, streamFinished }
     private let captureID: UUID
     private let started = ProcessInfo.processInfo.systemUptime
     private let lock = NSLock()
@@ -28,7 +28,9 @@ final class OfficialTransportTiming: NSObject, URLSessionTaskDelegate, @unchecke
     func mark(_ stage: Stage) {
         lock.lock(); defer { lock.unlock() }
         guard marked.insert(stage).inserted else { return }
-        emit(["stage": stage.rawValue, "elapsed_ms": max(0, (ProcessInfo.processInfo.systemUptime - started) * 1_000)])
+        let observedAt = ProcessInfo.processInfo.systemUptime
+        emit(["stage": stage.rawValue, "elapsed_ms": max(0, (observedAt - started) * 1_000),
+              "uptime_ms": observedAt * 1_000])
     }
 
     func recordResponse(_ response: HTTPURLResponse) {

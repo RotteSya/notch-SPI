@@ -51,6 +51,7 @@ final class CaptureLatencyTests: XCTestCase {
             XCTAssertTrue(answer.completedCapture === trace)
             view.displayIfNeeded()
             XCTAssertNotNil(trace.offsets[.renderStarted], "Completed answer was not drawn in round \(iteration)")
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(trace.offsets[.renderCompleted]), try XCTUnwrap(trace.offsets[.renderStarted]))
             model.expanded = false
             view.refreshScreenshotTray()
             view.qaAdvanceMorph(by: 0.5)
@@ -129,8 +130,13 @@ final class CaptureLatencyTests: XCTestCase {
         XCTAssertNil(trace.offsets[.renderStarted], "Streaming tokens are not a completed answer")
         now += 1.2; trace.complete(success: true)
         XCTAssertTrue(trace.needsCompletedDraw)
+        trace.mark(.renderCompleted)
+        XCTAssertNil(trace.offsets[.renderCompleted], "Completion cannot precede draw entry")
         now += 0.05; trace.mark(.renderStarted)
         XCTAssertEqual(trace.offsets[.renderStarted]!, 1950, accuracy: 0.001)
+        XCTAssertTrue(trace.needsCompletedDraw, "Draw entry alone is not completion")
+        now += 0.01; trace.mark(.renderCompleted)
+        XCTAssertEqual(trace.offsets[.renderCompleted]!, 1960, accuracy: 0.001)
         now += 3; trace.mark(.renderStarted)
         XCTAssertEqual(trace.offsets[.renderStarted]!, 1950, accuracy: 0.001, "Redraws must not move the endpoint")
         XCTAssertFalse(trace.needsCompletedDraw)
@@ -141,9 +147,11 @@ final class CaptureLatencyTests: XCTestCase {
         trace.complete(success: false)
         trace.complete(success: true)
         trace.mark(.renderStarted)
+        trace.mark(.renderCompleted)
         XCTAssertFalse(trace.succeeded)
         XCTAssertNil(trace.offsets[.completed])
         XCTAssertNil(trace.offsets[.renderStarted])
+        XCTAssertNil(trace.offsets[.renderCompleted])
     }
 
     @MainActor func testCompletedAnswerCountsAtActualVisibleDrawNotSetAnswer() throws {
@@ -162,14 +170,17 @@ final class CaptureLatencyTests: XCTestCase {
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         XCTAssertNil(trace.offsets[.renderStarted], "Offscreen rendering cannot satisfy user-visible latency")
+        XCTAssertNil(trace.offsets[.renderCompleted])
         panel.orderFrontRegardless()
         view.isHidden = true
         view.cacheDisplay(in: view.bounds, to: bitmap)
         XCTAssertNil(trace.offsets[.renderStarted])
+        XCTAssertNil(trace.offsets[.renderCompleted])
         view.isHidden = false
         now += 0.1
         view.needsDisplay = true
         view.displayIfNeeded()
         XCTAssertEqual(try XCTUnwrap(trace.offsets[.renderStarted]), 1900, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(trace.offsets[.renderCompleted]), 1900, accuracy: 0.001)
     }
 }

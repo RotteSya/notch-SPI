@@ -674,6 +674,7 @@ enum OfficialAPI {
                     .trimmingCharacters(in: .whitespaces).lowercased() == "text/event-stream" else { throw URLError(.badServerResponse) }
                 let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id, screenQuery: screenQuery != nil,
                                                                        operation: operation) { event in
+                    timing?.mark(.firstEvent)
                     try await MainActor.run {
                         try Task.checkCancellation()
                         guard environment.account() == account else { throw CancellationError() }

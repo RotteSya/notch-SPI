@@ -6,7 +6,7 @@ import Foundation
 final class CaptureLatency {
     enum Entry: String { case single, multiple, direct, automatic }
     enum Stage: String {
-        case triggered, feedbackRequested, feedbackDraw, firstAnswerDraw, captureReady, materialsReady, submitted, firstDelta, receiptApplied, responseCompleted, completed, renderStarted, failed
+        case triggered, feedbackRequested, feedbackDraw, firstAnswerDraw, captureReady, materialsReady, submitted, firstDelta, receiptApplied, responseCompleted, completed, renderStarted, renderCompleted, failed
     }
     let id = UUID()
     let entry: Entry
@@ -16,7 +16,7 @@ final class CaptureLatency {
     private let startedAt: TimeInterval
     private(set) var offsets: [Stage: Double] = [.triggered: 0]
     private(set) var succeeded = false
-    var needsCompletedDraw: Bool { succeeded && offsets[.renderStarted] == nil }
+    var needsCompletedDraw: Bool { succeeded && offsets[.renderCompleted] == nil }
     var elapsedMS: Int { Int(max(0, (now() - startedAt) * 1_000)) }
 
     init(entry: Entry, channel: ServiceChannel = .official, mode: String = "tutor", triggeredAt: TimeInterval? = nil, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -34,7 +34,8 @@ final class CaptureLatency {
 
     func mark(_ stage: Stage) {
         guard offsets[stage] == nil, offsets[.failed] == nil else { return }
-        if stage == .renderStarted, !succeeded { return }
+        if (stage == .renderStarted || stage == .renderCompleted), !succeeded { return }
+        if stage == .renderCompleted, offsets[.renderStarted] == nil { return }
         let milliseconds = max(0, (now() - startedAt) * 1_000)
         offsets[stage] = milliseconds
         trace(stage, milliseconds: milliseconds)

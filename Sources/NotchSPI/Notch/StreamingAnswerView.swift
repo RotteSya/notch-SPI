@@ -221,8 +221,9 @@ final class StreamingAnswerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let frame = currentFrame() else { return }
-        if !isPlaceholder, window?.isVisible == true, !isHiddenOrHasHiddenAncestor,
-           !visibleRect.isEmpty {
+        let measuresVisibleAnswer = !isPlaceholder && window?.isVisible == true
+            && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty
+        if measuresVisibleAnswer {
             // An answer card contains the parsed conclusion, not a reasoning token or marker.
             if cardRange != nil { streamingCapture?.mark(.firstAnswerDraw) }
             completedCapture?.mark(.renderStarted)
@@ -320,6 +321,9 @@ final class StreamingAnswerView: NSView {
             }
         }
         ctx.restoreGState()
+        // Keep draw entry separate: only this point follows every CoreText/attachment draw.
+        // This software endpoint does not measure WindowServer composition or display scanout.
+        if measuresVisibleAnswer { completedCapture?.mark(.renderCompleted) }
     }
 
     private func easeOut(_ t: CFTimeInterval) -> CGFloat { CGFloat(1 - pow(1 - t, 2.4)) }

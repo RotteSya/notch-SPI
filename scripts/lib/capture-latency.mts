@@ -1,11 +1,14 @@
 type Sample = { id: string; channel: string; mode: string; entry: string; stages: Record<string, number> };
 const pipelineStages = ['triggered', 'captureReady', 'materialsReady', 'submitted', 'firstDelta',
-  'receiptApplied', 'responseCompleted', 'completed', 'renderStarted', 'failed'];
+  'receiptApplied', 'responseCompleted', 'completed', 'renderStarted', 'renderCompleted', 'failed'];
 const stages = [...pipelineStages, 'feedbackRequested', 'feedbackDraw', 'firstAnswerDraw'];
 
 /** Only the explicit, content-free QA records are accepted. Missing draws stay missing. */
-export function captureLatencyReport(logs: string[], targetMS = 2000) {
+export function captureLatencyReport(logs: string[], targetMS = 2000, singleLimitMS = targetMS,
+  drawStage: 'renderStarted' | 'renderCompleted' = 'renderStarted') {
+  if (!['renderStarted', 'renderCompleted'].includes(drawStage)) throw new Error('Invalid draw endpoint');
   if (!Number.isFinite(targetMS) || targetMS <= 0) throw new Error('Invalid latency target');
+  if (!Number.isFinite(singleLimitMS) || singleLimitMS < targetMS) throw new Error('Invalid single-question limit');
   const samples = new Map<string, Sample>();
   for (const log of logs) for (const line of log.split('\n')) {
     if (!line.startsWith('[CaptureLatency] ')) continue;
@@ -29,6 +32,8 @@ export function captureLatencyReport(logs: string[], targetMS = 2000) {
     if (ordered.some((n, i) => i > 0 && n < ordered[i - 1]!)) throw new Error('Non-monotonic latency record');
     if (values.renderStarted !== undefined && (values.completed === undefined || values.failed !== undefined))
       throw new Error('Render cannot succeed without a completed answer');
+    if (values.renderCompleted !== undefined && values.renderStarted === undefined)
+      throw new Error('Draw completion requires a draw start');
     for (const [start, end] of [['feedbackRequested', 'feedbackDraw'], ['firstDelta', 'firstAnswerDraw']]) {
       if (values[start!] !== undefined && values[end!] !== undefined && values[end!]! < values[start!]!)
         throw new Error('Draw precedes its input');
@@ -37,10 +42,14 @@ export function captureLatencyReport(logs: string[], targetMS = 2000) {
     groups.set(key, [...(groups.get(key) ?? []), sample]);
   }
   return {
-    definition: 'trigger_to_first_visible_draw_of_completed_answer', target_ms: targetMS,
+    definition: drawStage === 'renderCompleted' ? 'trigger_to_finish_of_visible_completed_answer_draw'
+      : 'trigger_to_start_of_visible_completed_answer_draw', target_ms: targetMS,
+    endpoint_stage: drawStage, endpoint_is_draw_completion: drawStage === 'renderCompleted',
+    compositor_or_display_scanout_measured: false,
+    single_question_limit_ms: singleLimitMS, quality_assessment: 'not_present_in_timing_logs',
     environment: 'explicit_local_QA_trace_not_production_SLA',
     groups: [...groups].map(([group, rows]) => {
-      const completed = rows.flatMap(r => r.stages.renderStarted === undefined ? [] : [r.stages.renderStarted]).sort((a, b) => a - b);
+      const completed = rows.flatMap(r => r.stages[drawStage] === undefined ? [] : [r.stages[drawStage]!]).sort((a, b) => a - b);
       const failed = rows.filter(r => r.stages.failed !== undefined).length;
       const missing = rows.length - completed.length - failed;
       const percentile = (p: number) => completed[Math.max(0, Math.ceil(completed.length * p) - 1)] ?? null;
@@ -55,14 +64,26 @@ export function captureLatencyReport(logs: string[], targetMS = 2000) {
           min_ms: values[0] ?? null, max_ms: values.at(-1) ?? null };
       };
       const firstAnswer = summarize('firstAnswerDraw');
-      return { metrics: { feedback: summarize('feedbackDraw'), first_answer: firstAnswer,
-          complete_answer: summarize('renderStarted') },
+      const completeAnswer = summarize(drawStage);
+      const overTarget = completed.filter(n => n > targetMS).length;
+      const overSingleLimit = completed.filter(n => n > singleLimitMS).length;
+      return { metrics: { feedback: summarize('feedbackDraw'), first_text: summarize('firstDelta'),
+          first_answer: firstAnswer, full_response: summarize('responseCompleted'), complete_answer: completeAnswer,
+          render_start: summarize('renderStarted'), render_end: summarize('renderCompleted') },
         // Timing eligibility only: fixture quality/coverage must still be reviewed separately.
         first_answer_mean_target_met_in_sample: firstAnswer.mean_ms !== null && firstAnswer.mean_ms < targetMS
           && firstAnswer.missing === 0 && failed === 0 && missing === 0,
         group, triggered: rows.length, rendered: completed.length, failed, missing,
-        p50_ms: percentile(0.5), p95_ms: percentile(0.95), max_ms: maximum,
-        over_target: completed.filter(n => n > targetMS).length,
+        p50_ms: percentile(0.5), p95_ms: completed.length >= 20 ? percentile(0.95) : null, max_ms: maximum,
+        over_target: overTarget, over_single_question_limit: overSingleLimit,
+        over_target_rendered_fraction: completed.length ? overTarget / completed.length : null,
+        over_single_limit_rendered_fraction: completed.length ? overSingleLimit / completed.length : null,
+        failure_fraction: failed / rows.length, missing_fraction: missing / rows.length,
+        not_complete_within_target_fraction: (rows.length - completed.filter(n => n <= targetMS).length) / rows.length,
+        // This is timing eligibility, not model accuracy or a complete acceptance result.
+        complete_answer_timing_targets_met_in_sample: completeAnswer.mean_ms !== null
+          && completeAnswer.mean_ms <= targetMS && maximum !== null && maximum <= singleLimitMS
+          && failed === 0 && missing === 0,
         target_met_in_sample: maximum !== null && maximum <= targetMS && failed === 0 && missing === 0,
         samples: rows };
     }),
