@@ -18,6 +18,21 @@ function requestReasoningEffort(value: unknown): CaptureRequest['reasoningEffort
   throw new ApiError(400, 'reasoning_effort 必须是 low、high 或 max', 'invalid_reasoning_effort');
 }
 interface Admission { attemptId: string; providerStarted: boolean }
+
+function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
+  if (!usage || usage.inputTokens === null || usage.outputTokens === null) return undefined;
+  if (usage.attempts) {
+    let total = 0;
+    for (const attempt of usage.attempts) {
+      const cost = estimateModelCostMicros(pricing, attempt.pricingModel, attempt.inputTokens, attempt.outputTokens);
+      if (cost === undefined) return undefined;
+      total += cost;
+    }
+    return total;
+  }
+  return estimateModelCostMicros(pricing, `${provider}:${model}`, usage.inputTokens, usage.outputTokens)
+    ?? estimateModelCostMicros(pricing, model, usage.inputTokens, usage.outputTokens);
+}
 export function settlementSnapshot(capture:CaptureRecord,quota:AccountSnapshot) {
   return { capture_id:capture.captureId,operation:capture.operation,terminal_state:capture.terminalState,
     settlement_status:capture.operation!=='solve'&&capture.settlementStatus!=='held'?'not_required':capture.settlementStatus,
@@ -319,9 +334,7 @@ export class CaptureService {
         }
       } catch {success=false;} finally {
         completed=true;clearTimeout(timer);abort.abort();
-        const cost=usage && usage.inputTokens !== null && usage.outputTokens !== null
-          ?estimateModelCostMicros(config.modelPricingJSON,selected.name+':'+model,usage.inputTokens,usage.outputTokens)
-            ??estimateModelCostMicros(config.modelPricingJSON,model,usage.inputTokens,usage.outputTokens):undefined;
+        const cost=captureCost(config.modelPricingJSON,selected.name,model,usage);
         try {
           if(admission.providerStarted) {
             await store.billing.finishAttemptAndBudget(token,attemptId,{status:success?'succeeded':'failed',inputTokens:usage?.inputTokens??null,
@@ -361,9 +374,7 @@ export class CaptureService {
     let firstTimer:ReturnType<typeof setTimeout>|undefined,totalTimer:ReturnType<typeof setTimeout>|undefined;
     let send:(event:StreamEvent)=>void=()=>{};
     const fullModel=provider.name+':'+model;
-    const cost=()=>usage && usage.inputTokens !== null && usage.outputTokens !== null
-      ? estimateModelCostMicros(config.modelPricingJSON,fullModel,usage.inputTokens,usage.outputTokens)
-        ??estimateModelCostMicros(config.modelPricingJSON,model,usage.inputTokens,usage.outputTokens):undefined;
+    const cost=()=>captureCost(config.modelPricingJSON,provider.name,model,usage);
     try {
       if(abort.signal.aborted)return;
       reply.hijack();

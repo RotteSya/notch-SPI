@@ -31,3 +31,19 @@ test('explanation output ceilings are explicit bounded integers and retain the d
   for(const cap of [1,768,2048,4096,8192,32768])assert.doesNotThrow(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}));
   for(const cap of [0,-1,0.5,32769,NaN,Infinity])assert.throws(()=>validateTrialPolicy({...production(),explanationMaxTokens:cap}),/EXPLANATION_MAX_TOKENS/);
 });
+
+test('Astra production requires a USD reservation for Standard and any configured Fast review', () => {
+  const rates = ['anthropic:control', 'openai:gpt-6-astra', 'openai:gpt-6-astra:fast'].map(model =>
+    ({ model, input_micros_per_million_tokens: 1_000, output_micros_per_million_tokens: 1_000 }));
+  const astra = { ...production(), objectiveProvider: 'openai' as const, objectiveModel: 'gpt-6-astra',
+    objectiveMaxTokens: 8192, objectiveAstraFastReview: true, modelCostCurrency: 'USD',
+    modelDailyBudgetMicros: 3000, attemptBudgetUpperMicros: 2116, modelPricingJSON: JSON.stringify(rates) };
+  assert.doesNotThrow(() => validateTrialPolicy(astra));
+  assert.throws(() => validateTrialPolicy({ ...astra, modelCostCurrency: 'CNY' }), /USD/);
+  assert.throws(() => validateTrialPolicy({ ...astra, attemptBudgetUpperMicros: 2115 }), /reservation/);
+  assert.throws(() => validateTrialPolicy({ ...astra, modelPricingJSON: JSON.stringify(rates.slice(0, 2)) }), /reservation/);
+  assert.throws(() => validateTrialPolicy({ ...astra, objectiveMaxTokens: 8193 }), /ceiling/);
+  assert.throws(() => validateTrialPolicy({ ...production(), objectiveAstraFastReview: true }), /objective slot/);
+  assert.doesNotThrow(() => validateTrialPolicy({ ...astra, objectiveAstraFastReview: false,
+    attemptBudgetUpperMicros: 1058, modelPricingJSON: JSON.stringify(rates.slice(0, 2)) }));
+});

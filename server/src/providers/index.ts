@@ -3,6 +3,7 @@ import type { Provider } from './types.ts';
 import { MockProvider } from './mock.ts';
 import { AnthropicProvider } from './anthropic.ts';
 import { OpenAIProvider } from './openai.ts';
+import { ASTRA_MODEL, AstraProvider } from './astra.ts';
 
 interface ProviderSelection {
   provider: Config['provider'];
@@ -109,6 +110,13 @@ function makeSelectedProvider(
         const why = `${selection.settingName}=openai but OPENAI_API_KEY is empty`;
         warn(`${why} — captures are DISABLED until it is set.`);
         return { provider: new MockProvider(), degraded: why };
+      }
+      if (selection.model === ASTRA_MODEL) {
+        return {
+          provider: new AstraProvider(config.openaiKey, config.openaiBaseURL, selection.maxTokens,
+            selection.settingName === 'OBJECTIVE_RESULT_V1_PROVIDER' && config.objectiveAstraFastReview),
+          degraded: null,
+        };
       }
       return {
         provider: new OpenAIProvider(

@@ -29,6 +29,8 @@ export interface Usage {
   outputTokens: number | null;
   /** Vendor termination signal; absent for older adapters, never inferred from token counts. */
   finishReason?: string;
+  /** Physical calls for a routed result, each priced under its own catalog key. */
+  attempts?: Array<{ pricingModel: string; inputTokens: number; outputTokens: number }>;
 }
 
 export interface Provider {
@@ -43,26 +45,31 @@ export interface Provider {
 
 /**
  * Parse a vendor SSE body, invoking `onEvent` with each `data:` JSON payload (already
- * JSON-parsed). Skips `[DONE]` and non-data lines. Shared by the Anthropic and OpenAI
- * providers; the line-buffering logic is unit-tested via `splitSSEChunk`.
+ * JSON-parsed). Skips non-data lines and reports `[DONE]` when requested. Shared by the
+ * Anthropic and OpenAI providers; line buffering is unit-tested via `splitSSEChunk`.
  */
 export async function readVendorSSE(
   body: ReadableStream<Uint8Array>,
   onEvent: (payload: unknown) => void,
+  onDone?: () => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let ended = false;
   // Only JSON *parse* failures are swallowed here (keep-alive / comment lines). An exception
   // thrown by `onEvent` itself is a real vendor error event (see the providers' `error` cases)
   // and MUST propagate so the capture route reports a failure and does NOT charge a question —
   // parsing it inside the same try/catch is exactly what let a failed answer bill the user.
   const emit = (payload: string): void => {
-    if (payload === '' || payload === '[DONE]') return;
+    if (payload === '') return;
+    if (onDone && ended) throw new Error('Unexpected vendor data after completion');
+    if (payload === '[DONE]') { ended = true; onDone?.(); return; }
     let parsed: unknown;
     try {
       parsed = JSON.parse(payload);
     } catch {
+      if (onDone) throw new Error('Malformed vendor data');
       return; // malformed keep-alive / comment line — never a vendor event
     }
     onEvent(parsed);
@@ -83,6 +90,9 @@ export async function readVendorSSE(
     for (const payload of lines) emit(payload);
     const tail = rest.trimStart();
     if (tail.startsWith('data:')) emit(tail.slice('data:'.length).trim());
+  } catch (error) {
+    if (onDone) await reader.cancel().catch(() => {});
+    throw error;
   } finally {
     // Release the lock on every exit (including an onEvent throw) so the upstream body can be
     // torn down cleanly instead of leaking a held reader.
