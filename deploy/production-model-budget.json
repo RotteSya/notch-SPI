@@ -1,36 +1,33 @@
 {
-  "approved_at": "2026-10-14",
+  "approved_at": "2026-11-08",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
-    "currency": "CNY",
-    "basis": "Conservative peak cache-miss valuation for all accepted input and completion tokens, including hidden reasoning. Not a vendor invoice. The existing 3 CNY reservation covers 1,048,576 input tokens plus 32,768 output tokens at 2/8 CNY per million (2.359296 CNY). Daily budget and model remain unchanged; no automatic budget increase.",
-    "context_input_upper_tokens": 1048576,
-    "output_upper_tokens": 32768,
-    "calculated_upper_micros": 2359296,
+    "currency": "USD",
+    "basis": "Conservative long-context/cache-write valuation, not a vendor invoice. Guarded request reservations include a 25% content allowance plus 4096 framing tokens, retain 20% daily headroom and permit at most four in-flight requests. User approved USD 15/day and USD 3/request; customer prices and question charges are unchanged.",
     "sources": [
-      "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+      "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "https://developers.openai.com/api/docs/pricing"
     ]
   },
   "environment": {
-    "MODEL_COST_CURRENCY": "CNY",
-    "MODEL_DAILY_BUDGET_MICROS": "120000000",
+    "OFFICIAL_PROVIDER": "openai",
+    "OFFICIAL_MODEL": "gpt-6-astra",
+    "OFFICIAL_MAX_TOKENS": "8192",
+    "OBJECTIVE_RESULT_V1_PROVIDER": "openai",
+    "OBJECTIVE_RESULT_V1_MODEL": "gpt-6-astra",
+    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "8192",
+    "OBJECTIVE_RESULT_V1_ASTRA_FAST_REVIEW": "0",
+    "OPENAI_BASE_URL": "https://api.openai.com",
+    "EXPLANATION_MAX_TOKENS": "8192",
+    "MODEL_COST_CURRENCY": "USD",
     "MODEL_BUDGET_UTC_OFFSET_MINUTES": "480",
     "ATTEMPT_BUDGET_UPPER_MICROS": "3000000",
-    "MODEL_PRICING_VERSION": "2026-09-13-deepseek-flash-cny-peak",
-    "MODEL_PRICING_JSON": "[{\"model\":\"deepseek:deepseek-flash\",\"input_micros_per_million_tokens\":2000000,\"output_micros_per_million_tokens\":8000000}]",
-    "OFFICIAL_PROVIDER": "deepseek",
-    "OFFICIAL_MODEL": "deepseek-flash",
-    "OFFICIAL_MAX_TOKENS": "32768",
-    "OFFICIAL_DEEPSEEK_REASONING_EFFORT": "low",
-    "OFFICIAL_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
-    "OBJECTIVE_RESULT_V1_PROVIDER": "deepseek",
-    "OBJECTIVE_RESULT_V1_MODEL": "deepseek-flash",
-    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "32768",
-    "OBJECTIVE_RESULT_V1_DEEPSEEK_REASONING_EFFORT": "low",
-    "OBJECTIVE_RESULT_V1_DEEPSEEK_EXPLANATION_REASONING_EFFORT": "low",
-    "EXPLANATION_MAX_TOKENS": "8192",
-    "CLIENT_CONFIG_REVISION": "production-2-12-flash-low-2048-20260913"
+    "MODEL_PRICING_VERSION": "2026-11-08-astra-standard-conservative-usd",
+    "MODEL_PRICING_JSON": "[{\"model\":\"openai:gpt-6-astra\",\"input_micros_per_million_tokens\":25000000,\"output_micros_per_million_tokens\":75000000}]",
+    "CLIENT_CONFIG_REVISION": "production-3-1-astra-standard-20261108",
+    "ASTRA_REQUEST_BUDGET_MODE": "guarded-request",
+    "MODEL_DAILY_BUDGET_MICROS": "15000000"
   }
 }
