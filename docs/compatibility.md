@@ -28,3 +28,10 @@
 主树仅支持 Apple Silicon/macOS 14+。历史 Intel build 28 为 x86_64/macOS 12.3+，Catalina build 29 为 x86_64/macOS 10.15.7+；它们由独立冻结源码构建，不能从当前主树重制。
 Intel SHA-256 为 b365a4e5f5afe40b40870220b709ac81175e58e0b2fdafa33126ffbbb919bc8f；Catalina 为 48ef38436629ee0f9a9ff94fb18ea7320efb3914805ce6559bf95506ece507ce。签名、公证记录和旧系统未完成的硬件验收见[历史索引](history/index.json)，不代表本轮重新验证。
 现有下载行为、冻结源码、原安装包和原始证据保持；旧版手动更新/登录启动限制不因主树整理改变。
+
+
+## Intel 自动更新准备
+
+独立 Intel 3.1 候选使用 `/update/intel` 与 `/dl/intel`，最低 macOS 12.3；主线 Apple Silicon 仍用 `/update` 与 `/dl`。安装前同时核验签名、CPU 架构及最低系统，失败保留旧包。旧 Intel 3.0 无法通过服务端开启已禁用的更新入口，需手动安装一次新客户端。
+
+当前仅完成实现与候选准备，尚未通过 Intel 实机安装重启验收，也未推进正式 Intel 下载渠道；官网继续描述实际在线的 3.0。Catalina 冻结版及其手动更新方式不变。

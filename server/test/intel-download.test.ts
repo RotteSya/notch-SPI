@@ -10,5 +10,5 @@ test('Intel and standard downloads coexist in all languages and entries',()=>{
   assert.ok(html.includes(({zh:'手动更新',ja:'手動更新',en:'Manual updates'})[lang]));
  }
  const config=JSON.parse(readFileSync(new URL('../vercel.json',import.meta.url),'utf8'));
- assert.deepEqual(config.redirects,[{source:'/dl/intel',destination:'https://github.com/RotteSya/notch-SPI/releases/download/v3.0/NotchSPI-3.0-build28-Intel.dmg',permanent:false}]);
+ assert.equal(config.redirects, undefined); // Both download channels are handled by the API.
 });

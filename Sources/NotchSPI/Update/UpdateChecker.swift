@@ -23,9 +23,18 @@ enum UpdateChecker {
 
     /// Both endpoints resolve against the configured base, so an `official.baseURL` override
     /// (staging / self-hosted) moves the update check with it.
-    private static var latestURL: URL { OfficialAPI.endpointURL(base: updateBase, path: "update") }
+    static var currentArchitecture: String {
+        #if arch(x86_64)
+        return "x86_64"
+        #else
+        return "arm64"
+        #endif
+    }
+    static var latestURL: URL {
+        OfficialAPI.endpointURL(base: updateBase, path: currentArchitecture == "x86_64" ? "update/intel" : "update")
+    }
     /// Official DMG stream used by the in-app installer.
-    static var downloadURL: URL { OfficialAPI.endpointURL(base: updateBase, path: "dl") }
+    static var downloadURL: URL { OfficialAPI.endpointURL(base: updateBase, path: currentArchitecture == "x86_64" ? "dl/intel" : "dl") }
     /// Fallback when the check itself fails: the product site, which carries the download button.
     /// A page degrades better than a binary stream when the network is already misbehaving.
     static var sitePage: URL { URL(string: OfficialAPI.baseURL) ?? downloadURL }
