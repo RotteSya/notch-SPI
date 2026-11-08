@@ -188,6 +188,14 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
         return data
     }
 
+    /// A valid same-team signature alone does not imply this Mac can launch the update.
+    static func validateCompatibility(architectures: [String], minimumOS: String?,
+                                      architecture: String, currentOS: String) throws {
+        guard architectures.contains(architecture), let minimumOS,
+              minimumOS.range(of: #"^\d+\.\d+(\.\d+)?$"#, options: .regularExpression) != nil,
+              !UpdateChecker.isNewer(minimumOS, than: currentOS) else { throw UpdateError.identity }
+    }
+
     static func validateCandidate(_ candidate: URL, current: URL, version: String) throws {
         guard let before = Bundle(url: current), let after = Bundle(url: candidate),
               before.bundleIdentifier == "com.rottesya.notchspi", after.bundleIdentifier == before.bundleIdentifier,
@@ -204,6 +212,14 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
               SecCodeCopyDesignatedRequirement(oldCode, [], &requirement) == errSecSuccess, let requirement,
               SecStaticCodeCreateWithPath(candidate as CFURL, [], &newCode) == errSecSuccess, let newCode,
               SecStaticCodeCheckValidity(newCode, SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode), requirement) == errSecSuccess else { throw UpdateError.identity }
+        guard let executable = after.executableURL else { throw UpdateError.identity }
+        let slices = String(decoding: try run("/usr/bin/lipo", ["-archs", executable.path]), as: UTF8.self)
+            .split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        try validateCompatibility(architectures: slices,
+                                  minimumOS: after.infoDictionary?["LSMinimumSystemVersion"] as? String,
+                                  architecture: UpdateChecker.currentArchitecture,
+                                  currentOS: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)")
         try run("/usr/sbin/spctl", ["--assess", "--type", "execute", candidate.path])
     }
 

@@ -55,15 +55,13 @@ final class LegacyCompatibilityTests: XCTestCase {
         XCTAssertEqual(ScreenCapture.legacyWindowIDs([], ownPID: 42, excludingWindowID: nil), [])
     }
 
-    func testIntelCannotUseAppleSiliconUpdateChannel() {
+    func testIntelUsesItsOwnUpdateChannel() {
         #if arch(x86_64)
-        XCTAssertFalse(UpdateChecker.supportsCurrentUpdateChannel)
-        var result: UpdateChecker.CheckResult?
-        UpdateChecker.check { result = $0 }
-        guard case .failed = result else { return XCTFail("Intel must reject the channel before requesting a download") }
+        XCTAssertTrue(UpdateChecker.supportsCurrentUpdateChannel)
+        XCTAssertTrue(UpdateChecker.downloadURL.path.hasSuffix("/dl/intel"))
         #else
         if #available(macOS 14.0, *) { XCTAssertTrue(UpdateChecker.supportsCurrentUpdateChannel) }
-        else { XCTAssertFalse(UpdateChecker.supportsCurrentUpdateChannel) }
+        XCTAssertTrue(UpdateChecker.downloadURL.path.hasSuffix("/dl"))
         #endif
     }
 }
