@@ -110,7 +110,7 @@ if (exists('server/package.json')) {
   try {
     const pkg = JSON.parse(read('server/package.json'));
     const engine = pkg.engines?.node;
-    const match = typeof engine === 'string' ? engine.match(/^>=(\d+\.\d+\.\d+)$/) : null;
+    const match = typeof engine === 'string' ? engine.match(/^>=(\d+\.\d+\.\d+)(?: <\d+)?$/) : null;
     if (!match) {
       fail('server/package.json engines.node must be an exact minimum such as >=22.18.0');
     } else {
