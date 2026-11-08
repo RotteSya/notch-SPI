@@ -223,6 +223,7 @@ async function start() {
     explanation: "",
     message: startupError ?? "",
     resultState: null,
+    resultKind: null,
     personalityNotice: null,
     requestStarted: false,
     images: [],
@@ -653,6 +654,7 @@ async function start() {
       state.working = "";
       state.explanation = "";
       state.resultState = null;
+      state.resultKind = null;
     }
     flights.retain(batch.map((x) => x.id));
     images = batch;
@@ -791,7 +793,7 @@ async function start() {
         const answer =
           mode === "personality"
             ? completePersona(true, result.raw)
-            : compose(result.raw, run?.objective ?? false);
+            : compose(result.raw, frozen.channel !== "official" || run?.structuredTutorResult === true);
         if(mode!=="personality"){observationParser=answer.parserPath;observationResult=answer.state;observationError=answer.noResultReason;}
         if (mode === "personality") {
           if (answer.isError)
@@ -799,12 +801,13 @@ async function start() {
           state.answer = answer.composition.visibleChoices;
         } else {
           state.resultState = answer.state;
+          state.resultKind = answer.result?.kind ?? null;
           state.answer = answer.finalAnswer ?? "";
-          state.working = parseAnswer(result.raw).working;
+          state.working = parseAnswer(answer.visibleText).working;
           if (!state.answer) {
             localReport?.record('solve_no_answer',{outcome:answer.state==='retake'?'retake':'no_result'});
             state.status = answer.state === "retake" ? "retake" : "empty";
-            state.message = answer.noResultReason ?? "";
+            state.message = answer.result?.reason ?? answer.noResultReason ?? "";
             auto.stop(autoFailureReason());
             if (onboardingAttempt) {
               guide.finished(false);
@@ -1880,6 +1883,7 @@ async function start() {
               working: h.working,
               explanation: h.explanation,
               resultState: h.resultState,
+              resultKind: null,
               images: h.images.map(({ id, thumbnail, width, height }) => ({
                 id,
                 thumbnail,

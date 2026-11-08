@@ -387,7 +387,7 @@ enum OfficialAPI {
         baseURL: String, deviceToken: String,
         prompt: CapturePrompt, imagesBase64: [String],
         resultProtocol: String? = nil, captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil,
-        reasoningEffort: String? = nil, allowPurchasedCredits: Bool = true
+        reasoningEffort: String? = nil, allowPurchasedCredits: Bool = true, tutorResultV1: Bool = false
     ) -> URLRequest {
         var req = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
         req.httpMethod = "POST"
@@ -406,6 +406,7 @@ enum OfficialAPI {
         if let reasoningEffort { payload["reasoning_effort"] = reasoningEffort }
         if imagesBase64.count > 1 { payload["images_base64"] = imagesBase64 }
         if let resultProtocol { payload["result_protocol"] = resultProtocol }
+        if tutorResultV1 { payload["tutor_result_v1"] = true }
         if let captureID { payload["capture_id"] = captureID.uuidString.lowercased() }
         if let screenQuery { payload.merge(screenQuery.fields(imageCount: imagesBase64.count)) { _, new in new } }
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: [.withoutEscapingSlashes])
@@ -581,7 +582,7 @@ enum OfficialAPI {
     static func run(
         imagePaths: [String], prompt: CapturePrompt, resultProtocol: String? = nil,
         captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil, auxiliary: AuxiliaryCaptureRequest? = nil,
-        reasoningEffort: String? = nil,
+        reasoningEffort: String? = nil, tutorResultV1: Bool = false,
         environment: CaptureEnvironment = .live,
         onUsage: ((OfficialUsageReceipt) -> Void)? = nil,
         onDelta: @escaping (String) -> Void,
@@ -620,7 +621,8 @@ enum OfficialAPI {
             }
             var request = makeCaptureRequest(baseURL: base, deviceToken: token, prompt: prompt,
                                              imagesBase64: imagesBase64, resultProtocol: resultProtocol,
-                                             captureID: id, screenQuery: screenQuery, reasoningEffort: reasoningEffort, allowPurchasedCredits: allowPurchased)
+                                             captureID: id, screenQuery: screenQuery, reasoningEffort: reasoningEffort,
+                                             allowPurchasedCredits: allowPurchased, tutorResultV1: tutorResultV1)
             if let auxiliary, let data = request.httpBody,
                var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let route = auxiliary.operation == "explain" ? "explanation" : "recovery"

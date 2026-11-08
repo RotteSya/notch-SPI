@@ -151,6 +151,21 @@ export const words = {
     "問題文と選択肢を鮮明に撮影してください。",
     "Capture the complete question and choices clearly.",
   ],
+  cropped: [
+    "题目有内容被裁切，请完整截图后重试。",
+    "問題の一部が切れています。全体を撮り直してください。",
+    "Part of the question is cut off. Capture the full question and try again.",
+  ],
+  unreadable: [
+    "题目有内容看不清，请重新截一张清晰的图。",
+    "問題の一部を読み取れません。鮮明に撮り直してください。",
+    "Part of the question is unreadable. Take a clearer screenshot.",
+  ],
+  missing_context: [
+    "缺少关键材料，请把题目引用的正文、图表或其他材料一起截入。",
+    "必要な資料が不足しています。参照先の本文や図表も撮影してください。",
+    "Key material is missing. Include the referenced passage, table, diagram, or other material.",
+  ],
   unsupported_scope: [
     "这道题超出当前支持范围。",
     "この問題は現在の対応範囲外です。",

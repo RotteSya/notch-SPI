@@ -37,9 +37,6 @@ const REASONS = new Set<ObjectiveResultReason>([
   'missing_context', 'unsupported',
 ]);
 const KEYS = ['answer', 'kind', 'reason', 'state', 'v'];
-const OBJECTIVE_KINDS = new Set<ObjectiveQuestionKind>([
-  'single_choice', 'multiple_choice', 'ordering', 'short_fill',
-]);
 
 function pushUnique(out: ObjectiveProtocolViolation[], value: ObjectiveProtocolViolation): void {
   if (!out.includes(value)) out.push(value);
@@ -132,11 +129,10 @@ function validateObject(raw: unknown, violations: ObjectiveProtocolViolation[]):
   let valid = true;
   if (result.state === 'ready') {
     valid = typeof result.answer === 'string' && answerLength >= 1 && answerLength <= 512
-      && result.reason === 'none' && OBJECTIVE_KINDS.has(result.kind);
+      && result.reason === 'none';
   } else if (result.state === 'review') {
     valid = typeof result.answer === 'string' && answerLength >= 1 && answerLength <= 512
-      && ['ambiguous_question', 'ambiguous_options', 'missing_context', 'unsupported'].includes(result.reason)
-      && (result.kind !== 'other' || result.reason === 'unsupported');
+      && ['ambiguous_question', 'ambiguous_options', 'missing_context', 'unsupported'].includes(result.reason);
   } else {
     valid = result.answer === null && ['cropped', 'unreadable', 'missing_context'].includes(result.reason);
   }
@@ -194,7 +190,8 @@ export function composeObjectiveResult(text: string, protocolEnabled = true): Ob
   }
 
   if (result) {
-    return { visibleText, finalAnswer: result.answer, result, state: result.state, parserPath: 'v1', violations };
+    return { visibleText: result.state === 'retake' ? '' : visibleText,
+      finalAnswer: result.answer, result, state: result.state, parserPath: 'v1', violations };
   }
   if (finalAnswer) {
     return {

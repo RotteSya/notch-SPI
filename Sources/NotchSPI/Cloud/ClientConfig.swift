@@ -59,6 +59,7 @@ struct NotchClientConfig: Codable, Equatable {
     let schemaVersion: Int
     let revision: String
     let objectiveResultV1: ObjectiveExperimentConfig
+    var tutorResultV1: Bool? = nil
     let telemetry: TelemetryRemoteConfig
     var screenQuery: ScreenQueryRemoteConfig? = nil
     var payments: PaymentsRemoteConfig? = nil
@@ -67,6 +68,7 @@ struct NotchClientConfig: Codable, Equatable {
         case schemaVersion = "schema_version"
         case revision
         case objectiveResultV1 = "objective_result_v1"
+        case tutorResultV1 = "tutor_result_v1"
         case telemetry
         case screenQuery = "screen_query"
         case payments

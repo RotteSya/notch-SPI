@@ -46,6 +46,11 @@ final class CaptureFlowStabilityTests: XCTestCase {
         var callbacks: [((String) -> Void, (Bool, String) -> Void)] = []
         func finish(_ index: Int, answer: String = "A", success: Bool = true, error: String = "") {
             callbacks[index].0("FINAL: \(answer)")
+            if success {
+                let result = ObjectiveResultV1(v: 1, kind: .singleChoice, state: .ready, answer: answer, reason: .none)
+                let payload = String(decoding: try! JSONEncoder().encode(result), as: UTF8.self)
+                callbacks[index].0("\nNSPI_RESULT_V1: \(payload)")
+            }
             callbacks[index].1(success, error)
         }
     }
@@ -59,6 +64,40 @@ final class CaptureFlowStabilityTests: XCTestCase {
         }
         XCTFail("Capture flow did not reach \(stage). \(state())", file: file, line: line)
         throw WaitFailure.timeout
+    }
+
+    @MainActor func testSingleShortcutShowsOpenAnswerReviewAndRetakeWithOneRequestEach() async throws {
+        let savedLanguage = L10n.setting
+        L10n.setting = .zhHans
+        defer { L10n.setting = savedLanguage }
+        try await withController { controller, gate in
+            let replies = [
+                "合并两个相同的项。\nFINAL: 2x\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"ready\",\"answer\":\"2x\",\"reason\":\"none\"}",
+                "两种分组会产生不同结果。\nFINAL: 6 或 10\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"review\",\"answer\":\"6 或 10\",\"reason\":\"ambiguous_question\"}",
+                "NSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"retake\",\"answer\":null,\"reason\":\"missing_context\"}",
+            ]
+            for (index, reply) in replies.enumerated() {
+                controller.qaPressScreenshot(multiple: false)
+                try await waitFor { gate.callbacks.count == index + 1 }
+                gate.callbacks[index].0(reply)
+                gate.callbacks[index].1(true, "")
+                XCTAssertFalse(controller.qaRequestRunning)
+                XCTAssertEqual(gate.callbacks.count, index + 1)
+                XCTAssertFalse(controller.model.displayedAnswer.contains("NSPI_RESULT_V1"))
+                if index == 0 {
+                    XCTAssertEqual(controller.model.resultState, .ready)
+                    XCTAssertTrue(controller.model.reasoningRevealed)
+                    XCTAssertTrue(controller.model.displayedAnswer.contains("2x"))
+                } else if index == 1 {
+                    XCTAssertEqual(controller.model.captureHeading, "需核对")
+                    XCTAssertTrue(controller.model.displayedAnswer.contains("6 或 10"))
+                } else {
+                    XCTAssertEqual(controller.model.captureHeading, "需要重拍")
+                    XCTAssertTrue(controller.model.displayedAnswer.contains("缺少关键材料"))
+                    XCTAssertNil(AnswerComposer.parse(controller.model.answer, streaming: false).final)
+                }
+            }
+        }
     }
 
     @MainActor func testIdleExpiryPreservesCompletedReadingAndNextShortcutUsesFreshCapture() async throws {

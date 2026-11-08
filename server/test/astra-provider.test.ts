@@ -90,6 +90,19 @@ test('ready, retake, malformed review, auxiliary and disabled review never dispa
   assert.equal(fetchMock.mock.callCount(), 7);
 });
 
+test('ordinary tutor keeps the ambiguous answer from one upstream call even with Fast review enabled', async t => {
+  const fetchMock = t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    assert.equal(JSON.parse(String(init.body)).service_tier, 'default');
+    return upstream(review, 'default');
+  });
+  const { provider } = makeObjectiveProvider(settings, assert.fail);
+  let raw = '';
+  const usage = await provider.stream({...request, tutorResultV1: true}, text => { raw += text; }, new AbortController().signal);
+  assert.equal(fetchMock.mock.callCount(), 1);
+  assert.equal(raw, review);
+  assert.equal(usage.attempts, undefined);
+});
+
 test('Astra accepts a valid retake but retains the review when Fast selects a third option', async t => {
   let fast = '';
   t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) =>

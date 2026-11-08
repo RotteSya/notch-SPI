@@ -171,6 +171,42 @@ for (const kind of ['memory', 'sqlite'] as const) {
       } finally { await f.close(); }
     });
   }
+
+  test(`${kind}: ordinary tutor answers any format with one call and releases a retake`, async () => {
+    const full = 'Adding two equal terms doubles the term.\nFINAL: x + x = 2x';
+    const cases = [
+      [full + '\nNSPI_RESULT_V1: {"v":1,"kind":"other","state":"ready","answer":"x + x = 2x","reason":"none"}', 1, 'usable'],
+      ['FINAL: 6 if grouped; 10 otherwise\nNSPI_RESULT_V1: {"v":1,"kind":"other","state":"review","answer":"6 if grouped; 10 otherwise","reason":"ambiguous_question"}', 1, 'usable'],
+      ['NSPI_RESULT_V1: {"v":1,"kind":"other","state":"retake","answer":null,"reason":"missing_context"}', 0, 'retake'],
+    ] as const;
+    for (const screen of [false, true]) {
+      let calls = 0;
+      const f = await fixture({ name: 'test', async stream(input, delta) {
+        assert.equal(input.tutorResultV1, true);
+        if (screen) {
+          assert.match(input.system, /Solve any question format/);
+          assert.doesNotMatch(input.system, /unsupported_scope/);
+        }
+        delta(cases[calls++]![0]);
+        return { inputTokens: 20, outputTokens: 5 };
+      } }, {enabledSupportProfiles: 'general'});
+      try {
+        for (const [index, [raw, charged, terminal]] of cases.entries()) {
+          const body = screen ? {...solveBody(), profile_id: 'general'} : {
+            capture_id: randomUUID(), image_base64: png, image_media_type: 'image/png',
+            system: 'Answer the question as asked', task: 'Read the screenshot',
+          };
+          const response = await f.post('/v1/captures', {...body, tutor_result_v1: true});
+          assert.equal(response.statusCode, 200);
+          assert.equal(calls, index + 1);
+          assert.ok(events(response.payload).some(event => event.type === 'delta' && event.text === raw));
+          assert.equal(usage(response.payload).questions_charged, charged);
+          assert.equal(usage(response.payload).terminal_state, terminal);
+          assert.equal(usage(response.payload).held_questions, 0);
+        }
+      } finally { await f.close(); }
+    }
+  });
   test(`${kind}: new official prompts are server-owned; material changes conflict and invalid scopes never call`, async () => {
     let calls = 0;
     const f = await fixture({ name: 'test', async stream(request, delta) {

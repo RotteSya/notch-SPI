@@ -317,6 +317,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return {
       schema_version: 1,
       revision: config.clientConfigRevision,
+      tutor_result_v1: true,
       objective_result_v1: treatment
         ? { variant: 'objective_v1', protocol: 'objective_v1', prompt_variant: 'objective_v1' }
         : { variant: 'control', protocol: null, prompt_variant: 'legacy' },

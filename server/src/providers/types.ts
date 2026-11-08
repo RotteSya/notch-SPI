@@ -21,6 +21,8 @@ export interface CaptureRequest {
   reasoningEffort?: 'low' | 'high' | 'max';
   /** Assigned by the server route; never read from client-supplied provider options. */
   purpose?: 'answer' | 'explain' | 'recover';
+  /** Negotiated tutor result. Report ambiguity from the original model call. */
+  tutorResultV1?: boolean;
 }
 
 export interface Usage {

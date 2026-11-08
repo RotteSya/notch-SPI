@@ -110,17 +110,17 @@ final class RecentQuestionTests: XCTestCase {
         controller.model.answer = "FINAL: B"; controller.model.status = .idle
         let count = NSApp.windows.filter(\.isVisible).count
         let capture = try snapshot()
-        controller.recordRecentQuestion(capture, succeeded: false, mode: "tutor", resultProtocol: nil, composition: nil)
+        controller.recordRecentQuestion(capture, succeeded: false, mode: "tutor", composition: nil)
         controller.model.onboardingStep = .practice
-        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", resultProtocol: nil, composition: nil)
+        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", composition: nil)
         controller.model.onboardingStep = nil
-        controller.recordRecentQuestion(capture, succeeded: true, mode: "personality", resultProtocol: nil, composition: nil)
+        controller.recordRecentQuestion(capture, succeeded: true, mode: "personality", composition: nil)
         let retake = ObjectiveResultComposition(visibleText: "请重拍", finalAnswer: nil, result: nil,
             state: .retake, parserPath: .v1, violations: [])
-        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", resultProtocol: "objective_v1", composition: retake)
+        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", composition: retake)
         let rejected = await list(store)
         XCTAssertTrue(rejected.isEmpty)
-        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", resultProtocol: nil, composition: nil)
+        controller.recordRecentQuestion(capture, succeeded: true, mode: "tutor", composition: nil)
         let accepted = await list(store)
         XCTAssertEqual(accepted.count, 1)
         XCTAssertEqual(controller.model.answer, "FINAL: B")

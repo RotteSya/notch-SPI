@@ -140,6 +140,8 @@ test("Actual server solve, multi-image ordering, full receipt, one debit, duplic
   const c = await client();
   const run = await c.freeze([...images, ...images], settings);
   assert.equal(run.screenQuery, true);
+  assert.equal(run.body.tutor_result_v1, true);
+  assert.equal(run.structuredTutorResult, true);
   assert.equal(run.body.images_base64.at(-1), run.body.image_base64);
   const before = providerCalls;
   let shown = "";

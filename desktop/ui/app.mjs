@@ -246,7 +246,9 @@ function notch() {
   } else if (state.flying?.length) {
     body = '<div class="waiting-light"></div>';
   } else if (state.answer) {
-    body = `<div class="reading shared-reading">${readingHTML({ answer: state.answer, detail: state.explanation, needsReview: state.resultState === "review", language: state.settings.language, emptyNote: false })}${state.working ? `<details ${workingOpen ? "open" : ""}><summary>${t("working")}</summary><div class="working" data-rich>${escape(state.working)}</div></details>` : ""}</div>`;
+    const showAnswerBody = state.status === "done" && (state.resultKind === "other" || state.resultState === "review");
+    const detail = showAnswerBody ? [state.working, state.explanation].filter(Boolean).join("\n\n") : state.explanation;
+    body = `<div class="reading shared-reading">${readingHTML({ answer: state.answer, detail, needsReview: state.resultState === "review", language: state.settings.language, emptyNote: false })}${state.working && !showAnswerBody ? `<details ${workingOpen ? "open" : ""}><summary>${t("working")}</summary><div class="working" data-rich>${escape(state.working)}</div></details>` : ""}</div>`;
   } else if (["error", "retake", "empty", "canceled"].includes(state.status)) {
     body = `<p class="${state.status === "error" ? "error-message" : "muted"}">${escape(state.message ? t(state.message) : t(state.status === "retake" ? "retakeHelp" : state.status))}</p>`;
   } else if (["running", "streaming"].includes(state.status)) {

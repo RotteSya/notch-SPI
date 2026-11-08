@@ -58,7 +58,7 @@ export class AstraProvider implements Provider {
     const first = await collect(this.standard);
     signal.throwIfAborted();
     const answering = req.purpose === undefined || req.purpose === 'answer';
-    const pair = this.fast && answering && first.usage.finishReason === 'stop' ? reviewPair(first.raw) : null;
+    const pair = this.fast && answering && !req.tutorResultV1 && first.usage.finishReason === 'stop' ? reviewPair(first.raw) : null;
     if (!this.fast || !pair) {
       if (first.usage.finishReason === 'stop' && first.raw) onDelta(first.raw);
       return first.usage;

@@ -157,6 +157,7 @@ final class NotchController: NSObject {
         let screenQuery: ScreenQueryRequest?
         let trigger: String
         let resultProtocol: String?
+        let tutorResultV1: Bool
         let configRevision: String
         let experimentVariant: String
         let telemetryEnabled: Bool
@@ -175,6 +176,9 @@ final class NotchController: NSObject {
         let apiEndpoint: String
         let apiModel: String
         let binding: CaptureRequestBinding
+        var usesStructuredTutorResult: Bool {
+            mode == "tutor" && (resultProtocol != nil || tutorResultV1 || channel != .official)
+        }
 
         var captureTargetID: String {
             switch captureTarget {
@@ -1148,10 +1152,10 @@ final class NotchController: NSObject {
 
     /// Saving is passive: it never changes the live model, opens a window, or submits work.
     func recordRecentQuestion(_ capture: QuestionCaptureSnapshot, succeeded: Bool, mode: String,
-                              resultProtocol: String?, composition: ObjectiveResultComposition?) {
+                              composition: ObjectiveResultComposition?) {
         guard succeeded, mode == "tutor", !onboardingAttempt, model.onboardingStep == nil,
               model.status != .error, composition?.state != .retake,
-              resultProtocol == nil || composition?.finalAnswer != nil,
+              composition == nil || composition?.finalAnswer != nil,
               !model.answer.isEmpty, model.answer != L10n.noOutput else { return }
         recentQuestions.save(snapshot: capture, answer: model.answer, needsReview: composition?.state == .review)
     }
@@ -2151,6 +2155,7 @@ final class NotchController: NSObject {
             captureID: UUID(), screenQuery: screenQuery,
             trigger: trigger ?? (mode == "personality" ? "personality_hotkey" : "capture_hotkey"),
             resultProtocol: resultProtocol,
+            tutorResultV1: mode == "tutor" && remote.tutorResultV1 == true,
             configRevision: remote.revision,
             experimentVariant: remote.objectiveResultV1.variant,
             telemetryEnabled: ProductTelemetry.shared.sharingEnabled && remote.telemetry.enabled,
@@ -2541,7 +2546,7 @@ final class NotchController: NSObject {
             personaName: snapshot.personaName,
             personaText: snapshot.personaText,
             sessionContext: sessionToken?.contextBlock ?? "",
-            objectiveProtocolEnabled: snapshot.resultProtocol == "objective_v1"
+            objectiveProtocolEnabled: snapshot.usesStructuredTutorResult
         )
         // Context runs keep the tutor system prompt (depth contract, FINAL line) and swap only
         // the task line, which explains the two-image order to the model.
@@ -2782,7 +2787,7 @@ final class NotchController: NSObject {
                 if firstTokenMS == nil { firstTokenMS = latency.elapsedMS; latency.mark(.firstDelta) }
                 let previousAnswer = self.model.answer
                 if let personalityRun { personalityRun.append(delta, to: self.model) }
-                else if snapshot.resultProtocol == "objective_v1" {
+                else if snapshot.usesStructuredTutorResult {
                     let visible = objectiveFilter.append(delta)
                     if visible != self.model.answer { self.model.answer = visible }
                 } else { self.model.answer += delta }
@@ -2803,12 +2808,15 @@ final class NotchController: NSObject {
                 streamFinished = true
                 latency.mark(.responseCompleted)
                 let composition: ObjectiveResultComposition?
-                if snapshot.resultProtocol == "objective_v1", snapshot.mode == "tutor" {
+                if snapshot.usesStructuredTutorResult {
                     let parsed = objectiveFilter.finish()
                     self.model.answer = parsed.visibleText
                     self.model.resultState = parsed.state
                     self.model.resultReason = parsed.result?.reason
                     self.model.parserPath = parsed.parserPath
+                    if parsed.result?.kind == .other || parsed.state == .review {
+                        self.model.reasoningRevealed = true
+                    }
                     composition = parsed
                 } else {
                     composition = nil
@@ -2856,7 +2864,7 @@ final class NotchController: NSObject {
                     }
                     self.model.statusText = outcome.statusText(suffixes: suffixes)
                 } else {
-                    if snapshot.resultProtocol == "objective_v1",
+                    if snapshot.usesStructuredTutorResult,
                        composition?.parserPath == ObjectiveParserPath.none {
                         self.model.answer = ""
                         self.model.status = .error
@@ -2873,7 +2881,7 @@ final class NotchController: NSObject {
                     } else {
                         self.model.status = .idle
                     }
-                    if !(snapshot.resultProtocol == "objective_v1"
+                    if !(snapshot.usesStructuredTutorResult
                          && composition?.parserPath == ObjectiveParserPath.none) {
                         self.model.statusText = ok ? L10n.statusDone : L10n.statusError
                     }
@@ -2929,21 +2937,21 @@ final class NotchController: NSObject {
                     self.reconcileQuestion(snapshot, generation: generation)
                 }
                 latency.complete(success: ok && self.model.status != .error && composition?.state != .retake
-                    && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
+                    && (!snapshot.usesStructuredTutorResult || composition?.finalAnswer != nil)
                     && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if let materialSnapshot {
                     self.recordRecentQuestion(materialSnapshot, succeeded: ok, mode: snapshot.mode,
-                                              resultProtocol: snapshot.resultProtocol, composition: composition)
+                                              composition: composition)
                 }
                 self.onboardingCaptureFinished(success: ok && composition?.state != .retake
-                    && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil)
+                    && (!snapshot.usesStructuredTutorResult || composition?.finalAnswer != nil)
                     && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 self.resizeToFit()
                 self.endRun()
                 self.pinned = false
                 if snapshot.mode != "tutor", prepared == nil { try? FileManager.default.removeItem(atPath: shot.path) }
                 self.scheduleCollapseAfterAnswer()
-                self.autoRunCompleted(ok: ok && composition?.state != .retake && (snapshot.resultProtocol == nil || composition?.finalAnswer != nil))
+                self.autoRunCompleted(ok: ok && composition?.state != .retake && (!snapshot.usesStructuredTutorResult || composition?.finalAnswer != nil))
             }
 
             latency.mark(.submitted)
@@ -2977,7 +2985,7 @@ final class NotchController: NSObject {
                 self.officialTask = OfficialAPI.run(
                     imagePaths: imagePaths, prompt: prompt,
                     resultProtocol: snapshot.resultProtocol, captureID: snapshot.captureID, screenQuery: snapshot.screenQuery,
-                    reasoningEffort: snapshot.reasoningEffort,
+                    reasoningEffort: snapshot.reasoningEffort, tutorResultV1: snapshot.tutorResultV1,
                     environment: .connected(to: .live, expectedAccount: snapshot.binding.officialAccount),
                     onUsage: { [weak self] value in
                         guard let self, self.accepts(snapshot, generation: generation) else { return }
@@ -3072,7 +3080,7 @@ final class NotchController: NSObject {
         case .unreadable:
             return L10n.t("题目无法辨认，请按 \(shortcut) 重新截图。", "問題を読み取れません。\(shortcut) でもう一度キャプチャしてください。", "The question is unreadable. Press \(shortcut) to capture it again.")
         default:
-            return L10n.t("缺少关键上下文，请补全画面后按 \(shortcut) 重试。", "重要な文脈が不足しています。画面を含めて \(shortcut) で再試行してください。", "Critical context is missing. Include it and press \(shortcut) again.")
+            return L10n.t("缺少关键材料，请把题目引用的正文、图表或其他材料一起截入，再按 \(shortcut) 重试。", "必要な資料が不足しています。参照先の本文や図表も含めて \(shortcut) で再試行してください。", "Key material is missing. Include the referenced passage, table, diagram, or other material and press \(shortcut) again.")
         }
     }
 

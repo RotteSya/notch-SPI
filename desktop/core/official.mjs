@@ -207,13 +207,14 @@ export class OfficialClient {
     const objective =
       mode !== "personality" &&
       this.config?.objective_result_v1?.protocol === "objective_v1";
+    const tutorResultV1 = mode === "tutor" && this.config?.tutor_result_v1 === true;
     const screenQuery =
       objective &&
       this.config?.screen_query?.capabilities?.includes("screen_query_v1") &&
       this.config.screen_query.enabled_profiles?.includes("general");
     const prompt = capturePrompt({
       language: settings.language,
-      objective,
+      objective: objective || tutorResultV1,
       mode,
       persona: settings.persona,
       sessionContext,
@@ -235,6 +236,7 @@ export class OfficialClient {
     if (!settings.allowPurchasedCredits) body.allow_purchased_credits = false;
     if (encoded.length > 1) body.images_base64 = encoded;
     if (objective) body.result_protocol = "objective_v1";
+    if (tutorResultV1) body.tutor_result_v1 = true;
     if (screenQuery)
       Object.assign(body, {
         response_contract: "screen_query_v1",
@@ -260,7 +262,7 @@ export class OfficialClient {
       token: this.token,
       base: this.base,
       screenQuery: Boolean(screenQuery),
-      objective,
+      structuredTutorResult: objective || tutorResultV1,
       mode,
       createdAt: Date.now(),
       receipt: null,

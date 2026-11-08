@@ -21,6 +21,7 @@ export async function directAPI({
     anthropic = settings.protocol === "anthropic";
   const prompt = capturePrompt({
     language: settings.language,
+    objective: mode === "tutor",
     mode,
     persona: settings.persona,
     sessionContext,
@@ -169,6 +170,7 @@ export async function localCLI({
     }
     const prompt = capturePrompt({
       language: settings.language,
+      objective: mode === "tutor",
       mode,
       persona: settings.persona,
       sessionContext,

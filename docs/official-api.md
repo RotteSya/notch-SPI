@@ -276,6 +276,11 @@ Objective V1 为可选扩展；旧客户端字段缺省时行为完全不变：
 `objective_v1` 走 `OBJECTIVE_RESULT_V1_PROVIDER/OBJECTIVE_RESULT_V1_MODEL`。treatment 配置缺省时
 完整继承 control，因此旧部署行为不变；任一 slot 配置错误只拒绝选中该 slot 的请求且不预扣。
 
+普通查题客户端在配置宣告 `tutor_result_v1: true` 后随请求发送同一字段。它在原分流上使用结构化
+答题结果和结算，遇到歧义保留本次模型的候选答案，使用一次模型请求。题型只描述结果，`kind=other`
+也接受 `ready` 和 `review`。较长的作答正文放在简短 `FINAL:` 前。缺少会影响答案的材料时返回
+`retake` 并释放预扣。
+
 上下文追问（⌘⇧2）可追加 `images_base64`（有序：老上下文在前、新截图在后，单张上限与
 `image_base64` 相同，数量上限 4，仍只扣 1 题）。该字段存在时优先；客户端同时把**最后一张**
 放进 `image_base64`，旧服务端退化为单图：

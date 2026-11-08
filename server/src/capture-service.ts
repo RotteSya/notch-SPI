@@ -171,6 +171,8 @@ export class CaptureService {
     const reasoningEffort=requestReasoningEffort(body.reasoning_effort);
     const protocol=body.result_protocol===undefined?null:text(body.result_protocol);
     if(protocol!==null&&protocol!=='objective_v1') throw new ApiError(400,'result_protocol 无效');
+    if(body.tutor_result_v1!==undefined&&body.tutor_result_v1!==true) throw new ApiError(400,'tutor_result_v1 无效');
+    const structuredTutorResult=body.tutor_result_v1===true;
     const suppliedId=body.capture_id!==undefined;
     const captureId=suppliedId?text(body.capture_id).toLowerCase():randomUUID();
     if(!UUID.test(captureId)) throw new ApiError(400,'capture_id 必须是 UUID');
@@ -218,7 +220,7 @@ export class CaptureService {
     this.timings.get(req)?.mark('duplicateCheckReady');
     const keyVersion=previous?.keyVersion??this.keys.current;
     const inputHmac=this.keys.digest('capture-input',JSON.stringify({digests,scope,profileId,profileVersion,promptVersion,language:body.ui_language??null}),keyVersion);
-    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(!allowPurchasedCredits?{allowPurchasedCredits:false}:{}),...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
+    const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(structuredTutorResult?{tutorResultV1:true}:{}),...(!allowPurchasedCredits?{allowPurchasedCredits:false}:{}),...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
     // Duplicates are answered from metadata even when the remaining balance is zero.
     if(previous) {
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
@@ -229,7 +231,7 @@ export class CaptureService {
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
         configRevision:config.clientConfigRevision,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},
-      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,{system,task,images,reasoningEffort},captureProvider,model,screen,abort,admission));
+      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,{system,task,images,reasoningEffort,tutorResultV1:structuredTutorResult},captureProvider,model,screen,abort,admission));
   }
   async auxiliary(req:FastifyRequest,reply:FastifyReply,operation:'explain'|'recover'):Promise<void> {
     return this.connected(req,reply,abort=>this.auxiliaryConnected(req,reply,operation,abort));
@@ -410,7 +412,7 @@ export class CaptureService {
       const invalidCompletion=overflow||rejectedFinish;
       const objective=composeObjectiveResult(invalidCompletion?'':raw,true);
       const result=screen?composeScreenQuery(invalidCompletion?'':raw):null;
-      const objectiveMode=capture.resultProtocol==='objective_v1';
+      const objectiveMode=capture.resultProtocol==='objective_v1'||input.tutorResultV1===true;
       const charge=!invalidCompletion && (screen?result!.charge:objectiveMode?objectiveResultIsBillable(objective):
         (!upstreamFailed?deliveredChars>0:abort.signal.aborted&&deliveredChars>=200));
       const terminalState=screen?result!.terminalState:objectiveMode&&objective.state==='retake'?'retake':charge?'usable':'failed';
