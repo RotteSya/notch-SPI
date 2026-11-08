@@ -37,6 +37,8 @@ export interface Usage {
 
 export interface Provider {
   readonly name: string;
+  /** Local estimate, never a client-supplied price or a proven vendor token count. */
+  estimateReservation?(req: CaptureRequest, pricingJSON: string): Promise<{ micros: number; inputUpper: number; outputUpper: number }>;
   stream(
     req: CaptureRequest,
     onDelta: (text: string) => void,

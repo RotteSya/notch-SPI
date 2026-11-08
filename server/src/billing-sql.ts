@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS attempt_budget_holds (
  reserved_upper_micros BIGINT NOT NULL CHECK(reserved_upper_micros>0), state TEXT NOT NULL CHECK(state IN ('held','released','settled')),
  actual_micros BIGINT, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS request_budget_guards (
+ scope TEXT NOT NULL, currency TEXT NOT NULL, tripped INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(scope,currency)
+);
+CREATE TABLE IF NOT EXISTS guarded_budget_holds (
+ attempt_id TEXT PRIMARY KEY REFERENCES attempt_budget_holds(attempt_id),
+ scope TEXT NOT NULL, currency TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_key ON devices(registration_key_hash);
 ${QUOTA_MIGRATION_SCHEMA}
 ${PLUS_SCHEMA}
@@ -373,15 +381,15 @@ export class SQLBilling implements BillingStore {
       yield* finishAttemptForDevice(d, attemptId, input);
     })());
   }
-  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null): Promise<void> {
+  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null, anomaly = false): Promise<void> {
     return this.run((function* (): Transaction<void> {
       const d = yield* device(token); if (!d) return;
       yield* finishAttemptForDevice(d, attemptId, input);
-      yield* settleBudgetForDevice(d, attemptId, actualMicros);
+      yield* settleBudgetForDevice(d, attemptId, actualMicros, anomaly);
     })());
   }
   reserveBudget(token: string, attemptId: string, scope: string, currency: string, reservedUpperMicros: number,
-    limitMicros: number, windowMs = 86_400_000, now = Date.now(), utcOffsetMinutes = 0): Promise<boolean> {
+    limitMicros: number, windowMs = 86_400_000, now = Date.now(), utcOffsetMinutes = 0, guarded = false): Promise<boolean> {
     if (limitMicros <= 0 || reservedUpperMicros <= 0) return Promise.resolve(true);
     return this.run((function* (): Transaction<boolean> {
       const d = yield* device(token); if (!d) return false;
@@ -393,10 +401,18 @@ export class SQLBilling implements BillingStore {
       const existing = yield* query('SELECT state,device_id FROM attempt_budget_holds WHERE attempt_id=?', attemptId);
       if (existing.length) return Number(existing[0]!.device_id)===Number(d.id)
         && (String(existing[0]!.state) === 'held' || String(existing[0]!.state) === 'settled');
+      if (guarded) {
+        yield* query('INSERT INTO request_budget_guards(scope,currency) VALUES (?,?) ON CONFLICT(scope,currency) DO NOTHING',scope,currency);
+        const guard=(yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',scope,currency))[0];
+        if (!guard || Number(guard.tripped)!==0) return false;
+        const active=(yield* query("SELECT COUNT(*) AS n FROM attempt_budget_holds WHERE scope=? AND currency=? AND state='held'",scope,currency))[0];
+        if (Number(active?.n)>=4) return false;
+      }
       const row = (yield* query('SELECT spent_micros,held_micros,limit_micros FROM budget_windows WHERE scope=? AND window_start=? AND currency=? FOR UPDATE', scope, windowStart, currency))[0];
-      if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros > Number(row.limit_micros)) return false;
+      if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros + (guarded?Math.ceil(Number(row.limit_micros)*0.2):0) > Number(row.limit_micros)) return false;
       yield* query(`INSERT INTO attempt_budget_holds(attempt_id,device_id,scope,window_start,currency,reserved_upper_micros,state,created_at)
         VALUES (?,?,?,?,?,?,'held',?)`, attemptId, Number(d.id), scope, windowStart, currency, reservedUpperMicros, new Date().toISOString());
+      if (guarded) yield* query('INSERT INTO guarded_budget_holds(attempt_id,scope,currency) VALUES (?,?,?)',attemptId,scope,currency);
       yield* query('UPDATE budget_windows SET held_micros=held_micros+? WHERE scope=? AND window_start=? AND currency=?', reservedUpperMicros, scope, windowStart, currency);
       return true;
     })());
@@ -409,10 +425,10 @@ export class SQLBilling implements BillingStore {
       yield* query('UPDATE budget_windows SET held_micros=held_micros-? WHERE scope=? AND window_start=? AND currency=?', Number(hold.reserved_upper_micros), String(hold.scope), String(hold.window_start), String(hold.currency));
     })());
   }
-  settleBudget(token: string, attemptId: string, actualMicros: number | null): Promise<void> {
+  settleBudget(token: string, attemptId: string, actualMicros: number | null, anomaly = false): Promise<void> {
     return this.run((function* (): Transaction<void> {
       const d = yield* device(token); if (!d) return;
-      yield* settleBudgetForDevice(d, attemptId, actualMicros);
+      yield* settleBudgetForDevice(d, attemptId, actualMicros, anomaly);
     })());
   }
   attempts(token: string): Promise<Attempt[]> {
@@ -569,10 +585,16 @@ function* finishAttemptForDevice(d: Row, attemptId: string, input: Pick<Attempt,
     attempt.costMicros === null ? 'unknown' : 'estimated', attempt.finishedAt);
 }
 
-function* settleBudgetForDevice(d: Row, attemptId: string, actualMicros: number | null): Transaction<void> {
+function* settleBudgetForDevice(d: Row, attemptId: string, actualMicros: number | null, anomaly = false): Transaction<void> {
+  // Guard before hold/window: the same lock order as admission, shared across instances.
+  const guard=(yield* query('SELECT scope,currency FROM guarded_budget_holds WHERE attempt_id=?',attemptId))[0];
+  if (guard) yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',String(guard.scope),String(guard.currency));
   const hold = (yield* query("SELECT * FROM attempt_budget_holds WHERE attempt_id=? AND device_id=? AND state='held' FOR UPDATE", attemptId, Number(d.id)))[0]; if (!hold) return;
   // Preserve the full observed expense even when the preflight bound was too low.
   const reserved = Number(hold.reserved_upper_micros), actual = actualMicros === null || !Number.isSafeInteger(actualMicros) || actualMicros < 0 ? reserved : actualMicros;
+  if (guard && (anomaly || actualMicros===null || !Number.isSafeInteger(actualMicros) || actualMicros<0 || actual>reserved)) {
+    yield* query('UPDATE request_budget_guards SET tripped=1 WHERE scope=? AND currency=?',String(guard.scope),String(guard.currency));
+  }
   yield* query("UPDATE attempt_budget_holds SET state='settled',actual_micros=? WHERE attempt_id=?", actual, attemptId);
   yield* query('UPDATE budget_windows SET held_micros=held_micros-?,spent_micros=spent_micros+? WHERE scope=? AND window_start=? AND currency=?', reserved, actual, String(hold.scope), String(hold.window_start), String(hold.currency));
 }

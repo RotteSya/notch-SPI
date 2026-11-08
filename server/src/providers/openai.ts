@@ -39,12 +39,7 @@ export class OpenAIProvider implements Provider {
     this.astraTier = options.astraTier;
   }
 
-  async stream(
-    req: CaptureRequest,
-    onDelta: (text: string) => void,
-    signal: AbortSignal,
-    onProgress?: () => void,
-  ): Promise<Usage> {
+  requestBody(req: CaptureRequest) {
     const extraBody = { ...(req.purpose === 'explain' ? this.explanationExtraBody : this.extraBody) };
     if (this.name === 'deepseek' && req.reasoningEffort !== undefined) {
       extraBody.thinking = { type: 'enabled' };
@@ -53,7 +48,7 @@ export class OpenAIProvider implements Provider {
     }
     const tier = this.astraTier;
     const maxTokens = Math.min(req.maxTokens ?? this.maxTokens, this.maxTokens);
-    const body = {
+    return {
       model: this.model,
       ...(tier ? { max_completion_tokens: maxTokens, reasoning_effort: 'low', service_tier: tier, store: false }
         : { max_tokens: maxTokens }),
@@ -74,7 +69,17 @@ export class OpenAIProvider implements Provider {
         },
       ],
     };
+  }
 
+  async stream(
+    req: CaptureRequest,
+    onDelta: (text: string) => void,
+    signal: AbortSignal,
+    onProgress?: () => void,
+  ): Promise<Usage> {
+    const tier = this.astraTier;
+    const maxTokens = Math.min(req.maxTokens ?? this.maxTokens, this.maxTokens);
+    const body = this.requestBody(req);
     const serialized = JSON.stringify(body);
     req.onTiming?.('upstreamRequest');
     const res = await fetch(this.endpoint, {

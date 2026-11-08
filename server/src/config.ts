@@ -211,6 +211,7 @@ export const config = {
   eventBatchPerMinute: boundedInt(envInt('EVENT_BATCH_PER_MINUTE', 30), 30, 0, 10_000),
   modelPricingJSON: envStr('MODEL_PRICING_JSON', '[]'),
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
+  requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),
   modelDailyBudgetMicros: envInt('MODEL_DAILY_BUDGET_MICROS', 0),
   modelBudgetUtcOffsetMinutes: Number(envStr('MODEL_BUDGET_UTC_OFFSET_MINUTES', '0')),
   attemptBudgetUpperMicros: envInt('ATTEMPT_BUDGET_UPPER_MICROS', 0),
@@ -219,8 +220,18 @@ export const config = {
 export type Config = typeof config;
 
 export function validateTrialPolicy(c: Config): void {
+  if (!['fixed', 'shadow', 'local-request', 'guarded-request'].includes(c.requestBudgetMode)) throw new Error('Invalid ASTRA_REQUEST_BUDGET_MODE');
+  if (c.requestBudgetMode === 'local-request' && (c.requireDurableStorage || c.isServerless)) {
+    throw new Error('Request-sized reservations are not production-qualified');
+  }
   const astraControl = c.provider === 'openai' && c.model === ASTRA_MODEL;
   const astraObjective = c.objectiveProvider === 'openai' && c.objectiveModel === ASTRA_MODEL;
+  if (c.requestBudgetMode === 'guarded-request' && (!astraControl || !astraObjective ||
+    c.openaiBaseURL.replace(/\/+$/u,'') !== 'https://api.openai.com' || c.modelCostCurrency !== 'USD' ||
+    !Number.isSafeInteger(c.modelDailyBudgetMicros) || c.modelDailyBudgetMicros <= 0 ||
+    !Number.isSafeInteger(c.attemptBudgetUpperMicros) || c.attemptBudgetUpperMicros <= 0)) {
+    throw new Error('Guarded requests require both Astra slots, global endpoint and positive USD budgets');
+  }
   if (c.objectiveAstraFastReview && !astraObjective) {
     throw new Error('Astra Fast review requires the OpenAI Astra objective slot');
   }
@@ -253,7 +264,7 @@ export function validateTrialPolicy(c: Config): void {
       if((estimateModelCostMicros(c.modelPricingJSON,provider+':'+model,1,1)
           ??estimateModelCostMicros(c.modelPricingJSON,model!,1,1))===undefined) throw new Error('Production model slots require known prices');
     }
-    if (astraControl || astraObjective) {
+    if ((astraControl || astraObjective) && c.requestBudgetMode !== 'guarded-request') {
       if (c.modelCostCurrency !== 'USD') throw new Error('Astra production pricing must use USD');
       const bound = (key: string, output: number) =>
         estimateModelCostMicros(c.modelPricingJSON, key, ASTRA_CONTEXT_TOKENS, output);

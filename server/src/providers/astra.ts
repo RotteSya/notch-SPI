@@ -1,4 +1,5 @@
 import { composeObjectiveResult, normalizeObjectiveAnswer, OBJECTIVE_RESULT_MARKER } from '../objective-result.ts';
+import { estimateAstraWire } from './astra-budget.ts';
 import { OpenAIProvider } from './openai.ts';
 import type { CaptureRequest, Provider, Usage } from './types.ts';
 
@@ -38,10 +39,18 @@ export class AstraProvider implements Provider {
   readonly name = 'openai';
   private readonly standard: OpenAIProvider;
   private readonly fast?: OpenAIProvider;
+  private readonly globalEndpoint: boolean;
 
   constructor(key: string, baseURL: string, maxTokens: number, fastReview: boolean) {
+    this.globalEndpoint = baseURL.replace(/\/+$/u, '') === 'https://api.openai.com';
     this.standard = new OpenAIProvider(key, baseURL, ASTRA_MODEL, maxTokens, { astraTier: 'default' });
     if (fastReview) this.fast = new OpenAIProvider(key, baseURL, ASTRA_MODEL, maxTokens, { astraTier: 'fast' });
+  }
+
+  async estimateReservation(req: CaptureRequest, pricingJSON: string) {
+    if (!this.globalEndpoint) throw new Error('Request budget requires the global OpenAI endpoint');
+    return estimateAstraWire(JSON.stringify(this.standard.requestBody(req)), pricingJSON,
+      !!this.fast && (req.purpose === undefined || req.purpose === 'answer'));
   }
 
   async stream(req: CaptureRequest, onDelta: (text: string) => void, signal: AbortSignal, onProgress?: () => void): Promise<Usage> {

@@ -26,7 +26,9 @@ export class MemoryBilling implements BillingStore {
   private devices = new Map<number, MemoryQuotaDevice>();
   private buckets = new Map<string, { count: number; end: number }>();
   private budgets = new Map<string, { limit: number; spent: number; held: number; end: number }>();
-  private budgetHolds = new Map<string, { deviceId: number; key: string; reserved: number; state: 'held'|'released'|'settled' }>();
+  private trippedBudgets = new Set<string>();
+  private guardedHolds = new Map<string,string>();
+  private budgetHolds = new Map<string, { deviceId: number; key: string; group: string; reserved: number; state: 'held'|'released'|'settled' }>();
   private lookup: (token: string) => MemoryQuotaDevice | undefined;
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
@@ -284,35 +286,40 @@ export class MemoryBilling implements BillingStore {
     const state=this.state(d),old=state.attempts.get(id);
     if(old?.status==='running') state.attempts.set(id,{...old,...input,finishedAt:new Date().toISOString()});
   }
-  async finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null): Promise<void> {
+  async finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null, anomaly = false): Promise<void> {
     const d=this.lookup(token); if(!d) return;
     // Both writes finish in the same synchronous turn, matching the SQL transaction.
     this.finishAttemptFor(d, attemptId, input);
-    this.settleBudgetFor(d, attemptId, actualMicros);
+    this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
-  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0):Promise<boolean> {
+  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false):Promise<boolean> {
     const d = this.lookup(token); if (!d) return false;
     if (limitMicros<=0 || reservedUpperMicros<=0) return true;
     const offset=utcOffsetMinutes*60_000,start=Math.floor((now+offset)/windowMs)*windowMs-offset;
     const key=`${scope}:${start}:${currency}`,existing=this.budgetHolds.get(attemptId);
     if (existing) return existing.deviceId===d.id && (existing.state==='held'||existing.state==='settled');
+    const guardKey=`${scope}:${currency}`;
+    if (guarded && (this.trippedBudgets.has(guardKey) || [...this.budgetHolds.values()].filter(h=>h.group===guardKey&&h.state==='held').length>=4)) return false;
     const budget=this.budgets.get(key)??{limit:limitMicros,spent:0,held:0,end:start+windowMs};
-    if (budget.spent+budget.held+reservedUpperMicros>budget.limit) return false;
-    budget.held+=reservedUpperMicros; this.budgets.set(key,budget); this.budgetHolds.set(attemptId,{deviceId:d.id,key,reserved:reservedUpperMicros,state:'held'}); return true;
+    if (budget.spent+budget.held+reservedUpperMicros+(guarded?Math.ceil(budget.limit*0.2):0)>budget.limit) return false;
+    if (guarded) this.guardedHolds.set(attemptId,guardKey);
+    budget.held+=reservedUpperMicros; this.budgets.set(key,budget); this.budgetHolds.set(attemptId,{deviceId:d.id,key,group:guardKey,reserved:reservedUpperMicros,state:'held'}); return true;
   }
   async releaseBudget(token:string,attemptId:string):Promise<void> {
     const d=this.lookup(token); if (!d) return; const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     const budget=this.budgets.get(hold.key); if (budget) budget.held=Math.max(0,budget.held-hold.reserved); hold.state='released';
   }
-  async settleBudget(token:string,attemptId:string,actualMicros:number|null):Promise<void> {
+  async settleBudget(token:string,attemptId:string,actualMicros:number|null,anomaly=false):Promise<void> {
     const d=this.lookup(token); if (!d) return;
-    this.settleBudgetFor(d, attemptId, actualMicros);
+    this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
-  private settleBudgetFor(d: MemoryQuotaDevice, attemptId: string, actualMicros: number | null): void {
+  private settleBudgetFor(d: MemoryQuotaDevice, attemptId: string, actualMicros: number | null, anomaly = false): void {
     const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     // An underestimated hold must never erase real spend. Accounting the entire overrun
     // also prevents the next reservation from spending the apparently unused difference.
     const budget=this.budgets.get(hold.key); if (!budget) return; const actual=actualMicros===null||!Number.isSafeInteger(actualMicros)||actualMicros<0?hold.reserved:actualMicros;
+    const guardKey=this.guardedHolds.get(attemptId);
+    if (guardKey && (anomaly || actualMicros===null || !Number.isSafeInteger(actualMicros) || actualMicros<0 || actual>hold.reserved)) this.trippedBudgets.add(guardKey);
     budget.held=Math.max(0,budget.held-hold.reserved); budget.spent+=actual; hold.state='settled';
   }
   async attempts(token:string):Promise<Attempt[]> {

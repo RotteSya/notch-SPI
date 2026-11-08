@@ -47,3 +47,16 @@ test('Astra production requires a USD reservation for Standard and any configure
   assert.doesNotThrow(() => validateTrialPolicy({ ...astra, objectiveAstraFastReview: false,
     attemptBudgetUpperMicros: 1058, modelPricingJSON: JSON.stringify(rates.slice(0, 2)) }));
 });
+
+test('guarded Astra admits request ceilings below full context while retaining production controls',()=>{
+  const c={...production(),requestBudgetMode:'guarded-request',provider:'openai' as const,objectiveProvider:'openai' as const,
+    model:'gpt-6-astra',objectiveModel:'gpt-6-astra',openaiBaseURL:'https://api.openai.com',
+    maxTokens:8192,objectiveMaxTokens:8192,modelCostCurrency:'USD',modelDailyBudgetMicros:10_000_000,attemptBudgetUpperMicros:3_000_000,
+    modelPricingJSON:JSON.stringify([{model:'openai:gpt-6-astra',input_micros_per_million_tokens:25_000_000,output_micros_per_million_tokens:75_000_000}])};
+  assert.doesNotThrow(()=>validateTrialPolicy(c));
+  assert.throws(()=>validateTrialPolicy({...c,requestBudgetMode:'fixed'}),/reservation/);
+  for(const patch of [{modelCostCurrency:'CNY'},{openaiBaseURL:'https://proxy.invalid'},
+    {provider:'deepseek' as const},{modelPricingJSON:'[]'},{modelDailyBudgetMicros:0},{attemptBudgetUpperMicros:0},{cronSecret:''}]){
+    assert.throws(()=>validateTrialPolicy({...c,...patch}));
+  }
+});
