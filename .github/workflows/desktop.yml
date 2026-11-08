@@ -25,6 +25,10 @@ jobs:
             server/package-lock.json
       - run: npm --prefix server ci --include=optional
       - run: npm --prefix desktop ci
+      # Electron downloads lazily on first launch; keep network setup outside smoke deadlines.
+      - name: Prepare the locked Electron binary
+        run: node desktop/node_modules/electron/install.js
+        timeout-minutes: 10
       - run: npm --prefix desktop run check
       - run: npm --prefix desktop audit --omit=dev --audit-level=high
       - name: Desktop launches and renderer is ready
