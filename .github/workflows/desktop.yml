@@ -2,7 +2,7 @@ name: Desktop cross-platform
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/windows-2022-flight-diagnostics]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2022, windows-2025, macos-15]
+        os: [windows-2022]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -33,30 +33,20 @@ jobs:
       - name: Personality warning remains visible and never offers copying
         run: npm --prefix desktop run smoke:personality
         timeout-minutes: 2
-      - name: Ghost and screenshot flight on a real desktop compositor
-        run: npm --prefix desktop run smoke:motion
-        timeout-minutes: 2
-      - name: Windows ZIP and NSIS from the same source
-        if: runner.os == 'Windows'
-        run: npm --prefix desktop run pack:win
-      - name: Visible overlays excluded from captured Windows pixels
-        if: runner.os == 'Windows'
-        run: npm --prefix desktop run smoke:capture
-        timeout-minutes: 2
-      - name: Mac native regression
-        if: runner.os == 'macOS'
-        run: swift test -Xswiftc -warnings-as-errors
-        env:
-          NSPI_QA_EPHEMERAL: "1"
-      - name: Mac native Release
-        if: runner.os == 'macOS'
-        run: swift build -c release --arch arm64
-      - name: Mac native unsigned review package
-        if: runner.os == 'macOS'
-        run: ./scripts/package.sh release --unsigned
-      - name: Prove one source change reaches both runtimes
-        if: runner.os == 'macOS'
-        run: node scripts/cross-platform/prove-shared-change.mjs
+      - name: Diagnose repeated screenshot flights
+        shell: pwsh
+        run: |
+          $failed = 0
+          1..8 | ForEach-Object {
+            npm --prefix desktop run smoke:motion
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+            if (Test-Path desktop/test-output/motion) {
+              Move-Item desktop/test-output/motion "desktop/test-output/motion-run-$_"
+            }
+          }
+          Write-Output "Failed original assertions: $failed / 8"
+          if ($failed -gt 0) { exit 1 }
+        timeout-minutes: 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -2,7 +2,14 @@ import { flightSample, flightStyle } from "../generated/ui/flight.mjs";
 let batch = { flights: [], origin: { x: 0, y: 0 } },
   frame;
 const cards = new Map();
+const diagnostic = new URL(location.href).searchParams.has("diagnostic");
+const trace = diagnostic ? (window.__flightDiagnostics = []) : null;
+function record(event, data = {}) {
+  if (trace && trace.length < 500) trace.push({event, at: Date.now(), ...data});
+}
+record("script-ready");
 window.flight.frames((value) => {
+  record("payload", {revision: value.revision, ids: value.flights.map(f => f.id)});
   batch = value;
   const ids = new Set(value.flights.map((f) => f.id));
   for (const [id, card] of cards)
@@ -15,7 +22,10 @@ window.flight.frames((value) => {
       const card = document.createElement("div");
       card.className = "photo";
       const img = document.createElement("img");
+      img.addEventListener("load", () => record("image-load", {id: f.id, width: img.naturalWidth, height: img.naturalHeight}));
+      img.addEventListener("error", () => record("image-error", {id: f.id}));
       img.src = f.image;
+      if (diagnostic) img.decode().then(() => record("image-decoded", {id: f.id}), () => record("decode-error", {id: f.id}));
       card.append(img);
       document.body.append(card);
       cards.set(f.id, card);
@@ -63,6 +73,9 @@ function paint() {
       height: Math.max(0, r.height - 2 * v.inset) + "px",
       borderRadius: Math.max(0, v.radius - v.inset) + "px",
     });
+    record("paint", {id: f.id, start: f.start, t, opacity: v.opacity, rect: r,
+      complete: card.firstElementChild.complete, width: card.firstElementChild.naturalWidth,
+      visibility: document.visibilityState});
     active ||= t < 1;
   }
   if (active) frame = requestAnimationFrame(paint);

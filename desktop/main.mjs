@@ -1258,7 +1258,15 @@ async function start() {
       throw new Error("Full-motion smoke unexpectedly selected reduced motion");
     const painting = (async () => {
       await wait(100);
-      return flights.evidence(directory, "flight-moving");
+      const first = await flights.evidence(directory, "flight-moving");
+      const samples = [first];
+      await fs.writeFile(path.join(directory, "pixel-series.json"), JSON.stringify(samples, null, 2));
+      for (let sample = 1; sample <= 6; sample++) {
+        await wait(80);
+        samples.push(await flights.evidence(directory, `flight-sample-${sample}`));
+        await fs.writeFile(path.join(directory, "pixel-series.json"), JSON.stringify(samples, null, 2));
+      }
+      return first;
     })();
     const captureContinuity = [];
     let hiddenDuringCapture = false;

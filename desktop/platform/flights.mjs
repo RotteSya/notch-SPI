@@ -67,7 +67,7 @@ export function createFlights({ root, host, changed, protection, exclusion, obse
         });
         // Publish only after protection and passthrough initialization succeeds.
         overlays.set(d.id, entry);
-        void w.loadFile(path.join(root, "ui/flight.html")).catch(() => {
+        void w.loadFile(path.join(root, "ui/flight.html"), {query: process.argv.includes("--motion-smoke") ? {diagnostic: "1"} : {}}).catch(() => {
           failed();
           if (!w.isDestroyed()) w.close();
         });
@@ -187,7 +187,9 @@ export function createFlights({ root, host, changed, protection, exclusion, obse
             path.join(directory, `${label}-${id}.png`),
             image.toPNG(),
           );
-          result.push({ id, ink, visible, requestedAt, completedAt: Date.now(),
+          const completedAt = Date.now();
+          const renderer = await w.webContents.executeJavaScript("window.__flightDiagnostics || []");
+          result.push({ id, ink, visible, requestedAt, completedAt, renderer,
             visibleAfterCapture: !w.isDestroyed() && w.isVisible() });
         }
       return result;
