@@ -97,6 +97,16 @@ test('request error is reserved once and never retried',async t=>{
   assert.equal(readFileSync(join(dir,'run/dispatches.jsonl'),'utf8').trim().split('\n').length,1);
   assert.ok(!readFileSync(join(dir,'run/1-error.json'),'utf8').includes('private content'));
 });
+test('stream failure preserves partial answer and elapsed time without error text or retry',async t=>{
+  const dir=temporary(t);let calls=0;
+  const result=await execute(plan,plan.bindings,join(dir,'run'),{async stream(_request,delta){
+    calls++;delta('FINAL: partial');throw new Error('PRIVATE TRANSPORT ERROR');
+  }});
+  assert.equal(calls,1);assert.equal(result.stopped,'request_error_no_retry');
+  const text=readFileSync(join(dir,'run/1-error.json'),'utf8'),record=JSON.parse(text);
+  assert.equal(record.raw,'FINAL: partial');assert.ok(record.timing.failed_after_ms>=0);
+  assert.equal(record.timing.response_complete_ms,null);assert.ok(!text.includes('PRIVATE TRANSPORT ERROR'));
+});
 test('quality failure stops before another paid sample',async t=>{
   const dir=temporary(t);let calls=0;
   const result=await execute(plan,plan.bindings,join(dir,'run'),{async stream(_request,delta){calls++;delta('FINAL: B');return {finishReason:'stop'};}});

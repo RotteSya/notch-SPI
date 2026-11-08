@@ -420,7 +420,9 @@ export async function execute(plan, permit, output, provider) {
       writeFileSync(resolve(output, `${ordinal}.json`), JSON.stringify({...record, usage, passed, raw, timing, provider_timing_ms:providerTiming, upstream_cadence:cadence.snapshot(), manual_quality_review_required: daily || legacy}), {mode: 0o600, flag: 'wx'});
       if (!passed) return {calls: ordinal, passed: false, stopped: 'quality_gate'};
     } catch {
-      writeFileSync(resolve(output, `${ordinal}-error.json`), JSON.stringify({...record, failed: true, provider_timing_ms:providerTiming, upstream_cadence:cadence.snapshot()}), {mode: 0o600, flag: 'wx'});
+      writeFileSync(resolve(output, `${ordinal}-error.json`), JSON.stringify({...record, failed: true, raw,
+        timing:{...timing,failed_after_ms:performance.now()-started},
+        provider_timing_ms:providerTiming, upstream_cadence:cadence.snapshot()}), {mode: 0o600, flag: 'wx'});
       return {calls: ordinal, passed: false, stopped: 'request_error_no_retry'};
     }
   }
