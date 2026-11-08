@@ -77,7 +77,8 @@ final class OptionCropGuardTests: XCTestCase {
     }
 
     @MainActor func testRealSingleIntakeRejectsClippedFixtureBeforeAnySubmissionAndMultipleIntakePreservesContext() async throws {
-        let item = try XCTUnwrap(try frozen().cases.first { $0.id == "cropped-options" })
+        let fixture = try frozen()
+        let item = try XCTUnwrap(fixture.cases.first { $0.id == "cropped-options" })
         let savedMode = Settings.shared.mode, savedService = Settings.shared.serviceMode
         defer { Settings.shared.mode = savedMode; Settings.shared.serviceMode = savedService }
         Settings.shared.mode = "tutor"; Settings.shared.serviceMode = "official"
