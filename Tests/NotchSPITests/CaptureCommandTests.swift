@@ -19,7 +19,7 @@ final class CaptureCommandTests: XCTestCase {
         var child: Process?
         do {
             try await command.run(executable: shell, arguments: ["-c", "trap '' TERM; while :; do :; done"],
-                                  timeout: .milliseconds(80)) { child = $0; try $0.run() }
+                                  timeout: 0.08) { child = $0; try $0.run() }
             XCTFail("expected timeout")
         } catch CaptureSystemOperationError.timedOut { }
         XCTAssertEqual(child?.isRunning, false)

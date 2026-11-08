@@ -101,7 +101,17 @@ enum UpdateChecker {
 
     /// Silent launch check: runs at most once per day and only shows UI when an update is available
     /// and that version hasn't been skipped. Failures are swallowed (the menu item is always there).
+    static var supportsCurrentUpdateChannel: Bool {
+        #if arch(x86_64)
+        return false
+        #else
+        if #available(macOS 14.0, *) { return true }
+        return false
+        #endif
+    }
+
     static func autoCheckIfDue() {
+        guard supportsCurrentUpdateChannel else { return }
         guard !inFlight, !InAppUpdater.shared.isRunning else { return }
         let now = Date().timeIntervalSince1970
         let last = UserDefaults.standard.double(forKey: lastCheckKey)
@@ -121,6 +131,10 @@ enum UpdateChecker {
 
     /// Fetch the latest release and compare to the running version. `completion` runs on the main thread.
     static func check(completion: @escaping (CheckResult) -> Void) {
+        guard supportsCurrentUpdateChannel else {
+            completion(.failed(L10n.t("兼容版暂不支持自动更新，请联系开发者获取新的兼容安装包。", "互換版の更新は開発者にお問い合わせください。", "Please contact the developer for a newer compatibility build.")))
+            return
+        }
         var req = URLRequest(url: latestURL)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 15

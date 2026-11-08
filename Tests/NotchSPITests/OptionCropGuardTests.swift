@@ -97,7 +97,7 @@ final class OptionCropGuardTests: XCTestCase {
         controller.model.explanationAvailable = true
         controller.model.recoveryAvailable = true
         controller.qaPressScreenshot(multiple: false)
-        for _ in 0..<100 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 where controller.model.screenshotCapturing { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertFalse(controller.model.screenshotCapturing)
         XCTAssertEqual(submissions, 0); XCTAssertEqual(controller.qaModelInvocations, 0)
         XCTAssertTrue(controller.model.answer.isEmpty); XCTAssertTrue(controller.model.screenshots.isEmpty)
@@ -107,7 +107,7 @@ final class OptionCropGuardTests: XCTestCase {
         XCTAssertFalse(controller.model.captureFeedback.isEmpty)
 
         controller.qaPressScreenshot(multiple: true)
-        for _ in 0..<100 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 where controller.model.screenshotCapturing { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(controller.model.screenshots.count, 1, "An earlier context shot may intentionally lack answer choices")
         XCTAssertEqual(submissions, 0)
         controller.qaCancelScreenshotRound()

@@ -57,7 +57,7 @@ final class ScreenshotIntakeTests: XCTestCase {
     @MainActor private func settle(_ predicate: () -> Bool) async throws {
         for _ in 0..<100 {
             if predicate() { return }
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(nanoseconds: 10000000)
         }
         XCTFail("Intake did not reach the expected state")
     }
@@ -175,7 +175,7 @@ final class ScreenshotIntakeTests: XCTestCase {
         try await settle { captureCompletion != nil }
         controller.qaCancelScreenshotRound()
         captureCompletion?.resume(returning: .success(try fixture()))
-        try await Task.sleep(for: .milliseconds(60))
+        try await Task.sleep(nanoseconds: 60000000)
         XCTAssertTrue(controller.model.screenshots.isEmpty)
         XCTAssertTrue(controller.model.flyingScreenshots.isEmpty)
         XCTAssertFalse(controller.model.screenshotRoundActive)

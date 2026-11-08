@@ -16,6 +16,7 @@ final class InAppUpdater: NSObject, URLSessionDownloadDelegate, NSWindowDelegate
     private var preparing = false
 
     func start(_ release: UpdateChecker.Release) {
+        guard UpdateChecker.supportsCurrentUpdateChannel else { return }
         if isRunning { window?.makeKeyAndOrderFront(nil); return }
         preparing = false
         expectedVersion = release.version

@@ -348,7 +348,7 @@ final class NotchOnboardingTests: XCTestCase {
         }
         controller.qaPresentOnboarding(.capture)
         controller.qaPressScreenshot(multiple: false)
-        for _ in 0..<50 where pending == nil { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<50 where pending == nil { try await Task.sleep(nanoseconds: 10000000) }
         XCTAssertNotNil(pending)
         controller.qaPressScreenshot(multiple: false)
         XCTAssertEqual(calls, 1)
@@ -357,7 +357,7 @@ final class NotchOnboardingTests: XCTestCase {
         controller.qaFinishOnboardingCapture(success: true)
         XCTAssertNil(controller.model.onboardingStep)
         pending?.resume(returning: .failure(.captureFailed))
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(nanoseconds: 50000000)
         XCTAssertNil(controller.model.onboardingStep)
     }
 
@@ -371,12 +371,12 @@ final class NotchOnboardingTests: XCTestCase {
         controller.qaScreenshotCapture = { calls += 1; return .failure(.captureFailed) }
         controller.qaPresentOnboarding(.capture)
         controller.qaPressScreenshot(multiple: false)
-        for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(nanoseconds: 10000000) }
         XCTAssertEqual(controller.model.status, .error)
         XCTAssertEqual(controller.model.onboardingStep, .working)
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))
         controller.qaPressScreenshot(multiple: false)
-        for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<50 where controller.model.screenshotCapturing { try await Task.sleep(nanoseconds: 10000000) }
         XCTAssertEqual(calls, 2)
         controller.qaFinishOnboardingCapture(success: true)
         XCTAssertEqual(controller.model.onboardingStep, .firstAnswer)
@@ -414,7 +414,7 @@ final class NotchOnboardingTests: XCTestCase {
             XCTAssertTrue(model.answer.isEmpty)
             XCTAssertTrue(model.screenshots.isEmpty)
             controller.qaAdvanceOnboarding()
-            for _ in 0..<50 where model.onboardingTrialState == .claiming { try await Task.sleep(for: .milliseconds(10)) }
+            for _ in 0..<50 where model.onboardingTrialState == .claiming { try await Task.sleep(nanoseconds: 10000000) }
             XCTAssertEqual(model.onboardingTrialState, .claimed)
             if dismiss { controller.qaDismissOnboarding() } else { controller.qaAdvanceOnboarding() }
             XCTAssertTrue(d.bool(forKey: "onboardingDone"))
@@ -440,12 +440,12 @@ final class NotchOnboardingTests: XCTestCase {
         controller.qaScreenshotCapture = { await withCheckedContinuation { pending = $0 } }
         controller.qaPresentOnboarding(.capture)
         controller.qaPressScreenshot(multiple: false)
-        for _ in 0..<50 where pending == nil { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<50 where pending == nil { try await Task.sleep(nanoseconds: 10000000) }
         XCTAssertNotNil(pending)
         controller.qaCancelScreenshotRound()
         XCTAssertEqual(controller.model.onboardingStep, .capture)
         pending?.resume(returning: .failure(.captureFailed))
-        try await Task.sleep(for: .milliseconds(50))
+        try await Task.sleep(nanoseconds: 50000000)
         controller.qaFinishOnboardingCapture(success: true)
         XCTAssertEqual(controller.model.onboardingStep, .capture)
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))

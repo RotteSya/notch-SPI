@@ -18,7 +18,7 @@ final class NotchLumaView: NSView {
     private let maskLayer = CAShapeLayer()
     private var queue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
-    private var link: CADisplayLink?
+    private var link: CompatibleDisplayLink?
     private var proxy: LumaProxy?
     private let t0 = CACurrentMediaTime()
 
@@ -165,7 +165,7 @@ final class NotchLumaView: NSView {
             if link == nil {
                 let p = LumaProxy(self)
                 proxy = p
-                link = displayLink(target: p, selector: #selector(LumaProxy.tick))
+                link = CompatibleDisplayLink(view: self, target: p, selector: #selector(LumaProxy.tick))
                 link?.add(to: .main, forMode: .common)
             }
             link?.isPaused = false

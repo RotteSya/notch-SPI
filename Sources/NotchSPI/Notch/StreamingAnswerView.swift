@@ -23,7 +23,7 @@ final class StreamingAnswerView: NSView {
     private var births: [CFTimeInterval] = []   // one per Character of `plain`
     private var utf16Births: [CFTimeInterval] = []
     private var isPlaceholder = true
-    private var link: CADisplayLink?
+    private var link: CompatibleDisplayLink?
     private var proxy: StreamProxy?
     private var frameCache: (key: String, width: CGFloat, frame: CTFrame)?
     private var fittedCache: (width: CGFloat, text: NSAttributedString)?
@@ -453,7 +453,7 @@ final class StreamingAnswerView: NSView {
         if link == nil {
             let p = StreamProxy(self)
             proxy = p
-            link = displayLink(target: p, selector: #selector(StreamProxy.tick))
+            link = CompatibleDisplayLink(view: self, target: p, selector: #selector(StreamProxy.tick))
             link?.add(to: .main, forMode: .common)
         }
         link?.isPaused = false

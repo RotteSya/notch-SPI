@@ -102,9 +102,9 @@ node scripts/lib/swift-check.mjs "$REPO_ROOT"
 PROVENANCE_DIR="$(node scripts/cross-platform/mac-provenance.mjs begin "$MODE")"
 CANDIDATE_ID="$(basename "$PROVENANCE_DIR")"
 
-echo "==> Building release binary (arm64)"
-swift build --disable-automatic-resolution --skip-update -c release --arch arm64
-BINDIR="$(swift build --disable-automatic-resolution --skip-update -c release --arch arm64 --show-bin-path)"
+echo "==> Building release binary (x86_64)"
+swift build --disable-automatic-resolution --skip-update -c release --arch x86_64
+BINDIR="$(swift build --disable-automatic-resolution --skip-update -c release --arch x86_64 --show-bin-path)"
 BIN="$BINDIR/$APP_NAME"
 [[ -x "$BIN" ]] || { echo "package: missing binary $BIN" >&2; exit 1; }
 echo "    $(file "$BIN")"
@@ -145,7 +145,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$SHORT_VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.3</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>NotchSPI</string>
 </dict>

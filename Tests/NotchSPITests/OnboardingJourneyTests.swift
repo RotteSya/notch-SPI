@@ -98,7 +98,7 @@ final class OnboardingJourneyTests: XCTestCase {
         controller.qaDismissOnboarding()
         XCTAssertEqual(NotchOnboardingProgress(defaults: d).resumeStep, .trial)
         pending?.resume(returning: true)
-        try await Task.sleep(for: .milliseconds(30))
+        try await Task.sleep(nanoseconds: 30000000)
         XCTAssertNil(controller.model.onboardingStep)
         XCTAssertFalse(d.bool(forKey: "onboardingDone"))
         XCTAssertEqual(controller.model.onboardingTrialState, .available)
@@ -196,7 +196,7 @@ final class OnboardingJourneyTests: XCTestCase {
         return .init(path: url.path, blank: false, targetFingerprint: "practice")
     }
     @MainActor private func settle(_ condition: () -> Bool) async throws {
-        for _ in 0..<100 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 { if condition() { return }; try await Task.sleep(nanoseconds: 10000000) }
         XCTFail("Guide intake failed to settle")
     }
     @MainActor func testTwoImageLessonUsesRealCountdownPreviewAndCompletionCleanup() async throws {

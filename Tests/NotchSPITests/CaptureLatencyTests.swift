@@ -34,7 +34,7 @@ final class CaptureLatencyTests: XCTestCase {
             model.status = .streaming
             model.answer = "Reasoning.\nFINAL: C"
             for _ in 0..<100 where trace.offsets[.firstAnswerDraw] == nil {
-                try await Task.sleep(for: .milliseconds(5))
+                try await Task.sleep(nanoseconds: 5_000_000)
                 view.displayIfNeeded()
             }
             view.displayIfNeeded()
@@ -46,7 +46,7 @@ final class CaptureLatencyTests: XCTestCase {
             trace.complete(success: true)
             // Wait for the scheduled model refresh, not an arbitrary frame deadline.
             for _ in 0..<100 where answer.completedCapture !== trace {
-                try await Task.sleep(for: .milliseconds(5))
+                try await Task.sleep(nanoseconds: 5000000)
             }
             XCTAssertTrue(answer.completedCapture === trace)
             view.displayIfNeeded()

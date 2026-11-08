@@ -9,7 +9,7 @@ final class CaptureSystemOperationTests: XCTestCase {
         var callback: CheckedContinuation<Int, Never>?
         var delivered = false
         let first = Task {
-            let value = try await gate.run(timeout: .milliseconds(40)) {
+            let value = try await gate.run(timeout: 0.04) {
                 let result = await withCheckedContinuation { callback = $0; started.fulfill() }
                 completed.fulfill()
                 return result
@@ -35,14 +35,14 @@ final class CaptureSystemOperationTests: XCTestCase {
         var callback: CheckedContinuation<Int, Never>?
         var starts = 0
         let first = Task {
-            try await gate.run(timeout: .milliseconds(40)) {
+            try await gate.run(timeout: 0.04) {
                 starts += 1
                 return await withCheckedContinuation { callback = $0; started.fulfill() }
             }
         }
         await fulfillment(of: [started], timeout: 2)
         let second = Task {
-            try await gate.run(timeout: .seconds(2)) { starts += 1; return -1 }
+            try await gate.run(timeout: 2) { starts += 1; return -1 }
         }
         do { _ = try await first.value; XCTFail("first caller missed its deadline") }
         catch CaptureSystemOperationError.timedOut { }

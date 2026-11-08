@@ -52,7 +52,7 @@ if (command === 'begin') {
   }
   verifySourceIdentity(provenance.source, root);
   const result = {
-    schemaVersion: 1, provenance, platform: 'macOS arm64',
+    schemaVersion: 1, provenance, platform: 'macOS x86_64',
     app: { path: path.relative(root, app), ...appPayload },
     dmg: dmg ?? null,
     checks: { sourceUnchanged: true, appSignatureValid: true, dmgPayloadMatches: dmg ? true : null },

@@ -60,7 +60,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
                                     _ predicate: () -> Bool) async throws {
         for _ in 0..<200 {
             if predicate() { return }
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(nanoseconds: 10000000)
         }
         XCTFail("Capture flow did not reach \(stage). \(state())", file: file, line: line)
         throw WaitFailure.timeout
@@ -403,7 +403,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
             XCTAssertTrue(controller.qaScreenRecheckPending)
             let immediate = controller.qaScreenRefreshCount
             XCTAssertGreaterThan(immediate, initial)
-            try await Task.sleep(for: .milliseconds(900))
+            try await Task.sleep(nanoseconds: 900000000)
             XCTAssertFalse(controller.qaScreenRecheckPending)
             XCTAssertEqual(controller.qaScreenRefreshCount, immediate + 1)
             XCTAssertEqual(controller.model.answer, answer)
@@ -432,7 +432,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
         XCTAssertTrue(controller.qaScreenRecheckPending)
         controller.prepareForTermination()
         let count = controller.qaScreenRefreshCount
-        try await Task.sleep(for: .milliseconds(900))
+        try await Task.sleep(nanoseconds: 900000000)
         XCTAssertFalse(controller.qaScreenRecheckPending)
         XCTAssertEqual(controller.qaScreenRefreshCount, count)
     }

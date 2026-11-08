@@ -193,8 +193,8 @@ if (exists('scripts/package.sh')) {
   if (/VERSION="[0-9]+\.[0-9]+/.test(pkg) || /CFBundleVersion<\/key><string>[0-9]+/.test(pkg)) {
     fail('scripts/package.sh must not hardcode CFBundle version values');
   }
-  if (pkg.includes('x86_64') || /universal/i.test(pkg)) {
-    fail('scripts/package.sh must build arm64 only');
+  if (!pkg.includes('--arch x86_64') || pkg.includes('--arch arm64') || /universal/i.test(pkg)) {
+    fail('Intel candidate scripts/package.sh must build x86_64 only');
   }
   if (/SHORT_VERSION=.*-test/.test(pkg)) {
     fail('scripts/package.sh must keep CFBundleShortVersionString numeric in QA builds');

@@ -86,20 +86,28 @@ private func tenth(_ v: Double) -> Double { (v * 10).rounded() / 10 }
 private func clamp01(_ v: Double) -> Double { min(1, max(0, v)) }
 
 /// Parse #rgb / #rrggbb / rgb() / hsl() into 0–255 channels; nil for anything else.
+private func colorMatch(_ input: String, pattern: String) -> [String]? {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+          let match = regex.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) else { return nil }
+    return (1..<match.numberOfRanges).map { index in
+        Range(match.range(at: index), in: input).map { String(input[$0]) } ?? ""
+    }
+}
+
 func parseColor(_ input: String) -> (Double, Double, Double)? {
     let s = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let m = s.firstMatch(of: #/^hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%/#.ignoresCase()) {
-        let c = hslToRgb((Double(m.1) ?? 0) / 360, (Double(m.2) ?? 0) / 100, (Double(m.3) ?? 0) / 100)
+    if let m = colorMatch(s, pattern: #"^hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%[,\s]+([\d.]+)%"#) {
+        let c = hslToRgb((Double(m[0]) ?? 0) / 360, (Double(m[1]) ?? 0) / 100, (Double(m[2]) ?? 0) / 100)
         return (c.0, c.1, c.2)
     }
-    if let m = s.firstMatch(of: #/^#([0-9a-f]{3}|[0-9a-f]{6})$/#.ignoresCase()) {
-        var h = String(m.1)
+    if let m = colorMatch(s, pattern: #"^#([0-9a-f]{3}|[0-9a-f]{6})$"#) {
+        var h = String(m[0])
         if h.count == 3 { h = h.map { "\($0)\($0)" }.joined() }
         let n = Int(h, radix: 16) ?? 0
         return (Double((n >> 16) & 255), Double((n >> 8) & 255), Double(n & 255))
     }
-    if let m = s.firstMatch(of: #/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/#.ignoresCase()) {
-        return (Double(m.1) ?? 0, Double(m.2) ?? 0, Double(m.3) ?? 0)
+    if let m = colorMatch(s, pattern: #"^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)"#) {
+        return (Double(m[0]) ?? 0, Double(m[1]) ?? 0, Double(m[2]) ?? 0)
     }
     return nil
 }

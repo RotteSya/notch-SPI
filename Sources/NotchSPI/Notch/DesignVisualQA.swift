@@ -18,7 +18,7 @@ enum DesignVisualQA {
         controller.qaOpenPracticePage = { _ in false }
         controller.model.onboardingTrialState = .available
         controller.qaOnboardingClaimTrial = {
-            try? await Task.sleep(for: .milliseconds(650))
+            try? await Task.sleep(nanoseconds: 650000000)
             return !Task.isCancelled
         }
         controller.qaPinDesignPreview()

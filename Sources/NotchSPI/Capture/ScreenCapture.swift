@@ -169,7 +169,7 @@ enum ScreenCapture {
 
     /// Refresh the cache off the critical path (launch, after each shot, display changes).
     @MainActor static func prefetchShareableContent() {
-        guard !refreshing, !recovery.usesFallback, CGPreflightScreenCaptureAccess() else { return }
+        guard #available(macOS 14.0, *), !refreshing, !recovery.usesFallback, CGPreflightScreenCaptureAccess() else { return }
         refreshing = true
         Task {
             #if DEBUG
@@ -200,7 +200,11 @@ enum ScreenCapture {
         if let context { resolved = context } else { resolved = await MainActor.run { Context.current(target: target) } }
         let context = resolved
         return await CapturePermission.withAccess {
-            await recovery.run {
+            guard #available(macOS 14.0, *) else {
+                return await captureLegacy(target: target, maxLongEdge: maxLongEdge,
+                                           excludingWindowID: excludingWindowID, context: context)
+            }
+            return await recovery.run {
                 await captureUsingScreenCaptureKit(target: target, maxLongEdge: maxLongEdge,
                                                    excludingWindowID: excludingWindowID, context: context)
             } fallback: {
@@ -210,6 +214,7 @@ enum ScreenCapture {
         }
     }
 
+    @available(macOS 14.0, *)
     private static func captureUsingScreenCaptureKit(
         target: CaptureTarget, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
     ) async -> Result<Shot, CaptureError> {
@@ -280,6 +285,7 @@ enum ScreenCapture {
         return await captureAppWindow(window, maxLongEdge: maxLongEdge, context: context)
     }
 
+    @available(macOS 14.0, *)
     private static func captureAppWindow(_ window: SCWindow, maxLongEdge: CGFloat, context: Context) async -> Result<Shot, CaptureError> {
         // Window-server composited: unaffected by occlusion, Space, or which display it's on.
         let filter = SCContentFilter(desktopIndependentWindow: window)
@@ -300,6 +306,7 @@ enum ScreenCapture {
         }
     }
 
+    @available(macOS 14.0, *)
     private static func captureFullScreen(
         maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
     ) async -> Result<Shot, CaptureError> {
@@ -333,6 +340,7 @@ enum ScreenCapture {
                                        excludingWindowID: excludingWindowID, context: context)
     }
 
+    @available(macOS 14.0, *)
     private static func attemptFullScreen(
         content: SCShareableContent, maxLongEdge: CGFloat, excludingWindowID: CGWindowID?, context: Context
     ) async -> Result<Shot, CaptureError> {
@@ -388,7 +396,18 @@ enum ScreenCapture {
     static func captureHashGrid(excludingWindowID: CGWindowID?) async -> [UInt8]? {
         // Do not keep probing the unhealthy service at the automatic-mode poll rate.
         // The command backend requires a hidden panel, so it is for user captures only.
-        guard CGPreflightScreenCaptureAccess(), await !recovery.usesFallback else { return nil }
+        guard CGPreflightScreenCaptureAccess() else { return nil }
+        guard #available(macOS 14.0, *) else {
+            guard let image = try? await hashCapture.run(operation: {
+                try await Task.detached(priority: .utility) {
+                    guard let image = legacyDisplayImage(displayID: CGMainDisplayID(), excludingWindowID: excludingWindowID)
+                    else { throw CaptureError.captureFailed }
+                    return image
+                }.value
+            }) else { return nil }
+            return ScreenHasher.lumaGrid(from: image)
+        }
+        guard await !recovery.usesFallback else { return nil }
         if let cached = await MainActor.run(body: { cachedContent }),
            let grid = await attemptHashGrid(content: cached, excludingWindowID: excludingWindowID) {
             return grid
@@ -398,6 +417,7 @@ enum ScreenCapture {
         return await attemptHashGrid(content: content, excludingWindowID: excludingWindowID)
     }
 
+    @available(macOS 14.0, *)
     private static func attemptHashGrid(
         content: SCShareableContent, excludingWindowID: CGWindowID?
     ) async -> [UInt8]? {
@@ -432,6 +452,7 @@ enum ScreenCapture {
         config.height = Int(height * f)
     }
 
+    @available(macOS 14.0, *)
     private static func shoot(
         filter: SCContentFilter, config: SCStreamConfiguration, maxLongEdge: CGFloat, blankThreshold: Int
     ) async -> Result<Shot, CaptureError> {
@@ -612,6 +633,91 @@ enum ScreenCapture {
             return Shot(path: file, blank: blank)
         } catch {
             return nil
+        }
+    }
+}
+
+// CoreGraphics is the supported screenshot backend on Monterey and Ventura.
+// Keep these calls unreachable on macOS 14+, where ScreenCaptureKit owns capture.
+extension ScreenCapture {
+    static func legacyWindowIDs(_ windows: [NSDictionary], ownPID: pid_t,
+                                excludingWindowID: CGWindowID?) -> [CGWindowID] {
+        windows.compactMap { window in
+            guard let pid = window[kCGWindowOwnerPID] as? pid_t, pid != ownPID,
+                  let id = window[kCGWindowNumber] as? UInt32, id != excludingWindowID else { return nil }
+            return id
+        }
+    }
+
+    private struct LegacyFrame {
+        let image: CGImage
+        let frame: CGRect
+        let fingerprint: String
+    }
+    @MainActor private static let legacyCapture = CaptureSystemOperation<LegacyFrame>()
+
+    @available(macOS, introduced: 12.3, obsoleted: 14.0)
+    private static func legacyDisplayImage(displayID: CGDirectDisplayID, excludingWindowID: CGWindowID?) -> CGImage? {
+        guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [NSDictionary]
+        else { return nil }
+        let ids = legacyWindowIDs(windows, ownPID: ProcessInfo.processInfo.processIdentifier,
+                                  excludingWindowID: excludingWindowID)
+        guard !ids.isEmpty else { return nil }
+        // This CoreGraphics API uses raw window-ID pointers, not CFNumber objects.
+        var pointers = ids.map { UnsafeRawPointer(bitPattern: UInt($0)) }
+        guard let array = CFArrayCreate(nil, &pointers, pointers.count, nil) else { return nil }
+        return CGImage(windowListFromArrayScreenBounds: CGDisplayBounds(displayID),
+                       windowArray: array, imageOption: [.bestResolution])
+    }
+
+    @available(macOS, introduced: 12.3, obsoleted: 14.0)
+    private static func captureLegacy(target: CaptureTarget, maxLongEdge: CGFloat,
+                                      excludingWindowID: CGWindowID?, context: Context) async -> Result<Shot, CaptureError> {
+        do {
+            let captured = try await legacyCapture.run {
+                try await Task.detached(priority: .userInitiated) { () throws -> LegacyFrame in
+                    try Task.checkCancellation()
+                    let image: CGImage?
+                    let frame: CGRect
+                    let fingerprint: String
+                    switch target {
+                    case .fullScreen:
+                        frame = CGDisplayBounds(context.displayID)
+                        image = legacyDisplayImage(displayID: context.displayID, excludingWindowID: excludingWindowID)
+                        fingerprint = "display:\(context.displayID):\(frame):\(context.foreground)"
+                    case .app(let bundleID):
+                        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                        let name = running.first?.localizedName ?? bundleID
+                        guard !running.isEmpty else { throw CaptureError.appNotRunning(name: name) }
+                        guard let selected = context.window,
+                              running.contains(where: { $0.processIdentifier == selected.processID }),
+                              let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, selected.id) as? [NSDictionary],
+                              let window = windows.first,
+                              window[kCGWindowOwnerPID] as? pid_t == selected.processID,
+                              let bounds = window[kCGWindowBounds] as? NSDictionary,
+                              let currentFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                              currentFrame == selected.frame else { throw CaptureError.noCapturableWindow(name: name) }
+                        frame = selected.frame
+                        image = CGWindowListCreateImage(.null, .optionIncludingWindow, selected.id, [.boundsIgnoreFraming, .bestResolution])
+                        fingerprint = "window:\(selected.id):\(frame)"
+                    }
+                    guard let image else { throw CaptureError.captureFailed }
+                    return LegacyFrame(image: image, frame: frame, fingerprint: fingerprint)
+                }.value
+            }
+            try Task.checkCancellation()
+            guard var shot = await Task.detached(priority: .userInitiated, operation: {
+                encode(captured.image, maxLongEdge: maxLongEdge, blankThreshold: target == .fullScreen ? 9000 : 0)
+            }).value else { return .failure(.captureFailed) }
+            if Task.isCancelled {
+                try? FileManager.default.removeItem(atPath: shot.path)
+                return .failure(.captureFailed)
+            }
+            shot.sourceFrame = context.appKitFrame(captured.frame)
+            shot.targetFingerprint = captured.fingerprint
+            return .success(shot)
+        } catch {
+            return .failure(CapturePermission.failure(for: error, hasAccess: CGPreflightScreenCaptureAccess()))
         }
     }
 }

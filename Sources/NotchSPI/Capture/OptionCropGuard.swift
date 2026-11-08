@@ -18,7 +18,7 @@ enum OptionCropGuard {
 
     @MainActor static func shouldRetake(path: String) async -> Bool {
         do {
-            return try await operation.run(timeout: .seconds(1)) {
+            return try await operation.run(timeout: 1) {
                 try await Task.detached(priority: .userInitiated) { try detect(path: path) }.value
             }
         } catch { return false } // Unknown/busy/timed-out evidence retains the existing solver.

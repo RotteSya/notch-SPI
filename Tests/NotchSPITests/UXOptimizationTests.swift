@@ -20,7 +20,7 @@ final class UXOptimizationTests: XCTestCase {
     @MainActor private func settle(_ check: () -> Bool) async throws {
         for _ in 0..<100 {
             if check() { return }
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(nanoseconds: 10000000)
         }
         XCTFail("Expected state not reached")
     }

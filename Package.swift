@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "NotchSPI",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("12.3")],
     dependencies: [.package(path: "Vendor/BotAvatarsKit"), .package(url: "https://github.com/mgriebling/SwiftMath.git", exact: "1.7.3")],
     targets: [
         .executableTarget(

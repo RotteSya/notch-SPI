@@ -7,7 +7,7 @@ final class CaptureCommand {
     enum Failure: Error { case exited(Int32) }
     private(set) var isRunning = false
 
-    func run(executable: URL, arguments: [String], timeout: Duration = .seconds(5),
+    func run(executable: URL, arguments: [String], timeout: TimeInterval = 5,
              launch: (Process) throws -> Void = { try $0.run() }) async throws {
         try Task.checkCancellation()
         guard !isRunning else { throw CaptureSystemOperationError.busy }
@@ -24,7 +24,7 @@ final class CaptureCommand {
             try Task.checkCancellation()
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 let deadline = Task { @MainActor in
-                    do { try await Task.sleep(for: timeout) } catch { return }
+                    do { try await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000)) } catch { return }
                     guard process.isRunning else { return }
                     stopError = CaptureSystemOperationError.timedOut
                     kill(process.processIdentifier, SIGKILL)

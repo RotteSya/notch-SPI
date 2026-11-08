@@ -468,7 +468,7 @@ final class DisplayTween {
     private var to: CGFloat = 0
     private var startTime: CFTimeInterval = 0
     private var duration: CFTimeInterval = NotchPalette.morphDuration
-    private var link: CADisplayLink?
+    private var link: CompatibleDisplayLink?
     private var proxy: TweenProxy?
     private weak var host: NSView?
 
@@ -532,7 +532,7 @@ final class DisplayTween {
         if link == nil {
             let p = TweenProxy(self)
             proxy = p
-            link = host.displayLink(target: p, selector: #selector(TweenProxy.tick))
+            link = CompatibleDisplayLink(view: host, target: p, selector: #selector(TweenProxy.tick))
             link?.add(to: .main, forMode: .common)
         }
         link?.isPaused = false
@@ -594,7 +594,7 @@ struct CriticalSpring {
 /// A pausable display-link that reports the frame delta — the clock for the springs. Weak-proxy
 /// target like `DisplayTween` so it never retains its host.
 final class NotchTicker {
-    private var link: CADisplayLink?
+    private var link: CompatibleDisplayLink?
     private var proxy: TickerProxy?
     private var lastTime: CFTimeInterval = 0
     private weak var host: NSView?
@@ -609,7 +609,7 @@ final class NotchTicker {
         if link == nil {
             let p = TickerProxy(self)
             proxy = p
-            link = host.displayLink(target: p, selector: #selector(TickerProxy.tick))
+            link = CompatibleDisplayLink(view: host, target: p, selector: #selector(TickerProxy.tick))
             link?.add(to: .main, forMode: .common)
         }
         if link?.isPaused == true || lastTime == 0 { lastTime = CACurrentMediaTime() }

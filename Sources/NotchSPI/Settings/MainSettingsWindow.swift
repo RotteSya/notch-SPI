@@ -710,6 +710,14 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     }
 
     private func reloadLoginState() {
+        guard #available(macOS 13.0, *) else {
+            loginCheckbox.isEnabled = false
+            loginCheckbox.state = .off
+            loginCaption.stringValue = L10n.t("macOS 12 请在系统偏好设置的登录项中添加 NotchSPI。",
+                "macOS 12 ではシステム環境設定のログイン項目に追加してください。",
+                "On macOS 12, add NotchSPI in System Preferences → Login Items.")
+            return
+        }
         if Bundle.main.bundleIdentifier != nil {
             loginCheckbox.isEnabled = true
             loginCheckbox.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -755,6 +763,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     }
 
     @objc private func loginToggled() {
+        guard #available(macOS 13.0, *) else { return }
         do {
             if loginCheckbox.state == .on {
                 try SMAppService.mainApp.register()

@@ -17,7 +17,7 @@ final class CaptureSystemOperation<Value> {
 
     init(coalescesRequests: Bool = false) { self.coalescesRequests = coalescesRequests }
 
-    func run(timeout: Duration = .seconds(10),
+    func run(timeout: TimeInterval = 10,
              operation: @escaping @MainActor () async throws -> Value) async throws -> Value {
         try Task.checkCancellation()
         if active != nil && !coalescesRequests { throw CaptureSystemOperationError.busy }
@@ -26,7 +26,7 @@ final class CaptureSystemOperation<Value> {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
                 let deadline = Task { [weak self] in
-                    do { try await Task.sleep(for: timeout) } catch { return }
+                    do { try await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000)) } catch { return }
                     self?.finishWaiter(waiterID, result: .failure(CaptureSystemOperationError.timedOut))
                 }
                 waiters[waiterID] = Waiter(continuation: continuation, deadline: deadline)

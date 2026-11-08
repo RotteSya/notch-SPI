@@ -53,7 +53,8 @@ final class GhostIndicatorView: NSView {
         @objc func tick() { view?.advance() }
     }
     private var clockTarget: ClockTarget?
-    private var link: CADisplayLink?
+    private var legacyAvatar: NSHostingView<AnyView>?
+    private var link: CompatibleDisplayLink?
     #if DEBUG
     var qaClockActive: Bool { link != nil }
     func qaAdvance(_ seconds: Double) { advanceMotion(seconds); needsDisplay = true }
@@ -92,7 +93,7 @@ final class GhostIndicatorView: NSView {
         if link != nil { retuneClock(); return }
         let target = ClockTarget(self)
         clockTarget = target
-        let l = displayLink(target: target, selector: #selector(ClockTarget.tick))
+        let l = CompatibleDisplayLink(view: self, target: target, selector: #selector(ClockTarget.tick))
         l.add(to: .main, forMode: .common)
         link = l
         retuneClock()
@@ -189,6 +190,20 @@ final class GhostIndicatorView: NSView {
                 green: config.ink.g / 255, blue: config.ink.b / 255).opacity(completed * 0.9)),
                 style: StrokeStyle(lineWidth: side * 0.04, lineCap: .round, lineJoin: .round))
         }.frame(width: side, height: side)
+        guard #available(macOS 13.0, *) else {
+            let host: NSHostingView<AnyView>
+            if let existing = legacyAvatar {
+                host = existing
+                host.rootView = AnyView(canvas)
+            } else {
+                host = NSHostingView(rootView: AnyView(canvas))
+                legacyAvatar = host
+                addSubview(host)
+            }
+            host.frame = NSRect(x: (Double(bounds.width) - side) / 2,
+                                y: (Double(bounds.height) - side) / 2, width: side, height: side)
+            return
+        }
         let renderer = ImageRenderer(content: canvas)
         renderer.scale = config.scale
         context.saveGState()
