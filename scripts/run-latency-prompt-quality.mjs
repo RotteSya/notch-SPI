@@ -159,7 +159,7 @@ export function groundedPlan(boundaryPlan, directory) {
   ]};
 }
 
-export function groundedCompletenessPlan(boundaryPlan) {
+export function groundedCompletenessPlan(boundaryPlan, productionBytes) {
   assert.equal(boundaryPlan.bindings.scope, 'prompt-quality-only');
   const bundle = JSON.parse(readFileSync(resolve(root, 'docs/experiments/latency-prompt-grounded-v4.json')));
   assert.deepEqual(bundle.baseline, boundaryPlan.bundle.baseline);
@@ -172,7 +172,7 @@ export function groundedCompletenessPlan(boundaryPlan) {
   assert.equal(sha(bundle.candidate.system_template), bundle.candidate_sha256);
   const bindings = {...boundaryPlan.bindings, scope:'grounded-v4-boundaries-only', approved_calls:4,
     profile:'general', language:'zh', max_tokens:32768, candidate_sha256:bundle.candidate_sha256};
-  bindings.production_comparison = productionComparison(bindings);
+  bindings.production_comparison = productionComparison(bindings, productionBytes);
   assert.deepEqual(bindings.production_comparison.mismatches, []);
   return {bundle, bindings, cases:boundaryPlan.cases.map(c => ({...c,variants:['B']}))};
 }
