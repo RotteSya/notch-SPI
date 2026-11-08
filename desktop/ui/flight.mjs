@@ -25,7 +25,6 @@ window.flight.frames((value) => {
       img.addEventListener("load", () => record("image-load", {id: f.id, width: img.naturalWidth, height: img.naturalHeight}));
       img.addEventListener("error", () => record("image-error", {id: f.id}));
       img.src = f.image;
-      if (diagnostic) img.decode().then(() => record("image-decoded", {id: f.id}), () => record("decode-error", {id: f.id}));
       card.append(img);
       document.body.append(card);
       cards.set(f.id, card);

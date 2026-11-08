@@ -37,16 +37,16 @@ jobs:
         shell: pwsh
         run: |
           $failed = 0
-          1..8 | ForEach-Object {
+          1..40 | ForEach-Object {
             npm --prefix desktop run smoke:motion
             if ($LASTEXITCODE -ne 0) { $failed++ }
             if (Test-Path desktop/test-output/motion) {
               Move-Item desktop/test-output/motion "desktop/test-output/motion-run-$_"
             }
           }
-          Write-Output "Failed original assertions: $failed / 8"
+          Write-Output "Failed original assertions: $failed / 40"
           if ($failed -gt 0) { exit 1 }
-        timeout-minutes: 5
+        timeout-minutes: 8
       - uses: actions/upload-artifact@v4
         if: always()
         with:
