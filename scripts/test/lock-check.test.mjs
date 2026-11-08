@@ -39,6 +39,10 @@ test('development preflight checks each declared Node floor without installing',
   assert.deepEqual(checkNodeVersion(dir,'24.16.0'),[]);
   assert.deepEqual(checkNodeVersion(dir,'24.20.0'),[]);
   assert.deepEqual(checkNodeVersion(dir,'25.0.0'),[]);
+  fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({engines:{node:'>=22.18.0 <25'}}));
+  assert.deepEqual(checkNodeVersion(dir,'22.18.0'),[]);
+  assert.deepEqual(checkNodeVersion(dir,'24.20.0'),[]);
+  assert.match(checkNodeVersion(dir,'26.0.0').join('\n'),/<25.*26.0.0/);
   assert.equal(fs.existsSync(path.join(dir,'node_modules')),false);
 });
 

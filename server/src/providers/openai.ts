@@ -144,6 +144,10 @@ export class OpenAIProvider implements Provider {
     if (tier && (!done || !tierConfirmed || usage.inputTokens === null || !usage.finishReason)) {
       throw new Error('Incomplete Astra response');
     }
+    if (tier) {
+      usage.upstreamModel = responseModel;
+      usage.serviceTier = tier;
+    }
     return usage;
   }
 }

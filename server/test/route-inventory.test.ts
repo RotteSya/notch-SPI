@@ -134,6 +134,7 @@ test('Cloud and update callers stay inside the inventory', () => {
   assert.deepEqual([...keys].sort(), [
     'GET /healthz',
     'GET /update',
+    'GET /update/intel',
     'GET /v1/account',
     'GET /v1/captures/:id/status',
     'GET /v1/client-config',

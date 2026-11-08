@@ -217,29 +217,31 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Counting is best-effort: a DB hiccup must never block the download, so a failure is logged
   // and ignored. Browser prefetch can inflate this slightly — it measures button clicks, not
   // completed downloads.
-  app.get('/dl', async (req, reply) => {
-    try {
-      await store.bumpCounter('download_clicks');
-    } catch (err) {
-      req.log.error({ err }, 'download counter bump failed');
-    }
+  for (const [path, dmgUrl] of [['/dl', config.dmgUrl], ['/dl/intel', config.intelDmgUrl]] as const) {
+    app.get(path, async (req, reply) => {
+      try {
+        await store.bumpCounter('download_clicks');
+      } catch (err) {
+        req.log.error({ err }, 'download counter bump failed');
+      }
 
-    const upstream = await fetch(config.dmgUrl, { redirect: 'follow' });
-    if (!upstream.ok || !upstream.body) {
-      req.log.error({ status: upstream.status }, 'DMG fetch failed');
-      return reply.code(502).type('text/plain; charset=utf-8').send('Download temporarily unavailable.');
-    }
+      const upstream = await fetch(dmgUrl, { redirect: 'follow' });
+      if (!upstream.ok || !upstream.body) {
+        req.log.error({ status: upstream.status }, 'DMG fetch failed');
+        return reply.code(502).type('text/plain; charset=utf-8').send('Download temporarily unavailable.');
+      }
 
-    // Content-Length lets the browser show a real progress bar; it is absent on a chunked
-    // upstream, in which case we simply omit it rather than buffering the whole file to measure.
-    const len = upstream.headers.get('content-length');
-    if (len) reply.header('Content-Length', len);
-    return reply
-      .header('Cache-Control', 'no-store')
-      .header('Content-Disposition', 'attachment; filename="NotchSPI.dmg"')
-      .type('application/x-apple-diskimage')
-      .send(upstream.body);
-  });
+      // Content-Length lets the browser show a real progress bar; it is absent on a chunked
+      // upstream, in which case we simply omit it rather than buffering the whole file to measure.
+      const len = upstream.headers.get('content-length');
+      if (len) reply.header('Content-Length', len);
+      return reply
+        .header('Cache-Control', 'no-store')
+        .header('Content-Disposition', 'attachment; filename="NotchSPI.dmg"')
+        .type('application/x-apple-diskimage')
+        .send(upstream.body);
+    });
+  }
 
   // GET /update — release metadata for the in-app "check for updates", relayed from GitHub so the
   // client never talks to (or links to) github.com. Shape is our own, not GitHub's:
@@ -248,25 +250,34 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // composes `<baseURL>/dl` itself, which keeps the response independent of proxy headers.
   // Cached for 10 minutes — releases change a few times a month, and this keeps the
   // unauthenticated GitHub API well clear of its 60-requests/hour/IP limit.
-  app.get('/update', async (req, reply) => {
-    const upstream = await fetch(config.releaseApiUrl, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'NotchSPI' },
+  for (const [path, releaseApiUrl, intel] of [['/update', config.releaseApiUrl, false], ['/update/intel', config.intelReleaseApiUrl, true]] as const) {
+    app.get(path, async (req, reply) => {
+      const upstream = await fetch(releaseApiUrl, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'NotchSPI' },
+      });
+      if (!upstream.ok) {
+        req.log.error({ status: upstream.status }, 'release lookup failed');
+        return reply.code(502).send(errorBody('Could not read the latest release.', 'upstream_error'));
+      }
+      const rel = (await upstream.json()) as { tag_name?: unknown; body?: unknown; draft?: unknown; prerelease?: unknown; assets?: { browser_download_url?: unknown }[] };
+      const tag = typeof rel.tag_name === 'string' ? rel.tag_name : '';
+      if (!tag) {
+        return reply.code(502).send(errorBody('Latest release has no tag.', 'upstream_error'));
+      }
+      // A pinned Intel tag must contain the configured Intel asset. Never fall back to arm64/latest.
+      if (intel && (rel.draft === true || rel.prerelease === true
+          || !/^v?\d+\.\d+(?:\.\d+)?$/i.test(tag)
+          || !Array.isArray(rel.assets)
+          || !rel.assets.some(asset => asset?.browser_download_url === config.intelDmgUrl))) {
+        return reply.code(502).send(errorBody('Intel release is not ready.', 'upstream_error'));
+      }
+      return reply.header('Cache-Control', 'public, max-age=600').send({
+        version: tag.replace(/^[vV]/, ''),
+        tag,
+        notes: typeof rel.body === 'string' ? rel.body : '',
+      });
     });
-    if (!upstream.ok) {
-      req.log.error({ status: upstream.status }, 'release lookup failed');
-      return reply.code(502).send(errorBody('Could not read the latest release.', 'upstream_error'));
-    }
-    const rel = (await upstream.json()) as { tag_name?: unknown; body?: unknown };
-    const tag = typeof rel.tag_name === 'string' ? rel.tag_name : '';
-    if (!tag) {
-      return reply.code(502).send(errorBody('Latest release has no tag.', 'upstream_error'));
-    }
-    return reply.header('Cache-Control', 'public, max-age=600').send({
-      version: tag.replace(/^[vV]/, ''),
-      tag,
-      notes: typeof rel.body === 'string' ? rel.body : '',
-    });
-  });
+  }
 
   // GET /stats — public, read-only tally of download-button clicks.
   app.get('/stats', async (_req, reply) => {

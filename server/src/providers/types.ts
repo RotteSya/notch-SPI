@@ -26,6 +26,9 @@ export interface CaptureRequest {
 }
 
 export interface Usage {
+  /** Confirmed upstream response metadata; never inferred from the configured route. */
+  upstreamModel?: string;
+  serviceTier?: string;
   /** null means the vendor completed without a usage record; never reinterpret it as zero. */
   inputTokens: number | null;
   outputTokens: number | null;

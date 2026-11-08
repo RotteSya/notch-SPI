@@ -138,7 +138,7 @@ need_cmd npm "Install npm (it ships with Node.js) from https://nodejs.org"
 
 [[ -f "$REPO_ROOT/server/package.json" ]] || fail "server/package.json is missing"
 [[ -f "$REPO_ROOT/scheduler/package.json" ]] || fail "scheduler/package.json is missing"
-node_floor="$(node -e 'const pkg = require("./server/package.json"); const match = String(pkg.engines && pkg.engines.node || "").match(/^>=(\d+\.\d+\.\d+)$/); if (!match) process.exit(2); process.stdout.write(match[1]);')" \
+node_floor="$(node -e 'const pkg = require("./server/package.json"); const match = String(pkg.engines && pkg.engines.node || "").match(/^>=(\d+\.\d+\.\d+)(?: <\d+)?$/); if (!match) process.exit(2); process.stdout.write(match[1]);')" \
   || fail "server/package.json engines.node must be an exact minimum such as >=22.18.0"
 scheduler_floor="$(node -e 'const pkg = require("./scheduler/package.json"); process.stdout.write(String(pkg.engines && pkg.engines.node || ""));')"
 if [[ "$scheduler_floor" != ">=$node_floor" ]]; then

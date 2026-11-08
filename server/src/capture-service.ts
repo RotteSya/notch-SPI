@@ -357,6 +357,7 @@ export class CaptureService {
           },abort.signal);
         };
         usage=await Promise.race([generate(),deadline]);
+        if (usage?.upstreamModel) req.log.info({upstreamModel:usage.upstreamModel,serviceTier:usage.serviceTier,operation},'upstream model confirmed');
         if(usage?.finishReason!==undefined && usage.finishReason!=='stop') throw new Error('incomplete model output');
         if(operation==='explain') {
           const explanation=JSON.parse(raw) as Record<string,unknown>;
@@ -443,6 +444,7 @@ export class CaptureService {
           });
         };
         usage=await Promise.race([generate(),deadline]);
+        if (usage?.upstreamModel) req.log.info({upstreamModel:usage.upstreamModel,serviceTier:usage.serviceTier,operation:'answer'},'upstream model confirmed');
         this.timings.get(req)?.mark('providerCompleted');
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}
       const truncated=usage?.finishReason==='length';
