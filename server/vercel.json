@@ -17,12 +17,5 @@
       "source": "/(.*)",
       "destination": "/api"
     }
-  ],
-  "redirects": [
-    {
-      "source": "/dl/intel",
-      "destination": "https://github.com/RotteSya/notch-SPI/releases/download/v3.0/NotchSPI-3.0-build28-Intel.dmg",
-      "permanent": false
-    }
   ]
 }

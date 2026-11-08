@@ -78,7 +78,7 @@ const S = {
       },
       {
         "q": "系统要求？",
-        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。Intel 老 Mac 兼容版：macOS 12.3 及以上，需手动更新。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
+        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。Intel 老 Mac 兼容版：macOS 12.3 及以上。Intel 3.0 用户需先手动安装 3.1，之后支持应用内更新。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記（日本法定披露）",
@@ -124,7 +124,7 @@ const S = {
       },
       {
         "q": "動作環境は？",
-        "a": "通常版：Apple Silicon Mac、macOS 14 以降。Intel Mac 互換版：macOS 12.3 以降、手動更新。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
+        "a": "通常版：Apple Silicon Mac、macOS 14 以降。Intel Mac 互換版：macOS 12.3 以降。Intel 3.0 からは 3.1 を一度手動でインストールし、その後はアプリ内更新に対応します。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記",
@@ -170,7 +170,7 @@ const S = {
       },
       {
         "q": "Requirements?",
-        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later, manual updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
+        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later. Intel 3.0 users must install 3.1 manually once; subsequent versions support in-app updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
       }
     ],
     "legalTitle": "特定商取引法に基づく表記 (Japanese commerce disclosure)",
@@ -274,9 +274,9 @@ export function renderLandingPage(input: SiteInput): string {
   const desktopMenu = ({zh:['文件','编辑','显示','前往','窗口','帮助'],ja:['ファイル','編集','表示','移動','ウインドウ','ヘルプ'],en:['File','Edit','View','Go','Window','Help']})[input.lang];
   const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}">${symbol("arrow.down.to.line")} ${d.download}</a>`;
   const intelCopy = {
-    zh: {label:'下载 Intel 老 Mac 兼容版', note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.0 build 28 · 手动更新'},
-    ja: {label:'Intel Mac 互換版をダウンロード', note:'Intel プロセッサ · macOS 12.3 以降 · 3.0 build 28 · 手動更新'},
-    en: {label:'Download for older Intel Macs', note:'Intel processor · macOS 12.3 or later · 3.0 build 28 · Manual updates'},
+    zh: {label:'下载 Intel 老 Mac 兼容版', note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.1 build 31 · 3.0 用户需手动安装一次，之后可应用内更新'},
+    ja: {label:'Intel Mac 互換版をダウンロード', note:'Intel プロセッサ · macOS 12.3 以降 · 3.1 build 31 · 3.0 から一度手動でインストール後、アプリ内更新に対応'},
+    en: {label:'Download for older Intel Macs', note:'Intel processor · macOS 12.3 or later · 3.1 build 31 · Install manually once from 3.0; then use in-app updates'},
   }[input.lang];
   const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${intelCopy.label}</a><p class="requirements">${intelCopy.note}</p></div>`;
   const c=continuationCopy[input.lang];

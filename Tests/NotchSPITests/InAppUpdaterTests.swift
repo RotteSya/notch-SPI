@@ -2,6 +2,22 @@ import XCTest
 @testable import NotchSPI
 
 final class InAppUpdaterTests: XCTestCase {
+    func testArchitectureSelectsItsOwnChannel() {
+        let intel = UpdateChecker.currentArchitecture == "x86_64"
+        XCTAssertEqual(UpdateChecker.latestURL.path, intel ? "/update/intel" : "/update")
+        XCTAssertEqual(UpdateChecker.downloadURL.path, intel ? "/dl/intel" : "/dl")
+    }
+
+    func testRejectsWrongArchitectureAndUnsupportedOSBeforeReplacement() {
+        XCTAssertNoThrow(try InAppUpdater.validateCompatibility(architectures: ["x86_64"], minimumOS: "12.3", architecture: "x86_64", currentOS: "12.3.0"))
+        XCTAssertNoThrow(try InAppUpdater.validateCompatibility(architectures: ["x86_64", "arm64"], minimumOS: "12.3", architecture: "arm64", currentOS: "14.0"))
+        XCTAssertThrowsError(try InAppUpdater.validateCompatibility(architectures: ["arm64"], minimumOS: "14.0", architecture: "x86_64", currentOS: "14.0"))
+        XCTAssertThrowsError(try InAppUpdater.validateCompatibility(architectures: ["x86_64"], minimumOS: "14.0", architecture: "x86_64", currentOS: "12.3"))
+        for minimum in [nil, "", "garbage", "12.3extra"] as [String?] {
+            XCTAssertThrowsError(try InAppUpdater.validateCompatibility(architectures: ["x86_64"], minimumOS: minimum, architecture: "x86_64", currentOS: "14.0"))
+        }
+    }
+
     func testAcceptanceOriginIsExplicitLoopbackOnly() {
         XCTAssertNotNil(UpdateChecker.acceptanceBase(arguments: ["app", "--update-test-base-url", "http://127.0.0.1:43123"]))
         for address in ["http://example.com:80", "http://127.0.0.1.example.com:80", "http://user@127.0.0.1:80", "http://127.0.0.1:80/path", "file:///tmp/test", "http://127.0.0.1"] {

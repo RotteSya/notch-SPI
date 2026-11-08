@@ -19,7 +19,9 @@
 | public | GET | /spi |
 | public | GET | /reading-practice |
 | public | GET | /dl |
+| public | GET | /dl/intel |
 | public | GET | /update |
+| public | GET | /update/intel |
 | public | GET | /stats |
 | public | GET | /purchase |
 | public | GET | /purchase/complete |
@@ -970,3 +972,15 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 要求 `Authorization: Bearer <CRON_SECRET>`，未配置密钥返回 404，鉴权失败返回 401。只执行 `SELECT 1`，不触发 schema 初始化；连接与查询分别限制为 3 秒。成功返回 200 和 `{ "ok": true, "database": "available" }`，连接失败、额度耗尽或超时返回 503 和 `{ "ok": false, "database": "unavailable" }`，全部禁止缓存。只在发布、排障或已有 15 分钟维护时段调用，避免高频探测唤醒数据库。
 
 `GET /healthz` 保留原有配置检查，新增 `scope: "process"`、`database: "not_checked"`、`readiness: "/readyz"`；200 仅表示进程及配置通过检查，不表示数据库可用。公开健康检查不访问数据库。
+
+
+## GET /update/intel — 独立 Intel 更新元数据
+
+与 `/update` 同形。来源固定为 `INTEL_RELEASE_API_URL`，不跟随 Apple Silicon latest。
+仅当稳定发布包含与 `INTEL_DMG_URL` 完全一致的资产时返回版本；缺少资产、草稿或预发布返回 502，不回退至 arm64。
+默认固定 Intel 3.1 build 31 的稳定发布资产；此次用户明确授权发布，但 Intel 实机安装、运行及应用内升级仍未验收。
+
+## GET /dl/intel — Intel 专用 DMG
+
+从 `INTEL_DMG_URL` 流式代理，与 `/dl` 保持独立。推进 Intel 渠道必须同步两个环境变量并核验签名、公证、架构和最低系统。
+已发布 Intel 3.0 禁用了应用内更新，首次迁移到支持独立通道的版本仍需手动安装；Catalina 不属于此通道。
