@@ -101,6 +101,8 @@ test('ordinary tutor keeps the ambiguous answer from one upstream call even with
   assert.equal(fetchMock.mock.callCount(), 1);
   assert.equal(raw, review);
   assert.equal(usage.attempts, undefined);
+  assert.equal(usage.upstreamModel, ASTRA_MODEL);
+  assert.equal(usage.serviceTier, 'default');
 });
 
 test('Astra accepts a valid retake but retains the review when Fast selects a third option', async t => {

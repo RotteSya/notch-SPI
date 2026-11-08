@@ -258,7 +258,13 @@ test('grounded screening uses the approved production cap and stops on failed Q1
 test('v4 preserves baseline and grounding, freezes four boundaries, rejects old approval', async t => {
   const dir=temporary(t);
   const base={...plan,bindings:{...plan.bindings,model:'deepseek-flash',reasoning_effort:'low'}};
-  const candidate=groundedCompletenessPlan(base);
+  const frozenProduction=Buffer.from(JSON.stringify({environment:{
+    OFFICIAL_MODEL:'deepseek-flash',OFFICIAL_DEEPSEEK_REASONING_EFFORT:'low',OFFICIAL_MAX_TOKENS:'32768',
+  }}));
+  const candidate=groundedCompletenessPlan(base,frozenProduction);
+  assert.throws(()=>groundedCompletenessPlan(base,Buffer.from(JSON.stringify({environment:{
+    OFFICIAL_MODEL:'gpt-6-astra',OFFICIAL_MAX_TOKENS:'8192',
+  }}))), 'the historical paid plan must reject the Astra production route');
   assert.equal(candidate.bindings.approved_calls,4);
   assert.equal(candidate.bindings.max_tokens,32768);
   assert.equal(candidate.bindings.profile,'general');

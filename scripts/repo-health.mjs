@@ -110,7 +110,7 @@ if (exists('server/package.json')) {
   try {
     const pkg = JSON.parse(read('server/package.json'));
     const engine = pkg.engines?.node;
-    const match = typeof engine === 'string' ? engine.match(/^>=(\d+\.\d+\.\d+)$/) : null;
+    const match = typeof engine === 'string' ? engine.match(/^>=(\d+\.\d+\.\d+)(?: <\d+)?$/) : null;
     if (!match) {
       fail('server/package.json engines.node must be an exact minimum such as >=22.18.0');
     } else {
@@ -148,7 +148,7 @@ if (nodeMinimum !== null) {
   if (exists('server/package-lock.json')) {
     try {
       const lock = JSON.parse(read('server/package-lock.json'));
-      if (lock.packages?.['']?.engines?.node !== `>=${nodeMinimum}`) {
+      if (lock.packages?.['']?.engines?.node !== JSON.parse(read('server/package.json')).engines.node) {
         fail('server/package-lock.json root engine must match server/package.json');
       }
     } catch (err) {
