@@ -148,7 +148,7 @@ if (nodeMinimum !== null) {
   if (exists('server/package-lock.json')) {
     try {
       const lock = JSON.parse(read('server/package-lock.json'));
-      if (lock.packages?.['']?.engines?.node !== `>=${nodeMinimum}`) {
+      if (lock.packages?.['']?.engines?.node !== JSON.parse(read('server/package.json')).engines.node) {
         fail('server/package-lock.json root engine must match server/package.json');
       }
     } catch (err) {
