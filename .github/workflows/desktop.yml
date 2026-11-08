@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-2022]
+        replica: [1, 2, 3]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -37,20 +38,20 @@ jobs:
         shell: pwsh
         run: |
           $failed = 0
-          1..40 | ForEach-Object {
+          1..20 | ForEach-Object {
             npm --prefix desktop run smoke:motion
             if ($LASTEXITCODE -ne 0) { $failed++ }
             if (Test-Path desktop/test-output/motion) {
               Move-Item desktop/test-output/motion "desktop/test-output/motion-run-$_"
             }
           }
-          Write-Output "Failed original assertions: $failed / 40"
+          Write-Output "Failed original assertions: $failed / 20"
           if ($failed -gt 0) { exit 1 }
         timeout-minutes: 8
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: desktop-${{ matrix.os }}
+          name: desktop-${{ matrix.os }}-${{ matrix.replica }}
           path: |
             desktop/dist/candidates/*/*.zip
             desktop/dist/candidates/*/*.exe
