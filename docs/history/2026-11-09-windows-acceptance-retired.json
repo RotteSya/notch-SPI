@@ -1,0 +1,14 @@
+{
+  "archive": "2026-11-09-windows-acceptance-retired.tar.gz",
+  "sha256": "8541d634f23551656366e021f1e90e8ecf2de31034e267221348c0eb90dbe7cf",
+  "base_commit": "6c6b91dc710d7a059199d57735ea281f21f42dd1",
+  "status": "historical_not_current_instructions",
+  "files": [
+    {
+      "path": "docs/windows/manual-acceptance.md",
+      "bytes": 42361,
+      "sha256": "25461c67a4f1dcc969a3221231c1084edbe2cfc1c8327eacc76ff6796540a760",
+      "replacement": "docs/windows/manual-acceptance.md"
+    }
+  ]
+}

@@ -12,7 +12,7 @@
     "test": "node --test test/*.test.mjs",
     "check": "node ../scripts/cross-platform/generate.mjs --check && node --check main.mjs && node --check ui/app.mjs && npm test",
     "pack:win": "node ../scripts/cross-platform/package.mjs",
-    "pack:mac": "electron-builder --mac --arm64 --dir --publish never",
+    "pack:mac": "node ../scripts/cross-platform/package.mjs --mac",
     "smoke": "electron . --smoke",
     "smoke:daily": "electron . --daily-smoke",
     "smoke:feedback": "electron . --feedback-smoke",

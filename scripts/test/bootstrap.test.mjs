@@ -283,6 +283,27 @@ describe('bootstrap offline defaults and explicit install', {concurrency:1}, () 
     assert.equal(result.status,1);assert.match(result.stderr,/port 18787 is already in use/);
     assert.equal(listener.listening,true);assert.equal(result.order.includes('npm-ci '),false);
   });
+  for (const version of ['22.17.0', '22.18.0', '24.16.0', '25.0.0']) {
+    test(`bootstrap enforces the server Node range for ${version}`, () => {
+      const nodeStub = path.join(stubDir, 'node');
+      fs.writeFileSync(nodeStub, '#!/bin/bash\nif [[ "${1:-}" == "-v" ]]; then echo "v$NSPI_STUB_NODE_VERSION"; exit 0; fi\nprintf "node %s\\n" "$*" >> "$NSPI_STUB_LOG"\nexec "$NSPI_REAL_NODE" "$@"\n');
+      fs.chmodSync(nodeStub, 0o755);
+      try {
+        const dir = scenario();
+        const accepted = ['22.18.0', '24.16.0'].includes(version);
+        if (accepted) { installLocked(dir, 'server'); prepareSwift(dir); }
+        const result = invoke(dir, accepted ? ['--check'] : ['--install'], {
+          NSPI_REAL_NODE: process.execPath, NSPI_STUB_NODE_VERSION: version,
+        });
+        assert.equal(result.status, accepted ? 0 : 1, result.stdout + result.stderr);
+        if (!accepted) {
+          assert.match(result.stderr, /Node(?:.js)? .*required/);
+          for (const forbidden of ['repo-health.mjs', 'generate.mjs', 'npm-ci ', 'swift build', 'dev.sh'])
+            assert.equal(result.order.includes(forbidden), false, result.order);
+        }
+      } finally { fs.unlinkSync(nodeStub); }
+    });
+  }
   test('unsupported Node stops before importing the generator or running checks', () => {
     const nodeStub=path.join(stubDir,'node');
     fs.writeFileSync(nodeStub,'#!/bin/bash\nif [[ "${1:-}" == "-v" ]]; then echo v20.0.0; exit 0; fi\nprintf "node %s\\n" "$*" >> "$NSPI_STUB_LOG"\nexec "$NSPI_REAL_NODE" "$@"\n');

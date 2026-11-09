@@ -32,15 +32,21 @@ final class MaterialActionAccessibilityTests: XCTestCase {
         model.materials = [ContextAsset(id: UUID(), sessionID: UUID(), file: QuestionAssetFile(url: file),
                                        sha256: "test", width: 1, height: 1, byteCount: 68,
                                        targetFingerprint: "test", capturedAt: Date())]
+        weak var fileOwner = model.materials.first?.file
+        defer { fileOwner = nil }
         let view = NotchView(model: model, frameProvider: { _ in NSRect(x: 0, y: 0, width: 600, height: 300) },
                              onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
                              onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
         XCTAssertTrue(model.showMaterialStrip)
         model.materials = []
         XCTAssertFalse(model.showMaterialStrip)
-        for _ in 0..<20 where FileManager.default.fileExists(atPath: file.path) {
+        for _ in 0..<20 where fileOwner != nil {
             try await Task.sleep(nanoseconds: 25_000_000)
         }
+        XCTAssertNil(fileOwner, "Hidden material UI must release the last file owner")
+        // Ownership release and utility-queue I/O are separate events. Keep the release
+        // deadline, then await the existing deletion barrier rather than racing disk work.
+        await QuestionAssetFile.finishPendingRemovals()
         withExtendedLifetime(view) {
             XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         }
@@ -54,17 +60,25 @@ final class MaterialActionAccessibilityTests: XCTestCase {
         try Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aGaQAAAAASUVORK5CYII=")!.write(to: file)
         let strip = QuestionMaterialStrip(frame: NSRect(x: 0, y: 0, width: 600, height: 74))
         strip.onRemove = { [weak strip] _ in strip?.update([], explanationAvailable: false) }
-        strip.update([ContextAsset(id: UUID(), sessionID: UUID(), file: QuestionAssetFile(url: file),
-                                   sha256: "test", width: 1, height: 1, byteCount: 68,
-                                   targetFingerprint: "test", capturedAt: Date())], explanationAvailable: false)
+        var asset: ContextAsset? = ContextAsset(id: UUID(), sessionID: UUID(), file: QuestionAssetFile(url: file),
+                                               sha256: "test", width: 1, height: 1, byteCount: 68,
+                                               targetFingerprint: "test", capturedAt: Date())
+        weak var fileOwner = asset?.file
+        defer { fileOwner = nil }
+        strip.update([try XCTUnwrap(asset)], explanationAvailable: false)
+        asset = nil
         // Accessibility clients can retain a removed control after it leaves the view tree.
         let retainedButton = try XCTUnwrap(strip.subviews.compactMap { $0 as? NSButton }.first { $0.accessibilityLabel()?.contains("Remove") == true || $0.accessibilityLabel()?.contains("删除") == true || $0.accessibilityLabel()?.contains("削除") == true })
         XCTAssertTrue(retainedButton.accessibilityPerformPress())
-        for _ in 0..<20 where FileManager.default.fileExists(atPath: file.path) {
+        for _ in 0..<20 where fileOwner != nil {
             try await Task.sleep(nanoseconds: 25_000_000)
         }
         XCTAssertNil(retainedButton.superview)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertNil(fileOwner, "A retained accessibility button must not own deleted material")
+        await QuestionAssetFile.finishPendingRemovals()
+        withExtendedLifetime(retainedButton) {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        }
     }
 
     @MainActor func testActionsWorkInTheNonKeyNotchPanelAndRespectDisabledState() throws {

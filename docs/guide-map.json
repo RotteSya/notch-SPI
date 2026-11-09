@@ -455,15 +455,41 @@
       "scope": [
         "desktop"
       ],
-      "purpose": "Windows 实机验收清单（照着做版）",
+      "purpose": "当前候选的 Windows 实机验收步骤",
       "sources": [
         "desktop/platform/capture.mjs",
         "desktop/platform/updater.mjs"
       ],
       "checks": [
         "desktop/test/capture-exclusion.test.mjs",
-        "desktop/test/window-behavior.test.mjs"
-      ]
+        "desktop/test/window-behavior.test.mjs",
+        "scripts/test/repo-health.test.mjs"
+      ],
+      "required_artifacts": [
+        {
+          "path": "docs/windows/fixtures/practice.html",
+          "kind": "tracked"
+        },
+        {
+          "path": "desktop/test/fixtures/question.jpg",
+          "kind": "tracked"
+        },
+        {
+          "path": "desktop/dist/candidates/<candidateID>/delivery-manifest.json",
+          "kind": "generated",
+          "producer": "scripts/cross-platform/package.mjs",
+          "contract": "npm --prefix desktop run pack:win；同目录交付 manifest.zip 指向的 ZIP，按 bytes/sha256 核对。"
+        },
+        {
+          "path": "output/windows-acceptance/<candidateID>/reference",
+          "kind": "external",
+          "acquisition_contract": "由开发者提供对应候选的 Mac 原生参考，附源码身份、版本、日期及场景；缺少时 C09 缺条件。"
+        }
+      ],
+      "candidate_identity": {
+        "source": "delivery-manifest",
+        "artifact": "desktop/dist/candidates/<candidateID>/delivery-manifest.json"
+      }
     },
     {
       "path": "objective-eval-output/2026-08-30T17-03-15.896Z-summary.md",

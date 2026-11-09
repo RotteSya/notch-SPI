@@ -76,3 +76,28 @@ test('bundle identity detects resource tampering, missing files and changed syml
     assert.notDeepEqual(bundleIdentity(root), linked);
   }
 });
+
+test('Electron packaging rejects wrong targets and release arguments before generation', async () => {
+  const {packagingTarget}=await import('../cross-platform/package.mjs');
+  const host={platform:'darwin',arch:'arm64',env:{}};
+  assert.deepEqual(packagingTarget(['--mac'],host).builderArgs,['--mac','--arm64','--dir','--publish','never']);
+  assert.deepEqual(packagingTarget([],host).builderArgs,['--win','zip','--x64','--publish','never']);
+  assert.deepEqual(packagingTarget(['--win'],{...host,platform:'win32'}).builderArgs,['--win','nsis','zip','--x64','--publish','never']);
+  for(const args of [['--linux'],['--publish','always'],['--mac','--win'],['--mac','--mac'],['--mac','--local-test']])
+    assert.throws(()=>packagingTarget(args,host));
+  for(const platform of ['win32','linux']) assert.throws(()=>packagingTarget(['--mac'],{...host,platform}),/Apple Silicon/);
+  assert.throws(()=>packagingTarget(['--mac'],{...host,arch:'x64'}),/Apple Silicon/);
+  for(const key of ['CSC_LINK','CSC_NAME','APPLE_ID','NSPI_WINDOWS_UPDATE_URL','NSPI_WINDOWS_PUBLISHER'])
+    assert.throws(()=>packagingTarget(['--mac'],{...host,env:{[key]:'test'}}),/signing settings/);
+  assert.throws(()=>packagingTarget(['--local-test'],{...host,env:{CSC_LINK:'test'}}),/signing settings/);
+});
+
+test('package verification distinguishes Windows PE x64 from Mac Mach-O arm64', async () => {
+  const {verifyExecutable}=await import('../cross-platform/verify-package.mjs');
+  const mach=Buffer.alloc(64);mach.writeUInt32LE(0xfeedfacf);mach.writeUInt32LE(0x0100000c,4);
+  verifyExecutable(mach,true);
+  mach.writeUInt32LE(0x01000007,4);assert.throws(()=>verifyExecutable(mach,true),/arm64/);
+  const pe=Buffer.alloc(128);pe.writeUInt16LE(0x5a4d);pe.writeUInt32LE(64,0x3c);pe.writeUInt32LE(0x4550,64);pe.writeUInt16LE(0x8664,68);
+  verifyExecutable(pe,false);assert.throws(()=>verifyExecutable(pe,true),/Mach-O/);
+  pe.writeUInt16LE(0x14c,68);assert.throws(()=>verifyExecutable(pe,false));
+});

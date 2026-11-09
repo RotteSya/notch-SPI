@@ -290,3 +290,53 @@ test('archive members are checked against their individual digests',()=>{
   write(root,'docs/history/unit-retired.json',JSON.stringify({archive:'unit-retired.tar.gz',sha256:createHash('sha256').update(bytes).digest('hex'),files:[{path:'old.md',sha256:'0'.repeat(64)}]}));
   assert.match(checkHistoricalArchives(root).join('\n'),/archive member mismatch/);
 });
+
+test('operation dependencies require delivered files or explicit generation/acquisition contracts', () => {
+  const {root,map,save}=guideFixture(), item=map.documents[1];
+  write(root,'fixture.html','offline material');
+  item.required_artifacts=[{kind:'tracked',path:'fixture.html'},
+    {kind:'generated',path:'output/candidate/delivery-manifest.json',producer:'owner.mjs',contract:'Run owner.mjs'},
+    {kind:'external',path:'output/reference',acquisition_contract:'Ask the reviewer for source-identified references'}];
+  item.candidate_identity={source:'delivery-manifest',artifact:'output/candidate/delivery-manifest.json'};save();
+  assert.deepEqual(checkGuideMap(root,governedPaths(root)),[]);
+  assert.match(checkGuideMap(root,governedPaths(root).filter(f=>f!=='fixture.html')).join('\n'),/required artifact is outside delivery/);
+  fs.unlinkSync(path.join(root,'fixture.html'));
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/required artifact is outside delivery/);
+  item.required_artifacts[1].producer='missing.mjs';item.required_artifacts[2].acquisition_contract='';save();
+  let errors=checkGuideMap(root,governedPaths(root)).join('\n');
+  assert.match(errors,/delivered producer and contract/);assert.match(errors,/acquisition contract/);
+  item.required_artifacts=[{kind:'tracked',path:'../escape'}];save();
+  errors=checkGuideMap(root,governedPaths(root)).join('\n');
+  assert.match(errors,/invalid required artifact/);assert.match(errors,/candidate identity/);
+  item.required_artifacts=null;save();
+  assert.match(checkGuideMap(root,governedPaths(root)).join('\n'),/invalid required_artifacts/);
+});
+
+test('each current Windows tracked operation material must belong to delivery', () => {
+  const files=governedPaths(REPO);
+  const map=JSON.parse(fs.readFileSync(path.join(REPO,'docs/guide-map.json')));
+  const item=map.documents.find(item=>item.path==='docs/windows/manual-acceptance.md');
+  const materials=item.required_artifacts.filter(a=>a.kind==='tracked');
+  assert.ok(materials.length>=2);
+  for(const artifact of materials) {
+    assert.ok(files.includes(artifact.path));
+    assert.ok(checkGuideMap(REPO,files.filter(f=>f!==artifact.path)).some(e=>e.includes(`required artifact is outside delivery: ${artifact.path}`)));
+  }
+});
+
+test('offline acceptance material switches all scenarios and Escape restores the menu', async () => {
+  const {runInNewContext}=await import('node:vm');
+  const html=fs.readFileSync(path.join(REPO,'docs/windows/fixtures/practice.html'),'utf8');
+  const menu={hidden:false,buttons:[],append(b){this.buttons.push(b);}}, question={hidden:true};
+  let keydown;
+  runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],{document:{
+    getElementById:id=>id==='menu'?menu:question,createElement:()=>({}),
+    addEventListener:(event,handler)=>{assert.equal(event,'keydown');keydown=handler;}
+  }});
+  assert.deepEqual(menu.buttons.map(b=>b.textContent),['单题1','单题2','公式题','两图·材料','两图·问题','四图1','四图2','四图3','四图4','人物像1','人物像2','空白页','缺条件题']);
+  for(const button of menu.buttons){
+    button.onclick();assert.equal(menu.hidden,true);assert.equal(question.hidden,false);
+    assert.equal(question.textContent.length===0,button.textContent==='空白页');
+    keydown({key:'Escape'});assert.equal(menu.hidden,false);assert.equal(question.hidden,true);
+  }
+});

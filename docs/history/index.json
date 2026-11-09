@@ -1561,5 +1561,13 @@
     "sha256": "a625a398564ac632b80787cb34e722a3af1805f9348828b436693e17e0c9ee67",
     "replacement": "docs/windows/closure-plan.md",
     "reason": "原始字节归档；日期记录不是当前行为或新授权。"
+  },
+  {
+    "path_at_baseline": "docs/windows/manual-acceptance.md",
+    "baseline_commit": "6c6b91dc710d7a059199d57735ea281f21f42dd1",
+    "status": "historical",
+    "replacement": "docs/windows/manual-acceptance.md",
+    "reason": "旧候选身份与原始验收说明按字节归档；当前路径为候选无关清单。",
+    "archive": "docs/history/2026-11-09-windows-acceptance-retired.tar.gz"
   }
 ]

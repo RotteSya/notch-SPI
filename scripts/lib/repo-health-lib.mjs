@@ -405,6 +405,25 @@ export function checkGuideMap(root, files) {
       if(!Array.isArray(item[field]) || !item[field].length) { errors.push(`guide-map: missing ${field} for ${name}`); continue; }
       for(const rel of item[field]) if(!validPath(rel) || !available.has(rel)) errors.push(`guide-map: missing ${field} target ${rel} for ${name}`);
     }
+    if (item.required_artifacts !== undefined) {
+      if (!Array.isArray(item.required_artifacts)) errors.push(`guide-map: invalid required_artifacts for ${name}`);
+      else for (const artifact of item.required_artifacts) {
+        if (!artifact || !validPath(artifact.path) || !['tracked', 'generated', 'external'].includes(artifact.kind)) {
+          errors.push(`guide-map: invalid required artifact for ${name}`); continue;
+        }
+        if (artifact.kind === 'tracked' && !available.has(artifact.path))
+          errors.push(`guide-map: required artifact is outside delivery: ${artifact.path} for ${name}`);
+        if (artifact.kind === 'generated' && (!validPath(artifact.producer) || !available.has(artifact.producer)
+            || typeof artifact.contract !== 'string' || !artifact.contract.trim()))
+          errors.push(`guide-map: generated artifact needs a delivered producer and contract: ${artifact.path}`);
+        if (artifact.kind === 'external' && (typeof artifact.acquisition_contract !== 'string' || !artifact.acquisition_contract.trim()))
+          errors.push(`guide-map: external artifact needs an acquisition contract: ${artifact.path}`);
+      }
+    }
+    if (item.candidate_identity !== undefined && (item.candidate_identity?.source !== 'delivery-manifest'
+        || !Array.isArray(item.required_artifacts) || !item.required_artifacts.some(artifact =>
+          artifact?.kind === 'generated' && artifact.path === item.candidate_identity.artifact)))
+      errors.push(`guide-map: candidate identity must name a declared generated delivery-manifest for ${name}`);
     if(item.kind==='evidence' && (!Object.hasOwn(item,'source_commit') || !Object.hasOwn(item,'as_of')
         || !(item.source_commit===null || /^[a-f0-9]{40}$/.test(item.source_commit))
         || !(item.as_of===null || /^\d{4}-\d{2}-\d{2}$/.test(item.as_of)))) errors.push(`guide-map: missing evidence identity for ${name}`);

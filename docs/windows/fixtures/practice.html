@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NotchSPI 离线验收题材</title>
+<style>body{font:24px/1.7 system-ui,sans-serif;margin:48px;background:white;color:#111}button{font:inherit;margin:8px;padding:8px 16px}main{max-width:850px;white-space:pre-wrap}h1{font-size:28px}</style>
+<nav id="menu"><h1>离线验收题材</h1><p>选择题材后按 Esc 返回。此页不联网、不生成答案、不保存结果。空白页刻意全空。</p></nav><main id="question" hidden></main>
+<script>
+const exercises = {
+  '单题1':'汽车行驶120千米，用时2小时。平均速度是多少？\nA. 40千米/小时\nB. 60千米/小时\nC. 80千米/小时',
+  '单题2':'一件商品原价80元，按八折出售，售价是多少？\nA. 16元\nB. 64元\nC. 72元',
+  '公式题':'求方程 x² − 5x + 6 = 0 的解。\nA. x=2 或 x=3\nB. x=1 或 x=6\nC. x=−2 或 x=−3',
+  '两图·材料':'材料：书架有60本书，其中40%是小说。',
+  '两图·问题':'根据上一张材料，书架上有多少本小说？\nA. 20本\nB. 24本\nC. 36本',
+  '四图1':'材料1：甲班有20人。',
+  '四图2':'材料2：乙班有30人。',
+  '四图3':'材料3：丙班有40人。',
+  '四图4':'问题：前三张材料的三个班共有多少人？\nA. 60人\nB. 90人\nC. 120人',
+  '人物像1':'性格练习 1：我愿意与同事合作完成任务。\nA. 很符合\nB. 比较符合\nC. 不太符合\nD. 很不符合',
+  '人物像2':'性格练习 2：面对复杂任务，我会先仔细制定计划。\nA. 很符合\nB. 比较符合\nC. 不太符合\nD. 很不符合',
+  '空白页':'',
+  '缺条件题':'根据未提供的销售表，第四季度的销售额是多少？\nA. 100万元\nB. 200万元\nC. 300万元'
+};
+const menu = document.getElementById('menu'), question = document.getElementById('question');
+for (const [label, text] of Object.entries(exercises)) {
+  const button = document.createElement('button');
+  button.textContent = label;
+  button.onclick = () => { menu.hidden = true; question.textContent = text; question.hidden = false; };
+  menu.append(button);
+}
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { question.hidden = true; question.textContent = ''; menu.hidden = false; }
+});
+</script></html>

@@ -151,6 +151,14 @@ if ! version_ge "$node_ver" "$node_floor"; then
   fail "Node.js >= $node_floor is required (found v$node_ver). Install from https://nodejs.org"
 fi
 
+# Keep the shell floor guard above readable even on Node too old to import our modules.
+node --input-type=module - "$REPO_ROOT/server" "$node_ver" <<'NODE'
+import { checkNodeVersion } from './scripts/lib/lock-check.mjs';
+const errors = checkNodeVersion(process.argv[2], process.argv[3]);
+for (const error of errors) console.error(`bootstrap: ${error}`);
+if (errors.length) process.exit(1);
+NODE
+
 echo "    macOS $os_ver ($arch), Swift $swift_ver, Node v$node_ver (minimum $node_floor)"
 
 if [[ "$MODE" != "check" ]]; then

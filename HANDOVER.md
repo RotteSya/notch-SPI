@@ -13,11 +13,11 @@
 
 ## 五分钟本地启动
 
-前提是工具链及经授权准备好的锁定依赖已具备；首次安装、下载和系统授权单独计时。默认启动不安装、不下载、不读取生产配置。
+“五分钟”指依赖已准备、支持的平台上，从阅读入口到看到 mock 流式答案；首次下载、编译和系统授权另记实际耗时，不保证冷构建五分钟完成。默认启动不安装、不下载、不读取生产配置。
 
 ### Mac 原生
 
-需要 macOS 14+ arm64、Xcode 命令行工具、Swift 5.9+、Node/npm。Node 下限读取 `server/package.json`；启动仅需 server npm 依赖及 `Package.resolved` 对应的干净 Swift checkout，不要求 scheduler/desktop 依赖。
+需要 macOS 14+ arm64、Xcode 命令行工具、Swift 5.9+、Node/npm。完整 Node 范围（含上限）读取 `server/package.json`；启动仅需 server npm 依赖及 `Package.resolved` 对应的干净 Swift checkout，不要求 scheduler/desktop 依赖。
 
 ```sh
 ./scripts/bootstrap.sh --run
@@ -102,6 +102,8 @@ quick：健康/治理测试、共享生成、server/scheduler 类型和隔离 sm
 未配置含 test 的 `TEST_POSTGRES_URL` 时 Postgres 跳过；硬件 blocked，签名 skipped。CI 平台矩阵读取 `.github/workflows/ci.yml`、`.github/workflows/desktop.yml`。完整通过不等于 Windows 实机、真实模型或签名更新已验收。
 Desktop 图形检查为 `npm --prefix desktop run smoke`、`smoke:motion`、Windows 上 `smoke:capture`；先退出其他实例。DPI、多屏、系统凭据、安装/升级、付款回跳见[实机清单](docs/windows/manual-acceptance.md)，总体缺口见[闭环条件](docs/windows/closure-plan.md)。
 Windows 打包 `npm --prefix desktop run pack:win`，固定 `--publish never`；Windows x64 产出 NSIS/ZIP，Apple Silicon 仅 ZIP，位于独立候选目录。签名/更新需要独立授权和配置，见[候选包源码身份与 ZIP 核验](docs/windows/architecture.md#候选包源码身份与-zip-核验)。
+Electron Mac 本地审核用 `npm --prefix desktop run pack:mac`，统一版本与独立候选身份，核验 arm64 App bundle；它不替代原生 Mac 发行包，见[审核候选](docs/windows/architecture.md#electron-mac-本地审核候选)。
+
 Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候选目录，并校验 DMG 内 App，见[Mac 追溯](docs/windows/mac-provenance.md)。正式签名、公证和发布不属于本地 verify。
 交付时运行 `node scripts/repo-health.mjs --delivery`：检查 Git index，拒绝遗漏新文件及未暂存改动。本地普通检查包含未忽略的新文件，不代表已提交可克隆。未获提交要求时可在隔离临时 index 验证交付集合，保留用户原 index。
 
@@ -110,5 +112,5 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 引导样例 `./scripts/onboarding-qa.sh --mock`；离线设计样例 `./scripts/design-qa.sh`，完整答案窗口追加 expanded-answer。设置内存预览及 Plus 沙箱边界见[QA 参考](docs/prototypes.md)。
 官网隔离预览 `node scripts/preview-site.mjs`，回环 4173；不加载账户、数据库、支付或模型配置。行为和素材来源见官网参考。
 [Linux 运行验证](docs/linux-runtime-verification.md)、[Vercel 包验证](docs/vercel-bundle-verification.md)、[延迟参考](docs/latency.md)、[反馈操作](docs/feedback-operations.md)、[阅读评测](docs/reading-evaluation.md)按任务加载。付费运行器不由验证/CI 执行；旧预算、候选及许可不构成新调用授权。
-[文档映射](docs/guide-map.json)只记录分类和来源；[历史索引](docs/history/index.json)按路径和提交区分，[归档说明](docs/history/README.md)提供回读方法。归档正文不是当前操作步骤。
+[文档映射](docs/guide-map.json)记录分类、来源和结构化操作依赖；tracked 材料必须属于交付集合，生成物需声明生成入口，外部材料需明确获取契约。Windows 清单读取本次候选 manifest，不沿用日期报告的包名或摘要；[历史索引](docs/history/index.json)按路径和提交区分，[归档说明](docs/history/README.md)提供回读方法。归档正文不是当前操作步骤。
 发布工作树、冻结 Intel/Catalina 源码、签名安装包、本机业务/音频和不可变评测证据保留。不得用清空 output/.build 或整树 git clean 代替源码清理；旧包和旧验收不能改挂新源码。

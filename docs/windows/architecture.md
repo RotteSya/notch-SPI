@@ -82,3 +82,11 @@ Windows 打包入口将每次产物保存在 `desktop/dist/candidates/<candidate
 Mac 原生的五页设置、历史、人物像和三通道以[客户端契约](../client-behavior.md)及当前源码为准。几何、动效和字号从 shared/product.json、shared/ui 及原生设计类型读取，日期基线中的数值不覆盖源码。
 `evidence/mac-build27-*` 等为原生隔离 QA 截图，`evidence/desktop-macos-*` 为 Mac 宿主 Electron；均不是 Windows 实机证据。原始截图保留，历史 baseline/motion 报告归档。
 本地报告包的 pack:win -- --local-test 开关由 package.mjs 实现，正常退出生成测试电脑本地 ZIP，不自动上传；正式包不启用该模式。报告字段与窗口等待诊断见 desktop/core/local-test-report.mjs、window-diagnostics.mjs 及对应测试。
+
+## Electron Mac 本地审核候选
+
+`npm --prefix desktop run pack:mac` 保留 arm64 未签名目录包用途，通过同一 `package.mjs` 读取 `VERSION.env`，版本为 major.minor.build，输出到独立 `desktop/dist/candidates/<candidateID>/mac-arm64/NotchSPI Desktop.app`。它不是 AppKit 原生 Mac 发行包；原生入口仍见 HANDOVER。
+
+入口仅接受 Apple Silicon Mac，拒绝未知或冲突参数、Windows 诊断开关和发布签名环境，固定 `--publish never`、禁用身份自动发现与公证。`NSPI_ELECTRON_DIST` 可指向已准备的 Electron `dist` 目录，核对锁定版本并记录输入 bundle 摘要；不把打包命令当作下载授权。没有现成 runtime/builder 缓存时先停止并另行准备。
+
+自动运行 `verify-package.mjs <candidate-directory> --mac` 比较实际 ASAR 的自有源码、运行依赖与 fixture 排除，检查 Mach-O arm64，再记录整个 App 的文件、执行位和符号链接目标摘要。候选旁的 `delivery-manifest.json` 绑定源码身份及 `bundleIdentity`；`output/electron-mac-delivery/manifest.json` 仅为最新索引。Mac 目录包没有 ZIP，`zipPayloadMatches` 为 null，不声称验证了 Windows EXE、安装、截图或更新。修改任一 bundle 文件后应重新核验并对照保留的原 manifest 摘要；不能覆盖原证据来掩盖变化。
