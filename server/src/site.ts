@@ -1,3 +1,4 @@
+import {chipMenuImage, chipInfoImage} from './site-chip-assets.ts';
 import {polishCSS} from './site-polish.ts';
 import {continuationCopy, protectionSection, featureSection, continuationCSS} from './site-continuation.ts';
 import {checkIcon} from './site-continuation-assets.ts';
@@ -263,7 +264,6 @@ export function renderLandingPage(input: SiteInput): string {
     ja: {watch:'操作デモを見る',platforms:'その他の環境・動作条件',plus:'毎日使う方へ',trial:'まずは体験',packs:'必要な分だけ、追加。',packSub:'Plus とは別に購入できる一回払いの問題パック。',purchase:'購入方法を見る',protect:'ウィンドウのキャプチャ保護について',protectBody:'正式版にはウィンドウをキャプチャから除外する仕組みがあります。共有・録画の結果は OS とソフトによって異なり、すべての環境での動作は保証していません。ご利用環境で先に確認してください。',plain:'ダウンロード後、アプリで利用可能な枠と購入方法を確認できます。',off:'現在受付停止中',history:'考え方を、もう一度。',historyBody:'解答できた問題の画像と回答は、この Mac の「最近の問題」に保存されます。復習したい時に振り返れます。',planIntro:'同じ公式サービスを、使う頻度に合わせて。体験・月額・問題パックはそれぞれ別の利用枠です。'},
     en: {watch:'Watch the full demo',platforms:'Other platforms & requirements',plus:'For daily practice',trial:'Start with a trial',packs:'A little help, as needed.',packSub:'One-time question packs, purchased separately from Plus.',purchase:'How to purchase',protect:'About window capture protection',protectBody:'Release builds include window capture exclusion. Sharing and recording behavior depends on the OS and capture software; coverage of every environment is not guaranteed. Verify in your own setup first.',plain:'Download to check available credits and purchase options in the app.',off:'Currently unavailable',history:'Return to your train of thought.',historyBody:'Successful question images and answers stay in Recent Questions on this Mac, ready when you want to review.',planIntro:'The same official service, matched to your routine. Trial, subscription and one-time packs have separate allowances.'}
   }[input.lang];
-  const trialLine = trialEnabled ? d.free() : ui.plain;
   const ghost = `<img class="ghost-mark" src="${ghostAvatar}" alt="" width="100" height="100" aria-hidden="true">`;
   const packs = [...input.packs].sort((a,b)=>a.questions-b.questions);
   // Same selection as MainSettingsWindow.topUpTapped; never invent an unbound checkout.
@@ -272,13 +272,24 @@ export function renderLandingPage(input: SiteInput): string {
   const langLink = (lang:PageLang,label:string) => `<a class="lang${lang===input.lang?' on':''}" href="${pagePath}?lang=${lang}" lang="${lang}"${lang===input.lang?' aria-current="page"':''}>${label}</a>`;
   const symbol = (name: keyof typeof macSymbols, c='') => `<img class="mac-symbol ${c}" src="${macSymbols[name]}" alt="" aria-hidden="true" width="20" height="20">`;
   const desktopMenu = ({zh:['文件','编辑','显示','前往','窗口','帮助'],ja:['ファイル','編集','表示','移動','ウインドウ','ヘルプ'],en:['File','Edit','View','Go','Window','Help']})[input.lang];
-  const download = (c='')=>`<a class="button ${c}" href="${DOWNLOAD}">${symbol("arrow.down.to.line")} ${d.download}</a>`;
-  const intelCopy = {
-    zh: {label:'下载 Intel 老 Mac 兼容版', note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.1 build 31 · 3.0 用户需手动安装一次，之后可应用内更新'},
-    ja: {label:'Intel Mac 互換版をダウンロード', note:'Intel プロセッサ · macOS 12.3 以降 · 3.1 build 31 · 3.0 から一度手動でインストール後、アプリ内更新に対応'},
-    en: {label:'Download for older Intel Macs', note:'Intel processor · macOS 12.3 or later · 3.1 build 31 · Install manually once from 3.0; then use in-app updates'},
+  const download = (c='')=>`<a class="button ${c}" href="#downloads">${symbol("arrow.down.to.line")} ${s.navDownload}</a>`;
+  const chipCopy = {
+    zh: {silicon:'下载 Apple Silicon 版',intel:'下载 Intel 版',siliconNote:'M 系列芯片 · macOS 14+',intelNote:'Intel 处理器 · macOS 12.3+',label:'选择 Mac 芯片版本'},
+    ja: {silicon:'Apple Silicon 版をダウンロード',intel:'Intel 版をダウンロード',siliconNote:'M シリーズチップ · macOS 14 以降',intelNote:'Intel プロセッサ · macOS 12.3 以降',label:'Mac のチップに合わせて選択'},
+    en: {silicon:'Download for Apple Silicon',intel:'Download for Intel',siliconNote:'M-series chip · macOS 14+',intelNote:'Intel processor · macOS 12.3+',label:'Choose your Mac chip'},
   }[input.lang];
-  const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${intelCopy.label}</a><p class="requirements">${intelCopy.note}</p></div>`;
+  const chipGuide = {
+    zh: {prompt:'不确定芯片类型？',action:'查看方法',title:'确认芯片类型方法',step1:'在左上角，打开 <strong>Apple菜单</strong><br>选择<strong>“关于本机”</strong>',step2:'在<strong>“处理器”</strong>或<strong>“芯片”</strong>中<br>查看是<strong>“Intel”</strong>还是<strong>“Apple”</strong>'},
+    ja: {prompt:'チップの種類が不明ですか？',action:'確認方法',title:'チップの種類を確認する方法',step1:'左上の <strong>Apple メニュー</strong>から<br><strong>「この Mac について」</strong>を選択',step2:'<strong>「プロセッサ」</strong>または<strong>「チップ」</strong>で<br><strong>Intel</strong> か <strong>Apple</strong> かを確認'},
+    en: {prompt:'Not sure which chip?',action:'How to check',title:'How to check your chip type',step1:'Open the <strong>Apple menu</strong> at the top left.<br>Select <strong>“About This Mac”</strong>.',step2:'Under <strong>“Processor”</strong> or <strong>“Chip”</strong>,<br>look for <strong>“Intel”</strong> or <strong>“Apple”</strong>.'},
+  }[input.lang];
+  const chipDownloads = (id='') => `<div class="chip-downloads"${id?` id="${id}" tabindex="-1"`:''} role="group" aria-label="${chipCopy.label}"><div class="chip-options"><div><a class="button" href="${DOWNLOAD}"><span class="chip-label">${symbol('arrow.down.to.line')} ${chipCopy.silicon}</span><span class="chip-requirements">${chipCopy.siliconNote}</span></a></div><div><a class="button secondary" href="${INTEL_DOWNLOAD}"><span class="chip-label">${symbol('arrow.down.to.line')} ${chipCopy.intel}</span><span class="chip-requirements">${chipCopy.intelNote}</span></a></div></div><details class="chip-help"><summary>${chipGuide.prompt} <span>${chipGuide.action}</span></summary><div class="chip-guide"><h3>${chipGuide.title}</h3><div class="chip-guide-steps"><div><p><b>1</b><span>${chipGuide.step1}</span></p><img src="${chipMenuImage}" alt="" width="189" height="123"></div><div><p><b>2</b><span>${chipGuide.step2}</span></p><img src="${chipInfoImage}" alt="" width="189" height="123"></div></div></div></details></div>`;
+  const intelCopy = {
+    zh: {note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.1 build 31 · 3.0 用户需手动安装一次，之后可应用内更新'},
+    ja: {note:'Intel プロセッサ · macOS 12.3 以降 · 3.1 build 31 · 3.0 から一度手動でインストール後、アプリ内更新に対応'},
+    en: {note:'Intel processor · macOS 12.3 or later · 3.1 build 31 · Install manually once from 3.0; then use in-app updates'},
+  }[input.lang];
+  const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${chipCopy.intel}</a><p class="requirements">${intelCopy.note}</p></div>`;
   const c=continuationCopy[input.lang];
   const check = `<img class="plan-check" src="${checkIcon}" alt="" aria-hidden="true">`;
   const amount = (cents:number,currency:string) => e(formatMoney(cents,currency).replace(/^[^0-9-]+/,''));
@@ -291,11 +302,11 @@ export function renderLandingPage(input: SiteInput): string {
     en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Question packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
   }[input.lang];
   const plusCard = plusEnabled ? `<article class="concept-plan plus-plan" aria-label="${plusCopy.title}"><span class="plan-badge">${c.daily}</span><h3>Plus</h3><p>${c.plusSub}</p><div class="price-line">CNY <span class="price">${amount(PLUS.priceCents,PLUS.currency)}</span> / ${c.month}</div><ul>${c.plusFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#purchase" data-purchase="plus">${c.plusCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
-  const trialCard = trialEnabled ? `<article class="concept-plan trial-plan"><h3>${s.freeCard.name}</h3><p>${c.trialSub}</p><div class="price-line"><span class="price">${e(formatMoney(0,input.currency))}</span></div><ul>${c.trialFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="${DOWNLOAD}">${symbol('arrow.down.to.line')} ${c.trialCTA}</a></article>` : '';
+  const trialCard = trialEnabled ? `<article class="concept-plan trial-plan"><h3>${s.freeCard.name}</h3><p>${c.trialSub}</p><div class="price-line"><span class="price">${e(formatMoney(0,input.currency))}</span></div><ul>${c.trialFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#downloads">${symbol('arrow.down.to.line')} ${c.trialCTA}</a></article>` : '';
   const packCard = packs.length ? `<article class="concept-plan pack-plan"><h3>${c.packTitle}</h3><p>${c.packSub}</p><fieldset class="pack-choices"><legend>${c.packLegend}</legend>${packChoices}</fieldset><p class="pack-once">${check}${d.oneTime}</p><a class="button" href="#purchase" data-purchase="pack">${c.packCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
   const platforms = `<details class="platforms"><summary>${ui.platforms}</summary><div>${intelDownload()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">Coming soon</span></button></div></details>`;
   const faqDetail=(q:string,a:string,open=false)=>`<details${open?' open':''}><summary>${e(q)}</summary><p>${e(a)}</p></details>`;
-  const faqItems=faqDetail(c.captureQ,input.lang==='zh'?'不会。':ui.protectBody)+faqDetail(c.scopeQ,c.scopeA)+faqDetail(s.faqs[5]!.q,input.lang==='zh'?'正式版：Apple Silicon Mac，macOS 14 及以上。Windows 版尚未正式发布。':s.faqs[5]!.a)+faqDetail(s.faqs[2]!.q,s.faqs[2]!.a)+faqDetail(c.cancelQ,c.cancelA);
+  const faqItems=faqDetail(c.captureQ,input.lang==='zh'?'不会。':ui.protectBody)+faqDetail(c.scopeQ,c.scopeA)+faqDetail(s.faqs[5]!.q,s.faqs[5]!.a)+faqDetail(s.faqs[2]!.q,s.faqs[2]!.a)+faqDetail(c.cancelQ,c.cancelA);
   const extraFAQ=[s.faqs[1]!,s.faqs[3]!,s.faqs[4]!,s.faqs[0]!].map(f=>faqDetail(f.q,f.a)).join('');
   const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
@@ -305,11 +316,10 @@ export function renderLandingPage(input: SiteInput): string {
 <a class="skip" href="#main">${d.skip}</a>
 <div class="theater"><header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>
-<nav class="languages" aria-label="Language">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}</nav><a class="button small" href="${DOWNLOAD}">${symbol("arrow.down.to.line")} ${d.download}</a></header>
+<nav class="languages" aria-label="Language">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}</nav>${download('small')}</header>
 </div><main id="main"><div class="hero-band"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}<br><span>${e(d.accent)}</span>`}</h1>
-<p class="sub">${e(entry?.description??d.sub)}</p><div class="hero-actions">${download()}<button class="button secondary windows-download" type="button" disabled aria-disabled="true">${d.windowsDownload} <span class="coming-soon">${input.lang==='zh'?'（Coming soon）':'Coming soon'}</span></button></div>
-<p class="trial-line">${trialLine}</p><p class="requirements"><span class="release-label">${d.release}</span>${d.requirements}</p>
+<p class="sub">${e(entry?.description??d.sub)}</p>${chipDownloads('downloads')}
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"><fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend>
 <div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>
@@ -325,7 +335,7 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <details class="pricing-details"><summary>${c.more}</summary><p>${ui.planIntro}</p><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p>${plusEnabled?`<p>${plusCopy.title}: ${plusCopy.period} · ${plusCopy.benefit} ${plusCopy.cancel}</p>`:''}${trialEnabled?`<p>${d.trialNote}</p><p>${plusCopy.trial}</p>`:''}${packs.map(p=>`<p>${d.questions(p.questions)} · ${e(formatMoney(p.amountCents,input.currency))} ${e(input.currency)} · ${d.oneTime} · ${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>`).join('')}</details>
 <details class="purchase" id="purchase"><summary>${d.purchaseTitle}</summary><div class="purchase-content"><div><p>${ui.plain}</p><p class="selected-purchase" aria-live="polite"></p>${download()}</div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></details></div></section>
 <div class="wrap"><section id="faq" class="faq-section" aria-labelledby="faq-title"><div><h2 id="faq-title">${input.lang==='zh'?'开始前，你可能想知道。':d.faqTitle}</h2><p class="faq-lead">${lines(c.faqSub)}</p></div><div class="faq">${faqItems}</div></section></div>
-<div class="scenic-footer"><section class="closing wrap"><h2>${c.final}${input.lang==='en'?' ':''}<span>${c.finalAccent}</span></h2>${download()}<div class="footer-platforms"><a href="${INTEL_DOWNLOAD}">${c.intel}</a><button type="button" disabled>${c.windows}</button></div></section>
+<div class="scenic-footer"><section class="closing wrap"><h2>${c.final}${input.lang==='en'?' ':''}<span>${c.finalAccent}</span></h2>${chipDownloads()}<div class="footer-platforms"><button type="button" disabled>${c.windows}</button></div></section>
 <footer class="footer wrap"><div class="footer-brand"><a class="brand" href="/?lang=${input.lang}">${ghost}NotchSPI</a><small>© 2026 NotchSPI.</small></div><div class="footer-meta"><nav aria-label="${d.legal}">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}<a href="#privacy" data-disclosure>${c.privacy}</a><a href="#refund" data-disclosure>${c.refund}</a><a href="#tokushoho" data-disclosure>${c.legal}</a><a href="#usage-details" data-disclosure>${input.lang==='zh'?'使用说明':input.lang==='ja'?'使い方':'Usage'}</a></nav></div></footer></div>
 <div class="legal-drawer" id="legal-drawer"><div class="wrap"><details id="usage-details"><summary>${c.moreFAQ}</summary><div class="faq">${extraFAQ}${faqDetail(d.multiTitle,d.multiBody)}${faqDetail(d.quietTitle,d.quietBody)}</div><p>${d.release} · ${d.requirements}</p>${platforms}</details>
 <aside class="scope-links"><p>${d.scope}</p><nav class="entrylinks" aria-label="${d.scope}"><a href="/spi?lang=${input.lang}"${input.entry==='spi'?' aria-current="page"':''}>${d.spi}</a><a href="/reading-practice?lang=${input.lang}"${input.entry==='reading_practice'?' aria-current="page"':''}>${d.reading}</a></nav></aside>

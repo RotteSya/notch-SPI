@@ -266,4 +266,33 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #78
 @media(prefers-reduced-motion:reduce){.chapter-arrival.is-waiting>:is(h2,h3,p,figure,.concept-plan){opacity:1;transform:none}.stage-controls.has-indicator:before{transition:none}}
 @media print{.chapter-arrival.is-waiting>:is(h2,h3,p,figure,.concept-plan){opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}html{scroll-behavior:auto}.native-product-image:hover,.button:hover,.button:active{transform:none}.demo:has(#demo-capture:checked) .flying-capture{display:none}}
+/* Keep both Mac architectures visible without inheriting disabled-platform styling. */
+.chip-downloads{max-width:680px;margin:24px auto 0;scroll-margin-top:24px}
+.chip-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.chip-options .button{display:grid;place-items:center;width:100%;min-width:0;min-height:52px;height:52px;padding:10px 16px;font-size:14px;border-radius:14px;line-height:1.5}
+.chip-options .button.secondary{background:#152238;border:1px solid #93afe0;color:#edf3ff;box-shadow:none}
+.chip-options .secondary .mac-symbol{filter:invert(1)}
+.chip-label{grid-area:1/1;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .22s ease,transform .22s ease}
+.chip-requirements{grid-area:1/1;display:block;pointer-events:none;font-size:12px;font-weight:400;color:#253c65;line-height:1.6;transition:opacity .22s ease,transform .22s ease}
+.chip-options .secondary .chip-requirements{color:#dce5f4}
+.chip-options .chip-label{opacity:1;transform:translateY(0)}.chip-options .chip-requirements{opacity:0;transform:translateY(6px)}.chip-options .button:is(:hover,:focus-visible) .chip-label{opacity:0;transform:translateY(-6px)}.chip-options .button:is(:hover,:focus-visible) .chip-requirements{opacity:1;transform:translateY(0)}
+.chip-options .button:focus-visible{outline:2px solid #edf3ff;outline-offset:4px}
+.chip-help{font-size:12px;color:#b3bfd2;line-height:1.7;margin:16px auto 0;text-wrap:balance}
+.scenic-footer .closing{margin-inline:auto}
+.scenic-footer .closing .chip-help{color:#c9d5e8}
+@media(max-width:700px){.chip-downloads{max-width:340px;margin-top:22px}.chip-options{grid-template-columns:1fr;gap:17px}.chip-options .button{font-size:13px;min-height:48px;height:48px;padding:10px 12px}.chip-requirements{font-size:11px}.chip-help{font-size:11px;margin-top:15px}}
+.chip-help{position:relative;width:fit-content;max-width:100%;text-align:center}
+.chip-help>summary{list-style:none;cursor:pointer;font-size:12px;font-weight:400;line-height:20px;padding:0}.chip-help>summary::-webkit-details-marker{display:none}.chip-help>summary:after{display:none}
+.chip-help>summary>span{color:inherit;border-bottom:1px dashed currentColor;padding-bottom:2px}
+.chip-help>summary:hover>span{color:#91aff4}.chip-help>summary:focus-visible{outline:2px solid #aec6ff;outline-offset:5px;border-radius:3px}
+.chip-guide{position:absolute;z-index:20;top:calc(100% + 14px);left:50%;transform:translateX(-50%);width:440px;max-width:calc(100vw - 32px);padding:12px 16px;border:1px solid #91aff440;border-radius:16px;background:#151f30;box-shadow:0 16px 40px #0005,inset 0 1px #ffffff08;text-align:left;color:#c4cedf;font:14px/22px "Helvetica Neue",Helvetica,"PingFang SC","Microsoft YaHei",Arial,sans-serif;text-wrap:wrap}
+.chip-guide:before{content:'';position:absolute;top:-5px;left:calc(50% - 5px);width:10px;height:10px;background:#151f30;border-top:1px solid #91aff440;border-left:1px solid #91aff440;transform:rotate(45deg)}
+.chip-guide h3{font-size:16px;line-height:24px;font-weight:500;margin:0 0 12px;color:#edf3ff}.chip-guide-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.chip-guide-steps p,.closing .chip-guide-steps p{display:flex;align-items:baseline;gap:6px;font-size:14px;color:#c4cedf;margin:0 0 10px;line-height:22px}
+.chip-guide-steps p b{display:inline-grid;place-items:center;flex-shrink:0;width:14px;height:14px;border-radius:50%;background:#91aff426;color:#b8ccff;font-size:10px;line-height:14px}
+.chip-guide-steps img{display:block;width:100%;height:auto;aspect-ratio:189/123;object-fit:cover;border-radius:7px}
+@media(max-width:480px){.chip-guide{padding:12px}.chip-guide-steps{gap:12px}.chip-guide-steps p,.closing .chip-guide-steps p{font-size:11px;line-height:18px;gap:4px}}
+.chip-help[open] .chip-guide{animation:chip-guide-enter .24s cubic-bezier(.16,1,.3,1) both;transform-origin:50% 0}
+@keyframes chip-guide-enter{from{opacity:0;transform:translate(-50%,8px) scale(.98)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.chip-help[open] .chip-guide{animation:none}}
 `;
