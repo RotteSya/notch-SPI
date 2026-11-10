@@ -2,7 +2,7 @@ import { CaptureTiming } from './capture-timing.ts';
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from './routes.ts';
-import { isRecoveredAnswerFor, RequestKeys, type AccountSnapshot, type BeginCapture, type NewAttempt, type CaptureRecord, type QuotaSnapshot } from './billing.ts';
+import { BudgetAdmissionError, isRecoveredAnswerFor, RequestKeys, type AccountSnapshot, type BeginCapture, type NewAttempt, type CaptureRecord, type QuotaSnapshot } from './billing.ts';
 import { requireAccount } from './auth.ts';
 import { ApiError, beginSSE, SSE_DONE, type StreamEvent } from './http.ts';
 import type { CaptureRequest, Usage, Provider } from './providers/types.ts';
@@ -104,9 +104,11 @@ export class CaptureService {
   private budgetAnomaly(req: FastifyRequest, usage: Usage | null): boolean {
     const q=this.quotes.get(req); if (!q) return false;
     const calls=usage?.attempts ?? (usage ? [usage] : []);
-    return calls.length===0 || calls.some(x=>x.inputTokens===null || x.outputTokens===null ||
-      !Number.isSafeInteger(x.inputTokens) || !Number.isSafeInteger(x.outputTokens) ||
-      x.inputTokens<0 || x.outputTokens<0 || x.inputTokens>q.inputUpper || x.outputTokens>q.outputUpper);
+    // Missing usage (timeout/disconnect) consumes the reservation, but is not evidence
+    // that the estimate was exceeded. Only observed invalid/out-of-bound usage latches.
+    return calls.some(x=>
+      (x.inputTokens!==null && (!Number.isSafeInteger(x.inputTokens) || x.inputTokens<0 || x.inputTokens>q.inputUpper)) ||
+      (x.outputTokens!==null && (!Number.isSafeInteger(x.outputTokens) || x.outputTokens<0 || x.outputTokens>q.outputUpper)));
   }
   private async reservation(req: FastifyRequest, provider: Provider, input: CaptureRequest): Promise<number> {
     const c = this.ctx.config;
@@ -144,8 +146,18 @@ export class CaptureService {
     const requestId=randomUUID(),admission:Admission={attemptId:randomUUID(),providerStarted:false};
     let owned:CaptureRecord|null=null,beginUncertain=false;
     try {
-      if(!await store.billing.reserveBudget(token,admission.attemptId,'official',config.modelCostCurrency,
-        reservedMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes,config.requestBudgetMode==='guarded-request'))throw new ApiError(503,'当前服务预算已用完，请稍后再试','budget_exceeded');
+      try {
+        if(!await store.billing.reserveBudget(token,admission.attemptId,'official',config.modelCostCurrency,
+          reservedMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes,config.requestBudgetMode==='guarded-request'))throw new ApiError(503,'当前服务预算不足以接收本次请求，本次未扣题','budget_exceeded');
+      } catch (error) {
+        if (!(error instanceof BudgetAdmissionError)) throw error;
+        req.log.warn({budgetAdmission: error.reason}, 'request budget admission rejected');
+        if (error.reason === 'busy') {
+          reply.header('Retry-After','5');
+          throw new ApiError(429,'当前服务请求较多，本次未扣题，请稍后重试','rate_limited');
+        }
+        throw new ApiError(503,'服务费用核验异常，已暂停接收请求，本次未扣题，请联系支持恢复服务','service_maintenance');
+      }
       this.timings.get(req)?.mark('budgetReady');
       if(abort.signal.aborted)return;
       beginUncertain=true;

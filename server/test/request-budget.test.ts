@@ -65,8 +65,8 @@ for(const kind of ['memory','sqlite'] as const){
       if(failEstimate)throw new Error('private details');
       quotes.push(structuredClone(req));return astra.estimateReservation(req,p);
     },async stream(req,delta){sent.push(structuredClone(req));if(wait)await wait();
-      delta(req.purpose==='explain'?JSON.stringify({consistent:true,explanation:'B follows from the full passage.'}):answer);
       if(unknownUsage)throw new Error('missing final usage');
+      delta(req.purpose==='explain'?JSON.stringify({consistent:true,explanation:'B follows from the full passage.'}):answer);
       return {inputTokens:excessInput?10000:100,outputTokens:20,finishReason:'stop'};
     }};
     const settings={...config,provider:'openai' as const,objectiveProvider:'openai' as const,model:'gpt-6-astra',objectiveModel:'gpt-6-astra',
@@ -80,7 +80,7 @@ for(const kind of ['memory','sqlite'] as const){
     const {token}=await user();
     const post=(url:string,payload:object,t=token)=>app.inject({method:'POST',url,headers:{authorization:`Bearer ${t}`},payload});
     return {app,store,quotes,sent,settings,user,token,post,
-      excess:()=>{excessInput=true;},failEstimate:()=>{failEstimate=true;},unknown:()=>{unknownUsage=true;},wait:(fn:()=>Promise<void>)=>{wait=fn;},
+      excess:()=>{excessInput=true;},failEstimate:()=>{failEstimate=true;},unknown:(value=true)=>{unknownUsage=value;},wait:(fn:()=>Promise<void>)=>{wait=fn;},
       close:async()=>{await app.close();await store.close();}};
   }
   for (const mode of ['local-request','guarded-request']) test(`${kind}/${mode}: solve, recovery, explanation reserve the exact complete request before dispatch`,async()=>{
@@ -143,16 +143,49 @@ for(const kind of ['memory','sqlite'] as const){
   test(`${kind}: guarded routes latch on token excess even when actual cost is below hold`,async()=>{
     const f=await setup('guarded-request',10_000_000);try{
       f.excess();assert.equal((await f.post('/v1/captures',body())).statusCode,200);
-      assert.equal((await f.post('/v1/captures',body(),(await f.user()).token)).statusCode,503);
+      const blocked=await f.post('/v1/captures',body(),(await f.user()).token);
+      assert.equal(blocked.statusCode,503);assert.equal(blocked.json().error.code,'service_maintenance');
       assert.equal(f.sent.length,1);
     }finally{await f.close();}
   });
-  test(`${kind}: guarded routes stop after unknown metering despite ample remaining budget`,async()=>{
+  test(`${kind}: missing usage releases question and allows the next guarded request`,async()=>{
     const f=await setup('guarded-request',10_000_000);try{
+      f.unknown();const failed=await f.post('/v1/captures',body());
+      assert.match(failed.body,/"questions_charged":0/);
+      assert.equal((await f.store.getAccount(f.token))?.balanceQuestions,30);
+      f.unknown(false);
+      const next=await f.post('/v1/captures',body(),(await f.user()).token);
+      assert.equal(next.statusCode,200);assert.match(next.body,/"questions_charged":1/);
+      assert.equal(f.sent.length,2);
+    }finally{await f.close();}
+  });
+  test(`${kind}: repeated missing usage still exhausts daily budget`,async()=>{
+    const f=await setup('guarded-request',1_500_000);try{
       f.unknown();await f.post('/v1/captures',body());
-      assert.equal((await f.post('/v1/captures',body(),(await f.user()).token)).statusCode,503);
+      const next=await f.post('/v1/captures',body());
+      assert.equal(next.statusCode,503);assert.equal(next.json().error.code,'budget_exceeded');
       assert.equal(f.sent.length,1);
     }finally{await f.close();}
+  });
+  test(`${kind}: four guarded in-flight requests report busy, then recover when a slot frees`,async()=>{
+    const f=await setup('guarded-request',10_000_000);let release!:()=>void;
+    const hold=new Promise<void>(r=>{release=r;});f.wait(()=>hold);
+    try{
+      const users=await Promise.all(Array.from({length:4},()=>f.user()));
+      const pending=[];
+      for (const [i,u] of users.entries()) {
+        pending.push(Promise.resolve(f.post('/v1/captures',body(),u.token)));
+        for(let n=0;n<200&&f.sent.length<i+1;n++)await new Promise(r=>setTimeout(r,5));
+      }
+      const all=Promise.all(pending);
+      assert.equal(f.sent.length,4);
+      const busy=await f.post('/v1/captures',body());
+      assert.equal(busy.statusCode,429);assert.equal(busy.json().error.code,'rate_limited');
+      assert.equal(busy.headers['retry-after'],'5');assert.equal(f.sent.length,4);
+      release();await all;
+      assert.equal((await f.post('/v1/captures',body())).statusCode,200);
+      assert.equal(f.sent.length,5);
+    }finally{release();await f.close();}
   });
   test(`${kind}: shadow failure keeps fixed hold and never reduces production admission`,async()=>{
     const f=await setup('shadow',900_000);try{

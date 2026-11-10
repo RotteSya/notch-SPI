@@ -81,6 +81,13 @@ export function assertAttemptBinding(input: BeginCapture, attempt: NewAttempt): 
   const purpose = input.operation === 'explain' ? 'explain' : input.operation === 'recover' ? 'recover' : 'answer';
   if (attempt.captureId !== input.captureId || attempt.purpose !== purpose) throw new Error('Attempt/capture binding mismatch');
 }
+/** Non-spending admission rejections, distinct from an exhausted daily budget. */
+export class BudgetAdmissionError extends Error {
+  readonly reason: 'guard_tripped' | 'busy';
+  constructor(reason: 'guard_tripped' | 'busy') {
+    super(reason); this.name = 'BudgetAdmissionError'; this.reason = reason;
+  }
+}
 export interface BillingStore {
   claimFreeTrial(token: string): Promise<AccountSnapshot | null>;
   quota(token: string): Promise<QuotaSnapshot | null>;

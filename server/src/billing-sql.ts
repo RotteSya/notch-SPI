@@ -7,7 +7,7 @@ import { applyRefundLot } from './payment-ledger-sql.ts';
 import {checkpointQuota} from './quota-migration.ts';
 import {QUOTA_MIGRATION_SCHEMA} from './quota-migration-schema.ts';
 import {FREE_TRIAL_POLICY, trialWindow, trialSnapshot, type FreeTrialSnapshot} from './free-trial.ts';
-import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type CreditInput, type FinishCapture, type QuotaSnapshot,
   type RegistrationInput } from './billing.ts';
 
@@ -404,9 +404,9 @@ export class SQLBilling implements BillingStore {
       if (guarded) {
         yield* query('INSERT INTO request_budget_guards(scope,currency) VALUES (?,?) ON CONFLICT(scope,currency) DO NOTHING',scope,currency);
         const guard=(yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',scope,currency))[0];
-        if (!guard || Number(guard.tripped)!==0) return false;
+        if (!guard || Number(guard.tripped)!==0) throw new BudgetAdmissionError('guard_tripped');
         const active=(yield* query("SELECT COUNT(*) AS n FROM attempt_budget_holds WHERE scope=? AND currency=? AND state='held'",scope,currency))[0];
-        if (Number(active?.n)>=4) return false;
+        if (Number(active?.n)>=4) throw new BudgetAdmissionError('busy');
       }
       const row = (yield* query('SELECT spent_micros,held_micros,limit_micros FROM budget_windows WHERE scope=? AND window_start=? AND currency=? FOR UPDATE', scope, windowStart, currency))[0];
       if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros + (guarded?Math.ceil(Number(row.limit_micros)*0.2):0) > Number(row.limit_micros)) return false;
@@ -592,7 +592,8 @@ function* settleBudgetForDevice(d: Row, attemptId: string, actualMicros: number 
   const hold = (yield* query("SELECT * FROM attempt_budget_holds WHERE attempt_id=? AND device_id=? AND state='held' FOR UPDATE", attemptId, Number(d.id)))[0]; if (!hold) return;
   // Preserve the full observed expense even when the preflight bound was too low.
   const reserved = Number(hold.reserved_upper_micros), actual = actualMicros === null || !Number.isSafeInteger(actualMicros) || actualMicros < 0 ? reserved : actualMicros;
-  if (guard && (anomaly || actualMicros===null || !Number.isSafeInteger(actualMicros) || actualMicros<0 || actual>reserved)) {
+  // Missing metering consumes the entire hold; only observed invalid/overrun data latches.
+  if (guard && (anomaly || (actualMicros!==null && (!Number.isSafeInteger(actualMicros) || actualMicros<0)) || actual>reserved)) {
     yield* query('UPDATE request_budget_guards SET tripped=1 WHERE scope=? AND currency=?',String(guard.scope),String(guard.currency));
   }
   yield* query("UPDATE attempt_budget_holds SET state='settled',actual_micros=? WHERE attempt_id=?", actual, attemptId);

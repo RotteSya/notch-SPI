@@ -1,5 +1,5 @@
 import {PLUS,plusActive,type PlusRecord} from './plus.ts';
-import { assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
@@ -299,7 +299,8 @@ export class MemoryBilling implements BillingStore {
     const key=`${scope}:${start}:${currency}`,existing=this.budgetHolds.get(attemptId);
     if (existing) return existing.deviceId===d.id && (existing.state==='held'||existing.state==='settled');
     const guardKey=`${scope}:${currency}`;
-    if (guarded && (this.trippedBudgets.has(guardKey) || [...this.budgetHolds.values()].filter(h=>h.group===guardKey&&h.state==='held').length>=4)) return false;
+    if (guarded && this.trippedBudgets.has(guardKey)) throw new BudgetAdmissionError('guard_tripped');
+    if (guarded && [...this.budgetHolds.values()].filter(h=>h.group===guardKey&&h.state==='held').length>=4) throw new BudgetAdmissionError('busy');
     const budget=this.budgets.get(key)??{limit:limitMicros,spent:0,held:0,end:start+windowMs};
     if (budget.spent+budget.held+reservedUpperMicros+(guarded?Math.ceil(budget.limit*0.2):0)>budget.limit) return false;
     if (guarded) this.guardedHolds.set(attemptId,guardKey);
@@ -319,7 +320,8 @@ export class MemoryBilling implements BillingStore {
     // also prevents the next reservation from spending the apparently unused difference.
     const budget=this.budgets.get(hold.key); if (!budget) return; const actual=actualMicros===null||!Number.isSafeInteger(actualMicros)||actualMicros<0?hold.reserved:actualMicros;
     const guardKey=this.guardedHolds.get(attemptId);
-    if (guardKey && (anomaly || actualMicros===null || !Number.isSafeInteger(actualMicros) || actualMicros<0 || actual>hold.reserved)) this.trippedBudgets.add(guardKey);
+    // Missing metering consumes the entire hold; only observed invalid/overrun data latches.
+    if (guardKey && (anomaly || (actualMicros!==null && (!Number.isSafeInteger(actualMicros) || actualMicros<0)) || actual>hold.reserved)) this.trippedBudgets.add(guardKey);
     budget.held=Math.max(0,budget.held-hold.reserved); budget.spent+=actual; hold.state='settled';
   }
   async attempts(token:string):Promise<Attempt[]> {
