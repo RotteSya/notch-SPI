@@ -67,6 +67,9 @@
 | admin | GET | /admin/activity |
 | admin | POST | /admin/cli |
 | admin | POST | /admin/reservations/recover |
+| admin | GET | /admin/budget |
+| admin | POST | /admin/budget/reconcile |
+| admin | POST | /admin/budget/reset |
 | admin | GET | /admin/payments/finance |
 | admin | POST | /admin/payments/finance/reconcile |
 | admin | GET | /admin/payments |
@@ -464,7 +467,7 @@ Vercel 模式 Fastify parser 上限为 **4,500,000 字节**；self-hosted 仍为
 每个请求仍须不超过配置的单次风险上限，未知结构或价格拒绝派发，不自动改用无保护的估算。
 
 此模式在原日预算内留出 20% 不用于新请求准入，并最多允许同范围、同币种 4 个请求在途（包含
-跨日尚未结清的旧持有）。不是提高日预算或另加 20%。实际 token 超出估算、非法计量或费用超过预留时，在结算事务中持久置位 `request_budget_guards.tripped`，后续小额请求拒绝。
+跨日尚未结清的旧持有）。不是提高日预算或另加 20%。非法计量或显著费用偏差在结算事务中暂停对应模型通道；小幅偏差补记全部费用，连续偏差升级保护。规则见下文。
 `guarded_budget_holds` 记录适用该策略的尝试。共享 SQL 行锁负责跨实例协调；Memory、SQLite 与本地 PostgreSQL 双连接池并发检查均通过，
 生产部署网络与运行负载未据此验收。重启和跨日不自动复位；无公开重置接口，必须核对异常与费用后
 另行批准运维处理。没有派发的请求按原流程释放；已派发但失联的持有不能按零费用释放。
@@ -490,11 +493,44 @@ solve/explain/recover 从鉴权前监听连接关闭，解码、预算预留、�
 
 ### 请求预算异常与暂时繁忙
 
-`guarded-request` 下，超时、断流或缺少用量仍按完整预留费用结算，不按零成本计账，
-但不再单独触发永久全局锁定。观测到非法用量、超过估算的 token 数或费用超支仍锁定，需人工核验解除。
-日预算及 20% 余量不变。全局四个并发槽已满返回 `429 rate_limited` 和 `Retry-After: 5`；
-费用保护锁定返回 `503 service_maintenance`；只有当日可用预算不足才返回 `503 budget_exceeded`。
-三种拒绝均在调用模型和预扣题数前发生。旧锁定不会被升级自动清除，需单独核对账本后解除。
+本地候选实现；本节不表示已经推送、迁移或生产启用。事实所有者为 `server/src/budget-policy.ts`、
+`billing-sql.ts`、`billing-memory.ts`、`capture-service.ts` 与 `routes.ts`。
+
+- 日预算、20% 安全余量、全局四个在途槽保持不变；模型通道只隔离故障，不各自领取一份预算。
+- `budget_accounting` 分开记录预留、已占预算、实际计量及核账凭据。缺少或非法计量转 `provisional`，
+  按完整预留占用预算，`actual` / `actual_micros` 保留 NULL。普通重复结算不能清除或更改暂估。
+- 合法实际费用完整入账。单次超过预留 20%，或连续三次超估，暂停对应 provider/model 通道；
+  小幅超估先补记并留下 `estimate_overrun` 复核信号。正常计量且未超估会清零连续偏差计数。
+  非法计量立即暂停该通道。暂停不会自动提高预留或日预算，估算修正需核验后修改。
+- 连续三次无计量触发 60 秒冷却；之后只放行一个持有 120 秒探测租约的请求。成功计量关闭熔断，
+  再次缺失则重新冷却；探测未实际派发时撤销探测并延后重试。探测租约过期允许下一次探测，仍受全局在途槽约束。
+- 题数租约回收同步将关联运行尝试的预算转为暂估。独立预算预留超过 5 分钟也按暂估回收槽位，
+  覆盖“已预留、尚未创建题数持有即崩溃”的窗口。每批最多回收 100 个此类记录；定时回收仍须持续运行。
+- `429 rate_limited` + `Retry-After: 5` 表示并发满；冷却返回 `503 service_maintenance` 和等待秒数；
+  人工费用保护也返回 `service_maintenance`。预算不足返回 `503 budget_exceeded`、下个预算周期的 UTC 时间及
+  `Retry-After`；跨日自然使用新窗口，未核实的旧费用保留在原窗口。
+
+管理入口均要求现有 `x-admin-token`，关闭管理员功能时不开放；响应禁止缓存：
+
+| 入口 | 行为 |
+| --- | --- |
+| `GET /admin/budget` | 通道保护状态、原因、冷却时间，以及最早 200 条待核账记录 |
+| `POST /admin/budget/reconcile` | `{attemptId, actualMicros, evidence}`；仅将待核账记录校正一次，差额调整原预算窗口 |
+| `POST /admin/budget/reset` | `{channel, evidence}`；核验后解除该通道保护，保存解除前状态及凭据引用 |
+
+`evidence` 必须是 3–200 字符的账单/工单引用，只允许字母、数字及 `._:/-`；不要放入密钥或原始账单。
+核账必须由管理员取得供应商计量或账单后操作，本实现不虚构供应商账单查询 API，也不自动把未知费用归零。
+同一核账重复提交同金额、同凭据幂等；冲突返回 409。重复同一解除凭据不会解除后来产生的新故障。
+核账不改变用户题数，不清除费用保护；确认原因后另行解除。
+定时回收将保护状态及待核账数量写为结构化 warning，供现有日志监控消费；没有新增邮件或消息发送。
+旧 `request_budget_guards.tripped` 全局保护仍兼容，在管理查询中以 `legacy:` 通道显示，可使用同一恢复入口审计解除；升级不自动清除历史锁定。旧已结算记录不冒充新版本核账证据。
+新增表采用可重复执行的 expand DDL；生产迁移与发布不属于本次本地修改。
+
+本地跨连接验收入口：`TEST_POSTGRES_URL='postgres://...@127.0.0.1:端口/notchspi_test?sslmode=disable' node --test server/test/budget-postgres.test.ts`。
+专项脚本强制回环地址及含 test 的数据库名，创建随机隔离 schema，用两个独立连接池执行竞争准入、
+核账、探测恢复与回收竞争，并主动终止测试连接验证回滚；结束后移除该 schema。未设置测试地址时明确 skip，不能视为实测通过。
+连接池须处理空闲断连事件；事务连接发生错误或回滚失败时丢弃连接，禁止把异步断连异常升级为进程崩溃。
+
 
 ## POST /v1/events/batch — 匿名可靠性事件
 

@@ -105,10 +105,10 @@ export class CaptureService {
     const q=this.quotes.get(req); if (!q) return false;
     const calls=usage?.attempts ?? (usage ? [usage] : []);
     // Missing usage (timeout/disconnect) consumes the reservation, but is not evidence
-    // that the estimate was exceeded. Only observed invalid/out-of-bound usage latches.
+    // that the estimate was exceeded. Invalid counters are isolated; cost overruns use the shared policy.
     return calls.some(x=>
-      (x.inputTokens!==null && (!Number.isSafeInteger(x.inputTokens) || x.inputTokens<0 || x.inputTokens>q.inputUpper)) ||
-      (x.outputTokens!==null && (!Number.isSafeInteger(x.outputTokens) || x.outputTokens<0 || x.outputTokens>q.outputUpper)));
+      (x.inputTokens!==null && (!Number.isSafeInteger(x.inputTokens) || x.inputTokens<0)) ||
+      (x.outputTokens!==null && (!Number.isSafeInteger(x.outputTokens) || x.outputTokens<0)));
   }
   private async reservation(req: FastifyRequest, provider: Provider, input: CaptureRequest): Promise<number> {
     const c = this.ctx.config;
@@ -148,7 +148,12 @@ export class CaptureService {
     try {
       try {
         if(!await store.billing.reserveBudget(token,admission.attemptId,'official',config.modelCostCurrency,
-          reservedMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes,config.requestBudgetMode==='guarded-request'))throw new ApiError(503,'当前服务预算不足以接收本次请求，本次未扣题','budget_exceeded');
+          reservedMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes,config.requestBudgetMode==='guarded-request',JSON.stringify([attempt.provider,attempt.model]))) {
+          const offset=config.modelBudgetUtcOffsetMinutes*60_000;
+          const resetsAt=new Date((Math.floor((Date.now()+offset)/86_400_000)+1)*86_400_000-offset);
+          reply.header('Retry-After',String(Math.max(1,Math.ceil((resetsAt.getTime()-Date.now())/1000))));
+          throw new ApiError(503,`当前服务预算不足以接收本次请求，本次未扣题；下一预算周期始于 ${resetsAt.toISOString()}`,'budget_exceeded');
+        }
       } catch (error) {
         if (!(error instanceof BudgetAdmissionError)) throw error;
         req.log.warn({budgetAdmission: error.reason}, 'request budget admission rejected');
@@ -156,7 +161,11 @@ export class CaptureService {
           reply.header('Retry-After','5');
           throw new ApiError(429,'当前服务请求较多，本次未扣题，请稍后重试','rate_limited');
         }
-        throw new ApiError(503,'服务费用核验异常，已暂停接收请求，本次未扣题，请联系支持恢复服务','service_maintenance');
+        if (error.reason === 'cooldown') {
+          reply.header('Retry-After',String(error.retryAfter));
+          throw new ApiError(503,'当前模型通道暂不可用，本次未扣题，请稍后重试','service_maintenance');
+        }
+        throw new ApiError(503,'当前模型通道费用核验异常，本次未扣题，请联系支持','service_maintenance');
       }
       this.timings.get(req)?.mark('budgetReady');
       if(abort.signal.aborted)return;

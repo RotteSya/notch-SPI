@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import type { BudgetInspection } from './budget-policy.ts';
 import type { FreeTrialSnapshot } from './free-trial.ts';
 
 export const FIXED_TRIAL_POLICY = { version: 'fixed30-2026-09-06', questions: 30 } as const;
@@ -83,9 +84,10 @@ export function assertAttemptBinding(input: BeginCapture, attempt: NewAttempt): 
 }
 /** Non-spending admission rejections, distinct from an exhausted daily budget. */
 export class BudgetAdmissionError extends Error {
-  readonly reason: 'guard_tripped' | 'busy';
-  constructor(reason: 'guard_tripped' | 'busy') {
-    super(reason); this.name = 'BudgetAdmissionError'; this.reason = reason;
+  readonly reason: 'guard_tripped' | 'busy' | 'cooldown';
+  readonly retryAfter: number;
+  constructor(reason: 'guard_tripped' | 'busy' | 'cooldown', retryAfter = 60) {
+    super(reason); this.name = 'BudgetAdmissionError'; this.reason = reason; this.retryAfter = retryAfter;
   }
 }
 export interface BillingStore {
@@ -102,9 +104,12 @@ export interface BillingStore {
   finishAttempt(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>): Promise<void>;
   finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>, actualMicros: number | null, anomaly?: boolean): Promise<void>;
   reserveBudget(token: string, attemptId: string, scope: string, currency: string,
-    reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number, guarded?: boolean): Promise<boolean>;
+    reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number, guarded?: boolean, channel?: string): Promise<boolean>;
   releaseBudget(token: string, attemptId: string): Promise<void>;
   settleBudget(token: string, attemptId: string, actualMicros: number | null, anomaly?: boolean): Promise<void>;
+  inspectBudget(): Promise<BudgetInspection>;
+  reconcileBudget(attemptId: string, actualMicros: number, evidence: string): Promise<boolean>;
+  resetBudgetControl(channel: string, evidence: string): Promise<boolean>;
   creditDevice(deviceId: number, input: Omit<CreditInput, 'token'>): Promise<number | null>;
   attempts(token: string): Promise<Attempt[]>;
   rateLimit(scope: string, limit: number, windowMs: number, now?: number): Promise<boolean>;

@@ -22,7 +22,7 @@ for(const kind of ['memory','sqlite']){
       await assert.rejects(reserve(4), {name:'BudgetAdmissionError',reason:'busy'});assert.equal(await reserve(0),true);
       await store.billing.settleBudget(users[0]!.token,ids[0]!,10);
       assert.equal(await reserve(4),true);
-      await store.billing.settleBudget(users[1]!.token,ids[1]!,101);
+      await store.billing.settleBudget(users[1]!.token,ids[1]!,121);
       await store.billing.settleBudget(users[1]!.token,ids[1]!,0); // Cannot clear a latched fault.
       await assert.rejects(reserve(5), {name:'BudgetAdmissionError',reason:'guard_tripped'});
       await assert.rejects(reserve(5,'USD',now+86400000), {name:'BudgetAdmissionError',reason:'guard_tripped'});
@@ -49,7 +49,7 @@ test('SQLite observed overrun latch survives closing/reopening',async()=>{
   try{
     const {token}=await store.registerDevice({platform:'test',appVersion:'3',trialQuestions:30}),id=randomUUID();
     assert.equal(await store.billing.reserveBudget(token,id,'official','USD',100,10000,86400000,Date.now(),0,true),true);
-    await store.billing.settleBudget(token,id,101);await store.close();store=new SqliteStore(path);
+    await store.billing.settleBudget(token,id,121);await store.close();store=new SqliteStore(path);
     await assert.rejects(store.billing.reserveBudget(token,randomUUID(),'official','USD',100,10000,86400000,Date.now()+86400000,0,true), BudgetAdmissionError);
   }finally{await store.close();rmSync(dir,{recursive:true,force:true});}
 });

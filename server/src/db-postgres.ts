@@ -241,6 +241,9 @@ export class PostgresStore implements Store {
       max: 5, // serverless-friendly; use the provider's pooled URL for real concurrency
       ssl,
     });
+    // pg removes an idle broken client before emitting this event. Handle it so
+    // a network failure cannot become an uncaught process-level exception.
+    this.pool.on('error', () => console.warn('PostgreSQL idle connection discarded'));
   }
 
   /**
@@ -512,16 +515,22 @@ export class PostgresStore implements Store {
 
   private async tx<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    let discard = false;
+    const connectionError = () => { discard = true; };
+    client.on('error', connectionError);
     try {
       await client.query('BEGIN');
       const result = await fn(client);
       await client.query('COMMIT');
       return result;
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      // A failed rollback means the connection is no longer safe to reuse. In
+      // particular, a terminated backend can emit a delayed error after release.
+      await client.query('ROLLBACK').catch(() => { discard = true; });
       throw err;
     } finally {
-      client.release();
+      client.release(discard);
+      client.removeListener('error', connectionError);
     }
   }
 

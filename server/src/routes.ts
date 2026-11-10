@@ -151,6 +151,12 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     do {
       batch=await store.billing.reap(now); processed+=batch;
     } while(batch===100&&processed<1000&&Date.now()-started<20_000);
+    const budget=await store.billing.inspectBudget();
+    for(const control of budget.controls) {
+      if(control.reason) req.log.warn({budgetEvent:'protection',channel:control.channel,reason:control.reason,
+        blockedUntil:control.blockedUntil},'budget protection requires attention');
+    }
+    if(budget.provisional.length)req.log.warn({budgetEvent:'reconciliation_pending',count:budget.provisional.length},'budget metering reconciliation pending');
     let refundsReconciled=0,refundsFailed=0;
     if(stripeLive&&Date.now()-started<20_000) {
       const pending=await store.payments.pendingRefunds(now,5);
@@ -572,6 +578,31 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post('/admin/reservations/recover', async (req, reply) => {
     requireAdmin(req);
     return reply.send({ released: await store.billing.reap() });
+  });
+  app.get('/admin/budget', async (req,reply)=>{
+    requireAdmin(req);reply.header('Cache-Control','no-store');
+    return reply.send(await store.billing.inspectBudget());
+  });
+  app.post('/admin/budget/reconcile',{bodyLimit:4096},async(req,reply)=>{
+    requireAdmin(req);reply.header('Cache-Control','no-store');
+    const b=(req.body??{}) as Record<string,unknown>;
+    if(Object.keys(b).some(k=>!['attemptId','actualMicros','evidence'].includes(k)) ||
+      typeof b.attemptId!=='string'||b.attemptId.length>200||!Number.isSafeInteger(b.actualMicros)||Number(b.actualMicros)<0||
+      typeof b.evidence!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/.test(b.evidence))throw new ApiError(400,'核账字段无效');
+    const applied=await store.billing.reconcileBudget(b.attemptId,Number(b.actualMicros),b.evidence);
+    if(!applied)throw new ApiError(409,'记录不存在、已核账或状态不允许修改');
+    req.log.warn({budgetEvent:'reconciled',attemptId:b.attemptId},'budget audit');
+    return reply.send({applied});
+  });
+  app.post('/admin/budget/reset',{bodyLimit:4096},async(req,reply)=>{
+    requireAdmin(req);reply.header('Cache-Control','no-store');
+    const b=(req.body??{}) as Record<string,unknown>;
+    if(Object.keys(b).some(k=>!['channel','evidence'].includes(k))||typeof b.channel!=='string'||b.channel.length>500||
+      typeof b.evidence!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/.test(b.evidence))throw new ApiError(400,'恢复字段无效');
+    const applied=await store.billing.resetBudgetControl(b.channel,b.evidence);
+    if(!applied)throw new ApiError(409,'通道不存在或审计引用冲突');
+    req.log.warn({budgetEvent:'control_reset',channel:b.channel},'budget audit');
+    return reply.send({applied});
   });
   const financeReference=(raw:unknown):string=>{
     if(typeof raw!=='string'||!/^cs_[A-Za-z0-9_]{1,160}$/.test(raw))throw new ApiError(400,'订单引用无效');return raw;

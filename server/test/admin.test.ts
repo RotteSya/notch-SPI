@@ -320,3 +320,23 @@ test('a bad token is still 401 even when it carries client signals', async () =>
   });
   assert.equal(res.status, 401, 'telemetry headers must never soften auth');
 });
+
+test('budget administration requires admin authentication and validates reconciliation evidence',async()=>{
+  for(const path of ['/admin/budget','/admin/budget/reconcile','/admin/budget/reset']) {
+    const mutation=path!=='/admin/budget';
+    const denied=await app.inject({method:mutation?'POST':'GET',url:path,...(mutation?{payload:{}}:{})});
+    assert.equal(denied.statusCode,401);
+  }
+  const headers={'x-admin-token':'admin-secret-xyz'};
+  const snapshot=await app.inject({method:'GET',url:'/admin/budget',headers});
+  assert.equal(snapshot.statusCode,200);assert.equal(snapshot.headers['cache-control'],'no-store');
+  assert.ok(Array.isArray(snapshot.json().controls));assert.ok(Array.isArray(snapshot.json().provisional));
+  const invalid=await app.inject({method:'POST',url:'/admin/budget/reconcile',headers,
+    payload:{attemptId:'missing',actualMicros:-1,evidence:'bill:1'}});
+  assert.equal(invalid.statusCode,400);
+  const missing=await app.inject({method:'POST',url:'/admin/budget/reconcile',headers,
+    payload:{attemptId:'missing',actualMicros:0,evidence:'bill:1'}});
+  assert.equal(missing.statusCode,409);
+  const reset=await app.inject({method:'POST',url:'/admin/budget/reset',headers,payload:{channel:'unknown',evidence:'case:1'}});
+  assert.equal(reset.statusCode,409);
+});

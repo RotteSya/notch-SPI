@@ -140,12 +140,12 @@ for(const kind of ['memory','sqlite'] as const){
       assert.equal((await g.post('/v1/captures',body())).statusCode,503);assert.equal(g.sent.length,1);
     }finally{await g.close();}
   });
-  test(`${kind}: guarded routes latch on token excess even when actual cost is below hold`,async()=>{
+  test(`${kind}: valid token estimate deviations within cost hold do not latch`,async()=>{
     const f=await setup('guarded-request',10_000_000);try{
       f.excess();assert.equal((await f.post('/v1/captures',body())).statusCode,200);
       const blocked=await f.post('/v1/captures',body(),(await f.user()).token);
-      assert.equal(blocked.statusCode,503);assert.equal(blocked.json().error.code,'service_maintenance');
-      assert.equal(f.sent.length,1);
+      assert.equal(blocked.statusCode,200);
+      assert.equal(f.sent.length,2);
     }finally{await f.close();}
   });
   test(`${kind}: missing usage releases question and allows the next guarded request`,async()=>{

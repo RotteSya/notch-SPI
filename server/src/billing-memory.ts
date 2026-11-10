@@ -1,3 +1,4 @@
+import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS,plusActive,type PlusRecord} from './plus.ts';
 import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
@@ -26,9 +27,11 @@ export class MemoryBilling implements BillingStore {
   private devices = new Map<number, MemoryQuotaDevice>();
   private buckets = new Map<string, { count: number; end: number }>();
   private budgets = new Map<string, { limit: number; spent: number; held: number; end: number }>();
-  private trippedBudgets = new Set<string>();
+  private controls = new Map<string,BudgetControl>();
+  private accounting = new Map<string,BudgetAccounting>();
+  private controlResets = new Map<string,{channel:string;previous:BudgetControl}>();
   private guardedHolds = new Map<string,string>();
-  private budgetHolds = new Map<string, { deviceId: number; key: string; group: string; reserved: number; state: 'held'|'released'|'settled' }>();
+  private budgetHolds = new Map<string, { deviceId: number; key: string; group: string; reserved: number; createdAt: number; state: 'held'|'released'|'settled' }>();
   private lookup: (token: string) => MemoryQuotaDevice | undefined;
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
@@ -256,14 +259,20 @@ export class MemoryBilling implements BillingStore {
           terminalReason:'lease_expired',compensateGoodwill:record.operation==='recover'}); count++;
       }
     }
-    for (const state of this.states.values()) {
+    for (const [deviceId,state] of this.states) {
       for (const attempt of state.attempts.values()) {
         if (attempt.status === 'running') {
           const capture = state.captures.get(attempt.captureId)?.record;
           if (capture && capture.expiresAt <= now) {
+            this.settleBudgetFor(this.devices.get(deviceId)!,attempt.attemptId,null);
             attempt.status = 'unknown'; attempt.inputTokens = null; attempt.outputTokens = null; attempt.costMicros = null; attempt.finishedAt = now;
           }
         }
+      }
+    }
+    for (const [id,hold] of this.budgetHolds) {
+      if (hold.state==='held' && hold.createdAt<=Date.parse(now)-BUDGET_POLICY.orphanMs) {
+        const d=this.devices.get(hold.deviceId); if (d) this.settleBudgetFor(d,id,null);
       }
     }
     for(const [key,bucket] of this.buckets) if(bucket.end<Date.parse(now)) this.buckets.delete(key);
@@ -292,23 +301,34 @@ export class MemoryBilling implements BillingStore {
     this.finishAttemptFor(d, attemptId, input);
     this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
-  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false):Promise<boolean> {
+  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false,channel='default'):Promise<boolean> {
     const d = this.lookup(token); if (!d) return false;
+    this.devices.set(d.id,d);
     if (limitMicros<=0 || reservedUpperMicros<=0) return true;
     const offset=utcOffsetMinutes*60_000,start=Math.floor((now+offset)/windowMs)*windowMs-offset;
     const key=`${scope}:${start}:${currency}`,existing=this.budgetHolds.get(attemptId);
     if (existing) return existing.deviceId===d.id && (existing.state==='held'||existing.state==='settled');
     const guardKey=`${scope}:${currency}`;
-    if (guarded && this.trippedBudgets.has(guardKey)) throw new BudgetAdmissionError('guard_tripped');
+    const channelKey=JSON.stringify([scope,currency,channel]);
+    const control=this.controls.get(channelKey)??emptyControl(channelKey);
+    if (guarded && control.blockedUntil===-1) throw new BudgetAdmissionError('guard_tripped');
+    if (guarded && control.blockedUntil>now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
     if (guarded && [...this.budgetHolds.values()].filter(h=>h.group===guardKey&&h.state==='held').length>=4) throw new BudgetAdmissionError('busy');
     const budget=this.budgets.get(key)??{limit:limitMicros,spent:0,held:0,end:start+windowMs};
     if (budget.spent+budget.held+reservedUpperMicros+(guarded?Math.ceil(budget.limit*0.2):0)>budget.limit) return false;
-    if (guarded) this.guardedHolds.set(attemptId,guardKey);
-    budget.held+=reservedUpperMicros; this.budgets.set(key,budget); this.budgetHolds.set(attemptId,{deviceId:d.id,key,group:guardKey,reserved:reservedUpperMicros,state:'held'}); return true;
+    if (guarded) {
+      if (control.blockedUntil>0) { control.probe=attemptId;control.blockedUntil=now+BUDGET_POLICY.probeMs; }
+      this.controls.set(channelKey,control);this.guardedHolds.set(attemptId,channelKey);
+    }
+    this.accounting.set(attemptId,{attemptId,channel:channelKey,reserved:reservedUpperMicros,booked:0,actual:null,state:'pending',evidence:null,updatedAt:now});
+    budget.held+=reservedUpperMicros; this.budgets.set(key,budget); this.budgetHolds.set(attemptId,{deviceId:d.id,key,group:guardKey,reserved:reservedUpperMicros,createdAt:now,state:'held'}); return true;
   }
   async releaseBudget(token:string,attemptId:string):Promise<void> {
     const d=this.lookup(token); if (!d) return; const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     const budget=this.budgets.get(hold.key); if (budget) budget.held=Math.max(0,budget.held-hold.reserved); hold.state='released';
+    const a=this.accounting.get(attemptId);if(a){a.state='released';a.actual=0;a.booked=0;a.updatedAt=Date.now();
+      const c=this.controls.get(a.channel);if(c?.probe===attemptId){c.probe=null;c.blockedUntil=Date.now()+BUDGET_POLICY.cooldownMs;}}
+
   }
   async settleBudget(token:string,attemptId:string,actualMicros:number|null,anomaly=false):Promise<void> {
     const d=this.lookup(token); if (!d) return;
@@ -316,13 +336,33 @@ export class MemoryBilling implements BillingStore {
   }
   private settleBudgetFor(d: MemoryQuotaDevice, attemptId: string, actualMicros: number | null, anomaly = false): void {
     const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
-    // An underestimated hold must never erase real spend. Accounting the entire overrun
-    // also prevents the next reservation from spending the apparently unused difference.
-    const budget=this.budgets.get(hold.key); if (!budget) return; const actual=actualMicros===null||!Number.isSafeInteger(actualMicros)||actualMicros<0?hold.reserved:actualMicros;
-    const guardKey=this.guardedHolds.get(attemptId);
-    // Missing metering consumes the entire hold; only observed invalid/overrun data latches.
-    if (guardKey && (anomaly || (actualMicros!==null && (!Number.isSafeInteger(actualMicros) || actualMicros<0)) || actual>hold.reserved)) this.trippedBudgets.add(guardKey);
-    budget.held=Math.max(0,budget.held-hold.reserved); budget.spent+=actual; hold.state='settled';
+    const budget=this.budgets.get(hold.key); if (!budget) return;
+    const observed=validCost(actualMicros)&&!anomaly, actual=observed?actualMicros!:hold.reserved;
+    const channel=this.guardedHolds.get(attemptId);
+    if(channel) this.controls.set(channel,budgetOutcome(this.controls.get(channel)??emptyControl(channel),attemptId,hold.reserved,actualMicros,anomaly,Date.now()));
+    const a=this.accounting.get(attemptId)!;
+    a.booked=actual;a.actual=observed?actual:null;a.state=observed?'observed':'provisional';a.updatedAt=Date.now();
+    budget.held-=hold.reserved; budget.spent+=actual; hold.state='settled';
+  }
+  async inspectBudget(): Promise<BudgetInspection> {
+    return {controls:[...this.controls.values()].map(c=>({...c})),provisional:[...this.accounting.values()]
+      .filter(a=>a.state==='provisional').sort((a,b)=>a.updatedAt-b.updatedAt).slice(0,200).map(a=>({...a}))};
+  }
+  async reconcileBudget(attemptId: string, actualMicros: number, evidence: string): Promise<boolean> {
+    validateReconciliation(actualMicros,evidence);
+    const a=this.accounting.get(attemptId),hold=this.budgetHolds.get(attemptId);if(!a||!hold)return false;
+    if(a.state==='reconciled')return a.actual===actualMicros&&a.evidence===evidence;
+    if(a.state!=='provisional')return false;
+    const c=this.controls.get(a.channel);
+    if(c&&actualMicros>a.reserved)this.controls.set(a.channel,budgetOutcome(c,attemptId,a.reserved,actualMicros,false,Date.now()));
+    this.budgets.get(hold.key)!.spent+=actualMicros-a.booked;
+    a.booked=actualMicros;a.actual=actualMicros;a.state='reconciled';a.evidence=evidence;a.updatedAt=Date.now();return true;
+  }
+  async resetBudgetControl(channel: string, evidence: string): Promise<boolean> {
+    validateReconciliation(0,evidence);
+    const c=this.controls.get(channel);if(!c)return false;
+    const previous=this.controlResets.get(evidence);if(previous)return previous.channel===channel;
+    this.controlResets.set(evidence,{channel,previous:{...c}});this.controls.set(channel,emptyControl(channel));return true;
   }
   async attempts(token:string):Promise<Attempt[]> {
     const d=this.lookup(token); return d?[...this.state(d).attempts.values()].map(a=>({...a})):[];
@@ -335,9 +375,12 @@ export class MemoryBilling implements BillingStore {
       for(const c of rows)captures.push({deviceId:id,quotaKind:c.record.operation==='solve'?c.lot.kind:null,record:reportCapture(c.record,asOf)});
       for(const a of state.attempts.values())if(a.startedAt<=asOf){
         const finished=a.finishedAt!==null&&a.finishedAt<=asOf,hold=this.budgetHolds.get(a.attemptId);
+        const accounting=this.accounting.get(a.attemptId);
+        const reconciled=accounting?.state==='reconciled'&&accounting.updatedAt<=Date.parse(asOf);
         attempts.push({id:a.attemptId,deviceId:id,captureId:a.captureId,purpose:a.purpose,currency:a.currency,
-          costMicros:finished?a.costMicros:null,upperMicros:hold?String(hold.reserved):null,revision:finished?'2':'1',pricingVersion:a.pricingVersion,
-          startedAt:a.startedAt,calculatedAt:finished?a.finishedAt!:a.startedAt,status:finished?a.status:'running'});
+          costMicros:reconciled?String(accounting.actual):finished?a.costMicros:null,upperMicros:hold?String(hold.reserved):null,
+          revision:reconciled?'3':finished?'2':'1',pricingVersion:a.pricingVersion,
+          startedAt:a.startedAt,calculatedAt:reconciled?new Date(accounting.updatedAt).toISOString():finished?a.finishedAt!:a.startedAt,status:finished?a.status:'running'});
       }
       for(const l of state.lots)if(l.createdAt<=asOf){
         const related=rows.filter(c=>c.lot===l&&c.record.operation==='solve');
