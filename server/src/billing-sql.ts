@@ -1,7 +1,8 @@
+import {ADMIN_SCHEMA} from './admin-store.ts';
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS_SCHEMA} from './plus-schema.ts';
 import {plusRow} from './plus-sql.ts';
-import {PLUS,plusActive} from './plus.ts';
+import {PLUS,plusEntitlement} from './plus.ts';
 import { randomUUID } from 'node:crypto';
 import { hashToken, newToken, type RegisteredDevice } from './db.ts';
 import { applyRefundLot } from './payment-ledger-sql.ts';
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS budget_control_resets (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_key ON devices(registration_key_hash);
 ${QUOTA_MIGRATION_SCHEMA}
 ${PLUS_SCHEMA}
+${ADMIN_SCHEMA}
 `;
 
 export function* ledger(device: number, lot: string, event: string, available: number, held: number,
@@ -157,13 +159,14 @@ function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
 function* syncPlus(d: Row): Transaction<void> {
   const id=Number(d.id), now=new Date().toISOString();
   const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',id))[0];
-  const plan=row?plusRow(row):null;
-  if (!plusActive(plan)) {
+  const manual=(yield* query('SELECT * FROM admin_plus_entitlements WHERE device_id=?',id))[0];
+  const plan=plusEntitlement(row?plusRow(row):null,manual?{startsAt:String(manual.starts_at),expiresAt:String(manual.expires_at),version:Number(manual.version)}:null);
+  if (!plan.active) {
     const lots=yield* query("SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND source_ref LIKE 'plus_daily:%' AND refund_target<>granted",id);
     for(const lot of lots) yield* applyRefundLot(String(lot.lot_id),false,Number(lot.granted),'plus-expiry');
   } else {
     const window=trialWindow(), source='plus_daily:'+window.key, lot=randomUUID();
-    const expires=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+    const expires=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
     const inserted=yield* query(`INSERT INTO quota_lots(lot_id,device_id,kind,granted,remaining,source_ref,created_at,trial_expires_at)
       VALUES(?,?,'paid',?,?,?,?,?) ON CONFLICT(device_id,source_ref) DO NOTHING RETURNING lot_id`,lot,id,PLUS.dailyLimit,PLUS.dailyLimit,source,now,expires);
     if(!inserted.length) {

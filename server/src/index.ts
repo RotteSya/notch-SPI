@@ -19,7 +19,8 @@ import { captureRuntimePolicy } from './capture-timing.ts';
 export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.ts').PlusStripe; provider?: Provider; objectiveProvider?: Provider; readStripeRefund?: (id:string)=>Promise<RefundSnapshot>; createStripeCheckout?: typeof import('./stripe.ts').createCheckoutSession; readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>; readPurchaseProgress?: (id:string)=>Promise<import('./stripe.ts').CheckoutProgress>; readStripeFinance?:(order:FinanceOrder)=>Promise<FinanceSnapshot>; onRoute?: (route: { method: string | string[]; url: string }) => void } = {}) {
   validateTrialPolicy(config);
   const app = Fastify({
-    logger: { level: process.env.LOG_LEVEL ?? 'info' },
+    logger: { level: process.env.LOG_LEVEL ?? 'info',
+      redact: ['req.headers.authorization', 'req.headers["x-admin-token"]', 'req.body', 'req.rawBody'] },
     // Vercel rejects bodies above 4.5 MB before invoking the function. Match that ceiling
     // locally in serverless mode; the new official client leaves margin at 4 MiB JSON.
     bodyLimit: config.isServerless ? 4_500_000 : 16 * 1024 * 1024,

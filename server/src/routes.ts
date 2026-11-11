@@ -1,3 +1,4 @@
+import {registerAdminRoutes} from './admin-routes.ts';
 import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
@@ -27,7 +28,7 @@ import {retrieveStripeFinance} from './stripe-finance.ts';
 import {reconcilePaymentFinance,financeResource,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
 import { siteCSP } from './site-demo.ts';
 import { renderLandingPage, resolveSiteLang } from './site.ts';
-import { renderAdminPage } from './admin.ts';
+import { renderAdminPage, ADMIN_PAGE_CSP } from './admin.ts';
 import {renderPurchase,renderPurchaseComplete,PURCHASE_CSP} from './purchase-page.ts';
 import { renderReportsPage, REPORT_PAGE_CSP } from './admin-reports.ts';
 import {renderQualityPage,QUALITY_PAGE_CSP} from './admin-quality.ts';
@@ -132,6 +133,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const provided = typeof req.headers['x-admin-token'] === 'string' ? req.headers['x-admin-token'] : '';
     if (!adminTokenMatches(provided, config.adminToken)) throw new ApiError(401, '管理员密钥无效', 'invalid_token');
   };
+
+  registerAdminRoutes(app,ctx,requireAdmin);
 
   // Best-effort abuse limits (see rateLimit.ts): a per-IP cap on anonymous registration and a
   // per-token cap on concurrent captures. Instantiated once so state lives for the process.
@@ -815,6 +818,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       .header('X-Robots-Tag', 'noindex, nofollow')
       .header('Cache-Control', 'no-store')
       .type('text/html; charset=utf-8')
+      .header('Content-Security-Policy',ADMIN_PAGE_CSP)
+      .header('Referrer-Policy','no-referrer').header('X-Content-Type-Options','nosniff')
       .send(renderAdminPage());
   });
 

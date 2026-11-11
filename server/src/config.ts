@@ -185,6 +185,8 @@ export const config = {
   // GET /admin and POST /admin/grant. If empty, the entire /admin path is DISABLED (404) — the
   // feature simply does not exist unless an operator sets ADMIN_TOKEN, so it is safe by default.
   adminToken: envStr('ADMIN_TOKEN', ''),
+  // Explicit deployment switch for manual-days-v1; existing grants remain effective when off.
+  adminPlusGrantsEnabled: envStr('ADMIN_PLUS_GRANTS_ENABLED', '0') === '1',
 
   // ---- Where the app itself is distributed from --------------------------------------------
   // The notarized DMG and its release metadata. Both are INTERNAL: GET /dl streams the bytes and

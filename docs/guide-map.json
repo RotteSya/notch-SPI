@@ -600,6 +600,27 @@
       "checks": [
         "scripts/cross-platform/generate.mjs"
       ]
+    },
+    {
+      "path": "docs/admin-operations.md",
+      "kind": "reference",
+      "scope": [
+        "server",
+        "shared"
+      ],
+      "purpose": "运营后台、人工 PLUS 规则、指标与上线边界",
+      "sources": [
+        "server/src/admin-routes.ts",
+        "server/src/admin-store.ts",
+        "server/src/admin-plus.ts",
+        "server/src/admin-sql.ts",
+        "server/src/admin.ts",
+        "server/src/plus-routes.ts"
+      ],
+      "checks": [
+        "server/test/admin-operations.test.ts",
+        "server/test/admin-entitlement.test.ts"
+      ]
     }
   ]
 }

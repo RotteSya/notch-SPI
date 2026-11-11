@@ -10,6 +10,10 @@ export function plusRow(r: Row): PlusRecord {
 export class SQLPlus implements PlusStore {
   private run: RunTransaction;
   constructor(run: RunTransaction) { this.run = run; }
+  manual(token:string) { return this.run((function*():Transaction<import('./admin-store.ts').ManualPlus|null>{
+    const r=(yield* query('SELECT g.* FROM admin_plus_entitlements g JOIN devices d ON d.id=g.device_id WHERE d.token_hash=?',hashToken(token)))[0];
+    return r?{startsAt:String(r.starts_at),expiresAt:String(r.expires_at),version:Number(r.version)}:null;
+  })()); }
   get(token: string) { return this.run((function*(): Transaction<PlusRecord|null> {
     const r = (yield* query('SELECT p.* FROM plus_subscriptions p JOIN devices d ON d.id=p.device_id WHERE d.token_hash=?', hashToken(token)))[0];
     return r ? plusRow(r) : null;

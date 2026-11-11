@@ -8,6 +8,7 @@ struct PlusSubscription: Decodable, Equatable {
     let currency: String
     let dailyLimit: Int
     let paidUntil: String?
+    var manualUntil: String? = nil
     let cancelAtPeriodEnd: Bool
     let dailyUsed: Int
     let dailyHeld: Int
@@ -19,6 +20,7 @@ struct PlusSubscription: Decodable, Equatable {
     enum CodingKeys: String, CodingKey {
         case available, status, currency
         case billingStatus = "billing_status", priceCents = "price_cents", dailyLimit = "daily_limit"
+        case manualUntil = "manual_until"
         case paidUntil = "paid_until", cancelAtPeriodEnd = "cancel_at_period_end"
         case dailyUsed = "daily_used", dailyHeld = "daily_held", dailyRemaining = "daily_remaining"
         case resetsAt = "resets_at", canManage = "can_manage", syncFailed = "sync_failed", serverTime = "server_time"
@@ -27,6 +29,7 @@ struct PlusSubscription: Decodable, Equatable {
         priceCents == 6900 && currency == "CNY" && dailyLimit == 400
             && ["active", "inactive", "expired", "pending"].contains(status)
             && Self.parseDate(serverTime) != nil
+            && (manualUntil == nil || Self.parseDate(manualUntil!) != nil)
             && (paidUntil == nil || Self.parseDate(paidUntil!) != nil)
             && (resetsAt == nil || Self.parseDate(resetsAt!) != nil)
             && [dailyUsed, dailyHeld, dailyRemaining].allSatisfy { (0...400).contains($0) }
@@ -38,6 +41,11 @@ struct PlusSubscription: Decodable, Equatable {
         if let date = parser.date(from: value) { return date }
         parser.formatOptions = [.withInternetDateTime]
         return parser.date(from: value)
+    }
+    var hasManualAccess: Bool {
+        guard status == "active", let manualUntil, let end = Self.parseDate(manualUntil),
+              let now = Self.parseDate(serverTime) else { return false }
+        return end > now
     }
     var expirationLabel: String? {
         guard let paidUntil else { return nil }

@@ -81,6 +81,14 @@
 | compat | GET | /topup |
 | compat | POST | /topup/checkout |
 | compat | POST | /topup/stub-complete |
+| admin | POST | /admin/ops/lookup |
+| admin | GET | /admin/ops/overview |
+| admin | GET | /admin/ops/devices |
+| admin | GET | /admin/ops/devices/:id |
+| admin | GET | /admin/ops/requests |
+| admin | GET | /admin/ops/actions |
+| admin | POST | /admin/ops/plus/preview |
+| admin | POST | /admin/ops/plus/grant |
 <!-- route-inventory: end -->
 
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。
@@ -1028,3 +1036,19 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 
 从 `INTEL_DMG_URL` 流式代理，与 `/dl` 保持独立。推进 Intel 渠道必须同步两个环境变量并核验签名、公证、架构和最低系统。
 已发布 Intel 3.0 禁用了应用内更新，首次迁移到支持独立通道的版本仍需手动安装；Catalina 不属于此通道。
+
+
+## 管理运营后台
+
+`/admin/ops/*` 使用 `x-admin-token`，未配置管理密钥时 404，校验失败时 401；响应 no-store。
+恢复码仅可放在 `POST /admin/ops/lookup` 的 `recovery_code` 正文，不能放 URL。
+`POST /admin/ops/plus/preview` 接收 `device_id`、整数 `days`、`actor`、`reason`，返回带签名的短期预览。
+`POST /admin/ops/plus/grant` 接收 `ticket` 与 UUID `idempotency_key`，事务保存后返回 `operation_id` 和实际设备权益。
+有效权益从到期时间顺延；新开通从确认时刻计时，因此预览时间为预计值；成功后回读实际截止时间。
+人工发放由 `ADMIN_PLUS_GRANTS_ENABLED` 显式启用，默认关闭；关闭不取消已有权益。
+
+只读 overview/devices/requests/actions 使用 `from`、`to` UTC ISO 窗口（最多 90 天，左闭右开），明细接受 `page`/`size`。
+devices 支持 `search`、`plan=all|active|expiring|inactive`、`sort=newest|oldest|expiry`；只有 `registration_only=1` 才筛选注册窗口。
+requests 支持 `device_id`、`state`；actions 支持 `device_id`。devices/:id 返回脱敏详情。
+`/v1/plus` 新增可选 `subscription_paid_until`、`manual_until`；`paid_until` 为当前连续有效权益截止时间；每日额度仍为 400。
+完整统计口径、安全边界和回滚见 [管理后台与人工 PLUS](admin-operations.md)。

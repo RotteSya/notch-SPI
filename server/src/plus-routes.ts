@@ -2,7 +2,7 @@ import type {FastifyInstance} from 'fastify';
 import type {AppContext} from './routes.ts';
 import {ApiError} from './http.ts';
 import {requireAccount} from './auth.ts';
-import {PLUS,plusActive,type PlusRecord} from './plus.ts';
+import {PLUS,plusEntitlement,type PlusRecord} from './plus.ts';
 import {trialWindow} from './free-trial.ts';
 import {LivePlusStripe,type PlusStripe} from './plus-stripe.ts';
 import {stripeReference} from './stripe.ts';
@@ -22,12 +22,16 @@ export function plusService(ctx:AppContext) {
     if(!await store.plus.apply(ticket.intentId,ticket.generation,update))throw new Error('Plus changed during synchronization');
   }
   async function wire(token:string,syncFailed=false) {
-    await store.billing.quota(token); // expire and materialize daily lots under the device transaction
-    const r=await store.plus.get(token),active=plusActive(r),window=trialWindow();
+    const r=await store.plus.get(token),manual=await store.plus.manual(token);
+    // Read the plan before materializing quota: a concurrent grant must not report active
+    // with an absent daily lot (which the native client correctly rejects).
+    await store.billing.quota(token);
+    const entitlement=plusEntitlement(r,manual),active=entitlement.active,window=trialWindow();
+    const historicalUntil=[r?.paidUntil,manual?.expiresAt].filter((v):v is string=>!!v).sort().at(-1)??null;
     const usage=await store.plus.usage(token,'plus_daily:'+window.key);
-    return {available:available(),status:active?'active':r?.status==='checkout_pending'?'pending':r?.subscriptionId?'expired':'inactive',
+    return {available:available(),status:active?'active':r?.status==='checkout_pending'?'pending':r?.subscriptionId||manual?'expired':'inactive',
       billing_status:r?.status??'none',price_cents:PLUS.priceCents,currency:PLUS.currency,daily_limit:PLUS.dailyLimit,
-      paid_until:r?.paidUntil??null,cancel_at_period_end:r?.cancelAtPeriodEnd??false,
+      paid_until:entitlement.expiresAt??historicalUntil,subscription_paid_until:r?.paidUntil??null,manual_until:manual?.expiresAt??null,cancel_at_period_end:r?.cancelAtPeriodEnd??false,
       daily_used:active&&usage?usage.granted-usage.remaining:0,daily_held:active&&usage?usage.held:0,
       daily_remaining:active&&usage?usage.remaining-usage.held:0,resets_at:active?window.end:null,
       can_manage:!!r?.subscriptionId,sync_failed:syncFailed,server_time:new Date().toISOString()};

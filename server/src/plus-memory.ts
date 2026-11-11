@@ -1,10 +1,13 @@
+import type {ManualPlus} from './admin-store.ts';
 import {newPlus,mergePlus,reusablePlus,type PlusRecord,type PlusStore,type PlusUpdate} from './plus.ts';
 export class MemoryPlus implements PlusStore {
   readonly records = new Map<number,PlusRecord>();
   private invoices = new Map<string,number>();
   private lookup: (token:string)=>number|null;
   private readUsage: (token:string,source:string)=>{remaining:number;held:number;granted:number}|null;
-  constructor(lookup:(token:string)=>number|null, readUsage:MemoryPlus['readUsage']) { this.lookup=lookup; this.readUsage=readUsage; }
+  private readManual:(id:number)=>ManualPlus|null;
+  constructor(lookup:(token:string)=>number|null, readUsage:MemoryPlus['readUsage'],readManual:(id:number)=>ManualPlus|null=()=>null) { this.lookup=lookup; this.readUsage=readUsage;this.readManual=readManual; }
+  async manual(token:string){const id=this.lookup(token);return id===null?null:this.readManual(id);}
   async get(token:string) { return this.records.get(this.lookup(token)??-1)??null; }
   async byIntent(id:string) { return [...this.records.values()].find(r=>r.intentId===id)??null; }
   async reserve(token:string) {

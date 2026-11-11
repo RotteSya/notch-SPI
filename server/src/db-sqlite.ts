@@ -1,3 +1,4 @@
+import {SQLAdmin} from './admin-sql.ts';
 import {SQLPlus} from './plus-sql.ts';
 import {SQLPurchaseSessions} from './purchase-session-sql.ts';
 import {SQLQuotaMigration} from './quota-migration.ts';
@@ -125,6 +126,7 @@ interface DeviceRow {
 
 export class SqliteStore implements Store {
   private db: DatabaseSync;
+  readonly admin = new SQLAdmin(transaction => this.runBilling(transaction));
   readonly plus = new SQLPlus(transaction => this.runBilling(transaction));
   readonly billing = new SQLBilling(transaction => this.runBilling(transaction));
   readonly quotaMigration = new SQLQuotaMigration(transaction => this.runBilling(transaction, true));

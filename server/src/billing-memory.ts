@@ -1,5 +1,5 @@
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
-import {PLUS,plusActive,type PlusRecord} from './plus.ts';
+import {PLUS,plusEntitlement,type PlusRecord} from './plus.ts';
 import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
@@ -36,7 +36,8 @@ export class MemoryBilling implements BillingStore {
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
     usage: (event: StoredUsageMetric & { createdAt: string }) => void,
-    plus: (id:number)=>PlusRecord|null = () => null) { this.lookup = lookup; this.usage = usage; this.plus=plus; }
+    plus: (id:number)=>PlusRecord|null = () => null,manual:(id:number)=>import('./admin-store.ts').ManualPlus|null=()=>null) { this.lookup = lookup; this.usage = usage; this.plus=plus;this.manual=manual; }
+  private manual:(id:number)=>import('./admin-store.ts').ManualPlus|null;
   private plus: (id:number)=>PlusRecord|null;
   plusUsage(token:string,source:string) {
     const d=this.lookup(token); if(!d)return null;
@@ -88,16 +89,16 @@ export class MemoryBilling implements BillingStore {
       if (change.revokedDelta) lot.revocations.push({at: now, delta: change.revokedDelta});
       d.balanceQuestions += change.availableDelta; state.version++; d.updatedAt = now;
     }
-    const plan=this.plus(d.id);
-    if(plusActive(plan,clock)) {
+    const plan=plusEntitlement(this.plus(d.id),this.manual(d.id),clock);
+    if(plan.active) {
       const window=trialWindow(clock),source='plus_daily:'+window.key;
       if(!state.lots.some(l=>l.sourceRef===source)) {
         const lot=newLot('paid',PLUS.dailyLimit,source);
-        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        lot.expiresAt=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
         state.lots.push(lot);d.balanceQuestions+=lot.granted;state.version++;d.updatedAt=now;
       } else {
         const lot=state.lots.find(l=>l.sourceRef===source)!;
-        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        lot.expiresAt=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
         if(lot.target!==0){const change=applyLotPolicy(lot,false,0);d.balanceQuestions+=change.availableDelta;state.version++;d.updatedAt=now;}
       }
     } else for(const lot of state.lots.filter(l=>l.sourceRef?.startsWith('plus_daily:')&&l.target!==l.granted)) {
@@ -366,6 +367,15 @@ export class MemoryBilling implements BillingStore {
   }
   async attempts(token:string):Promise<Attempt[]> {
     const d=this.lookup(token); return d?[...this.state(d).attempts.values()].map(a=>({...a})):[];
+  }
+  adminTraffic() {
+    const requests:import('./admin-store.ts').AdminRequest[]=[],attempts:Array<Attempt & {deviceId:number;requestAt:string}>=[];
+    for(const [deviceId,state] of this.states){
+      for(const {record:r} of state.captures.values())requests.push({id:r.requestId,deviceId,createdAt:r.createdAt,finishedAt:r.finishedAt,
+        state:r.terminalState,operation:r.operation,error:r.terminalReason,latencyMs:r.finishedAt?Math.max(0,Date.parse(r.finishedAt)-Date.parse(r.createdAt)):null});
+      for(const a of state.attempts.values()){const c=state.captures.get(a.captureId);if(c)attempts.push({...a,deviceId,requestAt:c.record.createdAt});}
+    }
+    return {requests,attempts};
   }
   report(ids:Set<number>,asOf:string):{captures:ReportCapture[];attempts:ReportAttempt[];lots:ReportLot[];policies:Map<number,string>} {
     const captures:ReportCapture[]=[],attempts:ReportAttempt[]=[],lots:ReportLot[]=[],policies=new Map<number,string>();
