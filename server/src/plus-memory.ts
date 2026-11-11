@@ -1,5 +1,6 @@
 import {claimCompensation,type PlusCompensation} from './plus-compensation.ts';
-import {newPlus,mergePlus,reusablePlus,plusActive,type PlusRecord,type PlusStore,type PlusUpdate} from './plus.ts';
+import type {ManualPlus} from './admin-store.ts';
+import {newPlus,mergePlus,reusablePlus,plusEntitlement,type PlusRecord,type PlusStore,type PlusUpdate} from './plus.ts';
 export class MemoryPlus implements PlusStore {
   readonly compensations=new Map<number,PlusCompensation>();
   async compensation(token:string){const r=this.compensations.get(this.lookup(token)??-1);return r?{...r}:null;}
@@ -7,14 +8,16 @@ export class MemoryPlus implements PlusStore {
     const id=this.lookup(token);if(id===null)return null;
     const receipt=this.compensations.get(id);if(!receipt)return null;
     const paid=this.records.get(id)??null;
-    const next=claimCompensation(receipt,{active:plusActive(paid),expiresAt:plusActive(paid)?paid!.paidUntil:null});
+    const next=claimCompensation(receipt,plusEntitlement(paid,this.readManual(id)));
     this.compensations.set(id,next);return {...next};
   }
   readonly records = new Map<number,PlusRecord>();
   private invoices = new Map<string,number>();
   private lookup: (token:string)=>number|null;
   private readUsage: (token:string,source:string)=>{remaining:number;held:number;granted:number}|null;
-  constructor(lookup:(token:string)=>number|null, readUsage:MemoryPlus['readUsage']) { this.lookup=lookup; this.readUsage=readUsage; }
+  private readManual:(id:number)=>ManualPlus|null;
+  constructor(lookup:(token:string)=>number|null, readUsage:MemoryPlus['readUsage'],readManual:(id:number)=>ManualPlus|null=()=>null) { this.lookup=lookup; this.readUsage=readUsage;this.readManual=readManual; }
+  async manual(token:string){const id=this.lookup(token);return id===null?null:this.readManual(id);}
   async get(token:string) { return this.records.get(this.lookup(token)??-1)??null; }
   async byIntent(id:string) { return [...this.records.values()].find(r=>r.intentId===id)??null; }
   async reserve(token:string) {

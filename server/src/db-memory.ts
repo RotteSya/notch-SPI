@@ -1,3 +1,4 @@
+import {MemoryAdmin} from './admin-memory.ts';
 import {MemoryPlus} from './plus-memory.ts';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MemoryBilling } from './billing-memory.ts';
@@ -53,9 +54,13 @@ export class MemoryStore implements Store {
   private purchaseSessions = new Map<string, StoredPurchaseSession>();
   private purchaseCreatedAt = new Map<string,string>();
   private nextId = 1;
+  readonly admin = new MemoryAdmin(()=>[...this.devices.values()].map(d=>({id:d.id,platform:d.platform,appVersion:d.appVersion,
+    createdAt:d.createdAt,updatedAt:d.updatedAt,totalQuestions:d.totalQuestions,balanceQuestions:d.balanceQuestions,onboarded:d.onboarded,
+    hotkeyPresses:d.hotkeyPresses,cliEnabled:d.cliEnabled,paid:this.plus.records.get(d.id)??null,manual:null})),
+    token=>this.devices.get(hashToken(token))?.id??null,()=>this.billing.adminTraffic());
   readonly finance = new MemoryPaymentFinance(()=>this.payments.financeOrders());
-  readonly plus: MemoryPlus = new MemoryPlus(token => this.devices.get(hashToken(token))?.id ?? null, (token,source) => this.billing.plusUsage(token,source));
-  readonly billing: MemoryBilling = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event), id => this.plus.records.get(id) ?? null, id=>this.plus.compensations.get(id)??null);
+  readonly plus: MemoryPlus = new MemoryPlus(token => this.devices.get(hashToken(token))?.id ?? null, (token,source) => this.billing.plusUsage(token,source),id=>this.admin.grants.get(id)??null);
+  readonly billing: MemoryBilling = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event), id => this.plus.records.get(id) ?? null,id=>this.admin.grants.get(id)??null,id=>this.plus.compensations.get(id)??null);
   readonly observations = new MemoryObservationStore(token=>this.devices.get(hashToken(token))?.id??null,this.productEvents);
   readonly reporting = new MemoryReportingStore(q=>{
     const devices=[...this.devices.values()].filter(d=>d.createdAt>=q.cohortFrom&&d.createdAt<q.cohortTo);

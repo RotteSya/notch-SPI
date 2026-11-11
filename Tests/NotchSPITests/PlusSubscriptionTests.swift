@@ -26,6 +26,16 @@ final class PlusSubscriptionTests: XCTestCase {
         let value = try OfficialAPI.plusSnapshot(payload(["paid_until": "2026-11-17T12:00:00Z"]))
         XCTAssertNotNil(value.expirationLabel)
     }
+    func testManualEntitlementDecodesWithoutImplyingBillingOwnership() throws {
+        let value = try OfficialAPI.plusSnapshot(payload(["manual_until": "2026-11-17T12:00:00.000Z", "can_manage": false]))
+        XCTAssertEqual(value.manualUntil, "2026-11-17T12:00:00.000Z")
+        XCTAssertTrue(value.hasManualAccess)
+        XCTAssertFalse(try OfficialAPI.plusSnapshot(payload(["manual_until": "2026-09-01T00:00:00Z"])).hasManualAccess)
+        XCTAssertFalse(value.canManage)
+        XCTAssertEqual(value.status, "active")
+        XCTAssertNil(try OfficialAPI.plusSnapshot(payload()).manualUntil)
+        XCTAssertThrowsError(try OfficialAPI.plusSnapshot(payload(["manual_until": "bad-date"])))
+    }
     func testCancelAtPeriodEndDoesNotHidePaidEntitlement() throws {
         let value = try OfficialAPI.plusSnapshot(payload(["cancel_at_period_end": true]))
         XCTAssertEqual(value.status, "active")

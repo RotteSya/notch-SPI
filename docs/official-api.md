@@ -83,6 +83,14 @@
 | compat | GET | /topup |
 | compat | POST | /topup/checkout |
 | compat | POST | /topup/stub-complete |
+| admin | POST | /admin/ops/lookup |
+| admin | GET | /admin/ops/overview |
+| admin | GET | /admin/ops/devices |
+| admin | GET | /admin/ops/devices/:id |
+| admin | GET | /admin/ops/requests |
+| admin | GET | /admin/ops/actions |
+| admin | POST | /admin/ops/plus/preview |
+| admin | POST | /admin/ops/plus/grant |
 <!-- route-inventory: end -->
 
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。
@@ -1041,11 +1049,11 @@ Existing clients claim through startup `GET /v1/client-config`; `GET /v1/account
 
 Do not delete receipt rows during rollback. Any rollback must retain compensation-aware entitlement calculation, otherwise existing recipients temporarily lose access. Enrollment and background quota maintenance do not start an unclaimed award.
 
-## Request reliability (2026-11-11)
+## Request reliability (2026-11-12)
 
-Admission keeps the durable global maximum of four upstream calls. Contended slots and recoverable in-flight budget holds wait up to fifteen seconds (150-300 ms jitter); at most 32 waiters per server instance. Spent budget does not enter a pretend recovery loop. Disconnects cancel waiting before a model call. This is a bounded wait, not a globally fair session queue or a full-test capacity reservation.
+Admission uses the independently measured 24-call capacity policy below. Contended slots and recoverable in-flight budget holds absorb at most 1.5 seconds of overlap; at most 32 waiters per server instance. Spent budget does not enter a pretend recovery loop. Disconnects cancel waiting before a model call. This is a bounded wait, not a globally fair session queue or a full-test capacity reservation.
 
-An explicit upstream HTTP 429/502/503/504 before visible answer text may retry once, only when Retry-After permits a delay of at most three seconds and another complete reservation fits. Each physical attempt has its own durable budget hold and cost record. Unknown costs retain the complete reservation. No automatic retry of ambiguous disconnects, partial streamed answers, timeout, invalid metering or pricing overruns. The user capture/question is settled once. Existing 20 s startup / 90 s absolute deadlines remain; thinking progress suppresses only startup timeout. Orphan budget holds become reclaimable after 150 s, without erasing costs.
+An explicit upstream HTTP 429/502/503/504 before visible answer text may retry once, only when Retry-After permits a delay of at most three seconds and another complete reservation fits. Each physical attempt has its own durable budget hold and cost record. Unknown costs retain the complete reservation. A connection failure or startup timeout before visible output may use the same one-retry allowance. Partial streamed answers, invalid metering and pricing overruns are not blindly retried. The user capture/question is settled once. Existing 20 s startup / 90 s absolute deadlines remain; thinking progress suppresses only startup timeout. Orphan budget holds become reclaimable after 150 s, without erasing costs.
 
 Missing usage alone no longer pauses the entire model channel. Invalid counters and significant/repeated estimate overruns still require investigation. Recent hourly conservative bookings (including provisional fees) expose `hourly_burn_micros` and `runway_seconds`; less than one hour runway raises the existing cloud warning level. This projection is not guaranteed future demand.
 
@@ -1057,8 +1065,23 @@ Rollback target must include the Plus compensation implementation (`dpl_GnqUg1CR
 
 设备凭证绑定查询。完成的可用答案返回原始 SSE 正文、当前账户版本的同一次结算和 DONE；不调用模型、不再扣题或记费。进行中返回 202；不存在返回 404；超出 15 分钟恢复期返回 410。答案以 AES-256-GCM 加密，密钥按现有 HMAC key version、设备凭证及 capture ID 派生；没有新增明文题图或提示词存储。
 
-`delivery_recovery_v1: true` 协商后，连接中断不会立刻取消已经开始的生成；仍受 90 秒生成期限约束。工作进程每 2 秒续租、8 秒失联后允许使用原 capture ID 接管一次；旧尝试全额暂记，新尝试单独预占，全局仍最多两次模型调用。题图和提示词由客户端在这一次接管中重新提交，服务端不持久化。客户端主动取消通过 POST cancel 落库，提前取消同样阻止稍晚到达的原请求。
+`delivery_recovery_v1: true` 协商后，连接中断不会立刻取消已经开始的生成；仍受 90 秒生成期限约束。工作进程每 2 秒续租、8 秒失联后允许使用原 capture ID 接管一次；旧尝试全额暂记，新尝试单独预占，每题仍最多两次模型调用。题图和提示词由客户端在这一次接管中重新提交，服务端不持久化。客户端主动取消通过 POST cancel 落库，提前取消同样阻止稍晚到达的原请求。
 
 服务器以 `X-NotchSPI-Delivery: v1` 标识能力。新版客户端在原总时限内最多查询 60 次，完整验证恢复流后仅补上缺失正文；账户切换或主动取消不再更新旧界面。正式 3.1 不具备此客户端自动恢复能力。
 
 吞吐控制独立于费用预算：项目已核实 5,000 RPM / 1,000,000 TPM；服务以 24 个共享租约、4,000 RPM / 800,000 TPM 留出余量。TPM 按 max(输入估算上界, 输出上限) 计，费用仍按保守的输入与输出总上界预占。仅吸收至多 1.5 秒短暂占用波动；容量验收见当次发布报告，不能以等待延长代替扩容。租约 120 秒过期，未知调用费用仍留在原预算账本。
+
+## 管理运营后台
+
+`/admin/ops/*` 使用 `x-admin-token`，未配置管理密钥时 404，校验失败时 401；响应 no-store。
+恢复码仅可放在 `POST /admin/ops/lookup` 的 `recovery_code` 正文，不能放 URL。
+`POST /admin/ops/plus/preview` 接收 `device_id`、整数 `days`、`actor`、`reason`，返回带签名的短期预览。
+`POST /admin/ops/plus/grant` 接收 `ticket` 与 UUID `idempotency_key`，事务保存后返回 `operation_id` 和实际设备权益。
+有效权益从到期时间顺延；新开通从确认时刻计时，因此预览时间为预计值；成功后回读实际截止时间。
+人工发放由 `ADMIN_PLUS_GRANTS_ENABLED` 显式启用，默认关闭；关闭不取消已有权益。
+
+只读 overview/devices/requests/actions 使用 `from`、`to` UTC ISO 窗口（最多 90 天，左闭右开），明细接受 `page`/`size`。
+devices 支持 `search`、`plan=all|active|expiring|inactive`、`sort=newest|oldest|expiry`；只有 `registration_only=1` 才筛选注册窗口。
+requests 支持 `device_id`、`state`；actions 支持 `device_id`。devices/:id 返回脱敏详情。
+`/v1/plus` 新增可选 `subscription_paid_until`、`manual_until`；`paid_until` 为当前连续有效权益截止时间；每日额度仍为 400。
+完整统计口径、安全边界和回滚见 [管理后台与人工 PLUS](admin-operations.md)。

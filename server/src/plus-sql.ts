@@ -2,7 +2,7 @@ import {readCompensation} from './plus-compensation-sql.ts';
 import {claimCompensation} from './plus-compensation.ts';
 import {hashToken} from './db.ts';
 import {query, type Row, type Transaction, type RunTransaction} from './billing-sql.ts';
-import {newPlus, mergePlus, reusablePlus, plusActive, type PlusRecord, type PlusStore, type PlusUpdate} from './plus.ts';
+import {newPlus, mergePlus, reusablePlus, plusEntitlement, type PlusRecord, type PlusStore, type PlusUpdate} from './plus.ts';
 export function plusRow(r: Row): PlusRecord {
   return {deviceId: Number(r.device_id), createdAt: String(r.created_at), intentId: String(r.intent_id), checkoutId: r.checkout_id as string|null,
     checkoutURL: r.checkout_url as string|null, subscriptionId: r.subscription_id as string|null, customerId: r.customer_id as string|null,
@@ -12,6 +12,10 @@ export function plusRow(r: Row): PlusRecord {
 export class SQLPlus implements PlusStore {
   private run: RunTransaction;
   constructor(run: RunTransaction) { this.run = run; }
+  manual(token:string) { return this.run((function*():Transaction<import('./admin-store.ts').ManualPlus|null>{
+    const r=(yield* query('SELECT g.* FROM admin_plus_entitlements g JOIN devices d ON d.id=g.device_id WHERE d.token_hash=?',hashToken(token)))[0];
+    return r?{startsAt:String(r.starts_at),expiresAt:String(r.expires_at),version:Number(r.version)}:null;
+  })()); }
   compensation(token:string){return this.run((function*():Transaction<import('./plus-compensation.ts').PlusCompensation|null>{
     const d=(yield* query('SELECT id FROM devices WHERE token_hash=?',hashToken(token)))[0];
     return d?yield* readCompensation(Number(d.id)):null;
@@ -21,7 +25,8 @@ export class SQLPlus implements PlusStore {
     const receipt=yield* readCompensation(Number(d.id));if(!receipt||receipt.claimedAt)return receipt;
     const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',Number(d.id)))[0];
     const paid=row?plusRow(row):null;
-    const next=claimCompensation(receipt,{active:plusActive(paid),expiresAt:plusActive(paid)?paid!.paidUntil:null});
+    const manual=(yield* query('SELECT * FROM admin_plus_entitlements WHERE device_id=?',Number(d.id)))[0];
+    const next=claimCompensation(receipt,plusEntitlement(paid,manual?{startsAt:String(manual.starts_at),expiresAt:String(manual.expires_at),version:Number(manual.version)}:null));
     yield* query('UPDATE plus_compensations SET claimed_at=?,starts_at=?,expires_at=? WHERE campaign_id=? AND device_id=? AND claimed_at IS NULL',
       next.claimedAt,next.startsAt,next.expiresAt,next.campaignId,Number(d.id));
     return next;

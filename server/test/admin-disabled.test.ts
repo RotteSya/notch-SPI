@@ -52,3 +52,9 @@ test('POST /admin/cli is 404 when ADMIN_TOKEN is not set', async () => {
   });
   assert.equal(res.status, 404);
 });
+
+
+test('new operations endpoints are hidden when admin is disabled',async()=>{
+ for(const url of ['/admin/ops/lookup','/admin/ops/plus/preview','/admin/ops/plus/grant'])assert.equal((await app.inject({method:'POST',url,payload:{}})).statusCode,404);
+ for(const url of ['/admin/ops/overview','/admin/ops/devices','/admin/ops/devices/1','/admin/ops/requests','/admin/ops/actions'])assert.equal((await app.inject({url})).statusCode,404);
+});

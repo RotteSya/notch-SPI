@@ -123,7 +123,12 @@ final class PlusSubscriptionPage: NSViewController, SettingsPage {
             : snapshot?.status == "pending" ? L10n.t("等待付款确认", "決済確認待ち", "Awaiting payment confirmation")
             : snapshot?.status == "expired" ? L10n.t("当前权益已到期", "現在の利用期間は終了しました", "Your paid period has ended")
             : L10n.t("尚未开通 Plus", "Plus 未登録", "No active Plus plan")
-        if active, snapshot?.cancelAtPeriodEnd == true {
+        if active, snapshot?.hasManualAccess == true {
+            headline.stringValue = L10n.t("含人工权益 · 可用至 ", "付与された利用権を含む · 期限：", "Includes granted access · until ") + (snapshot?.expirationLabel ?? "—")
+            terms.stringValue = snapshot?.canManage == true && snapshot?.cancelAtPeriodEnd == false && snapshot?.billingStatus != "canceled"
+                ? L10n.t("人工赠送不改变原订阅扣款周期。续费日期请在账单管理中核对。每日额度于北京时间 00:00 重置，不累计。", "付与された利用権は請求周期を変更しません。更新日は請求管理で確認してください。毎日北京時間00:00にリセット。", "Granted access does not change your subscription billing cycle. Check renewal in billing management. Daily allowances reset at midnight Beijing time.")
+                : L10n.t("人工赠送不收费、不自动续费。每日额度于北京时间 00:00 重置，不累计。", "付与された利用権は無料で、自動更新されません。毎日北京時間00:00にリセット。", "Granted access is free and does not renew automatically. Daily allowances reset at midnight Beijing time.")
+        } else if active, snapshot?.cancelAtPeriodEnd == true {
             headline.stringValue = L10n.t("已取消续费 · 可用至 ", "自動更新停止 · 利用期限：", "Renewal canceled · access until ") + (snapshot?.expirationLabel ?? "—")
         } else if active {
             headline.stringValue = L10n.t("预计续费日：", "次回更新予定：", "Expected renewal: ") + (snapshot?.expirationLabel ?? "—")

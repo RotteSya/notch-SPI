@@ -1,4 +1,5 @@
 import type {PlusCompensation} from './plus-compensation.ts';
+import type {ManualPlus} from './admin-store.ts';
 import {randomUUID} from 'node:crypto';
 export const PLUS = {priceCents: 6900, currency: 'CNY', dailyLimit: 400, version: 'plus-monthly-400-v1'} as const;
 export interface PlusRecord {
@@ -13,6 +14,7 @@ export interface PlusUpdate {
 export interface PlusStore {
   compensation(token:string):Promise<PlusCompensation|null>;
   claimCompensation(token:string):Promise<PlusCompensation|null>;
+  manual(token:string):Promise<ManualPlus|null>;
   get(token: string): Promise<PlusRecord | null>;
   reserve(token: string): Promise<PlusRecord | null>;
   attach(intentId: string, checkoutId: string, url: string): Promise<boolean>;
@@ -42,6 +44,16 @@ export function mergePlus(record: PlusRecord, update: PlusUpdate): PlusRecord {
   return {...record, subscriptionId: update.subscriptionId, customerId: update.customerId,
     status: update.status, cancelAtPeriodEnd: update.cancelAtPeriodEnd,
     paidFrom: advances ? (record.paidUntil && update.paidFrom! <= record.paidUntil ? record.paidFrom : update.paidFrom) : record.paidFrom, paidUntil: advances ? update.paidUntil : record.paidUntil};
+}
+
+/** Resolve continuous coverage containing now; separate manual grants never mutate Stripe facts. */
+export function plusEntitlement(paid:PlusRecord|null,manual:ManualPlus|null,now=Date.now()):{active:boolean;expiresAt:string|null} {
+  const intervals:Array<[number,number]>=[];
+  if(paid?.paidFrom&&paid.paidUntil&&!['canceled','unpaid','incomplete_expired','paused'].includes(paid.status))intervals.push([Date.parse(paid.paidFrom),Date.parse(paid.paidUntil)]);
+  if(manual)intervals.push([Date.parse(manual.startsAt),Date.parse(manual.expiresAt)]);
+  let end=now;
+  for(const [from,to] of intervals.sort((a,b)=>a[0]-b[0]))if(from<=end&&to>end)end=to;
+  return {active:end>now,expiresAt:end>now?new Date(end).toISOString():null};
 }
 
 /** Only active coverage or a completed paid period can move a gift. A canceled future

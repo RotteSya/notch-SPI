@@ -1,10 +1,11 @@
 import {CAPACITY} from './capacity-policy.ts';
 import {readCompensation} from './plus-compensation-sql.ts';
 import {withCompensation} from './plus-compensation.ts';
+import {ADMIN_SCHEMA} from './admin-store.ts';
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS_SCHEMA} from './plus-schema.ts';
 import {plusRow} from './plus-sql.ts';
-import {PLUS,compensationPaidPeriod,plusActive} from './plus.ts';
+import {PLUS,compensationPaidPeriod,plusEntitlement} from './plus.ts';
 import { randomUUID } from 'node:crypto';
 import { hashToken, newToken, type RegisteredDevice } from './db.ts';
 import { applyRefundLot } from './payment-ledger-sql.ts';
@@ -120,6 +121,7 @@ CREATE TABLE IF NOT EXISTS budget_control_resets (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_registration_key ON devices(registration_key_hash);
 ${QUOTA_MIGRATION_SCHEMA}
 ${PLUS_SCHEMA}
+${ADMIN_SCHEMA}
 `;
 
 export function* ledger(device: number, lot: string, event: string, available: number, held: number,
@@ -170,8 +172,8 @@ function* syncPlus(d: Row): Transaction<void> {
   const id=Number(d.id), now=new Date().toISOString();
   const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',id))[0];
   const paid=row?plusRow(row):null;
-  const plan=withCompensation({active:plusActive(paid),expiresAt:plusActive(paid)?paid!.paidUntil:null},
-    yield* readCompensation(id),compensationPaidPeriod(paid));
+  const plan=withCompensation(plusEntitlement(paid,manual?{startsAt:String(manual.starts_at),expiresAt:String(manual.expires_at),version:Number(manual.version)}:null),yield* readCompensation(id),
+    compensationPaidPeriod(paid));
   if (!plan.active) {
     const lots=yield* query("SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND source_ref LIKE 'plus_daily:%' AND refund_target<>granted",id);
     for(const lot of lots) yield* applyRefundLot(String(lot.lot_id),false,Number(lot.granted),'plus-expiry');

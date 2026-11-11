@@ -202,6 +202,7 @@ export interface StoredUsageMetric {
 }
 
 export interface Store {
+  readonly admin: import('./admin-store.ts').AdminStore;
   /** Bounded, read-only readiness probe; must not initialize the schema. */
   checkHealth(): Promise<void>;
   readonly finance: import('./payment-finance.ts').PaymentFinance;

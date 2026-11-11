@@ -1,3 +1,4 @@
+import {SQLAdmin} from './admin-sql.ts';
 import {SQLPlus} from './plus-sql.ts';
 import {SQLPurchaseSessions} from './purchase-session-sql.ts';
 import {SQLQuotaMigration} from './quota-migration.ts';
@@ -224,6 +225,7 @@ export function resolvePostgresSSL(input: {
 export class PostgresStore implements Store {
   private pool: pg.Pool;
   private readonly healthConnection: { connectionString: string; ssl: PgSSLConfig };
+  readonly admin = new SQLAdmin((transaction,options) => this.runBilling(transaction,false,options?.readOnlySnapshot),true);
   readonly plus = new SQLPlus(transaction => this.runBilling(transaction));
   readonly billing = new SQLBilling(transaction => this.runBilling(transaction));
   readonly quotaMigration = new SQLQuotaMigration(transaction => this.runBilling(transaction, true));
