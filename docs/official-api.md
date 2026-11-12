@@ -1059,7 +1059,7 @@ Missing usage alone no longer pauses the entire model channel. Invalid counters 
 
 Daily USD 100, valuation, 20% risk headroom, model, answer length and all Plus/compensation records remain unchanged. Admitted individual requests have their own cost hold; no present client protocol declares the whole test length or reserves a complete test. Near-budget rejection can therefore still occur between questions. The owner has declined waiting before starting a test; no such admission gate is introduced. Do not claim full-session reliability or full-cohort simultaneous capacity from these changes.
 
-Rollback target must include the Plus compensation implementation (`dpl_GnqUg1CRSez7WDqEdwjENTHEdPCf`), preserve all database rows, and permit historical multiple attempt records. Never restore an older database snapshot or remove compensation claims.
+Rollback must retain compensation/manual Plus, multiple-attempt accounting, transaction-local timeouts and the serverless lifetime fix. The pre-fix deployments are not safe concurrency rollback targets: post-response suspension could leave transactions holding budget locks. Preserve all database rows and never restore an older database snapshot or remove compensation claims. A client rollback can repoint the Apple Silicon release channel while retaining the repaired server and every existing entitlement.
 
 ## GET /v1/captures/:id/delivery — 断流后的原答案
 
@@ -1069,7 +1069,15 @@ Rollback target must include the Plus compensation implementation (`dpl_GnqUg1CR
 
 服务器以 `X-NotchSPI-Delivery: v1` 标识能力。新版客户端在原总时限内最多查询 60 次，完整验证恢复流后仅补上缺失正文；账户切换或主动取消不再更新旧界面。正式 3.1 不具备此客户端自动恢复能力。
 
+3.1.1 也处理答案流开始前的临时 HTTP 500/502/503/504：先读原请求，恢复接口确认支持后最多重发同一请求一次。明确的预算、权益、凭证或配置错误不进入此恢复流程。没有恢复接口的旧服务不被假定具备接管能力。恢复总期限 105 秒是故障上限，不是正常查题延迟目标。
+
+Vercel 入口将整个 capture 工作关联到运行时 `waitUntil`，响应关闭后仍完成有界的结算与租约释放。每个 Postgres 事务使用 `SET LOCAL`：语句 15 秒、锁等待 5 秒、空闲事务 15 秒；不能只依赖经连接池转发的启动参数。冷实例通过 SCHEMA 内容摘要检查已应用版本，只在版本变化时执行迁移，避免重复 ALTER TABLE 阻塞其他请求。
+
 吞吐控制独立于费用预算：项目已核实 5,000 RPM / 1,000,000 TPM；服务以 24 个共享租约、4,000 RPM / 800,000 TPM 留出余量。TPM 按 max(输入估算上界, 输出上限) 计，费用仍按保守的输入与输出总上界预占。仅吸收至多 1.5 秒短暂占用波动；容量验收见当次发布报告，不能以等待延长代替扩容。租约 120 秒过期，未知调用费用仍留在原预算账本。
+
+2026-11-12 容量验收范围：近期非 QA 峰值为每分钟 6 次、10 秒内 2 次；连续查询间隔中位数约 35 秒。以补偿人群的 10%（12 人）同时连续使用、20%（24 人）同时突发作为规划假设，并非已观察到的需求。正式域名 12 人 × 3 轮完整返回 36/36，P95 4.386 秒；24 人突发完整返回 24/24，P95 5.081 秒。前者参考答案匹配 35/36，后者 24/24，传输可靠性不能冒充模型准确率。题目为固定单图，不能据此承诺所有复杂题的时延。
+
+运行目标：上述负载内完整答案加一次结算的可用率目标 99.5%，普通单图 P95 ≤ 10 秒；短暂故障自动恢复目标 ≤ 20 秒，超出仍计失败。目标不是凭短期样本证明的月度 SLA。24 人 × 3 轮的本地双实例/Postgres 故障模拟让模型集中慢 12 秒，72/72 完整回答，P95 约 12.3 秒；该数据不算真实供应商吞吐。120 人同时连续使用、持续供应商不可用和预算耗尽没有被覆盖。日预算与吞吐分别监控，不以平均单题费用推导安全题量。
 
 ## 管理运营后台
 

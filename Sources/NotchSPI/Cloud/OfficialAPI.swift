@@ -678,6 +678,16 @@ enum OfficialAPI {
                     var body = Data()
                     for try await byte in bytes { try Task.checkCancellation(); body.append(byte); if body.count > 65_536 { break } }
                     bytes.task.cancel()
+                    let failure = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any]
+                    let failureCode = failure?["code"] as? String
+                    if operation == "solve", [500, 502, 503, 504].contains(http.statusCode),
+                       failureCode == nil || failureCode == "internal" {
+                        // A proxy/DB failure can happen before SSE negotiation. First read
+                        // the original capture; resend only after the recovery endpoint
+                        // confirms support. Budget and entitlement rejections never retry.
+                        if supportsDelivery != true { supportsDelivery = nil }
+                        throw URLError(.networkConnectionLost)
+                    }
                     if http.statusCode == 401 {
                         await MainActor.run {
                             if !Task.isCancelled, environment.account() == account { environment.rejectCredential() }
@@ -780,11 +790,20 @@ enum OfficialAPI {
                                value["can_resume"] as? Bool == true, !resumed {
                                 resumeNext = true; resumed = true
                             }
-                        } else if http.statusCode == 404, !resumed {
+                        } else if http.statusCode == 404, !resumed,
+                                  supportsDelivery == true || http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
                             // The first transport may have failed before admission. Same ID
                             // makes the single resend safe even if the original arrives late.
                             resumeNext = true; resumed = true
-                        } else if ![409, 429, 502, 503, 504].contains(http.statusCode) { break }
+                        } else if isResume, http.statusCode != 200 {
+                            // The single resend was rejected. Do not turn an exhausted
+                            // budget or unavailable entitlement into a pretend wait loop.
+                            var data = Data()
+                            for try await byte in bytes { data.append(byte); if data.count > 16384 { break } }
+                            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                            let code = (value?["error"] as? [String: Any])?["code"] as? String
+                            if let code, !["internal", "capture_in_progress", "capture_already_finalized"].contains(code) { break }
+                        } else if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { break }
                     } catch { if Task.isCancelled { break } }
                     if poll < 59 { try? await Task.sleep(nanoseconds: 500_000_000) }
                 }

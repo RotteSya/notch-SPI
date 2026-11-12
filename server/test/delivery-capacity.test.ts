@@ -40,6 +40,16 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   return {store,users,call,apps,stores,connectionURL,async close(){await Promise.all(apps.map(a=>a.close()));await Promise.all(stores.map(s=>s.close()));await cleanup();}};
  }
 
+ test(`${kind}: recovery capability survives pre-stream database failures and missing captures`,async()=>{
+  let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
+  const account=f.store.getAccount.bind(f.store);
+  try{
+   const missing=await f.apps[0]!.inject({url:`/v1/captures/${randomUUID()}/delivery`,headers:{authorization:'Bearer '+f.users[0]!.token}});
+   assert.equal(missing.statusCode,404);assert.equal(missing.headers['x-notchspi-delivery'],'v1');
+   f.store.getAccount=async()=>{throw new Error('temporary DB outage');};
+   const failed=await f.call();assert.equal(failed.statusCode,500);assert.equal(failed.headers['x-notchspi-delivery'],'v1');assert.equal(calls,0);
+  }finally{f.store.getAccount=account;await f.close();}
+ });
  test(`${kind}: 24 active users complete three rounds including a concentrated slow wave`,{timeout:45_000},async()=>{
   let active=0,peak=0,calls=0;const latencies:number[]=[];
   const f=await fixture(async(_r,delta)=>{calls++;active++;peak=Math.max(peak,active);await delay(kind==='postgres'?12000:150);delta(ready);active--;return {inputTokens:50,outputTokens:50};});

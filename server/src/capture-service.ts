@@ -87,6 +87,7 @@ export class CaptureService {
     return reply.header('Cache-Control','no-store').send(this.currentSnapshot(capture,quota));
   }
   async delivery(req:FastifyRequest,reply:FastifyReply) {
+    reply.header('X-NotchSPI-Delivery','v1').header('Cache-Control','no-store');
     const {token}=await requireAccount(req,this.ctx.store),id=text((req.params as Record<string,unknown>).id).toLowerCase();
     const c=await this.ctx.store.billing.capture(token,id);
     if(!c)throw new ApiError(404,'未找到请求','not_found');
@@ -114,6 +115,7 @@ export class CaptureService {
     return {...snapshot,can_recover:snapshot.can_recover && capture.configRevision===this.ctx.config.clientConfigRevision};
   }
   async solve(req:FastifyRequest,reply:FastifyReply):Promise<void> {
+    reply.header('X-NotchSPI-Delivery','v1');
     return this.connected(req,reply,abort=>this.solveConnected(req,reply,abort));
   }
   private connected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {

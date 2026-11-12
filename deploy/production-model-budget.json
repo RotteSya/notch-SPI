@@ -5,7 +5,7 @@
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
     "currency": "USD",
-    "basis": "Conservative long-context/cache-write valuation, not a vendor invoice. Guarded request reservations include a 25% content allowance plus 4096 framing tokens, retain 20% daily headroom and permit at most four in-flight requests. User approved USD 100/day hard limit on 2026-11-11; USD 15/day is an operational warning only. USD 3/request, customer prices and question charges are unchanged.",
+    "basis": "Conservative long-context/cache-write valuation, not a vendor invoice. Guarded request reservations include a 25% content allowance plus 4096 framing tokens and retain 20% daily headroom. Throughput is independently controlled by the verified supplier RPM/TPM limits and 24 active leases; it is not a budget setting. User approved USD 100/day hard limit on 2026-11-11; USD 15/day is an operational warning only. USD 3/request, customer prices and question charges are unchanged.",
     "sources": [
       "https://developers.openai.com/api/docs/models/gpt-6-astra",
       "https://developers.openai.com/api/docs/pricing"
