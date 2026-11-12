@@ -1,6 +1,7 @@
 import {grantAction,type AdminGrantCommand} from './admin-store.ts';
 import type {AdminStore,AdminDevice,AdminFilter,AdminWindow,AdminOverview,AdminRequest,AdminAction,AdminPage,ManualPlus} from './admin-store.ts';
 import type {Attempt} from './billing.ts';
+import type {BudgetAccounting} from './budget-policy.ts';
 import {plusEntitlement} from './plus.ts';
 import {ApiError} from './http.ts';
 
@@ -8,7 +9,7 @@ export class MemoryAdmin implements AdminStore {
   readonly grants=new Map<number,ManualPlus>();
   readonly audit=new Map<string,AdminAction & {fingerprint:string}>();
   private source:()=>AdminDevice[]; private credential:(token:string)=>number|null;
-  private traffic:()=>{requests:AdminRequest[];attempts:Array<Attempt & {deviceId:number;requestAt:string}>};
+  private traffic:()=>{requests:AdminRequest[];attempts:Array<Attempt & {deviceId:number;requestAt:string;accounting?:BudgetAccounting}>};
   constructor(source:MemoryAdmin['source'],credential:MemoryAdmin['credential'],traffic:MemoryAdmin['traffic']){this.source=source;this.credential=credential;this.traffic=traffic;}
   private all(){return this.source().map(d=>({...d,manual:this.grants.get(d.id)??null}));}
   async applyGrant(c:AdminGrantCommand):Promise<AdminAction>{
@@ -34,9 +35,15 @@ export class MemoryAdmin implements AdminStore {
     const devices=this.all(),traffic=this.traffic(),requests=traffic.requests.filter(r=>r.createdAt>=q.from&&r.createdAt<q.to),latencies=requests.flatMap(r=>r.latencyMs===null?[]:[r.latencyMs]);
     const days=new Map<string,AdminRequest[]>(),errors=new Map<string,number>(),models=new Map<string,AdminOverview['models'][number]>();
     for(const r of requests){const day=new Date(Date.parse(r.createdAt)+8*3600000).toISOString().slice(0,10);days.set(day,[...(days.get(day)??[]),r]);if(r.state==='failed')errors.set(r.error??'unknown',(errors.get(r.error??'unknown')??0)+1);}
-    for(const a of traffic.attempts.filter(a=>a.requestAt>=q.from&&a.requestAt<q.to)){const key=JSON.stringify([a.provider,a.model,a.currency]),m=models.get(key)??{provider:a.provider,model:a.model,currency:a.currency,count:0,knownCostMicros:null,unknownCost:0};m.count++;if(a.costMicros===null)m.unknownCost++;else m.knownCostMicros=(BigInt(m.knownCostMicros??0)+BigInt(a.costMicros)).toString();models.set(key,m);}
+    const costs=new Map<string,AdminOverview['costs'][number]>();
+    for(const a of traffic.attempts.filter(a=>a.requestAt>=q.from&&a.requestAt<q.to)){const device=devices.find(d=>d.id===a.deviceId),category=device?.isInternal||device?.platform==='release-qa'?'internal':'user';const key=JSON.stringify([category,a.provider,a.model,a.currency]),m=models.get(key)??{category,provider:a.provider,model:a.model,currency:a.currency,count:0,knownCostMicros:null,unknownCost:0};m.count++;if(a.costMicros===null)m.unknownCost++;else m.knownCostMicros=(BigInt(m.knownCostMicros??0)+BigInt(a.costMicros)).toString();models.set(key,m);
+      const ck=JSON.stringify([category,a.currency]),c=costs.get(ck)??{category,currency:a.currency,count:0,knownCostMicros:null,unknownCost:0,provisionalMicros:'0',bookedMicros:'0',unbooked:0};
+      const b=a.accounting,value=b&&['observed','reconciled','released'].includes(b.state)?b.actual:a.costMicros;c.count++;
+      if(value===null)c.unknownCost++;else c.knownCostMicros=(BigInt(c.knownCostMicros??0)+BigInt(value)).toString();
+      if(!b)c.unbooked++;else {c.bookedMicros=(BigInt(c.bookedMicros)+BigInt(b.booked)).toString();if(b.state==='provisional')c.provisionalMicros=(BigInt(c.provisionalMicros)+BigInt(b.booked)).toString();}costs.set(ck,c);
+    }
     const soon=new Date(Date.now()+7*86400000).toISOString();
-    return {registered:devices.filter(d=>d.createdAt>=q.from&&d.createdAt<q.to).length,totalDevices:devices.length,activePlus:devices.filter(d=>this.until(d)).length,expiringPlus:devices.filter(d=>this.until(d)&&this.until(d)!<=soon).length,
+    return {costs:[...costs.values()],registered:devices.filter(d=>d.createdAt>=q.from&&d.createdAt<q.to).length,totalDevices:devices.length,activePlus:devices.filter(d=>this.until(d)).length,expiringPlus:devices.filter(d=>this.until(d)&&this.until(d)!<=soon).length,
       requests:requests.length,activeDevices:new Set(requests.map(r=>r.deviceId)).size,completed:requests.filter(r=>r.state!=='pending').length,usable:requests.filter(r=>r.state==='usable').length,
       latencyMs:latencies.length?Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length):null,latencySamples:latencies.length,
       trend:[...days].sort(([a],[b])=>a.localeCompare(b)).map(([day,rs])=>({day,requests:rs.length,usable:rs.filter(r=>r.state==='usable').length,activeDevices:new Set(rs.map(r=>r.deviceId)).size})),

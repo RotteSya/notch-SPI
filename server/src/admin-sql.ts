@@ -8,12 +8,12 @@ import type {AdminStore,AdminDevice,AdminFilter,AdminWindow,AdminOverview,AdminR
 const iso=(v:unknown)=>new Date(String(v)).toISOString();
 const bool=(v:unknown)=>v===true||Number(v)===1;
 export function adminDevice(r:Row):AdminDevice {
-  return {id:Number(r.id),platform:r.platform as string|null,appVersion:r.app_version as string|null,createdAt:iso(r.created_at),updatedAt:iso(r.updated_at),
+  return {id:Number(r.id),platform:r.platform as string|null,appVersion:r.app_version as string|null,isInternal:bool(r.is_internal),createdAt:iso(r.created_at),updatedAt:iso(r.updated_at),
     totalQuestions:Number(r.total_questions),balanceQuestions:Number(r.balance_questions),onboarded:bool(r.onboarded),hotkeyPresses:Number(r.hotkey_presses),cliEnabled:bool(r.cli_enabled),
     paid:r.intent_id?plusRow({...r,device_id:r.id,created_at:r.plan_created}):null,
     manual:r.manual_until?{startsAt:String(r.manual_from),expiresAt:String(r.manual_until),version:Number(r.manual_version)}:null};
 }
-export const DEVICE_SELECT=`SELECT d.id,d.platform,d.app_version,d.created_at,d.updated_at,d.total_questions,d.balance_questions,d.onboarded,d.hotkey_presses,d.cli_enabled,
+export const DEVICE_SELECT=`SELECT d.id,d.platform,d.app_version,d.is_internal,d.created_at,d.updated_at,d.total_questions,d.balance_questions,d.onboarded,d.hotkey_presses,d.cli_enabled,
  p.intent_id,p.created_at AS plan_created,p.checkout_id,p.checkout_url,p.subscription_id,p.customer_id,p.status,p.paid_from,p.paid_until,p.cancel_at_period_end,p.generation,
  g.starts_at AS manual_from,g.expires_at AS manual_until,g.version AS manual_version
  FROM devices d LEFT JOIN plus_subscriptions p ON p.device_id=d.id LEFT JOIN admin_plus_entitlements g ON g.device_id=d.id`;
@@ -85,6 +85,7 @@ export class SQLAdmin implements AdminStore {
   })(),{readOnlySnapshot:true});}
   overview(q:AdminWindow){const now=new Date().toISOString(),a=activeSQL(now),soon=new Date(Date.now()+7*86400000).toISOString(),state=this.json('c.metadata','terminalState'),duration=this.duration(),day=this.day('c.created_at'),error=this.json('c.metadata','terminalReason');
     const model=this.json('a.metadata','model'),provider=this.json('a.metadata','provider'),currency=this.json('a.metadata','currency'),cost=this.json('a.metadata','costMicros');
+    const category="CASE WHEN d.is_internal=1 OR d.platform='release-qa' THEN 'internal' ELSE 'user' END";
     return this.run((function*():Transaction<AdminOverview>{
       const devices=(yield* query(`SELECT COUNT(*) AS total,SUM(CASE WHEN d.created_at>=? AND d.created_at<? THEN 1 ELSE 0 END) AS registered,
         SUM(CASE WHEN ${a.active} THEN 1 ELSE 0 END) AS plus,SUM(CASE WHEN (${a.until})<=? THEN 1 ELSE 0 END) AS expiring`+DEVICE_SELECT.slice(DEVICE_SELECT.indexOf(' FROM devices')),q.from,q.to,soon))[0]!;
@@ -92,11 +93,18 @@ export class SQLAdmin implements AdminStore {
         SUM(CASE WHEN ${state}='usable' THEN 1 ELSE 0 END) AS usable,AVG(${duration}) AS latency,COUNT(${duration}) AS samples FROM capture_requests c WHERE c.created_at>=? AND c.created_at<?`,q.from,q.to))[0]!;
       const trend=yield* query(`SELECT ${day} AS day,COUNT(*) AS n,SUM(CASE WHEN ${state}='usable' THEN 1 ELSE 0 END) AS usable,COUNT(DISTINCT c.device_id) AS active FROM capture_requests c WHERE c.created_at>=? AND c.created_at<? GROUP BY ${day} ORDER BY day`,q.from,q.to);
       const errors=yield* query(`SELECT COALESCE(${error},'unknown') AS error,COUNT(*) AS n FROM capture_requests c WHERE c.created_at>=? AND c.created_at<? AND ${state}='failed' GROUP BY COALESCE(${error},'unknown') ORDER BY n DESC LIMIT 20`,q.from,q.to);
-      const models=yield* query(`SELECT ${model} AS model,${provider} AS provider,${currency} AS currency,COUNT(*) AS n,SUM(CAST(${cost} AS BIGINT)) AS cost,SUM(CASE WHEN ${cost} IS NULL THEN 1 ELSE 0 END) AS unknown FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id WHERE c.created_at>=? AND c.created_at<? GROUP BY ${model},${provider},${currency} ORDER BY n DESC LIMIT 50`,q.from,q.to);
-      return {registered:Number(devices.registered??0),totalDevices:Number(devices.total),activePlus:Number(devices.plus??0),expiringPlus:Number(devices.expiring??0),
+      const models=yield* query(`SELECT ${category} AS category,${model} AS model,${provider} AS provider,${currency} AS currency,COUNT(*) AS n,SUM(CAST(${cost} AS BIGINT)) AS cost,SUM(CASE WHEN ${cost} IS NULL THEN 1 ELSE 0 END) AS unknown FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id JOIN devices d ON d.id=a.device_id WHERE c.created_at>=? AND c.created_at<? GROUP BY ${category},${model},${provider},${currency} ORDER BY n DESC LIMIT 50`,q.from,q.to);
+      const costs=yield* query(`SELECT ${category} AS category,${currency} AS currency,COUNT(*) AS n,
+        SUM(CASE WHEN b.state IN ('observed','reconciled','released') THEN b.actual ELSE CAST(${cost} AS BIGINT) END) AS cost,
+        SUM(CASE WHEN b.state IN ('observed','reconciled','released') OR ${cost} IS NOT NULL THEN 0 ELSE 1 END) AS unknown,
+        COALESCE(SUM(CASE WHEN b.state='provisional' THEN b.booked ELSE 0 END),0) AS provisional,
+        COALESCE(SUM(b.booked),0) AS booked,SUM(CASE WHEN b.attempt_id IS NULL THEN 1 ELSE 0 END) AS unbooked
+        FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id JOIN devices d ON d.id=a.device_id
+        LEFT JOIN budget_accounting b ON b.attempt_id=a.attempt_id WHERE c.created_at>=? AND c.created_at<? GROUP BY ${category},${currency} ORDER BY ${currency},${category}`,q.from,q.to);
+      return {costs:costs.map(r=>({category:r.category as 'internal'|'user',currency:String(r.currency),count:Number(r.n),knownCostMicros:r.cost===null?null:String(r.cost),unknownCost:Number(r.unknown),provisionalMicros:String(r.provisional),bookedMicros:String(r.booked),unbooked:Number(r.unbooked)})),registered:Number(devices.registered??0),totalDevices:Number(devices.total),activePlus:Number(devices.plus??0),expiringPlus:Number(devices.expiring??0),
         requests:Number(captures.n),activeDevices:Number(captures.active),completed:Number(captures.completed??0),usable:Number(captures.usable??0),latencyMs:captures.latency===null?null:Math.round(Number(captures.latency)),latencySamples:Number(captures.samples),
         trend:trend.map(r=>({day:String(r.day),requests:Number(r.n),usable:Number(r.usable),activeDevices:Number(r.active)})),errors:errors.map(r=>({error:String(r.error),count:Number(r.n)})),
-        models:models.map(r=>({model:String(r.model),provider:String(r.provider),currency:String(r.currency),count:Number(r.n),knownCostMicros:r.cost===null?null:String(r.cost),unknownCost:Number(r.unknown)}))};
+        models:models.map(r=>({category:r.category as 'internal'|'user',model:String(r.model),provider:String(r.provider),currency:String(r.currency),count:Number(r.n),knownCostMicros:r.cost===null?null:String(r.cost),unknownCost:Number(r.unknown)}))};
     })(),{readOnlySnapshot:true});
   }
 }

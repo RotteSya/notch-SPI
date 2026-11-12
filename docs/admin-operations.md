@@ -84,3 +84,7 @@ Mac/Windows 源码已区分含人工权益的截止时间，提示原订阅扣�
 发布验收记录：隔离 PostgreSQL 17.11 相关回归 255/255 通过（其中 71 项明确为 Postgres），TypeScript 与交付检查通过；生产 13 项 HTTP 检查通过。未用真实账户赠送测试。生产管理员密钥为不可回读敏感变量，因此登录后的生产赠送提交未实操；完整赠送和客户端回读在隔离实库完成。详细日志留存在上述本地发布目录，此处的部署标识、快照和回退步骤随源码提交保留。
 
 验证入口：`server/test/admin-operations.test.ts`（权限、统计、完整 HTTP 链路）、`admin-entitlement.test.ts`（并发/幂等、事务失败、独立付费、到期）、既有 `admin*.test.ts`、`plus*.test.ts`、账务/付款回归、Mac `PlusSubscriptionTests`、Windows `account-presentation.test.mjs`。完整工程验证使用 `./scripts/verify.sh`，结束前不再编辑源码，确保源码摘要不漂移。
+
+### 内部／测试费用分类
+
+运营总览、请求与模型、订单与成本按当前 `devices.is_internal=1` 或 `platform=release-qa` 分为内部／测试，其余归真实用户。分类更新会重算历史视图，不改费用账本。费用汇总不受模型前 50 行限制，按币种独立展示；按父请求创建时间筛选，含失败和重试，因此跨日调用与预算窗口可能不同。已知费用优先采用预算账 observed/reconciled/released 的 actual，否则使用模型 metadata.costMicros；未知费用保持未知，provisional 暂估、预算 booked 和未入预算次数分别显示。此分类仅用于统计，不授予内部账号特权，也不代表供应商最终账单。

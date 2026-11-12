@@ -42,6 +42,27 @@ for(const [name,make] of makers){
   }finally{await s.close();}
  });
 }
+for(const [name,make] of makers)test(name+': costs separate QA from users, include unknown budget holds and retain currency boundaries',async()=>{
+ const s=await make();try{
+  const user=await s.registerDevice({platform:'macos',appVersion:'3.1',trialQuestions:10});
+  const qa=await s.registerDevice({platform:'release-qa',appVersion:'cost-test',trialQuestions:10});
+  for(const [d,currency,cost] of [[user,'USD',120],[qa,'USD',null],[qa,'CNY',40]] as const){
+   const captureId=randomUUID(),attemptId=randomUUID();
+   await s.billing.beginWithAttempt({token:d.token,captureId,requestHmac:captureId},{attemptId,captureId,purpose:'answer',provider:'mock',model:'same-model',currency,policyVersion:'test',pricingVersion:'test'});
+   assert.equal(await s.billing.reserveBudget(d.token,attemptId,'official',currency,500,100000),true);
+   await s.billing.finishAttempt(d.token,attemptId,{status:cost===null?'unknown':'succeeded',inputTokens:0,outputTokens:0,costMicros:cost===null?null:String(cost)});
+   await s.billing.settleBudget(d.token,attemptId,cost);
+   await s.billing.finish({token:d.token,captureId,charge:cost!==null,terminalState:cost===null?'failed':'usable'});
+  }
+  const j=await s.admin.overview({from:new Date(Date.now()-60000).toISOString(),to:new Date(Date.now()+60000).toISOString()});
+  const userCost=j.costs.find(c=>c.category==='user')!;
+  assert.equal(userCost.knownCostMicros,'120');assert.equal(userCost.bookedMicros,'120');assert.equal(userCost.unknownCost,0);
+  const qaCost=j.costs.find(c=>c.category==='internal'&&c.currency==='USD')!;
+  assert.equal(qaCost.knownCostMicros,null);assert.equal(qaCost.unknownCost,1);assert.equal(qaCost.provisionalMicros,'500');assert.equal(qaCost.bookedMicros,'500');
+  assert.equal(j.costs.find(c=>c.currency==='CNY')!.knownCostMicros,'40');assert.equal(j.models.length,3);
+  assert.equal(j.costs.reduce((n,c)=>n+c.count,0),3);assert.ok(j.costs.every(c=>c.unbooked===0));
+ }finally{await s.close();}
+});
 test('operational filters reject invalid ranges, unsafe searches and pagination',()=>{
  for(const input of [{from:'garbage'},{from:'2026-01-01T00:00:00Z',to:'2026-11-01T00:00:00Z'},{page:0},{size:101},{device_id:-1},{plan:'sql'},{state:'bogus'},{search:'dev_secret'}])assert.throws(()=>adminFilter(input));
 });

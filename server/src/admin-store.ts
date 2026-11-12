@@ -4,7 +4,7 @@ import {ApiError} from './http.ts';
 
 export interface ManualPlus {startsAt:string; expiresAt:string; version:number}
 export interface AdminDevice {
-  id:number; platform:string|null; appVersion:string|null; createdAt:string; updatedAt:string;
+  id:number; platform:string|null; appVersion:string|null; isInternal?:boolean; createdAt:string; updatedAt:string;
   totalQuestions:number; balanceQuestions:number; onboarded:boolean; hotkeyPresses:number;
   cliEnabled:boolean; paid:PlusRecord|null; manual:ManualPlus|null;
 }
@@ -26,7 +26,8 @@ export interface AdminOverview {
   latencyMs:number|null; latencySamples:number; totalDevices:number; activePlus:number; expiringPlus:number;
   trend:Array<{day:string; requests:number; usable:number; activeDevices:number}>;
   errors:Array<{error:string; count:number}>;
-  models:Array<{model:string; provider:string; count:number; currency:string; knownCostMicros:string|null; unknownCost:number}>;
+  costs:Array<{category:'internal'|'user'; currency:string; count:number; knownCostMicros:string|null; unknownCost:number; provisionalMicros:string; bookedMicros:string; unbooked:number}>;
+  models:Array<{category:'internal'|'user'; model:string; provider:string; count:number; currency:string; knownCostMicros:string|null; unknownCost:number}>;
 }
 export interface AdminPage<T> {items:T[]; total:number; page:number; size:number}
 export interface AdminGrantCommand {

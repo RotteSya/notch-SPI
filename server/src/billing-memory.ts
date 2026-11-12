@@ -450,11 +450,11 @@ export class MemoryBilling implements BillingStore {
     const d=this.lookup(token); return d?[...this.state(d).attempts.values()].map(a=>({...a})):[];
   }
   adminTraffic() {
-    const requests:import('./admin-store.ts').AdminRequest[]=[],attempts:Array<Attempt & {deviceId:number;requestAt:string}>=[];
+    const requests:import('./admin-store.ts').AdminRequest[]=[],attempts:Array<Attempt & {deviceId:number;requestAt:string;accounting?:BudgetAccounting}>=[];
     for(const [deviceId,state] of this.states){
       for(const {record:r} of state.captures.values())requests.push({id:r.requestId,deviceId,createdAt:r.createdAt,finishedAt:r.finishedAt,
         state:r.terminalState,operation:r.operation,error:r.terminalReason,latencyMs:r.finishedAt?Math.max(0,Date.parse(r.finishedAt)-Date.parse(r.createdAt)):null});
-      for(const a of state.attempts.values()){const c=state.captures.get(a.captureId);if(c)attempts.push({...a,deviceId,requestAt:c.record.createdAt});}
+      for(const a of state.attempts.values()){const c=state.captures.get(a.captureId);if(c)attempts.push({...a,deviceId,requestAt:c.record.createdAt,accounting:this.accounting.get(a.attemptId)});}
     }
     return {requests,attempts};
   }
