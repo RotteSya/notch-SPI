@@ -196,7 +196,7 @@ export const config = {
   dmgUrl: envStr('DMG_URL', 'https://github.com/RotteSya/notch-SPI/releases/latest/download/NotchSPI.dmg'),
   releaseApiUrl: envStr('RELEASE_API_URL', 'https://api.github.com/repos/RotteSya/notch-SPI/releases/latest'),
   // Intel stays pinned independently; publishing an arm64 release must never advance this channel.
-  intelDmgUrl: envStr('INTEL_DMG_URL', 'https://github.com/RotteSya/notch-SPI/releases/download/v3.1.2/NotchSPI-3.1.2-build35-Intel.dmg'),
+  intelDmgUrl: envStr('INTEL_DMG_URL', 'https://github.com/RotteSya/notch-SPI/releases/download/v3.1.2/NotchSPI-3.1.2-build37-Intel.dmg'),
   intelReleaseApiUrl: envStr('INTEL_RELEASE_API_URL', 'https://api.github.com/repos/RotteSya/notch-SPI/releases/tags/v3.1.2'),
 
   // ---- Best-effort rate limits (see rateLimit.ts) -----------------------------------------

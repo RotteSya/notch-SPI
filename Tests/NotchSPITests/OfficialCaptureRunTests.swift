@@ -469,12 +469,45 @@ final class OfficialCaptureRunTests: XCTestCase {
         }
         defer { sender?.cancel(); server.stop(); f.cleanup() }
         let started = Date()
-        await finish(try f.run(), fixture: f, timeout: 15)
-        XCTAssertLessThan(Date().timeIntervalSince(started), 14)
+        await finish(try f.run(), fixture: f, timeout: 23)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 22)
         XCTAssertEqual(f.completions.first?.0, false)
         XCTAssertEqual(f.requests.count, 2, "A final status lookup must not add another ten seconds")
         XCTAssertTrue(f.receipts.isEmpty)
         XCTAssertTrue(f.deltas.isEmpty)
+    }
+
+    func testExpiredWorkerStillHasTimeToGenerateACompleteSixSecondAnswer() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer(), started = Date()
+        var posts = 0
+        var sender: Task<Void, Never>?
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" {
+                posts += 1
+                reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                reply.send(Data(": connected\n\n".utf8))
+                if posts == 1 { reply.truncated(); return }
+                sender = Task {
+                    for _ in 0..<6 {
+                        reply.send(Data(": keepalive\n\n".utf8))
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        if Task.isCancelled { return }
+                    }
+                    reply.send(payload); reply.finish()
+                }
+            } else {
+                let resumable = Date().timeIntervalSince(started) >= 8
+                reply.respond(status: 202, type: "application/json",
+                    body: Data("{\"can_resume\":\(resumable)}".utf8))
+            }
+        }
+        defer { sender?.cancel(); server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f, timeout: 19)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 18)
+        XCTAssertEqual(posts, 2)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
     }
 
     func testCompleteRunReadsFilesBuildsBoundRequestAndDeliversExactlyOnceOnMainThread() async throws {
