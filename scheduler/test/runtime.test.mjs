@@ -21,7 +21,8 @@ test(`workerd runs the ${candidate ? 'candidate' : 'production'} handler and ref
       assert.equal(request.headers.get('x-vercel-protection-bypass'), candidate ? bypass : null);
       return Response.json({ processed: 0, checked_at: new Date().toISOString(), more_possible: false,
         refunds_reconciled: 0, refunds_failed: 0, checkouts_credited: 0, checkouts_review: 0,
-        checkouts_failed: 0, finance_reconciled: 0, finance_failed: 0, events_pruned: 0 });
+        checkouts_failed: 0, finance_reconciled: 0, finance_failed: 0, events_pruned: 0,
+        model_budget:{level:0,limit_micros:100000000,spent_micros:0,held_micros:0,available_micros:80000000} });
     },
   }));
   try {

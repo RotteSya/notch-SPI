@@ -29,29 +29,14 @@ for (const kind of ['memory','sqlite']) {
       await assert.rejects(async()=>store.billing.reconcileBudget(id,-1,'vendor:request-1'));
     }finally{await store.close();}
   });
-  test(`${kind}: three unmetered outcomes cool only their channel; one probe then recover`,async()=>{
+  test(`${kind}: repeated missing usage stays booked without stopping healthy users`,async()=>{
     const {store,token,reserve}=await setup();try{
-      for(let i=0;i<3;i++){const id=randomUUID();await reserve(id);await store.billing.settleBudget(token,id,null);}
-      const c=(await store.billing.inspectBudget()).controls[0]!;
-      assert.equal(c.failures,3);assert.equal(c.reason,'metering_unavailable');
-      await assert.rejects(reserve(),{reason:'cooldown'});
-      const other=randomUUID();assert.equal(await reserve(other,'model-b'),true);await store.billing.releaseBudget(token,other);
-      const probe=randomUUID();assert.equal(await reserve(probe,'model-a',c.blockedUntil+1),true);
-      await assert.rejects(reserve(randomUUID(),'model-a',c.blockedUntil+2),{reason:'cooldown'});
-      await store.billing.settleBudget(token,probe,20);
-      assert.equal(await reserve(),true);
-    }finally{await store.close();}
-  });
-  test(`${kind}: failed probe reopens cooldown; abandoned probe expires`,async()=>{
-    const {store,token,reserve}=await setup();try{
-      for(let i=0;i<3;i++){const id=randomUUID();await reserve(id);await store.billing.settleBudget(token,id,null);}
-      let c=(await store.billing.inspectBudget()).controls[0]!;
-      const probe=randomUUID();await reserve(probe,'model-a',c.blockedUntil+1);
-      await store.billing.settleBudget(token,probe,null);
-      await assert.rejects(reserve(),{reason:'cooldown'});
-      c=(await store.billing.inspectBudget()).controls[0]!;
-      const orphan=randomUUID();await reserve(orphan,'model-a',c.blockedUntil+1);
-      assert.equal(await reserve(randomUUID(),'model-a',c.blockedUntil+BUDGET_POLICY.probeMs+2),true);
+      for(let i=0;i<6;i++){const id=randomUUID();assert.equal(await reserve(id),true);await store.billing.settleBudget(token,id,null);}
+      const state=await store.billing.inspectBudget();assert.equal(state.provisional.reduce((n,a)=>n+a.booked,0),600);
+      assert.equal(state.controls[0]!.blockedUntil,0);assert.equal(state.controls[0]!.failures,6);
+      const next=randomUUID();assert.equal(await reserve(next),true);await store.billing.settleBudget(token,next,20);
+      assert.equal((await store.billing.inspectBudget()).controls[0]!.failures,0);
+      assert.equal((await store.billing.inspectBudget()).provisional.length,6);
     }finally{await store.close();}
   });
   test(`${kind}: small overrun books full expense; repeated or major deviations isolate channel`,async()=>{
@@ -81,7 +66,7 @@ for (const kind of ['memory','sqlite']) {
     const {store,token,reserve}=await setup();try{
       const old=Date.now()-BUDGET_POLICY.orphanMs-1,ids=Array.from({length:4},()=>randomUUID());
       for(const id of ids)await reserve(id,'model-a',old);
-      await assert.rejects(reserve(randomUUID(),'model-b'),{reason:'busy'});
+      assert.equal(await reserve(randomUUID(),'model-b'),true);
       await store.billing.reap();await store.billing.reap();
       assert.equal((await store.billing.inspectBudget()).provisional.length,4);
       assert.equal(await reserve(randomUUID(),'model-b'),true);
@@ -102,7 +87,7 @@ for (const kind of ['memory','sqlite']) {
       assert.equal((await store.billing.inspectBudget()).provisional[0]!.booked,100);
     }finally{await store.close();}
   });
-  test(`${kind}: concurrent admissions cannot overspend or occupy more than four slots`,async()=>{
+  test(`${kind}: concurrent admissions cannot overspend independently of throughput`,async()=>{
     const {store,reserve}=await setup();try{
       const results=await Promise.allSettled(Array.from({length:10},()=>reserve(randomUUID(),'model-a',Date.now(),100,500)));
       assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value).length,4);

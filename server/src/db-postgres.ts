@@ -238,6 +238,9 @@ export class PostgresStore implements Store {
     this.healthConnection = { connectionString, ssl };
     this.pool = new pg.Pool({
       connectionString,
+      connectionTimeoutMillis: 3000,
+      statement_timeout: 15000,
+      idle_in_transaction_session_timeout: 15000,
       max: 5, // serverless-friendly; use the provider's pooled URL for real concurrency
       ssl,
     });

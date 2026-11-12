@@ -191,6 +191,8 @@ function canon(raw: string): string {
   route = route.replace(/\/{2,}/g, '/');
   if (route.length > 1 && route.endsWith('/')) route = route.slice(0, -1);
   const known: Record<string, string> = {
+    '/v1/captures/*/cancel': '/v1/captures/:id/cancel',
+    '/v1/captures/*/delivery': '/v1/captures/:id/delivery',
     '/v1/captures/*/status': '/v1/captures/:id/status',
     '/v1/captures/*/explanation': '/v1/captures/:id/explanation',
     '/v1/captures/*/recovery': '/v1/captures/:id/recovery',

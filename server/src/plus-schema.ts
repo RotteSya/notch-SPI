@@ -1,4 +1,6 @@
-export const PLUS_SCHEMA = `
+import {COMPENSATION_SCHEMA} from './plus-compensation.ts';
+export const PLUS_SCHEMA = `${COMPENSATION_SCHEMA}
+
 CREATE TABLE IF NOT EXISTS plus_subscriptions (
  device_id BIGINT PRIMARY KEY REFERENCES devices(id), created_at TEXT NOT NULL, intent_id TEXT NOT NULL UNIQUE,
  checkout_id TEXT UNIQUE, checkout_url TEXT, subscription_id TEXT UNIQUE, customer_id TEXT,

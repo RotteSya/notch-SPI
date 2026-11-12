@@ -90,6 +90,7 @@ export function beginSSE(reply: FastifyReply): (event: StreamEvent) => void {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
+    'X-NotchSPI-Delivery': 'v1',
     'X-Accel-Buffering': 'no', // disable proxy buffering so deltas flush promptly
   });
   // Establish the response while the provider is generating, not on its first delta.

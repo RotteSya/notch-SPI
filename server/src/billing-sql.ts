@@ -1,7 +1,10 @@
+import {CAPACITY} from './capacity-policy.ts';
+import {readCompensation} from './plus-compensation-sql.ts';
+import {withCompensation} from './plus-compensation.ts';
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS_SCHEMA} from './plus-schema.ts';
 import {plusRow} from './plus-sql.ts';
-import {PLUS,plusActive} from './plus.ts';
+import {PLUS,compensationPaidPeriod,plusActive} from './plus.ts';
 import { randomUUID } from 'node:crypto';
 import { hashToken, newToken, type RegisteredDevice } from './db.ts';
 import { applyRefundLot } from './payment-ledger-sql.ts';
@@ -21,6 +24,15 @@ export type RunTransaction = <T>(transaction: Transaction<T>, options?: {readOnl
 export function* query(sql: string, ...args: Statement['args']): Transaction<Row[]> { return yield { sql, args }; }
 
 export const BILLING_SCHEMA = `
+CREATE TABLE IF NOT EXISTS capture_cancellations (device_id BIGINT NOT NULL REFERENCES devices(id), capture_id TEXT NOT NULL, expires BIGINT NOT NULL, PRIMARY KEY(device_id,capture_id));
+CREATE TABLE IF NOT EXISTS provider_capacity_guard (id INTEGER PRIMARY KEY);
+INSERT INTO provider_capacity_guard(id) VALUES(1) ON CONFLICT(id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS provider_capacity_leases (
+ id TEXT PRIMARY KEY, device_id BIGINT NOT NULL REFERENCES devices(id), tokens BIGINT NOT NULL,
+ started BIGINT NOT NULL, expires BIGINT NOT NULL, active INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_capacity_started ON provider_capacity_leases(started);
+
 CREATE TABLE IF NOT EXISTS free_trials (
  device_id BIGINT PRIMARY KEY REFERENCES devices(id), activated_at TEXT, expires_at TEXT,
  CHECK((activated_at IS NULL AND expires_at IS NULL) OR (activated_at IS NOT NULL AND expires_at>activated_at))
@@ -157,13 +169,15 @@ function* quotaFor(d: Row): Transaction<QuotaSnapshot> {
 function* syncPlus(d: Row): Transaction<void> {
   const id=Number(d.id), now=new Date().toISOString();
   const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',id))[0];
-  const plan=row?plusRow(row):null;
-  if (!plusActive(plan)) {
+  const paid=row?plusRow(row):null;
+  const plan=withCompensation({active:plusActive(paid),expiresAt:plusActive(paid)?paid!.paidUntil:null},
+    yield* readCompensation(id),compensationPaidPeriod(paid));
+  if (!plan.active) {
     const lots=yield* query("SELECT lot_id,granted FROM quota_lots WHERE device_id=? AND source_ref LIKE 'plus_daily:%' AND refund_target<>granted",id);
     for(const lot of lots) yield* applyRefundLot(String(lot.lot_id),false,Number(lot.granted),'plus-expiry');
   } else {
     const window=trialWindow(), source='plus_daily:'+window.key, lot=randomUUID();
-    const expires=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+    const expires=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
     const inserted=yield* query(`INSERT INTO quota_lots(lot_id,device_id,kind,granted,remaining,source_ref,created_at,trial_expires_at)
       VALUES(?,?,'paid',?,?,?,?,?) ON CONFLICT(device_id,source_ref) DO NOTHING RETURNING lot_id`,lot,id,PLUS.dailyLimit,PLUS.dailyLimit,source,now,expires);
     if(!inserted.length) {
@@ -222,14 +236,33 @@ function* readCapture(d: Row, captureId?: string): Transaction<CaptureRecord | n
   return rows[0] ? JSON.parse(String(rows[0].metadata)) as CaptureRecord : null;
 }
 function* expireAnswer(capture: CaptureRecord | null): Transaction<CaptureRecord | null> {
-  if (capture && Date.now() - Date.parse(capture.createdAt) >= 900_000 && capture.answerHmac !== null) {
-    capture.answerHmac = null;
+  if (capture && Date.now() - Date.parse(capture.createdAt) >= 900_000 && (capture.answerHmac !== null || capture.sealedAnswer)) {
+    capture.answerHmac = null; delete capture.sealedAnswer;
     yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?', JSON.stringify(capture), capture.requestId);
   }
   return capture;
 }
 
 export class SQLBilling implements BillingStore {
+  acquireCapacity(token:string,id:string,tokens:number,now=Date.now()):Promise<boolean> {
+    if(!Number.isSafeInteger(tokens)||tokens<=0)return Promise.resolve(false);
+    return this.run((function*():Transaction<boolean>{
+      const d=yield* device(token);if(!d)return false;
+      yield* query('SELECT id FROM provider_capacity_guard WHERE id=1 FOR UPDATE');
+      const prior=(yield* query('SELECT * FROM provider_capacity_leases WHERE id=?',id))[0];
+      if(prior)return Number(prior.device_id)===Number(d.id)&&Number(prior.active)===1&&Number(prior.expires)>now;
+      const stats=(yield* query(`SELECT SUM(CASE WHEN active=1 AND expires>? THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN started>? THEN 1 ELSE 0 END) AS requests,
+        SUM(CASE WHEN started>? THEN tokens ELSE 0 END) AS tokens FROM provider_capacity_leases`,now,now-60000,now-60000))[0]!;
+      if(Number(stats.active)>=CAPACITY.concurrency||Number(stats.requests)>=CAPACITY.requestsPerMinute||Number(stats.tokens)+tokens>CAPACITY.tokensPerMinute)return false;
+      yield* query('INSERT INTO provider_capacity_leases(id,device_id,tokens,started,expires,active) VALUES(?,?,?,?,?,1)',id,Number(d.id),tokens,now,now+CAPACITY.leaseMs);
+      yield* query('DELETE FROM provider_capacity_leases WHERE expires<=? AND started<=?',now,now-60000);
+      return true;
+    })());
+  }
+  releaseCapacity(token:string,id:string):Promise<void> {
+    return this.run((function*():Transaction<void>{const d=yield* device(token);if(d)yield* query('UPDATE provider_capacity_leases SET active=0 WHERE id=? AND device_id=?',id,Number(d.id));})());
+  }
   private run: RunTransaction;
   constructor(run: RunTransaction) { this.run = run; }
   register(input: RegistrationInput): Promise<RegisteredDevice> {
@@ -291,11 +324,42 @@ export class SQLBilling implements BillingStore {
   begin(input: BeginCapture): Promise<BeginResult> {
     return this.run(beginCapture(input));
   }
+  cancelCapture(token:string,id:string):Promise<void>{
+    return this.run((function*():Transaction<void>{const d=yield* device(token);if(!d)return;
+      yield* query('INSERT INTO capture_cancellations(device_id,capture_id,expires) VALUES(?,?,?) ON CONFLICT(device_id,capture_id) DO NOTHING',Number(d.id),id,Date.now()+900000);
+      yield* finishForDevice(d,{token,captureId:id,charge:false,terminalState:'canceled'});
+    })());
+  }
+  heartbeat(token:string,id:string,owner:string,now=Date.now()):Promise<boolean> {
+    return this.run((function*():Transaction<boolean>{
+      const d=yield* device(token),c=d?yield* readCapture(d,id):null;
+      if(!c||c.settlementStatus!=='held'||c.deliveryOwner!==owner||Date.parse(c.expiresAt)<=now)return false;
+      c.workerAliveUntil=now+8000;yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?',JSON.stringify(c),c.requestId);return true;
+    })());
+  }
   beginWithAttempt(input: BeginCapture, attempt: NewAttempt): Promise<BeginResult> {
     assertAttemptBinding(input, attempt);
     return this.run((function* (): Transaction<BeginResult> {
-      const result = yield* beginCapture(input);
-      if (result.ok && ! (yield* insertAttempt(result.capture, attempt))) throw new Error('Attempt could not start');
+      let result = yield* beginCapture(input);
+      if(!result.ok&&result.reason==='capture_in_progress'&&input.deliveryRecovery&&result.capture?.deliveryOwner
+        && (result.capture.workerAliveUntil??Infinity)<Date.now()&&Date.parse(result.capture.expiresAt)>Date.now()){
+        const c=result.capture,d=(yield* device(input.token))!;
+        const attempts=yield* query('SELECT attempt_id,metadata FROM model_attempts WHERE request_id=?',c.requestId);
+        if(attempts.length>=2)return result;
+        for(const row of attempts){
+          yield* finishAttemptForDevice(d,String(row.attempt_id),{status:'unknown',inputTokens:null,outputTokens:null,costMicros:null});
+          yield* settleBudgetForDevice(d,String(row.attempt_id),null);
+          yield* query('UPDATE provider_capacity_leases SET active=0 WHERE id=? AND device_id=?',String(row.attempt_id),Number(d.id));
+        }
+        c.deliveryOwner=input.requestId;c.workerAliveUntil=Date.now()+8000;
+        yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?',JSON.stringify(c),c.requestId);
+        result={ok:true,capture:c,quota:yield* quotaFor(d)};
+      }
+      if(result.ok){
+        if(!(yield* insertAttempt(result.capture,attempt)))throw new Error('Attempt could not start');
+        if(result.capture.deliveryOwner){result.capture.workerAttemptId=attempt.attemptId;result.capture.deliveryAttempts=(result.capture.deliveryAttempts??0)+1;
+          yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?',JSON.stringify(result.capture),result.capture.requestId);}
+      }
       return result;
     })());
   }
@@ -310,6 +374,9 @@ export class SQLBilling implements BillingStore {
   finishWithCapture(input: FinishCapture & {captureId: string}): Promise<CaptureSettlement | null> {
     return this.run((function* (): Transaction<CaptureSettlement | null> {
       const d = yield* device(input.token); if (!d) return null;
+      if(input.attemptSettlement){const a=input.attemptSettlement;
+        yield* finishAttemptForDevice(d,a.id,a.result);yield* settleBudgetForDevice(d,a.id,a.actual,a.anomaly);
+      }
       // Reuse the record read/written while settling under the device lock. run resolves
       // only after COMMIT, so callers never send a receipt for an uncommitted snapshot.
       const capture = yield* expireAnswer(yield* finishForDevice(d, input));
@@ -363,7 +430,7 @@ export class SQLBilling implements BillingStore {
       for (const id of [...new Set([...expired,...stale].map(r=>Number(r.device_id)))].sort((a,b)=>a-b)) {
         yield* query('SELECT id FROM devices WHERE id=? FOR UPDATE',id);
       }
-      yield* query('SELECT scope,currency FROM request_budget_guards ORDER BY scope,currency FOR UPDATE');
+      if(expired.length||stale.length)yield* query('SELECT scope,currency FROM request_budget_guards ORDER BY scope,currency FOR UPDATE');
       let count = 0;
       for (const row of expired) {
         const d = (yield* query('SELECT * FROM devices WHERE id=? FOR UPDATE', Number(row.device_id)))[0];
@@ -389,6 +456,11 @@ export class SQLBilling implements BillingStore {
         const d=(yield* query('SELECT * FROM devices WHERE id=? FOR UPDATE',Number(row.device_id)))[0];
         if (d) yield* settleBudgetForDevice(d,String(row.attempt_id),null);
       }
+      // Remove expired ciphertext independently of shared budget guards.
+      const delivered=yield* query(`SELECT request_id,metadata FROM capture_requests WHERE state<>'held' AND created_at<=? AND metadata LIKE '%"sealedAnswer":%' LIMIT 100`,new Date(Date.parse(now)-900000).toISOString());
+      for(const row of delivered){const c=JSON.parse(String(row.metadata)) as CaptureRecord;delete c.sealedAnswer;c.answerHmac=null;
+        yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=? AND metadata=?',JSON.stringify(c),String(row.request_id),String(row.metadata));}
+      yield* query('DELETE FROM capture_cancellations WHERE expires<?',Date.parse(now));
       yield* query('DELETE FROM rate_limit_buckets WHERE expires_at<?', now);
       return count;
     })());
@@ -397,7 +469,10 @@ export class SQLBilling implements BillingStore {
     return this.run((function* (): Transaction<boolean> {
       const d = yield* device(token), capture = d ? yield* readCapture(d, input.captureId) : null;
       if (!d || !capture || capture.settlementStatus !== 'held') return false;
-      return yield* insertAttempt(capture, input);
+      const inserted=yield* insertAttempt(capture,input);
+      if(inserted&&capture.deliveryOwner){capture.workerAttemptId=input.attemptId;capture.deliveryAttempts=(capture.deliveryAttempts??0)+1;
+        yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?',JSON.stringify(capture),capture.requestId);}
+      return inserted;
     })());
   }
   finishAttempt(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>): Promise<void> {
@@ -433,8 +508,6 @@ export class SQLBilling implements BillingStore {
         const control = JSON.parse(String((yield* query('SELECT metadata FROM budget_controls WHERE channel=? FOR UPDATE',channelKey))[0]!.metadata)) as BudgetControl;
         if (control.blockedUntil === -1) throw new BudgetAdmissionError('guard_tripped');
         if (control.blockedUntil > now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
-        const active=(yield* query("SELECT COUNT(*) AS n FROM attempt_budget_holds WHERE scope=? AND currency=? AND state='held'",scope,currency))[0];
-        if (Number(active?.n)>=4) throw new BudgetAdmissionError('busy');
       }
       yield* query(`INSERT INTO budget_windows(scope,window_start,currency,limit_micros,expires_at)
         VALUES (?,?,?,?,?) ON CONFLICT(scope,window_start,currency) DO NOTHING`, scope, windowStart, currency, limitMicros, expiresAt);
@@ -485,9 +558,13 @@ export class SQLBilling implements BillingStore {
       const controls=yield* query('SELECT metadata FROM budget_controls ORDER BY channel');
       const provisional=yield* query("SELECT * FROM budget_accounting WHERE state='provisional' ORDER BY updated_at LIMIT 200");
       const legacy=yield* query('SELECT scope,currency FROM request_budget_guards WHERE tripped<>0 ORDER BY scope,currency');
-      return {controls:[...controls.map(r=>JSON.parse(String(r.metadata)) as BudgetControl),
+      const now = new Date().toISOString();
+      const windows = yield* query('SELECT * FROM budget_windows WHERE window_start<=? AND expires_at>? ORDER BY scope,currency',now,now);
+      const recent=yield* query("SELECT h.currency,SUM(a.booked) AS micros FROM budget_accounting a JOIN attempt_budget_holds h ON h.attempt_id=a.attempt_id WHERE h.scope='official' AND h.created_at>=? GROUP BY h.currency",new Date(Date.now()-3600000).toISOString());
+      return {recentSpend:recent.map(r=>({currency:String(r.currency),micros:Number(r.micros)})),controls:[...controls.map(r=>JSON.parse(String(r.metadata)) as BudgetControl),
         ...legacy.map(r=>({...emptyControl('legacy:'+JSON.stringify([String(r.scope),String(r.currency)])),blockedUntil:-1,reason:'legacy_global_guard'}))],
-        provisional:provisional.map(accountingRow)};
+        provisional:provisional.map(accountingRow), windows:windows.map(r=>({scope:String(r.scope),currency:String(r.currency),
+          start:String(r.window_start),expiresAt:String(r.expires_at),limit:Number(r.limit_micros),spent:Number(r.spent_micros),held:Number(r.held_micros)}))};
     })());
   }
   reconcileBudget(attemptId: string, actualMicros: number, evidence: string): Promise<boolean> {
@@ -565,11 +642,12 @@ export class SQLBilling implements BillingStore {
 
 function* finishForDevice(d: Row, input: FinishCapture): Transaction<CaptureRecord | null> {
   const capture = yield* readCapture(d, input.captureId);
-  if (!capture || capture.settlementStatus !== 'held') return capture;
+  if (!capture || capture.settlementStatus !== 'held' || (input.owner&&capture.deliveryOwner!==input.owner)) return capture;
   if (capture.operation !== 'solve') {
     capture.settlementStatus = 'released'; capture.terminalState = input.terminalState;
     capture.finishedAt = new Date().toISOString(); capture.terminalReason = input.terminalReason ?? null;
     capture.usableResult = input.terminalState === 'usable';
+    if(input.sealedAnswer)capture.sealedAnswer = input.sealedAnswer;
     capture.answerHmac = capture.usableResult ? input.answerHmac ?? null : null;
     capture.resultState = input.resultState ?? null; capture.questionKind = input.questionKind ?? null;
     capture.parserPath = input.parserPath ?? null;
@@ -596,6 +674,7 @@ function* finishForDevice(d: Row, input: FinishCapture): Transaction<CaptureReco
   capture.settlementStatus = state;
   capture.terminalState = input.charge && !charge ? 'failed' : input.terminalState;
   capture.usableResult = charge && input.terminalState === 'usable';
+  if(input.sealedAnswer)capture.sealedAnswer = input.sealedAnswer;
   capture.answerHmac = charge ? input.answerHmac ?? null : null;
   capture.resultState = input.resultState ?? null; capture.questionKind = input.questionKind ?? null;
   capture.parserPath = input.parserPath ?? null; capture.terminalReason = input.terminalReason ?? null; capture.finishedAt = now;
@@ -620,6 +699,7 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
   if (!admission || admission.state !== 'active') return {ok: false, reason: 'service_maintenance'};
   const d = yield* device(input.token);
   if (!d) return { ok: false, reason: 'unknown_token' };
+  if(input.deliveryRecovery&&(yield* query('SELECT capture_id FROM capture_cancellations WHERE device_id=? AND capture_id=? AND expires>?',Number(d.id),input.captureId,Date.now())).length)return {ok:false,reason:'capture_already_finalized'};
   yield* opening(d);
   yield* syncFreeTrial(d);
   yield* syncPlus(d);
@@ -673,13 +753,15 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
 }
 
 function* insertAttempt(capture: CaptureRecord, input: NewAttempt): Transaction<boolean> {
+  const prior=yield* query('SELECT status FROM model_attempts WHERE request_id=?',capture.requestId);
+  if(prior.length>=2||prior.some(r=>!['failed','unknown'].includes(String(r.status))))return false;
   const attempt: Attempt = {...input, status: 'running', inputTokens: null, outputTokens: null,
     costMicros: null, startedAt: new Date().toISOString(), finishedAt: null};
   // The caller owns the device lock. Reuse the newly inserted capture instead of reading it
   // in another transaction; SELECT obtains the device ID without another network round trip.
   const rows = yield* query(`INSERT INTO model_attempts (attempt_id,request_id,device_id,ordinal,metadata,status)
-    SELECT ?,request_id,device_id,1,?,'running' FROM capture_requests WHERE request_id=? AND state='held'
-    ON CONFLICT(request_id,ordinal) DO NOTHING RETURNING attempt_id`, input.attemptId, JSON.stringify(attempt), capture.requestId);
+    SELECT ?,request_id,device_id,?,?,'running' FROM capture_requests WHERE request_id=? AND state='held'
+    ON CONFLICT(request_id,ordinal) DO NOTHING RETURNING attempt_id`, input.attemptId, prior.length+1, JSON.stringify(attempt), capture.requestId);
   if (!rows.length) return false;
   yield* query(`INSERT INTO attempt_costs (attempt_id,revision,currency,cost_micros,pricing_version,source,calculated_at)
     VALUES (?,1,?,NULL,?,'unknown',?)`, input.attemptId, input.currency, input.pricingVersion, attempt.startedAt);

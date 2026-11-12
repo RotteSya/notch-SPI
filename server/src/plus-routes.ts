@@ -1,8 +1,9 @@
+import {withCompensation,compensationInterval} from './plus-compensation.ts';
 import type {FastifyInstance} from 'fastify';
 import type {AppContext} from './routes.ts';
 import {ApiError} from './http.ts';
 import {requireAccount} from './auth.ts';
-import {PLUS,plusActive,type PlusRecord} from './plus.ts';
+import {PLUS,compensationPaidPeriod,plusActive,type PlusRecord} from './plus.ts';
 import {trialWindow} from './free-trial.ts';
 import {LivePlusStripe,type PlusStripe} from './plus-stripe.ts';
 import {stripeReference} from './stripe.ts';
@@ -22,12 +23,17 @@ export function plusService(ctx:AppContext) {
     if(!await store.plus.apply(ticket.intentId,ticket.generation,update))throw new Error('Plus changed during synchronization');
   }
   async function wire(token:string,syncFailed=false) {
+    const compensation=await store.plus.claimCompensation(token);
     await store.billing.quota(token); // expire and materialize daily lots under the device transaction
-    const r=await store.plus.get(token),active=plusActive(r),window=trialWindow();
+    const r=await store.plus.get(token),window=trialWindow();
+    const paid=compensationPaidPeriod(r);
+    const entitlement=withCompensation({active:plusActive(r),expiresAt:plusActive(r)?r!.paidUntil:null},compensation,paid),active=entitlement.active;
+    const gift=compensationInterval(compensation,paid);
     const usage=await store.plus.usage(token,'plus_daily:'+window.key);
-    return {available:available(),status:active?'active':r?.status==='checkout_pending'?'pending':r?.subscriptionId?'expired':'inactive',
+    return {available:available(),status:active?'active':r?.status==='checkout_pending'?'pending':r?.subscriptionId||compensation?.claimedAt?'expired':'inactive',
       billing_status:r?.status??'none',price_cents:PLUS.priceCents,currency:PLUS.currency,daily_limit:PLUS.dailyLimit,
-      paid_until:r?.paidUntil??null,cancel_at_period_end:r?.cancelAtPeriodEnd??false,
+      paid_until:entitlement.expiresAt??gift?.expiresAt??r?.paidUntil??null,subscription_paid_until:r?.paidUntil??null,
+      compensation:compensation?.claimedAt?{campaign_id:compensation.campaignId,claimed_at:compensation.claimedAt,starts_at:gift?.startsAt,expires_at:gift?.expiresAt,duration_hours:48}:null,cancel_at_period_end:r?.cancelAtPeriodEnd??false,
       daily_used:active&&usage?usage.granted-usage.remaining:0,daily_held:active&&usage?usage.held:0,
       daily_remaining:active&&usage?usage.remaining-usage.held:0,resets_at:active?window.end:null,
       can_manage:!!r?.subscriptionId,sync_failed:syncFailed,server_time:new Date().toISOString()};

@@ -9,17 +9,17 @@ import {MemoryStore} from '../src/db-memory.ts';
 import {SqliteStore} from '../src/db-sqlite.ts';
 
 for(const kind of ['memory','sqlite']){
-  test(`${kind}: guarded global slots, 20% headroom, settlement and cross-day latch`,async()=>{
+  test(`${kind}: budget independent of global slots, 20% headroom, settlement and cross-day latch`,async()=>{
     const store=kind==='memory'?new MemoryStore():new SqliteStore(':memory:');
     try{
       const users=await Promise.all(Array.from({length:6},()=>store.registerDevice({platform:'test',appVersion:'3',trialQuestions:30})));
       const ids=users.map(()=>randomUUID()),now=Date.now();
       const reserve=(i:number,currency='USD',time=now,amount=100)=>store.billing.reserveBudget(users[i]!.token,ids[i]!, 'official',currency,amount,1000,86400000,time,480,true);
       assert.deepEqual(await Promise.all([0,1,2,3].map(i=>reserve(i))),[true,true,true,true]);
-      await assert.rejects(reserve(4), {name:'BudgetAdmissionError',reason:'busy'});
+      assert.equal(await reserve(4),true);
       // Unknown user cannot release another user's hold; a repeated ID adds no slot.
       await store.billing.releaseBudget(users[5]!.token,ids[0]!);
-      await assert.rejects(reserve(4), {name:'BudgetAdmissionError',reason:'busy'});assert.equal(await reserve(0),true);
+      assert.equal(await reserve(4),true);assert.equal(await reserve(0),true);
       await store.billing.settleBudget(users[0]!.token,ids[0]!,10);
       assert.equal(await reserve(4),true);
       await store.billing.settleBudget(users[1]!.token,ids[1]!,121);

@@ -1,5 +1,5 @@
 import type { CaptureRequest, Provider, Usage } from './types.ts';
-import { readVendorSSE } from './types.ts';
+import { readVendorSSE, TransientProviderError } from './types.ts';
 import { vendorErrorMessage } from './anthropic.ts';
 
 export type AstraTier = 'default' | 'fast';
@@ -90,9 +90,29 @@ export class OpenAIProvider implements Provider {
       },
       body: serialized,
       signal,
+    }).catch(error=>{
+      if(error instanceof TypeError&&!signal.aborted)throw new TransientProviderError(0,250);
+      throw error;
     });
 
     req.onTiming?.('upstreamHeaders');
+    const diagnostics:Record<string,string>={};
+    for(const name of ['x-ratelimit-limit-requests','x-ratelimit-limit-tokens','x-ratelimit-remaining-requests','x-ratelimit-remaining-tokens','x-ratelimit-reset-requests','x-ratelimit-reset-tokens','x-ratelimit-limit-project-tokens','x-ratelimit-remaining-project-tokens','openai-organization','openai-project','x-request-id']){
+      const value=res.headers.get(name);if(value&&value.length<=200)diagnostics[name]=value;
+    }
+    req.onHeaders?.(diagnostics);
+    if(res.status===429){
+      const body=await res.clone().json().catch(()=>null) as {error?:{code?:string}}|null;
+      if(['insufficient_quota','billing_hard_limit_reached'].includes(body?.error?.code??'')){
+        await res.body?.cancel().catch(()=>{});throw new Error('Upstream billing quota unavailable');
+      }
+    }
+    if ([429,502,503,504].includes(res.status)) {
+      const header=res.headers.get('retry-after');
+      const after=header===null?500:/^\d+$/.test(header)?Number(header)*1000:Date.parse(header)-Date.now();
+      await res.body?.cancel().catch(()=>{});
+      throw new TransientProviderError(res.status,Number.isFinite(after)?Math.max(500,after):500);
+    }
     if (!res.ok || !res.body) {
       throw new Error(await vendorErrorMessage(res));
     }

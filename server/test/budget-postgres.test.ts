@@ -33,15 +33,15 @@ else {
     try {const rows=await Promise.all(clients.map(c=>c.query('SELECT pg_backend_pid() AS pid')));assert.notEqual(rows[0]!.rows[0].pid,rows[1]!.rows[0].pid);}
     finally{clients.forEach(c=>c.release());}
   });
-  test('PostgreSQL: 20 rounds of 32 admissions enforce four global slots across pools',async()=>{
+  test('PostgreSQL: 20 rounds of 32 budget admissions are independent of throughput across pools',async()=>{
     for(let round=0;round<20;round++){
       const scope=randomUUID(),ids=users.map(()=>randomUUID());
       const results=await Promise.allSettled(users.map((_,i)=>reserve(i,ids[i]!,scope)));
-      const accepted=settled(results);assert.equal(accepted.length,4);
+      const accepted=settled(results);assert.equal(accepted.length,32);
       for(const r of results)if(r.status==='rejected')assert.equal(r.reason.reason,'busy');
-      assert.equal(Number((await window(scope)).held_micros),400);
+      assert.equal(Number((await window(scope)).held_micros),3200);
       await Promise.all(accepted.map(i=>stores[(i+1)%2]!.billing.settleBudget(users[i]!.token,ids[i]!,20)));
-      assert.equal(Number((await window(scope)).spent_micros),80);assert.equal(Number((await window(scope)).held_micros),0);
+      assert.equal(Number((await window(scope)).spent_micros),640);assert.equal(Number((await window(scope)).held_micros),0);
     }
   });
   test('PostgreSQL: shared daily balance rejects oversubscription before concurrency limit',async()=>{
@@ -68,14 +68,15 @@ else {
     assert.equal(Number((await window(scope)).held_micros),0);
     assert.equal(await stores[1]!.billing.reconcileBudget(id,0,'conflict:'+id),false);
   });
-  test('PostgreSQL: concurrent cooldown exit permits exactly one probe across pools',async()=>{
+  test('PostgreSQL: unknown costs remain booked while healthy requests are not blocked by throughput accounting',async()=>{
     const scope=randomUUID();
     for(let i=0;i<3;i++){const id=randomUUID();await reserve(i,id,scope);await stores[i%2]!.billing.settleBudget(users[i]!.token,id,null);}
-    const c=await control(scope),ids=users.map(()=>randomUUID());
-    const results=await Promise.allSettled(users.map((_,i)=>reserve(i,ids[i]!,scope,'model-a',c.blockedUntil+1)));
-    const accepted=settled(results);assert.equal(accepted.length,1);
-    for(const r of results)if(r.status==='rejected')assert.equal(r.reason.reason,'cooldown');
-    const i=accepted[0]!;await stores[(i+1)%2]!.billing.settleBudget(users[i]!.token,ids[i]!,20);
+    const c=await control(scope),ids=users.map(()=>randomUUID());assert.equal(c.blockedUntil,0);assert.equal(c.failures,3);
+    const results=await Promise.allSettled(users.map((_,i)=>reserve(i,ids[i]!,scope)));
+    const accepted=settled(results);assert.equal(accepted.length,32);
+    for(const r of results)if(r.status==='rejected')assert.equal(r.reason.reason,'busy');
+    await Promise.all(accepted.map(i=>stores[(i+1)%2]!.billing.settleBudget(users[i]!.token,ids[i]!,20)));
+    assert.equal(Number((await window(scope)).spent_micros),940);assert.equal(Number((await window(scope)).held_micros),0);
     assert.equal((await control(scope)).blockedUntil,0);
     const next=randomUUID();assert.equal(await reserve(0,next,scope),true);await stores[0]!.billing.releaseBudget(users[0]!.token,next);
   });

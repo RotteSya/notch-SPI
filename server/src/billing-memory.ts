@@ -1,5 +1,7 @@
+import {CAPACITY,capacityAvailable,type CapacityLease} from './capacity-policy.ts';
+import {withCompensation,type PlusCompensation} from './plus-compensation.ts';
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
-import {PLUS,plusActive,type PlusRecord} from './plus.ts';
+import {PLUS,compensationPaidPeriod,plusActive,type PlusRecord} from './plus.ts';
 import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
@@ -23,10 +25,24 @@ interface State {
   attempts: Map<string, Attempt>;
 }
 export class MemoryBilling implements BillingStore {
+  private canceled=new Map<string,number>();
+  async cancelCapture(token:string,id:string):Promise<void>{const d=this.lookup(token);if(!d)return;
+    this.canceled.set(d.id+':'+id,Date.now()+900000);this.finishDevice(d,{token,captureId:id,charge:false,terminalState:'canceled'});
+  }
+  private capacity = new Map<string,CapacityLease>();
+  async acquireCapacity(token:string,id:string,tokens:number,now=Date.now()):Promise<boolean> {
+    if(!this.lookup(token)||!Number.isSafeInteger(tokens)||tokens<=0)return false;
+    for(const [k,l] of this.capacity)if(l.expires<=now&&l.started<=now-60000)this.capacity.delete(k);
+    const existing=this.capacity.get(id);if(existing)return existing.owner===token&&existing.active&&existing.expires>now;
+    if(!capacityAvailable([...this.capacity.values()],tokens,now))return false;
+    this.capacity.set(id,{id,owner:token,tokens,started:now,expires:now+CAPACITY.leaseMs,active:true});return true;
+  }
+  async releaseCapacity(token:string,id:string):Promise<void> {const l=this.capacity.get(id);if(l?.owner===token)l.active=false;}
+
   private states = new Map<number, State>();
   private devices = new Map<number, MemoryQuotaDevice>();
   private buckets = new Map<string, { count: number; end: number }>();
-  private budgets = new Map<string, { limit: number; spent: number; held: number; end: number }>();
+  private budgets = new Map<string, { scope:string; currency:string; start:number; limit: number; spent: number; held: number; end: number }>();
   private controls = new Map<string,BudgetControl>();
   private accounting = new Map<string,BudgetAccounting>();
   private controlResets = new Map<string,{channel:string;previous:BudgetControl}>();
@@ -36,7 +52,9 @@ export class MemoryBilling implements BillingStore {
   private usage: (event: StoredUsageMetric & { createdAt: string }) => void;
   constructor(lookup: (token: string) => MemoryQuotaDevice | undefined,
     usage: (event: StoredUsageMetric & { createdAt: string }) => void,
-    plus: (id:number)=>PlusRecord|null = () => null) { this.lookup = lookup; this.usage = usage; this.plus=plus; }
+    plus: (id:number)=>PlusRecord|null = () => null,
+    compensation:(id:number)=>PlusCompensation|null=()=>null) { this.compensation=compensation; this.lookup = lookup; this.usage = usage; this.plus=plus; }
+  private compensation:(id:number)=>PlusCompensation|null;
   private plus: (id:number)=>PlusRecord|null;
   plusUsage(token:string,source:string) {
     const d=this.lookup(token); if(!d)return null;
@@ -88,16 +106,18 @@ export class MemoryBilling implements BillingStore {
       if (change.revokedDelta) lot.revocations.push({at: now, delta: change.revokedDelta});
       d.balanceQuestions += change.availableDelta; state.version++; d.updatedAt = now;
     }
-    const plan=this.plus(d.id);
-    if(plusActive(plan,clock)) {
+    const paid=this.plus(d.id);
+    const plan=withCompensation({active:plusActive(paid,clock),expiresAt:plusActive(paid,clock)?paid!.paidUntil:null},
+      this.compensation(d.id),compensationPaidPeriod(paid,clock),clock);
+    if(plan.active) {
       const window=trialWindow(clock),source='plus_daily:'+window.key;
       if(!state.lots.some(l=>l.sourceRef===source)) {
         const lot=newLot('paid',PLUS.dailyLimit,source);
-        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        lot.expiresAt=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
         state.lots.push(lot);d.balanceQuestions+=lot.granted;state.version++;d.updatedAt=now;
       } else {
         const lot=state.lots.find(l=>l.sourceRef===source)!;
-        lot.expiresAt=window.end<plan!.paidUntil!?window.end:plan!.paidUntil!;
+        lot.expiresAt=window.end<plan.expiresAt!?window.end:plan.expiresAt!;
         if(lot.target!==0){const change=applyLotPolicy(lot,false,0);d.balanceQuestions+=change.availableDelta;state.version++;d.updatedAt=now;}
       }
     } else for(const lot of state.lots.filter(l=>l.sourceRef?.startsWith('plus_daily:')&&l.target!==l.granted)) {
@@ -154,26 +174,45 @@ export class MemoryBilling implements BillingStore {
   }
   private captureFor(d: MemoryQuotaDevice, captureId: string): CaptureRecord | null {
     const record = this.state(d).captures.get(captureId)?.record;
-    if (record && Date.now() - Date.parse(record.createdAt) >= 900_000 && record.answerHmac !== null) {
-      record.answerHmac = null;
+    if (record && Date.now() - Date.parse(record.createdAt) >= 900_000 && (record.answerHmac !== null || record.sealedAnswer)) {
+      record.answerHmac = null; delete record.sealedAnswer;
     }
     return record ? { ...record } : null;
   }
   async begin(input: BeginCapture): Promise<BeginResult> {
     return this.beginCapture(input);
   }
+  async heartbeat(token:string,id:string,owner:string,now=Date.now()):Promise<boolean> {
+    const d=this.lookup(token),c=d?this.state(d).captures.get(id)?.record:null;
+    if(!c||c.settlementStatus!=='held'||c.deliveryOwner!==owner||Date.parse(c.expiresAt)<=now)return false;
+    c.workerAliveUntil=now+8000;return true;
+  }
   async beginWithAttempt(input: BeginCapture, attempt: NewAttempt): Promise<BeginResult> {
     assertAttemptBinding(input, attempt);
     // Validate uniqueness only after capture admission succeeds, but before changing quota.
     // Both writes occur without await; rejected duplicates retain the ordinary begin result.
+    const d=this.lookup(input.token),previous=d?this.state(d).captures.get(input.captureId)?.record:null;
+    if(d&&(this.canceled.get(d.id+':'+input.captureId)??0)<=Date.now()&&previous?.deliveryOwner&&input.deliveryRecovery&&previous.requestHmac===input.requestHmac&&previous.settlementStatus==='held'
+      &&(previous.workerAliveUntil??Infinity)<Date.now()&&Date.parse(previous.expiresAt)>Date.now()){
+      const attempts=[...this.state(d).attempts.values()].filter(a=>a.captureId===input.captureId);
+      if(attempts.length<2){
+        for(const a of attempts){this.finishAttemptFor(d,a.attemptId,{status:'unknown',inputTokens:null,outputTokens:null,costMicros:null});this.settleBudgetFor(d,a.attemptId,null);
+          const lease=this.capacity.get(a.attemptId);if(lease)lease.active=false;}
+        previous.deliveryOwner=input.requestId;previous.workerAliveUntil=Date.now()+8000;
+        if(!this.startAttemptNow(input.token,attempt))throw Error('Recovery attempt unavailable');
+        return {ok:true,capture:{...previous},quota:this.snapshot(d)};
+      }
+    }
     const result = this.beginCapture(input, () => {
       if ([...this.states.values()].some(state => state.attempts.has(attempt.attemptId))) throw new Error('Attempt already exists');
     });
     if (result.ok && !this.startAttemptNow(input.token, attempt)) throw new Error('Attempt could not start');
+    if(result.ok&&d)return {...result,capture:this.captureFor(d,input.captureId)!};
     return result;
   }
   private beginCapture(input: BeginCapture, beforeCommit?: () => void): BeginResult {
     const d = this.lookup(input.token); if (!d) return { ok: false, reason: 'unknown_token' };
+    if(input.deliveryRecovery&&(this.canceled.get(d.id+':'+input.captureId)??0)>Date.now())return {ok:false,reason:'capture_already_finalized'};
     this.syncFreeTrial(d);
     const state = this.state(d), previous = state.captures.get(input.captureId);
     if (previous) return duplicateCapture(previous.record,input);
@@ -212,13 +251,14 @@ export class MemoryBilling implements BillingStore {
     const state=this.state(d);
     const capture = input.captureId ? state.captures.get(input.captureId)
       : [...state.captures.values()].find(c => c.legacy && c.record.settlementStatus==='held');
-    if (!capture || capture.record.settlementStatus!=='held') return;
+    if (!capture || capture.record.settlementStatus!=='held' || (input.owner&&capture.record.deliveryOwner!==input.owner)) return;
     if (capture.record.operation !== 'solve') {
       capture.record.settlementStatus = 'released'; capture.record.terminalState = input.terminalState;
       capture.record.finishedAt = new Date().toISOString();
       capture.record.terminalReason = input.terminalReason ?? null;
       capture.record.usableResult = input.terminalState === 'usable';
       capture.record.answerHmac = capture.record.usableResult ? input.answerHmac ?? null : null;
+      capture.record.sealedAnswer = input.sealedAnswer;
       capture.record.resultState = input.resultState ?? null; capture.record.questionKind = input.questionKind ?? null;
       capture.record.parserPath = input.parserPath ?? null;
       if (capture.record.operation === 'recover' && input.compensateGoodwill && capture.record.parentCaptureId) {
@@ -229,7 +269,7 @@ export class MemoryBilling implements BillingStore {
     const now=new Date().toISOString(), charge=input.charge && capture.record.expiresAt>now;
     capture.record={...capture.record,settlementStatus:charge?'settled':'released',
       terminalState:input.charge&&!charge?'failed':input.terminalState,usableResult:charge&&input.terminalState==='usable',
-      answerHmac:charge?input.answerHmac??null:null,resultState:input.resultState??null,
+      sealedAnswer:input.sealedAnswer,answerHmac:charge?input.answerHmac??null:null,resultState:input.resultState??null,
       questionKind:input.questionKind??null,parserPath:input.parserPath??null,
       terminalReason:input.terminalReason??null,finishedAt:now};
     capture.lot.held--; if(charge) { capture.lot.remaining--; d.totalQuestions++; } else if(!capture.lot.frozen) d.balanceQuestions++;
@@ -246,12 +286,16 @@ export class MemoryBilling implements BillingStore {
   }
   async finishWithCapture(input: FinishCapture & {captureId: string}): Promise<CaptureSettlement | null> {
     const d = this.lookup(input.token); if (!d) return null;
+    if(input.attemptSettlement){const a=input.attemptSettlement;
+      this.finishAttemptFor(d,a.id,a.result);this.settleBudgetFor(d,a.id,a.actual,a.anomaly);
+    }
     // No await: settlement and both snapshots are copied before another operation can run.
     this.finishDevice(d, input);
     return {account: this.accountFor(d), capture: this.captureFor(d, input.captureId)};
   }
   async reap(now=new Date().toISOString()):Promise<number> {
     let count=0;
+    for(const [key,expiry] of this.canceled)if(expiry<=Date.parse(now))this.canceled.delete(key);
     for(const [id,state] of this.states) for(const {record} of state.captures.values()) {
       if(count>=100) break;
       if(record.settlementStatus==='held' && record.expiresAt<=now) {
@@ -284,7 +328,8 @@ export class MemoryBilling implements BillingStore {
   private startAttemptNow(token: string, input: NewAttempt): boolean {
     const d=this.lookup(token); if(!d) return false;
     const state=this.state(d),capture=state.captures.get(input.captureId);
-    if(!capture || capture.record.settlementStatus!=='held' || state.attempts.has(input.attemptId) || [...state.attempts.values()].some(a=>a.captureId===input.captureId)) return false;
+    if(!capture || capture.record.settlementStatus!=='held' || state.attempts.has(input.attemptId) || [...state.attempts.values()].filter(a=>a.captureId===input.captureId).length>=2 || [...state.attempts.values()].some(a=>a.captureId===input.captureId&&!['failed','unknown'].includes(a.status))) return false;
+    if(capture.record.deliveryOwner){capture.record.workerAttemptId=input.attemptId;capture.record.deliveryAttempts=(capture.record.deliveryAttempts??0)+1;}
     state.attempts.set(input.attemptId,{...input,status:'running',inputTokens:null,outputTokens:null,costMicros:null,startedAt:new Date().toISOString(),finishedAt:null}); return true;
   }
   async finishAttempt(token:string,id:string,input:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>):Promise<void> {
@@ -313,8 +358,7 @@ export class MemoryBilling implements BillingStore {
     const control=this.controls.get(channelKey)??emptyControl(channelKey);
     if (guarded && control.blockedUntil===-1) throw new BudgetAdmissionError('guard_tripped');
     if (guarded && control.blockedUntil>now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
-    if (guarded && [...this.budgetHolds.values()].filter(h=>h.group===guardKey&&h.state==='held').length>=4) throw new BudgetAdmissionError('busy');
-    const budget=this.budgets.get(key)??{limit:limitMicros,spent:0,held:0,end:start+windowMs};
+    const budget=this.budgets.get(key)??{scope,currency,start,limit:limitMicros,spent:0,held:0,end:start+windowMs};
     if (budget.spent+budget.held+reservedUpperMicros+(guarded?Math.ceil(budget.limit*0.2):0)>budget.limit) return false;
     if (guarded) {
       if (control.blockedUntil>0) { control.probe=attemptId;control.blockedUntil=now+BUDGET_POLICY.probeMs; }
@@ -345,8 +389,12 @@ export class MemoryBilling implements BillingStore {
     budget.held-=hold.reserved; budget.spent+=actual; hold.state='settled';
   }
   async inspectBudget(): Promise<BudgetInspection> {
-    return {controls:[...this.controls.values()].map(c=>({...c})),provisional:[...this.accounting.values()]
-      .filter(a=>a.state==='provisional').sort((a,b)=>a.updatedAt-b.updatedAt).slice(0,200).map(a=>({...a}))};
+    const recent=new Map<string,number>();
+    for(const [id,h] of this.budgetHolds){const b=this.budgets.get(h.key);if(b?.scope==='official'&&h.createdAt>=Date.now()-3600000)recent.set(b.currency,(recent.get(b.currency)??0)+(this.accounting.get(id)?.booked??0));}
+    return {recentSpend:[...recent].map(([currency,micros])=>({currency,micros})),controls:[...this.controls.values()].map(c=>({...c})),provisional:[...this.accounting.values()]
+      .filter(a=>a.state==='provisional').sort((a,b)=>a.updatedAt-b.updatedAt).slice(0,200).map(a=>({...a})),
+      windows:[...this.budgets.values()].filter(b=>b.start<=Date.now()&&b.end>Date.now()).map(b=>({scope:b.scope,currency:b.currency,
+        start:new Date(b.start).toISOString(),expiresAt:new Date(b.end).toISOString(),limit:b.limit,spent:b.spent,held:b.held}))};
   }
   async reconcileBudget(attemptId: string, actualMicros: number, evidence: string): Promise<boolean> {
     validateReconciliation(actualMicros,evidence);

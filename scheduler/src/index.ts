@@ -72,6 +72,20 @@ export function createReaper(target: keyof typeof REAP_URLS) {
         throw new Error('reaper_http_failed');
       }
       const result = await readResult(response);
+      if (target === 'production') {
+        const budget = result.model_budget as Record<string,unknown> | undefined;
+        if (!budget || !Number.isInteger(budget.level) || Number(budget.level)<0 || Number(budget.level)>3
+          || !['limit_micros','spent_micros','held_micros','available_micros'].every(k=>Number.isSafeInteger(budget[k])&&Number(budget[k])>=0)) {
+          throw new Error('reaper_missing_budget_status');
+        }
+        console.log(JSON.stringify({event:'model_budget',level:budget.level,limit_micros:budget.limit_micros,
+          spent_micros:budget.spent_micros,held_micros:budget.held_micros,available_micros:budget.available_micros}));
+        // Stable messages group repeated occurrences. Platform Issues owns email delivery;
+        // warnings must never throw or interrupt the reaper/account reconciliation work.
+        if (budget.level===1) console.error(new Error('NotchSPI daily model budget warning: USD 15 threshold reached; service continues'));
+        if (budget.level===2) console.error(new Error('NotchSPI model budget critical: capacity running low; review before service interruption'));
+        if (budget.level===3) console.error(new Error('NotchSPI model budget blocked: official answering requires attention'));
+      }
       const partial = ['refunds_failed', 'checkouts_failed', 'finance_failed'].some(key => Number(result[key]) > 0);
       console.log(JSON.stringify({ event: 'reaper_result', scheduled_at: controller.scheduledTime,
         duration_ms: Date.now() - started, status, more_possible: result.more_possible,

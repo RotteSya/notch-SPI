@@ -119,6 +119,12 @@ for(const [kind,make] of implementations) {
       try {
         const target=await f.target(operation),billing=f.store.billing,before=f.calls();
         billing.finishAttemptAndBudget=failOnce(billing.finishAttemptAndBudget.bind(billing),afterCommit);
+        if(operation==='solve'){
+          const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
+          assert.match(response!.payload,/data: \[DONE\]/);assert.match(response!.payload,/"questions_charged":1/);
+          assert.equal(f.calls(),before+1);assert.equal((await billing.quota(f.token))?.balanceQuestions,29);
+          const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id)!;assert.equal(attempt.status,'succeeded');return;
+        }
         const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
         assert.equal(f.calls(),before+1);assert.equal(response?.status,200);
         assert.match(response!.payload,/正在核对/);assert.doesNotMatch(response!.payload,/data: \[DONE\]/);
@@ -127,11 +133,11 @@ for(const [kind,make] of implementations) {
         assert.equal((await billing.quota(f.token))?.heldQuestions,0);
         assert.equal((await billing.quota(f.token))?.balanceQuestions,operation==='explain'?29:30);
         const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id)!;
-        assert.equal(attempt.status,afterCommit?'succeeded':operation==='solve'?'unknown':'running');
-        assert.equal(attempt.costMicros,afterCommit||operation==='solve'?'0':null);
+        assert.equal(attempt.status,afterCommit?'succeeded':'running');
+        assert.equal(attempt.costMicros,afterCommit?'0':null);
         // Solve has an independent best-effort cost retry. An uncertain auxiliary cost
         // keeps the full bound until reconciliation instead of fabricating a zero.
-        await f.budgetAvailable(afterCommit||operation==='solve');
+        await f.budgetAvailable(afterCommit);
       }finally{await f.close();}
     });
   }
@@ -176,15 +182,20 @@ for(const [kind,make] of implementations) {
           const target=await f.target(operation),before=f.calls(),billing=f.store.billing;
           if(method==='reserveBudget')billing.reserveBudget=failOnce(billing.reserveBudget.bind(billing),afterCommit);
           else billing.beginWithAttempt=failOnce(billing.beginWithAttempt.bind(billing),afterCommit);
-          const req=f.request(target.url,target.payload);await req.response;await req.finished;
+          const req=f.request(target.url,target.payload);const response=await req.response;await req.finished;
+          if(method==='beginWithAttempt'){
+            assert.equal(f.calls(),before+1);assert.match(response!.payload,/data: \[DONE\]/);
+            assert.equal((await billing.quota(f.token))?.heldQuestions,0);
+            assert.equal((await billing.quota(f.token))?.balanceQuestions,29);
+            assert.equal((await billing.attempts(f.token)).filter(a=>a.captureId===target.id).length,1);return;
+          }
           assert.equal(f.calls(),before);
-          const captured=method==='beginWithAttempt'&&afterCommit;
+          const captured=false;
           assert.equal((await billing.capture(f.token,target.id))?.settlementStatus??null,captured?'released':null);
           const quota=(await billing.quota(f.token))!;assert.equal(quota.heldQuestions,0);
           assert.equal(quota.balanceQuestions,operation==='solve'?30:operation==='recover'&&captured?30:29);
           const attempt=(await billing.attempts(f.token)).find(a=>a.captureId===target.id);
-          if(method==='beginWithAttempt'&&afterCommit)assert.deepEqual([attempt?.status,attempt?.costMicros,attempt?.inputTokens],['failed','0',0]);
-          else assert.equal(attempt,undefined);
+          assert.equal(attempt,undefined);
           await f.budgetAvailable();
           const next=f.request('/v1/captures',body());assert.equal((await next.response)?.status,200);await next.finished;
           assert.equal(f.calls(),before+1);
@@ -220,10 +231,16 @@ for(const [kind,make] of implementations) {
           billing.finishWithCapture=failOnce(billing.finishWithCapture.bind(billing),afterCommit);
           const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
           assert.equal(response?.status,200);
+          if(operation==='solve'){
+            assert.match(response.payload,/data: \[DONE\]/);assert.match(response.payload,/"questions_charged":1/);
+            assert.equal((await billing.quota(f.token))?.balanceQuestions,29);assert.equal((await billing.quota(f.token))?.heldQuestions,0);
+            const once=await billing.quota(f.token);await billing.finishWithCapture({token:f.token,captureId:target.id,charge:true,terminalState:'usable'});
+            assert.deepEqual(await billing.quota(f.token),once);return;
+          }
           assert.ok(!response.payload.includes('"type":"usage"'));
           assert.ok(!response.payload.includes('data: [DONE]'));
           const capture=await billing.capture(f.token,target.id);
-          assert.equal(capture?.settlementStatus,operation==='solve'&&afterCommit?'settled':'released');
+          assert.equal(capture?.settlementStatus,'released');
           assert.equal(capture?.usableResult,afterCommit);
           const quota=(await billing.quota(f.token))!;
           assert.equal(quota.heldQuestions,0);

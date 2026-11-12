@@ -1,3 +1,4 @@
+import type {PlusCompensation} from './plus-compensation.ts';
 import {randomUUID} from 'node:crypto';
 export const PLUS = {priceCents: 6900, currency: 'CNY', dailyLimit: 400, version: 'plus-monthly-400-v1'} as const;
 export interface PlusRecord {
@@ -10,6 +11,8 @@ export interface PlusUpdate {
   paidFrom: string | null; paidUntil: string | null; invoiceId: string | null;
 }
 export interface PlusStore {
+  compensation(token:string):Promise<PlusCompensation|null>;
+  claimCompensation(token:string):Promise<PlusCompensation|null>;
   get(token: string): Promise<PlusRecord | null>;
   reserve(token: string): Promise<PlusRecord | null>;
   attach(intentId: string, checkoutId: string, url: string): Promise<boolean>;
@@ -39,4 +42,11 @@ export function mergePlus(record: PlusRecord, update: PlusUpdate): PlusRecord {
   return {...record, subscriptionId: update.subscriptionId, customerId: update.customerId,
     status: update.status, cancelAtPeriodEnd: update.cancelAtPeriodEnd,
     paidFrom: advances ? (record.paidUntil && update.paidFrom! <= record.paidUntil ? record.paidFrom : update.paidFrom) : record.paidFrom, paidUntil: advances ? update.paidUntil : record.paidUntil};
+}
+
+/** Only active coverage or a completed paid period can move a gift. A canceled future
+ * invoice must not defer a newly claimed gift for an account without active Plus. */
+export function compensationPaidPeriod(record:PlusRecord|null,now=Date.now()) {
+  return record?.paidFrom&&record.paidUntil&&(plusActive(record,now)||Date.parse(record.paidUntil)<=now)
+    ? {startsAt:record.paidFrom,expiresAt:record.paidUntil}:null;
 }

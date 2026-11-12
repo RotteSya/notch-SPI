@@ -40,6 +40,8 @@
 | client | POST | /v1/device-observation |
 | client | POST | /v1/captures |
 | client | GET | /v1/captures/:id/status |
+| client | GET | /v1/captures/:id/delivery |
+| client | POST | /v1/captures/:id/cancel |
 | client | POST | /v1/captures/:id/explanation |
 | client | POST | /v1/captures/:id/recovery |
 | client | GET | /v1/support |
@@ -1028,3 +1030,35 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 
 从 `INTEL_DMG_URL` 流式代理，与 `/dl` 保持独立。推进 Intel 渠道必须同步两个环境变量并核验签名、公证、架构和最低系统。
 已发布 Intel 3.0 禁用了应用内更新，首次迁移到支持独立通道的版本仍需手动安装；Catalina 不属于此通道。
+
+## One-time Plus compensation: 2026-11-11
+
+Campaign `service-budget-20261111` covers the device accounts existing at release. Deployment enrolls a fixed cohort in `plus_compensations`; registration never adds new accounts. `(campaign_id,device_id)` is unique. Claiming locks the device row, so concurrent starts, retries and restoring the same account cannot duplicate the award. Unclaimed rows have no running clock or claim deadline.
+
+Existing clients claim through startup `GET /v1/client-config`; `GET /v1/account` and `GET /v1/plus` also claim. Config responses are `no-store`. The 48 hours start at the current effective Plus expiry, or at claim time without active Plus. Normal Plus rules apply: 400 questions per Shanghai day; today's usage is not reset. Purchased credits and free-trial eligibility are preserved. An online request is required. Existing clients display the entitlement/expiry on the Plus page; no new compensation popup is shipped.
+
+`GET /v1/plus` exposes effective expiry as `paid_until`, original paid expiry as `subscription_paid_until`, and an optional `compensation` receipt with `campaign_id/claimed_at/starts_at/expires_at/duration_hours`. Stripe paid facts, renewal dates and subscription management remain unchanged. Continuing paid renewals carry unconsumed gift time forward; a new subscription after the gift was exhausted cannot resurrect it.
+
+Do not delete receipt rows during rollback. Any rollback must retain compensation-aware entitlement calculation, otherwise existing recipients temporarily lose access. Enrollment and background quota maintenance do not start an unclaimed award.
+
+## Request reliability (2026-11-11)
+
+Admission keeps the durable global maximum of four upstream calls. Contended slots and recoverable in-flight budget holds wait up to fifteen seconds (150-300 ms jitter); at most 32 waiters per server instance. Spent budget does not enter a pretend recovery loop. Disconnects cancel waiting before a model call. This is a bounded wait, not a globally fair session queue or a full-test capacity reservation.
+
+An explicit upstream HTTP 429/502/503/504 before visible answer text may retry once, only when Retry-After permits a delay of at most three seconds and another complete reservation fits. Each physical attempt has its own durable budget hold and cost record. Unknown costs retain the complete reservation. No automatic retry of ambiguous disconnects, partial streamed answers, timeout, invalid metering or pricing overruns. The user capture/question is settled once. Existing 20 s startup / 90 s absolute deadlines remain; thinking progress suppresses only startup timeout. Orphan budget holds become reclaimable after 150 s, without erasing costs.
+
+Missing usage alone no longer pauses the entire model channel. Invalid counters and significant/repeated estimate overruns still require investigation. Recent hourly conservative bookings (including provisional fees) expose `hourly_burn_micros` and `runway_seconds`; less than one hour runway raises the existing cloud warning level. This projection is not guaranteed future demand.
+
+Daily USD 100, valuation, 20% risk headroom, model, answer length and all Plus/compensation records remain unchanged. Admitted individual requests have their own cost hold; no present client protocol declares the whole test length or reserves a complete test. Near-budget rejection can therefore still occur between questions. The owner has declined waiting before starting a test; no such admission gate is introduced. Do not claim full-session reliability or full-cohort simultaneous capacity from these changes.
+
+Rollback target must include the Plus compensation implementation (`dpl_GnqUg1CRSez7WDqEdwjENTHEdPCf`), preserve all database rows, and permit historical multiple attempt records. Never restore an older database snapshot or remove compensation claims.
+
+## GET /v1/captures/:id/delivery — 断流后的原答案
+
+设备凭证绑定查询。完成的可用答案返回原始 SSE 正文、当前账户版本的同一次结算和 DONE；不调用模型、不再扣题或记费。进行中返回 202；不存在返回 404；超出 15 分钟恢复期返回 410。答案以 AES-256-GCM 加密，密钥按现有 HMAC key version、设备凭证及 capture ID 派生；没有新增明文题图或提示词存储。
+
+`delivery_recovery_v1: true` 协商后，连接中断不会立刻取消已经开始的生成；仍受 90 秒生成期限约束。工作进程每 2 秒续租、8 秒失联后允许使用原 capture ID 接管一次；旧尝试全额暂记，新尝试单独预占，全局仍最多两次模型调用。题图和提示词由客户端在这一次接管中重新提交，服务端不持久化。客户端主动取消通过 POST cancel 落库，提前取消同样阻止稍晚到达的原请求。
+
+服务器以 `X-NotchSPI-Delivery: v1` 标识能力。新版客户端在原总时限内最多查询 60 次，完整验证恢复流后仅补上缺失正文；账户切换或主动取消不再更新旧界面。正式 3.1 不具备此客户端自动恢复能力。
+
+吞吐控制独立于费用预算：项目已核实 5,000 RPM / 1,000,000 TPM；服务以 24 个共享租约、4,000 RPM / 800,000 TPM 留出余量。TPM 按 max(输入估算上界, 输出上限) 计，费用仍按保守的输入与输出总上界预占。仅吸收至多 1.5 秒短暂占用波动；容量验收见当次发布报告，不能以等待延长代替扩容。租约 120 秒过期，未知调用费用仍留在原预算账本。

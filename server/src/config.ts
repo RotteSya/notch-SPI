@@ -216,6 +216,7 @@ export const config = {
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
   requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),
   modelDailyBudgetMicros: envInt('MODEL_DAILY_BUDGET_MICROS', 0),
+  modelBudgetWarningMicros: envInt('MODEL_BUDGET_WARNING_MICROS', 0),
   modelBudgetUtcOffsetMinutes: Number(envStr('MODEL_BUDGET_UTC_OFFSET_MINUTES', '0')),
   attemptBudgetUpperMicros: envInt('ATTEMPT_BUDGET_UPPER_MICROS', 0),
 } as const;
@@ -223,6 +224,10 @@ export const config = {
 export type Config = typeof config;
 
 export function validateTrialPolicy(c: Config): void {
+  if (!Number.isSafeInteger(c.modelBudgetWarningMicros) || c.modelBudgetWarningMicros < 0
+    || (c.modelBudgetWarningMicros > 0 && c.modelBudgetWarningMicros >= c.modelDailyBudgetMicros)) {
+    throw new Error('Model budget warning must be nonnegative and below the daily hard limit');
+  }
   if (!['fixed', 'shadow', 'local-request', 'guarded-request'].includes(c.requestBudgetMode)) throw new Error('Invalid ASTRA_REQUEST_BUDGET_MODE');
   if (c.requestBudgetMode === 'local-request' && (c.requireDurableStorage || c.isServerless)) {
     throw new Error('Request-sized reservations are not production-qualified');

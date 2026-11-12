@@ -1,3 +1,8 @@
+import {CAPACITY} from './capacity-policy.ts';
+import {sealAnswer,openAnswer,settleReliably} from './answer-delivery.ts';
+import {reserveWithWait} from './admission-wait.ts';
+import {TransientProviderError} from './providers/types.ts';
+import {setTimeout as delay} from 'node:timers/promises';
 import { CaptureTiming } from './capture-timing.ts';
 import { randomUUID } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -17,7 +22,7 @@ function requestReasoningEffort(value: unknown): CaptureRequest['reasoningEffort
   if (value === 'low' || value === 'high' || value === 'max') return value;
   throw new ApiError(400, 'reasoning_effort 必须是 low、high 或 max', 'invalid_reasoning_effort');
 }
-interface Admission { attemptId: string; providerStarted: boolean }
+interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
 
 function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
   if (!usage || usage.inputTokens === null || usage.outputTokens === null) return undefined;
@@ -54,6 +59,15 @@ function terminalUsage(capture:CaptureRecord,quota:AccountSnapshot,usage:Usage|n
 export class CaptureService {
   private ctx:AppContext;
   readonly keys:RequestKeys;
+  private reaping:Promise<number>|undefined;
+  private nextReap=0;
+  private async reapIfDue():Promise<void> {
+    if(this.reaping){await this.reaping;return;}
+    if(Date.now()<this.nextReap)return;
+    this.reaping=this.ctx.store.billing.reap();
+    try{await this.reaping;this.nextReap=Date.now()+10_000;}finally{this.reaping=undefined;}
+  }
+  private waiting=0;
   private active = new Map<string,number>();
   private timings = new WeakMap<FastifyRequest, CaptureTiming>();
   constructor(ctx:AppContext) {
@@ -64,12 +78,35 @@ export class CaptureService {
   async status(req:FastifyRequest,reply:FastifyReply) {
     const {token}=await requireAccount(req,this.ctx.store);
     const id=text((req.params as Record<string,unknown>).id).toLowerCase();
-    await this.ctx.store.billing.reap();
+    await this.reapIfDue();
     const capture=await this.ctx.store.billing.capture(token,id);
     if(!capture) throw new ApiError(404,'未找到请求','not_found');
     const quota=await this.ctx.store.billing.accountSnapshot(token);
     if(!quota) throw new ApiError(401,'服务凭证无效','invalid_token');
     return reply.header('Cache-Control','no-store').send(this.currentSnapshot(capture,quota));
+  }
+  async delivery(req:FastifyRequest,reply:FastifyReply) {
+    const {token}=await requireAccount(req,this.ctx.store),id=text((req.params as Record<string,unknown>).id).toLowerCase();
+    const c=await this.ctx.store.billing.capture(token,id);
+    if(!c)throw new ApiError(404,'未找到请求','not_found');
+    if(c.settlementStatus==='held')return reply.code(202).header('Retry-After','1').header('Cache-Control','no-store').send({pending:true,can_resume:!!c.deliveryOwner&&(c.workerAliveUntil??Infinity)<Date.now()&&(c.deliveryAttempts??2)<2&&Date.parse(c.expiresAt)>Date.now()});
+    if(!c.sealedAnswer)throw new ApiError(410,'答案恢复期限已结束','expired');
+    return this.replay(reply,token,c);
+  }
+  async cancel(req:FastifyRequest,reply:FastifyReply){
+    const {token}=await requireAccount(req,this.ctx.store),id=text((req.params as Record<string,unknown>).id).toLowerCase();
+    if(!UUID.test(id))throw new ApiError(400,'请求标识无效');
+    await this.ctx.store.billing.cancelCapture(token,id);
+    return reply.header('Cache-Control','no-store').send({canceled:true});
+  }
+  private async replay(reply:FastifyReply,token:string,capture:CaptureRecord):Promise<void> {
+    const saved=openAnswer(this.keys,token,capture.captureId,capture.keyVersion,capture.sealedAnswer!);
+    const account=await this.ctx.store.billing.accountSnapshot(token);
+    if(!account)throw new ApiError(401,'服务凭证无效','invalid_token');
+    reply.hijack();const send=beginSSE(reply);
+    send({type:'delta',text:saved.text});
+    send({...terminalUsage(capture,account,saved.usage),...this.explanationFields(capture,capture)});
+    reply.raw.end(SSE_DONE);
   }
   private currentSnapshot(capture:CaptureRecord,quota:AccountSnapshot) {
     const snapshot=settlementSnapshot(capture,quota);
@@ -81,10 +118,14 @@ export class CaptureService {
   private async connected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {
     const timing=process.env.NSPI_SERVER_LATENCY_TRACE==='1'?new CaptureTiming():undefined;
     if(timing)this.timings.set(req,timing);
-    const abort=new AbortController(),closed=()=>abort.abort();
+    const abort=new AbortController(),closed=()=>{
+      // Negotiated clients recover the same answer after a dropped transport. The
+      // handler remains awaited and bounded by the vendor deadline, including on Vercel.
+      if((req.body as Record<string,unknown>|undefined)?.delivery_recovery_v1!==true)abort.abort();
+    };
     // Observe disconnects before the first authentication, decoding or database await.
     req.raw.once('aborted',closed);reply.raw.once('close',closed);
-    if(req.raw.aborted||reply.raw.destroyed)closed();
+    if(req.raw.aborted||reply.raw.destroyed)abort.abort();
     try {if(!abort.signal.aborted)await run(abort);} finally {
       req.raw.removeListener('aborted',closed);reply.raw.removeListener('close',closed);abort.abort();
       this.logTiming(req,'handlerFinished');
@@ -135,6 +176,23 @@ export class CaptureService {
       throw new ApiError(503,'无法确认请求费用上界','service_maintenance');
     }
   }
+  private async waitForBudget(token:string,id:string,amount:number,provider:string,model:string,signal:AbortSignal,tokenUpper=32_000){
+    const {config:c,store}=this.ctx;
+    if(this.waiting>=32)throw new BudgetAdmissionError('busy');
+    this.waiting++;
+    try{
+      const deadline=performance.now()+CAPACITY.burstWaitMs;
+      while(!await settleReliably(()=>store.billing.acquireCapacity(token,id,tokenUpper))){
+        signal.throwIfAborted();if(performance.now()>=deadline)throw new BudgetAdmissionError('busy');
+        await delay(50+Math.random()*50,undefined,{signal});
+      }
+      const result=await reserveWithWait(()=>store.billing.reserveBudget(token,id,'official',c.modelCostCurrency,
+      amount,c.modelDailyBudgetMicros,86_400_000,Date.now(),c.modelBudgetUtcOffsetMinutes,c.requestBudgetMode==='guarded-request',JSON.stringify([provider,model])),
+      store.billing,c.modelCostCurrency,amount,c.requestBudgetMode==='guarded-request',signal);
+      if(!result)await store.billing.releaseCapacity(token,id);return result;
+    }catch(e){await store.billing.releaseCapacity(token,id).catch(()=>{});throw e;}
+    finally{this.waiting--;}
+  }
   private async admitted(req:FastifyRequest,reply:FastifyReply,abort:AbortController,input:Omit<BeginCapture,'requestId'>,
     attempt:Omit<NewAttempt,'attemptId'|'captureId'>, reservedMicros:number,
     run:(capture:CaptureRecord,quota:QuotaSnapshot,admission:Admission)=>Promise<void>):Promise<void> {
@@ -143,12 +201,11 @@ export class CaptureService {
     const active=this.active.get(token)??0;
     if(config.captureConcurrencyPerToken>0&&active>=config.captureConcurrencyPerToken)throw new ApiError(429,'请等待当前请求完成','rate_limited');
     this.active.set(token,active+1);
-    const requestId=randomUUID(),admission:Admission={attemptId:randomUUID(),providerStarted:false};
+    const requestId=randomUUID(),admission:Admission={attemptId:randomUUID(),providerStarted:false,reservedMicros,tokenUpper:Math.max(this.quotes.get(req)?.inputUpper??24_000,this.quotes.get(req)?.outputUpper??8192),template:attempt};
     let owned:CaptureRecord|null=null,beginUncertain=false;
     try {
       try {
-        if(!await store.billing.reserveBudget(token,admission.attemptId,'official',config.modelCostCurrency,
-          reservedMicros,config.modelDailyBudgetMicros,86_400_000,Date.now(),config.modelBudgetUtcOffsetMinutes,config.requestBudgetMode==='guarded-request',JSON.stringify([attempt.provider,attempt.model]))) {
+        if(!await this.waitForBudget(token,admission.attemptId,reservedMicros,attempt.provider,attempt.model,abort.signal,admission.tokenUpper)) {
           const offset=config.modelBudgetUtcOffsetMinutes*60_000;
           const resetsAt=new Date((Math.floor((Date.now()+offset)/86_400_000)+1)*86_400_000-offset);
           reply.header('Retry-After',String(Math.max(1,Math.ceil((resetsAt.getTime()-Date.now())/1000))));
@@ -170,7 +227,14 @@ export class CaptureService {
       this.timings.get(req)?.mark('budgetReady');
       if(abort.signal.aborted)return;
       beginUncertain=true;
-      const hold=await store.billing.beginWithAttempt({...input,requestId},{...attempt,attemptId:admission.attemptId,captureId});
+      const hold=await settleReliably(async()=>{
+        try{return await store.billing.beginWithAttempt({...input,requestId},{...attempt,attemptId:admission.attemptId,captureId});}
+        catch(error){
+          const found=await store.billing.capture(token,captureId);
+          if((found?.requestId===requestId||found?.deliveryOwner===requestId)&&found?.settlementStatus==='held')return {ok:true as const,capture:found,quota:(await store.billing.quota(token))!};
+          throw error;
+        }
+      });
       beginUncertain=false;
       this.timings.get(req)?.mark('admissionReady');
       if(!hold.ok) {
@@ -183,6 +247,7 @@ export class CaptureService {
       if(!abort.signal.aborted)await run(hold.capture,hold.quota,admission);
     } finally {
       try {
+        await settleReliably(()=>store.billing.releaseCapacity(token,admission.attemptId)).catch(()=>req.log.error({captureId},'capacity release pending'));
         // A commit can succeed even if its acknowledgement is lost. Only clean up the
         // capture created by this admission; a duplicate may belong to another worker.
         if(beginUncertain) {
@@ -204,7 +269,7 @@ export class CaptureService {
           await store.billing.settleBudget(token,admission.attemptId,null)
             .catch(()=>req.log.error({attemptId:admission.attemptId},'budget settlement pending'));
         }
-        if(owned)await store.billing.finish({token,captureId,charge:false,
+        if(owned&&!admission.recoverableAbandon)await store.billing.finish({token,captureId,charge:false,owner:input.deliveryRecovery?requestId:undefined,
           terminalState:req.raw.aborted||reply.raw.destroyed?'canceled':'failed',
           compensateGoodwill:owned.operation==='recover'})
           .catch(()=>req.log.error({captureId},'reservation cleanup pending'));
@@ -268,7 +333,7 @@ export class CaptureService {
     const model=protocol==='objective_v1'?config.objectiveModel:config.model;
     if(degraded!==null) throw new ApiError(503,'答案生成服务暂时不可用','upstream_error');
     this.timings.get(req)?.mark('validationReady');
-    await store.billing.reap();
+    await this.reapIfDue();
     this.timings.get(req)?.mark('reapReady');
     const previous=await store.billing.capture(token,captureId);
     this.timings.get(req)?.mark('duplicateCheckReady');
@@ -276,16 +341,20 @@ export class CaptureService {
     const inputHmac=this.keys.digest('capture-input',JSON.stringify({digests,scope,profileId,profileVersion,promptVersion,language:body.ui_language??null}),keyVersion);
     const requestHmac=this.keys.digest('capture-request',JSON.stringify({inputHmac,system,task,protocol,screen,parent:parent??null,...(structuredTutorResult?{tutorResultV1:true}:{}),...(!allowPurchasedCredits?{allowPurchasedCredits:false}:{}),...(reasoningEffort ? {reasoningEffort} : {})}),keyVersion);
     // Duplicates are answered from metadata even when the remaining balance is zero.
-    if(previous) {
+    const resuming=!!previous&&body.delivery_recovery_v1===true&&previous.requestHmac===requestHmac&&previous.settlementStatus==='held'
+      &&!!previous.deliveryOwner&&(previous.workerAliveUntil??Infinity)<Date.now()&&(previous.deliveryAttempts??2)<2&&Date.parse(previous.expiresAt)>Date.now();
+    if(resuming&&previous.workerAttemptId)await store.billing.releaseCapacity(token,previous.workerAttemptId);
+    if(previous&&!resuming) {
+      if(previous.requestHmac===requestHmac&&previous.sealedAnswer&&body.delivery_recovery_v1===true)return this.replay(reply,token,previous);
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
-      reply.code(409).send({error:{code,message:'请查询原请求状态'},status_path:`/v1/captures/${captureId}/status`,
+      reply.header('X-NotchSPI-Delivery','v1').code(409).send({error:{code,message:'请查询原请求状态'},status_path:`/v1/captures/${captureId}/status`,
         ...(code==='idempotency_conflict'?{}:{settlement:this.currentSnapshot(previous,(await store.billing.accountSnapshot(token))!)})}); return;
     }
     const providerInput: CaptureRequest = {system,task,images,reasoningEffort,tutorResultV1:structuredTutorResult};
     const reservedMicros = await this.reservation(req,captureProvider,providerInput);
     await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion,allowPurchasedCredits,parentCaptureId:parent,
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
-        configRevision:config.clientConfigRevision,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
+        configRevision:config.clientConfigRevision,deliveryRecovery:body.delivery_recovery_v1===true,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},reservedMicros,
       (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,providerInput,captureProvider,model,screen,abort,admission));
   }
@@ -399,6 +468,7 @@ export class CaptureService {
         const cost=captureCost(config.modelPricingJSON,selected.name,model,usage);
         try {
           if(admission.providerStarted) {
+            await store.billing.releaseCapacity(token,attemptId);
             await store.billing.finishAttemptAndBudget(token,attemptId,{status:success?'succeeded':'failed',inputTokens:usage?.inputTokens??null,
               outputTokens:usage?.outputTokens??null,costMicros:cost?.toString()??null},cost??null,this.budgetAnomaly(req,usage));
           }
@@ -431,8 +501,14 @@ export class CaptureService {
   private async stream(req:FastifyRequest,reply:FastifyReply,token:string,capture:CaptureRecord,initial:QuotaSnapshot,
     input:CaptureRequest,provider:AppContext['provider'],model:string,screen:boolean,abort:AbortController,admission:Admission):Promise<void> {
     const {store,config}=this.ctx;
-    const {attemptId}=admission;
+    let {attemptId}=admission;
     let raw='',overflow=false,deliveredChars=0,accepting=true,usage:Usage|null=null,upstreamFailed=false,timedOut=false;
+    const recoverable=!!capture.deliveryOwner;
+    let heartbeatRunning=false,lostLease=false;
+    const heartbeat=recoverable?setInterval(()=>{
+      if(heartbeatRunning)return;heartbeatRunning=true;
+      store.billing.heartbeat(token,capture.captureId,capture.deliveryOwner!).then(ok=>{if(!ok){lostLease=true;abort.abort();}},()=>{lostLease=true;abort.abort();}).finally(()=>{heartbeatRunning=false;});
+    },2000):undefined;
     let firstTimer:ReturnType<typeof setTimeout>|undefined,totalTimer:ReturnType<typeof setTimeout>|undefined;
     let send:(event:StreamEvent)=>void=()=>{};
     const fullModel=provider.name+':'+model;
@@ -445,7 +521,7 @@ export class CaptureService {
       if(abort.signal.aborted)return;
       const deadline=new Promise<never>((_,reject)=>{
         const stop=()=>{timedOut=true;abort.abort();reject(new Error('deadline'));};
-        firstTimer=setTimeout(stop,20_000);totalTimer=setTimeout(stop,90_000);
+        totalTimer=setTimeout(stop,Math.min(90_000,Math.max(1,Date.parse(capture.expiresAt)-Date.now()-2000)));
         abort.signal.addEventListener('abort',()=>reject(new Error('canceled')),{once:true});
       });
       try {
@@ -453,21 +529,47 @@ export class CaptureService {
           admission.providerStarted=true;
           const timing=this.timings.get(req);
           timing?.mark('providerStarted');
-          return provider.stream(timing?{...input,onTiming:stage=>timing.mark(stage)}:input,chunk=>{
-            if(!accepting||abort.signal.aborted) return;
+          const observedInput=Object.defineProperty(timing?{...input,onTiming:(stage:import('./capture-timing.ts').ProviderTimingStage)=>timing.mark(stage)}:{...input},'onHeaders',
+            {value:(headers:Record<string,string>)=>req.log.info({providerCapacity:headers},'upstream capacity confirmed'),enumerable:false});
+          const invoke=async()=>{
+            const attemptAbort=new AbortController(),signal=AbortSignal.any([abort.signal,attemptAbort.signal]);
+            const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
+              timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
+            },20_000);});
+            try{return await Promise.race([provider.stream(observedInput,chunk=>{
+            if(!accepting||signal.aborted) return;
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
             if(Buffer.byteLength(raw+chunk)<=64*1024) raw+=chunk; else {overflow=true;abort.abort();}
-            if(!overflow) {send({type:'delta',text:chunk});if(chunk.length)this.timings.get(req)?.mark('firstDeltaSent');}
-          },abort.signal,()=>{
+            if(!overflow&&!recoverable) {send({type:'delta',text:chunk});if(chunk.length)this.timings.get(req)?.mark('firstDeltaSent');}
+          },signal,()=>{
             // A thinking model can be healthy before it emits its first visible answer.
             // Keep the absolute 90-second deadline; only retire the startup deadline.
-            if(accepting&&!abort.signal.aborted) clearTimeout(firstTimer);
-          });
+            if(accepting&&!signal.aborted) clearTimeout(firstTimer);
+          }),startup]);}finally{clearTimeout(firstTimer);attemptAbort.abort();}
+          };
+          try{return await invoke();}catch(error){
+            // Retry only an explicit transient HTTP rejection, before visible output.
+            // Unknown first-call cost stays fully booked; retry owns a separate hold.
+            if(!(error instanceof TransientProviderError)||error.retryAfterMs>3000||deliveredChars||abort.signal.aborted)throw error;
+            await store.billing.releaseCapacity(token,attemptId);
+            await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null},null);
+            await delay(error.retryAfterMs,undefined,{signal:abort.signal});
+            const next=randomUUID();
+            if(!await this.waitForBudget(token,next,admission.reservedMicros,provider.name,model,abort.signal,admission.tokenUpper))throw error;
+            if(abort.signal.aborted){await store.billing.releaseBudget(token,next);throw error;}
+            admission.attemptId=next;admission.providerStarted=false;attemptId=next;
+            if(!await store.billing.startAttempt(token,{...admission.template,attemptId:next,captureId:capture.captureId}))throw new Error('Retry attempt unavailable');
+            abort.signal.throwIfAborted();
+            admission.providerStarted=true;
+            req.log.info({captureId:capture.captureId,status:error.status,attempt:2},'bounded upstream retry');
+            return invoke();
+          }
         };
         usage=await Promise.race([generate(),deadline]);
         if (usage?.upstreamModel) req.log.info({upstreamModel:usage.upstreamModel,serviceTier:usage.serviceTier,operation:'answer'},'upstream model confirmed');
         this.timings.get(req)?.mark('providerCompleted');
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}
+      if(lostLease){admission.recoverableAbandon=true;return;}
       const truncated=usage?.finishReason==='length';
       const rejectedFinish=usage?.finishReason!==undefined && usage.finishReason!=='stop';
       const invalidCompletion=overflow||rejectedFinish;
@@ -478,20 +580,28 @@ export class CaptureService {
         (!upstreamFailed?deliveredChars>0:abort.signal.aborted&&deliveredChars>=200));
       const terminalState=screen?result!.terminalState:objectiveMode&&objective.state==='retake'?'retake':charge?'usable':'failed';
       const finalAnswer=objective.finalAnswer;
-      await store.billing.finishAttemptAndBudget(token,attemptId,{status:upstreamFailed||invalidCompletion?'failed':'succeeded',inputTokens:usage?.inputTokens??null,
-        outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},cost()??null,this.budgetAnomaly(req,usage));
-      const settlement=await store.billing.finishWithCapture({token,captureId:capture.captureId,charge,terminalState,
+      if(!admission.providerStarted) {
+        // A retry admission can fail after committing its attempt record. There was
+        // no second vendor call, so release this hold while preserving the first cost.
+        await store.billing.finishAttempt(token,attemptId,{status:'failed',inputTokens:0,outputTokens:0,costMicros:'0'});
+        await store.billing.releaseBudget(token,attemptId);
+      }
+      const sealedAnswer=charge&&!invalidCompletion?sealAnswer(this.keys,token,capture.captureId,capture.keyVersion,{text:raw,usage}):undefined;
+      const settlement=await settleReliably(()=>store.billing.finishWithCapture({token,captureId:capture.captureId,charge,terminalState,sealedAnswer,owner:capture.deliveryOwner,
+        ...(admission.providerStarted?{attemptSettlement:{id:attemptId,result:{status:upstreamFailed||invalidCompletion?'failed' as const:'succeeded' as const,inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},actual:cost()??null,anomaly:this.budgetAnomaly(req,usage)}}:{}),
         inputTokens:usage?.inputTokens,outputTokens:usage?.outputTokens,model:fullModel,
         resultState:objective.state??undefined,questionKind:objective.result?.kind,parserPath:objectiveMode?objective.parserPath:'legacy',
         answerHmac:finalAnswer?this.keys.digest('answer',normalizeObjectiveAnswer(finalAnswer),capture.keyVersion):undefined,
-        terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion});
+        terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion}));
       const quota=settlement?.account,committed=settlement?.capture;
       if(!quota||!committed||committed.settlementStatus==='held') throw new Error('Settlement pending');
+      if(recoverable&&committed.deliveryOwner!==capture.deliveryOwner)return;
       if(terminalState==='failed') req.log.warn({captureId:capture.captureId,provider:provider.name,model,
         failure:truncated?'model_output_limit':timedOut?'upstream_timeout':'upstream_error',
         finishReason:usage?.finishReason??null,inputTokens:usage?.inputTokens??null,
         outputTokens:usage?.outputTokens??null,visibleCharacters:deliveredChars,
         settlementStatus:committed.settlementStatus},'answer generation failed');
+      if(recoverable&&committed.usableResult&&committed.sealedAnswer){send({type:'delta',text:raw});this.timings.get(req)?.mark('firstDeltaSent');}
       if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣题。请缩小到一个小问后重试。'}});
       else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣题。请稍后重试。'}});
       else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
@@ -504,11 +614,14 @@ export class CaptureService {
           outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null}).catch(()=>{});
         await store.billing.settleBudget(token,attemptId,cost()??null).catch(()=>{});
       }
+      // An eligible client can reclaim an expired worker lease or replay a commit whose
+      // acknowledgement was lost. Do not finalize its held question as a failure here.
+      if(recoverable)admission.recoverableAbandon=true;
       // No definitive billing claim when the transaction outcome could not be read back.
       req.log.error({captureId:capture.captureId},'capture requires settlement reconciliation');
-      send({type:'error',error:{code:'internal',message:'正在核对本次额度，请查询请求状态'}});
+      if(!recoverable)send({type:'error',error:{code:'internal',message:'正在核对本次额度，请查询请求状态'}});
     } finally {
-      void initial; accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
+      void initial;clearInterval(heartbeat);accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
       this.logTiming(req,'responseFinishing');
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.end();
     }

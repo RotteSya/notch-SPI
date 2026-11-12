@@ -36,6 +36,8 @@ export interface CaptureRecord {
   profileId: string | null; profileVersion: string | null; promptVersion: string | null;
   resultProtocol: string | null; responseContract: string | null; configRevision: string;
   settlementStatus: SettlementState; terminalState: TerminalState; usableResult: boolean;
+  deliveryOwner?: string; workerAliveUntil?: number; workerAttemptId?: string; deliveryAttempts?: number;
+  sealedAnswer?: string;
   answerHmac: string | null; resultState: string | null; questionKind: string | null;
   parserPath: string | null; terminalReason: string | null;
   /** Explanation input may be a recovered answer; entitlement/cost parent remains the paid solve. */
@@ -51,6 +53,7 @@ export interface BeginCapture {
   answerCaptureId?: string;
   profileId?: string; profileVersion?: string; promptVersion?: string; resultProtocol?: string;
   responseContract?: string; configRevision?: string; leaseMs?: number;
+  deliveryRecovery?: boolean;
   exclusive?: boolean; legacy?: boolean;
   allowPurchasedCredits?: boolean;
 }
@@ -59,6 +62,9 @@ export type BeginResult = { ok: true; capture: CaptureRecord; quota: QuotaSnapsh
     'capture_in_progress' | 'capture_already_finalized' | 'device_busy' | 'service_maintenance'; capture?: CaptureRecord };
 export interface FinishCapture {
   token: string; captureId?: string; charge: boolean; terminalState: Exclude<TerminalState, 'pending'>;
+  owner?: string;
+  attemptSettlement?: {id:string; result:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>; actual:number|null; anomaly:boolean};
+  sealedAnswer?: string;
   answerHmac?: string; resultState?: string; questionKind?: string; parserPath?: string;
   terminalReason?: string; inputTokens?: number | null; outputTokens?: number | null; model?: string;
   estimatedCostMicros?: number; pricingVersion?: string; usageCaptureId?: string;
@@ -91,6 +97,10 @@ export class BudgetAdmissionError extends Error {
   }
 }
 export interface BillingStore {
+  cancelCapture(token:string,id:string):Promise<void>;
+  heartbeat(token:string,id:string,owner:string,now?:number):Promise<boolean>;
+  acquireCapacity(token:string,id:string,tokens:number,now?:number):Promise<boolean>;
+  releaseCapacity(token:string,id:string):Promise<void>;
   claimFreeTrial(token: string): Promise<AccountSnapshot | null>;
   quota(token: string): Promise<QuotaSnapshot | null>;
   accountSnapshot(token: string): Promise<AccountSnapshot | null>;
@@ -136,6 +146,7 @@ export function newCapture(input: BeginCapture): CaptureRecord {
     profileId: input.profileId ?? null, profileVersion: input.profileVersion ?? null,
     promptVersion: input.promptVersion ?? null, resultProtocol: input.resultProtocol ?? null,
     responseContract: input.responseContract ?? null, configRevision: input.configRevision ?? 'legacy',
+    ...(input.deliveryRecovery?{deliveryOwner:input.requestId,workerAliveUntil:Date.now()+8000,deliveryAttempts:0}:{}),
     settlementStatus: 'held', terminalState: 'pending', usableResult: false,
     answerHmac: null, resultState: null, questionKind: null, parserPath: null, terminalReason: null,
     createdAt, expiresAt: new Date(Date.parse(createdAt) + (input.leaseMs ?? 120_000)).toISOString(), finishedAt: null,

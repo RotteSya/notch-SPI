@@ -1,5 +1,15 @@
-import {newPlus,mergePlus,reusablePlus,type PlusRecord,type PlusStore,type PlusUpdate} from './plus.ts';
+import {claimCompensation,type PlusCompensation} from './plus-compensation.ts';
+import {newPlus,mergePlus,reusablePlus,plusActive,type PlusRecord,type PlusStore,type PlusUpdate} from './plus.ts';
 export class MemoryPlus implements PlusStore {
+  readonly compensations=new Map<number,PlusCompensation>();
+  async compensation(token:string){const r=this.compensations.get(this.lookup(token)??-1);return r?{...r}:null;}
+  async claimCompensation(token:string){
+    const id=this.lookup(token);if(id===null)return null;
+    const receipt=this.compensations.get(id);if(!receipt)return null;
+    const paid=this.records.get(id)??null;
+    const next=claimCompensation(receipt,{active:plusActive(paid),expiresAt:plusActive(paid)?paid!.paidUntil:null});
+    this.compensations.set(id,next);return {...next};
+  }
   readonly records = new Map<number,PlusRecord>();
   private invoices = new Map<string,number>();
   private lookup: (token:string)=>number|null;

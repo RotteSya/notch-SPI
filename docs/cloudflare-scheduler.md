@@ -28,7 +28,11 @@ The first observed scheduled release occurred about 4 hours 50 minutes after act
 
 ## Model budget
 
-[`deploy/production-model-budget.json`](../deploy/production-model-budget.json) is the production model budget: CNY 20 per Shanghai calendar day, shared by official solves, explanations, and recovery attempts. The evaluation campaign budget is the separate file [`docs/evaluation-budget.json`](evaluation-budget.json).
+[`deploy/production-model-budget.json`](../deploy/production-model-budget.json) is the production model budget: USD 100 per Shanghai calendar day, approved on 2026-11-11, shared by official solves, explanations, and recovery attempts. USD 15 is an operational warning and does not stop requests. Guarded admission retains 20% headroom, so usable capacity is USD 80 minus booked costs, active holds and the next request reservation. Amounts are conservative internal valuations, not vendor invoices. The evaluation campaign budget is the separate file [`docs/evaluation-budget.json`](evaluation-budget.json).
+
+The authenticated reaper returns `model_budget`, using the current durable window (including any same-day override). The production Worker checks it every 15 minutes and emits stable Workers Issues for warning, critical (75% of usable capacity or fewer than four maximum request reservations left), and blocked states. Issues email routing must be configured and delivery tested; emitting a log alone does not prove an email was sent. Warnings do not throw or stop maintenance. Missing or malformed budget data fails monitoring visibly. `/readyz` includes the same report and returns 503 if the configured maximum request cannot be admitted; this is conservative capacity readiness, not proof that every smaller request is blocked or a real-model health test. `/healthz` remains process liveness only.
+
+Changing Vercel environment variables requires a new deployment, and existing budget windows keep their persisted limits. A same-day limit change therefore needs an explicit scoped database update as well as the deployment configuration. Never erase booked costs or set unknown usage to zero to restore availability.
 
 ## Database readiness
 

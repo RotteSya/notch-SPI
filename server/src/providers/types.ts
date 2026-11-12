@@ -13,6 +13,7 @@ export interface CaptureImage {
 export interface CaptureRequest {
   /** Internal observation only; never serialized or populated from client JSON. */
   onTiming?: (stage: ProviderTimingStage) => void;
+  onHeaders?: (headers:Record<string,string>)=>void;
   system: string;
   task: string;
   images: CaptureImage[];
@@ -125,4 +126,10 @@ export function splitSSEChunk(buffer: string): { lines: string[]; rest: string }
     nl = rest.indexOf('\n');
   }
   return { lines: out, rest };
+}
+
+/** Explicit HTTP transient response before answer streaming; cost remains unknown. */
+export class TransientProviderError extends Error {
+  readonly status:number;readonly retryAfterMs:number;
+  constructor(status:number,retryAfterMs=500){super('Transient upstream HTTP response');this.name='TransientProviderError';this.status=status;this.retryAfterMs=retryAfterMs;}
 }

@@ -16,7 +16,8 @@ test('approved Astra Standard policy boots with guarded USD limits and no Fast r
   assert.equal(env.EXPLANATION_MAX_TOKENS,'8192');
   assert.equal(env.ASTRA_REQUEST_BUDGET_MODE,'guarded-request');
   assert.equal(env.MODEL_COST_CURRENCY,'USD');
-  assert.equal(env.MODEL_DAILY_BUDGET_MICROS,'15000000');
+  assert.equal(env.MODEL_DAILY_BUDGET_MICROS,'100000000');
+  assert.equal(env.MODEL_BUDGET_WARNING_MICROS,'15000000');
   assert.equal(env.ATTEMPT_BUDGET_UPPER_MICROS,'3000000');
   assert.equal(policy.auto_increase,false);
   const run=spawnSync(process.execPath,['--input-type=module','-e',

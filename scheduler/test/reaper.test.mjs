@@ -7,7 +7,8 @@ const secret = 'test-only-reaper-credential-0123456789';
 const controller = { scheduledTime: 1_788_825_600_000, cron: '* * * * *' };
 const result = { processed: 2, checked_at: '2026-09-08T00:00:00.000Z', more_possible: false,
   refunds_reconciled: 0, refunds_failed: 0, checkouts_credited: 0, checkouts_review: 0,
-  checkouts_failed: 0, finance_reconciled: 0, finance_failed: 0, events_pruned: 0 };
+  checkouts_failed: 0, finance_reconciled: 0, finance_failed: 0, events_pruned: 0,
+  model_budget:{level:0,limit_micros:100000000,spent_micros:0,held_micros:0,available_micros:80000000} };
 
 function harness(t, response) {
   const logs = [];
@@ -26,7 +27,7 @@ test('one authenticated request to the fixed origin; counters only in success lo
     return Response.json({ ...result, private_field: secret });
   });
   await h.run(); assert.equal(h.fetchMock.mock.callCount(), 1);
-  assert.equal(JSON.parse(h.logs[0]).processed, 2);
+  assert.equal(h.logs.map(x=>JSON.parse(x)).find(x=>x.event==='reaper_result').processed, 2);
   assert.ok(!JSON.stringify(h.logs).includes(secret));
 });
 
@@ -70,13 +71,29 @@ test('invalid, oversized, and partial results cannot report cron success', async
 test('more work remains visible and is deferred to the next scheduled tick', async t => {
   const h = harness(t, async () => Response.json({ ...result, more_possible: true }));
   await h.run(); assert.equal(h.fetchMock.mock.callCount(), 1);
-  assert.equal(JSON.parse(h.logs[0]).more_possible, true);
+  assert.equal(h.logs.map(x=>JSON.parse(x)).find(x=>x.event==='reaper_result').more_possible, true);
 });
 
 test('public HTTP requests cannot trigger maintenance', async t => {
   const h = harness(t, async () => { throw new Error('unexpected request'); });
   assert.equal((await worker.fetch()).status, 404);
   assert.equal(h.fetchMock.mock.callCount(), 0);
+});
+
+for (const level of [1,2,3]) test(`budget level ${level} emits a platform issue without breaking maintenance`, async t => {
+  const h=harness(t,async()=>Response.json({...result,model_budget:{...result.model_budget,level}}));
+  await h.run();
+  assert.equal(h.fetchMock.mock.callCount(),1);
+  const errors=h.logs.filter(x=>x instanceof Error);
+  assert.equal(errors.length,1);
+  assert.match(errors[0].message,/NotchSPI/);
+  assert.ok(h.logs.filter(x=>typeof x==='string').some(x=>JSON.parse(x).event==='reaper_result'));
+});
+
+test('missing or malformed production budget status cannot silently report healthy',async t=>{
+  const replies=[undefined,{...result.model_budget,level:9},{...result.model_budget,spent_micros:-1}];
+  const h=harness(t,async()=>Response.json({...result,model_budget:replies.shift()}));
+  for(let i=0;i<3;i++)await assert.rejects(h.run(),/reaper_failed/);
 });
 
 test('candidate authenticates to its immutable deployment; production never sends the protection secret', async t => {

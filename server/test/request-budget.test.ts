@@ -167,24 +167,24 @@ for(const kind of ['memory','sqlite'] as const){
       assert.equal(f.sent.length,1);
     }finally{await f.close();}
   });
-  test(`${kind}: four guarded in-flight requests report busy, then recover when a slot frees`,async()=>{
-    const f=await setup('guarded-request',10_000_000);let release!:()=>void;
+  test(`${kind}: 24 capacity leases report busy, then recover when a slot frees`,async()=>{
+    const f=await setup('guarded-request',100_000_000);let release!:()=>void;
     const hold=new Promise<void>(r=>{release=r;});f.wait(()=>hold);
     try{
-      const users=await Promise.all(Array.from({length:4},()=>f.user()));
+      const users=await Promise.all(Array.from({length:24},()=>f.user()));
       const pending=[];
       for (const [i,u] of users.entries()) {
         pending.push(Promise.resolve(f.post('/v1/captures',body(),u.token)));
         for(let n=0;n<200&&f.sent.length<i+1;n++)await new Promise(r=>setTimeout(r,5));
       }
       const all=Promise.all(pending);
-      assert.equal(f.sent.length,4);
+      assert.equal(f.sent.length,24);
       const busy=await f.post('/v1/captures',body());
       assert.equal(busy.statusCode,429);assert.equal(busy.json().error.code,'rate_limited');
-      assert.equal(busy.headers['retry-after'],'5');assert.equal(f.sent.length,4);
+      assert.equal(busy.headers['retry-after'],'5');assert.equal(f.sent.length,24);
       release();await all;
       assert.equal((await f.post('/v1/captures',body())).statusCode,200);
-      assert.equal(f.sent.length,5);
+      assert.equal(f.sent.length,25);
     }finally{release();await f.close();}
   });
   test(`${kind}: shadow failure keeps fixed hold and never reduces production admission`,async()=>{

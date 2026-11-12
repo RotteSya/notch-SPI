@@ -126,6 +126,7 @@ test('Cloud and update callers stay inside the inventory', () => {
   const keys = new Set(scanned.calls.map((call) => `${call.method} ${call.path}`));
   for (const key of [
     'POST /v1/device-source',
+    'GET /v1/captures/:id/delivery',
     'GET /v1/captures/:id/status',
     'POST /v1/captures/:id/explanation',
     'POST /v1/captures/:id/recovery',
@@ -136,12 +137,14 @@ test('Cloud and update callers stay inside the inventory', () => {
     'GET /update',
     'GET /update/intel',
     'GET /v1/account',
+    'GET /v1/captures/:id/delivery',
     'GET /v1/captures/:id/status',
     'GET /v1/client-config',
     'GET /v1/device-observation',
     'GET /v1/plus',
     'GET /v1/purchase-sessions/:purchaseId',
     'POST /v1/captures',
+    'POST /v1/captures/:id/cancel',
     'POST /v1/captures/:id/explanation',
     'POST /v1/captures/:id/recovery',
     'POST /v1/device-observation',

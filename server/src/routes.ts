@@ -1,3 +1,4 @@
+import {budgetStatus} from './budget-policy.ts';
 import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
@@ -152,6 +153,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       batch=await store.billing.reap(now); processed+=batch;
     } while(batch===100&&processed<1000&&Date.now()-started<20_000);
     const budget=await store.billing.inspectBudget();
+    const modelBudget=budgetStatus(budget,config);
+    req.log.info({budgetEvent:'capacity',...modelBudget},'model budget capacity');
     for(const control of budget.controls) {
       if(control.reason) req.log.warn({budgetEvent:'protection',channel:control.channel,reason:control.reason,
         blockedUntil:control.blockedUntil},'budget protection requires attention');
@@ -177,7 +180,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }));
     const eventsPruned=await store.pruneProductEvents(new Date(Date.parse(now)-90*86_400_000).toISOString());
     return {processed,checked_at:now,more_possible:batch===100,refunds_reconciled:refundsReconciled,refunds_failed:refundsFailed,
-      checkouts_credited:checkoutsCredited,checkouts_review:checkoutsReview,checkouts_failed:checkoutsFailed,finance_reconciled:financeReconciled,finance_failed:financeFailed,events_pruned:eventsPruned};
+      checkouts_credited:checkoutsCredited,checkouts_review:checkoutsReview,checkouts_failed:checkoutsFailed,finance_reconciled:financeReconciled,finance_failed:financeFailed,events_pruned:eventsPruned,
+      model_budget:modelBudget};
   });
 
   // Config-at-a-glance for operators: which provider answers, where data lives, how payments
@@ -299,7 +303,9 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (!adminTokenMatches(auth, 'Bearer ' + config.cronSecret)) throw new ApiError(401, '凭证无效', 'invalid_token');
     try {
       await store.checkHealth();
-      return reply.send({ ok: true, database: 'available' });
+      const modelBudget=budgetStatus(await store.billing.inspectBudget(),config);
+      const ok=modelBudget.max_request_admissible;
+      return reply.code(ok?200:503).send({ ok, database: 'available', model_budget:modelBudget });
     } catch {
       return reply.code(503).send({ ok: false, database: 'unavailable' });
     }
@@ -424,6 +430,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // GET /v1/account — question balance + lifetime usage + per-device feature switches. Auth.
   app.get('/v1/account', async (req, reply) => {
     const { token } = await requireAccount(req, store);
+    await store.plus.claimCompensation(token);
     await store.billing.reap();
     const account = await store.billing.accountSnapshot(token);
     if (!account) throw new ApiError(401, '设备令牌无效');
@@ -432,7 +439,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/v1/client-config', async (req, reply) => {
     const { token } = await requireAccount(req, store);
-    return reply.header('Cache-Control', 'private, max-age=300').send(clientConfiguration(token));
+    await store.plus.claimCompensation(token);
+    return reply.header('Cache-Control', 'no-store').send(clientConfiguration(token));
   });
 
   app.post('/v1/events/batch', async (req, reply) => {
@@ -497,6 +505,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // charge at the very end) had two holes: concurrent captures all passed the same stale balance
   // check, and a client that hung up mid-stream took the failure path and got its answer free.
   app.post('/v1/captures', (req, reply) => captureService.solve(req, reply));
+  app.post('/v1/captures/:id/cancel', (req, reply) => captureService.cancel(req, reply));
+  app.get('/v1/captures/:id/delivery', (req, reply) => captureService.delivery(req, reply));
   app.get('/v1/captures/:id/status', (req, reply) => captureService.status(req, reply));
   app.post('/v1/captures/:id/explanation', (req, reply) => captureService.auxiliary(req, reply, 'explain'));
   app.post('/v1/captures/:id/recovery', (req, reply) => captureService.auxiliary(req, reply, 'recover'));
@@ -581,7 +591,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
   app.get('/admin/budget', async (req,reply)=>{
     requireAdmin(req);reply.header('Cache-Control','no-store');
-    return reply.send(await store.billing.inspectBudget());
+    const inspection=await store.billing.inspectBudget();
+    return reply.send({...inspection,status:budgetStatus(inspection,config)});
   });
   app.post('/admin/budget/reconcile',{bodyLimit:4096},async(req,reply)=>{
     requireAdmin(req);reply.header('Cache-Control','no-store');

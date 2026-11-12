@@ -7,5 +7,5 @@
   "preview_urls": false,
   "triggers": { "crons": ["*/15 * * * *"] },
   "secrets": { "required": ["CRON_SECRET"] },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true, "issues": { "enabled": true } }
 }

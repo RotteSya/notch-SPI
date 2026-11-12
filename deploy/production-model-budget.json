@@ -1,11 +1,11 @@
 {
-  "approved_at": "2026-11-08",
+  "approved_at": "2026-11-11",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
     "currency": "USD",
-    "basis": "Conservative long-context/cache-write valuation, not a vendor invoice. Guarded request reservations include a 25% content allowance plus 4096 framing tokens, retain 20% daily headroom and permit at most four in-flight requests. User approved USD 15/day and USD 3/request; customer prices and question charges are unchanged.",
+    "basis": "Conservative long-context/cache-write valuation, not a vendor invoice. Guarded request reservations include a 25% content allowance plus 4096 framing tokens, retain 20% daily headroom and permit at most four in-flight requests. User approved USD 100/day hard limit on 2026-11-11; USD 15/day is an operational warning only. USD 3/request, customer prices and question charges are unchanged.",
     "sources": [
       "https://developers.openai.com/api/docs/models/gpt-6-astra",
       "https://developers.openai.com/api/docs/pricing"
@@ -28,6 +28,7 @@
     "MODEL_PRICING_JSON": "[{\"model\":\"openai:gpt-6-astra\",\"input_micros_per_million_tokens\":25000000,\"output_micros_per_million_tokens\":75000000}]",
     "CLIENT_CONFIG_REVISION": "production-3-1-astra-standard-20261108",
     "ASTRA_REQUEST_BUDGET_MODE": "guarded-request",
-    "MODEL_DAILY_BUDGET_MICROS": "15000000"
+    "MODEL_DAILY_BUDGET_MICROS": "100000000",
+    "MODEL_BUDGET_WARNING_MICROS": "15000000"
   }
 }
