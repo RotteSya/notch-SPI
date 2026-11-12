@@ -652,7 +652,7 @@ enum OfficialAPI {
             guard let body = request.httpBody, body.count <= OfficialCaptureMaterials.requestBodyLimit else {
                 await MainActor.run { onDone(false, captureTooLargeMessage) }; return
             }
-            let recoveryDeadline = Date().addingTimeInterval(105)
+            if operation == "solve" { request.timeoutInterval = 8 }
             var deliveredText = ""
             var deliveredUsage = false
             var supportsDelivery: Bool? = nil
@@ -736,80 +736,29 @@ enum OfficialAPI {
                 completed = true; sawContent = outcome.hasContent
                 streamError = outcome.serviceError.map { localizedMessage(code: $0.code, fallback: $0.message) }
             } catch { streamError = cannotConnectMessage }
+            // A broken connection has a short, actual wall-clock recovery budget.
+            // Healthy model progress is handled on the original stream, not this timer.
+            let recoveryDeadline = Date().addingTimeInterval(12)
             if !completed, operation == "solve", supportsDelivery != false {
-                // Replay never invokes the model. Decode a complete, authenticated receipt
-                // before appending only the missing suffix; preserve the original capture ID.
-                var resumeNext = false, resumed = false
-                for poll in 0..<60 {
-                    guard Date() < recoveryDeadline,
-                          await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else { break }
-                    var recovery = URLRequest(url: endpointURL(base: base, path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))
-                    let isResume = resumeNext
-                    resumeNext = false
-                    recovery.timeoutInterval = min(5, max(0.1, recoveryDeadline.timeIntervalSinceNow))
-                    recovery.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    do {
-                        let bytes: URLSession.AsyncBytes
-                        let response: URLResponse
-                        if isResume {
-                            request.timeoutInterval = min(90, max(0.1, recoveryDeadline.timeIntervalSinceNow))
-                            (bytes, response) = try await environment.session.bytes(for: request)
-                        } else {
-                            (bytes, response) = try await environment.session.bytes(for: recovery)
+                do {
+                    if let replay = try await recoverDelivery(request: request, id: id, account: account,
+                        environment: environment, screenQuery: screenQuery != nil, supportsDelivery: supportsDelivery,
+                        deliveredText: deliveredText) {
+                        let suffix = String(replay.text.dropFirst(deliveredText.count))
+                        let needsReceipt = !deliveredUsage
+                        try await MainActor.run {
+                            try Task.checkCancellation()
+                            guard environment.account() == account else { throw CancellationError() }
+                            if !suffix.isEmpty { onDelta(suffix) }
+                            if needsReceipt { environment.receiveUsage(replay.receipt); onUsage?(replay.receipt) }
                         }
-                        defer { bytes.task.cancel() }
-                        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-                        if http.statusCode == 200 {
-                            guard http.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/event-stream") == true else { break }
-                            var replay = ""
-                            var receipt: OfficialUsageReceipt?
-                            let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id,
-                                screenQuery: screenQuery != nil, operation: operation) { event in
-                                switch event {
-                                case .delta(let text): replay += text
-                                case .usage(let value): receipt = value
-                                case .error, .done: break
-                                }
-                            }
-                            guard outcome.serviceError == nil, let receipt, replay.hasPrefix(deliveredText) else { break }
-                            let suffix = String(replay.dropFirst(deliveredText.count))
-                            let needsReceipt = !deliveredUsage
-                            try await MainActor.run {
-                                try Task.checkCancellation()
-                                guard environment.account() == account else { throw CancellationError() }
-                                if !suffix.isEmpty { onDelta(suffix) }
-                                if needsReceipt { environment.receiveUsage(receipt); onUsage?(receipt) }
-                            }
-                            completed = true; sawContent = outcome.hasContent; streamError = nil
-                            break
-                        }
-                        if http.statusCode == 202 {
-                            var data = Data()
-                            for try await byte in bytes { data.append(byte); if data.count > 16384 { break } }
-                            if let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                               value["can_resume"] as? Bool == true, !resumed {
-                                resumeNext = true; resumed = true
-                            }
-                        } else if http.statusCode == 404, !resumed,
-                                  supportsDelivery == true || http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
-                            // The first transport may have failed before admission. Same ID
-                            // makes the single resend safe even if the original arrives late.
-                            resumeNext = true; resumed = true
-                        } else if isResume, http.statusCode != 200 {
-                            // The single resend was rejected. Do not turn an exhausted
-                            // budget or unavailable entitlement into a pretend wait loop.
-                            var data = Data()
-                            for try await byte in bytes { data.append(byte); if data.count > 16384 { break } }
-                            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                            let code = (value?["error"] as? [String: Any])?["code"] as? String
-                            if let code, !["internal", "capture_in_progress", "capture_already_finalized"].contains(code) { break }
-                        } else if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { break }
-                    } catch { if Task.isCancelled { break } }
-                    if poll < 59 { try? await Task.sleep(nanoseconds: 500_000_000) }
-                }
+                        completed = true; sawContent = replay.hasContent; streamError = nil
+                    }
+                } catch { streamError = cannotConnectMessage }
             }
             if !completed, await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) {
-                if let status = await captureStatus(id, base: base, token: token, operation: operation, session: environment.session), status.isTerminal,
+                if recoveryDeadline.timeIntervalSinceNow > 0,
+                   let status = await captureStatus(id, base: base, token: token, operation: operation, session: environment.session, timeout: min(2, recoveryDeadline.timeIntervalSinceNow)), status.isTerminal,
                    await MainActor.run(body: {
                        guard !Task.isCancelled, environment.account() == account else { return false }
                        environment.receiveSettlement(status); return true
@@ -841,6 +790,79 @@ enum OfficialAPI {
         }
     }
 
+    private struct DeliveryReplay {
+        let text: String
+        let receipt: OfficialUsageReceipt
+        let hasContent: Bool
+    }
+
+    private static func recoverDelivery(request original: URLRequest, id: UUID, account: CaptureAccount,
+        environment: CaptureEnvironment, screenQuery: Bool, supportsDelivery: Bool?, deliveredText: String
+    ) async throws -> DeliveryReplay? {
+        try await withThrowingTaskGroup(of: DeliveryReplay?.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                var resumed = false, resumeNext = false
+                for _ in 0..<48 {
+                    try Task.checkCancellation()
+                    guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
+                    let isResume = resumeNext
+                    resumeNext = false
+                    var request = isResume ? original : URLRequest(url: endpointURL(base: account.baseURL,
+                        path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))
+                    request.timeoutInterval = isResume ? 8 : 2
+                    request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+                    do {
+                        let (bytes, response) = try await environment.session.bytes(for: request)
+                        defer { bytes.task.cancel() }
+                        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                        if http.statusCode == 200 {
+                            guard http.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/event-stream") == true else { return nil }
+                            var text = ""
+                            var receipt: OfficialUsageReceipt?
+                            let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id,
+                                screenQuery: screenQuery, operation: "solve") { event in
+                                switch event {
+                                case .delta(let value): text += value
+                                case .usage(let value): receipt = value
+                                case .error, .done: break
+                                }
+                            }
+                            guard outcome.serviceError == nil, let receipt, text.hasPrefix(deliveredText) else { return nil }
+                            return DeliveryReplay(text: text, receipt: receipt, hasContent: outcome.hasContent)
+                        }
+                        var data = Data()
+                        for try await byte in bytes {
+                            try Task.checkCancellation()
+                            data.append(byte); if data.count > 16384 { return nil }
+                        }
+                        let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        if http.statusCode == 202 {
+                            if value?["can_resume"] as? Bool == true, !resumed { resumeNext = true; resumed = true }
+                        } else if http.statusCode == 404, !resumed,
+                                  supportsDelivery == true || http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
+                            resumeNext = true; resumed = true
+                        } else if isResume {
+                            let code = (value?["error"] as? [String: Any])?["code"] as? String
+                            if let code, !["internal", "capture_in_progress", "capture_already_finalized"].contains(code) { return nil }
+                            if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { return nil }
+                        } else if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { return nil }
+                    } catch {
+                        try Task.checkCancellation()
+                    }
+                    // A known absent/expired worker can be resumed immediately; no poll sleep.
+                    if !resumeNext { try await Task.sleep(nanoseconds: 250_000_000) }
+                }
+                return nil
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 12_000_000_000)
+                throw URLError(.timedOut)
+            }
+            return try await group.next() ?? nil
+        }
+    }
+
     private static var captureTooLargeMessage: String {
         L10n.t("图片数据过大，请缩小区域或减少材料。", "画像が大きすぎます。範囲または資料を減らしてください。", "The images are too large. Select a smaller region or remove material.")
     }
@@ -861,11 +883,11 @@ enum OfficialAPI {
     }
 
     static func captureStatus(_ id: UUID, base: String? = nil, token: String? = nil,
-                              operation: String = "solve", session: URLSession = .shared) async -> SettlementSnapshot? {
+                              operation: String = "solve", session: URLSession = .shared, timeout: TimeInterval = 10) async -> SettlementSnapshot? {
         guard let credential = token ?? deviceToken else { return nil }
         let path = "v1/captures/" + id.uuidString.lowercased() + "/status"
         var request = URLRequest(url: endpointURL(base: base ?? baseURL, path: path))
-        request.timeoutInterval = 10
+        request.timeoutInterval = max(0.1, timeout)
         request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
         do {
             try Task.checkCancellation()
