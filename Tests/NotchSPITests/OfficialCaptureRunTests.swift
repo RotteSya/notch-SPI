@@ -240,8 +240,17 @@ final class OfficialCaptureRunTests: XCTestCase {
             XCTAssertTrue(f.settlements.isEmpty, scenario.id)
             XCTAssertEqual(f.completions.first?.0, scenario.expectedSuccess, scenario.id)
             XCTAssertEqual(f.requests.filter { $0.method == "GET" }.count, scenario.expectedStatusRequests, scenario.id)
-            XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count,
+            XCTAssertEqual(f.requests.filter { $0.method == "POST" && $0.path == "/v1/captures" }.count,
                            scenario.action == "nextQuestion" ? 2 : 1, scenario.id)
+            // Cancellation before SSE headers are delivered may send the bound tombstone.
+            // It is not a second solve; reject any other unexpected POST instead of hiding it.
+            let cancellations = f.requests.filter { $0.method == "POST" && $0.path != "/v1/captures" }
+            XCTAssertLessThanOrEqual(cancellations.count, 1, scenario.id)
+            for request in cancellations {
+                XCTAssertEqual(request.path, "/v1/captures/\(f.id.uuidString.lowercased())/cancel", scenario.id)
+                XCTAssertNotEqual(scenario.action, "none", scenario.id)
+                XCTAssertNotEqual(scenario.action, "replaceAccount", scenario.id)
+            }
         }
     }
 
