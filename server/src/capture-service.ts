@@ -622,7 +622,10 @@ export class CaptureService {
         resultState:objective.state??undefined,questionKind:objective.result?.kind,parserPath:objectiveMode?objective.parserPath:'legacy',
         answerHmac:finalAnswer?this.keys.digest('answer',normalizeObjectiveAnswer(finalAnswer),capture.keyVersion):undefined,
         terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion};
-      if (recoverable && charge && sealedAnswer) await settleReliably(()=>store.billing.checkpointCompletion(completion));
+      if (recoverable && charge && sealedAnswer) {
+        try { await settleReliably(()=>store.billing.checkpointCompletion(completion)); }
+        catch { req.log.warn({captureId:capture.captureId},'completion checkpoint unavailable; committing original answer'); }
+      }
       const settlement=await settleReliably(()=>store.billing.finishWithCapture(completion));
       const quota=settlement?.account,committed=settlement?.capture;
       if(!quota||!committed||committed.settlementStatus==='held') throw new Error('Settlement pending');

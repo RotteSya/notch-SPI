@@ -51,6 +51,14 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
   }finally{await f.close();}
  });
+ test(`${kind}: an unavailable recovery checkpoint does not fail an otherwise committable answer`,async()=>{
+  let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
+  f.store.billing.checkpointCompletion=async()=>{throw Error('checkpoint connection temporarily unavailable');};
+  try{const id=randomUUID(),r=await f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers:{authorization:'Bearer '+f.users[0]!.token},payload:{capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}});
+   assert.match(r.body,/FINAL: B/);assert.match(r.body,/\[DONE\]/);assert.match(r.body,/"questions_charged":1/);assert.equal(calls,1);
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
+  }finally{await f.close();}
+ });
  test(`${kind}: durable completion recovers after every final settlement call loses its connection`,async()=>{
   let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
   const original=f.store.billing.finishWithCapture.bind(f.store.billing);
