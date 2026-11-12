@@ -7,15 +7,21 @@ import {
 import { randomUUID } from "node:crypto";
 import { windowBounds } from "./window-bounds.mjs";
 import { autoDefaults } from "../generated/auto-session.mjs";
+import { SystemOperation } from "../core/system-operation.mjs";
+const targetEnumeration = new SystemOperation(), screenshotOperation = new SystemOperation();
+let targetListing = null;
 export async function listTargets() {
-  const sources = await desktopCapturer.getSources({
+  // Multiple settings/menu observers may ask for the same list in one frame.
+  // Join that read, while the system gate still blocks a timed-out OS operation.
+  if (!targetListing) targetListing = targetEnumeration.run(() => desktopCapturer.getSources({
     types: ["screen", "window"],
     thumbnailSize: { width: 0, height: 0 },
     fetchWindowIcons: false,
-  });
-  return sources
-    .filter((s) => !s.name.startsWith("NotchSPI"))
-    .map((s) => ({ id: s.id, name: s.name, displayId: s.display_id }));
+  })).then(sources => sources
+    .filter(s => !s.name.startsWith("NotchSPI"))
+    .map(s => ({ id: s.id, name: s.name, displayId: s.display_id })))
+    .finally(() => { targetListing = null; });
+  return await targetListing;
 }
 export async function capture(target = "screen") {
   if (
@@ -33,11 +39,11 @@ export async function capture(target = "screen") {
     }),
     { width: 1, height: 1 },
   );
-  const sources = await desktopCapturer.getSources({
+  const sources = await screenshotOperation.run(() => desktopCapturer.getSources({
     types: target === "screen" ? ["screen"] : ["screen", "window"],
     thumbnailSize: max,
     fetchWindowIcons: false,
-  });
+  }));
   const source =
     target === "screen"
       ? sources.find((s) => s.display_id === String(display.id))

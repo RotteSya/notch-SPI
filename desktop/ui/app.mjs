@@ -1,3 +1,6 @@
+import { apiProviders } from "../core/api-providers.mjs";
+import { version } from "../generated/product.mjs";
+import { renderReader } from "./reader.mjs";
 import { renderFeedback } from "./feedback.mjs";
 import { capsule, compactStatus, quickMenu } from "./notch-controls.mjs";
 import { LightField } from "./light-field.mjs";
@@ -273,7 +276,7 @@ function notch() {
     actions = button("cancel", t("cancel"));
   if (state.collecting) actions = "";
   if (state.status === "done" && state.answer)
-    actions = state.canExplain ? button("explain", t("explain")) : "";
+    actions = (state.canExplain ? button("explain", t("explain")) : "") + (state.mode === "tutor" ? button("fullAnswer", t("fullAnswer")) : "");
   if (["error", "canceled"].includes(state.status))
     actions =
       (state.canCheckSettlement ? button("status", t("status"), `title="${t("statusHint")}"`) : "") +
@@ -647,15 +650,9 @@ function settings(force = false) {
     content = !selected ? `<div class="persona-empty"><div class="persona-empty-icon">${icon('personas')}</div><p>${t('personaEmpty')}</p>${button('newPersona',t('newPersona'),'class="primary"')}</div>` : `<div class="persona-columns"><section><h2>${t('personaLibrary')}</h2><div class="group"><div class="persona-library" role="listbox" aria-label="${t('personaLibrary')}">${library.map(x=>button('editPersona',`<span class="persona-active">${x.id===state.settings.persona.id?'●':''}</span><span class="persona-list-name">${escape(x.name||t('personaUntitled'))}</span>`,`role="option" aria-selected="${x.id===selectedPersonaID}" data-value="${escape(x.id)}"`)).join('')}</div><div class="actions">${button('newPersona','＋',`aria-label="${t('newPersona')}" title="${t('newPersona')}"`)}${button('deletePersona','－',`aria-label="${t('deletePersona')}" title="${t('deletePersona')}" data-value="${escape(selected.id)}"`)}</div></div></section><section><h2>${t('personaEdit')}</h2><div class="group persona-editor"><input name="personaName" aria-label="${t('personaName')}" placeholder="${t('personaPlaceholder')}" value="${escape(selected.name)}"><label for="persona-description">${t('personaDescription')}</label><textarea id="persona-description" name="personaDescription" aria-label="${t('personaDescription')}">${escape(selected.description)}</textarea>${button('selectPersona',t(selected.id===state.settings.persona.id?'personaInUse':'personaUse'),`class="primary" data-value="${escape(selected.id)}" ${selected.id===state.settings.persona.id?'disabled':''}`)}<p>${t('personaExample')}</p></div></section></div>`;
   }
   if (settingsPage === "service")
-    content = `<h2>${t("channel")}</h2><div class="group service-options" role="radiogroup">${["official","api",...(state.account?.cli_enabled || state.settings.channel==='cli' ? ["cli"]:[])].map(x=>button("channel",`<strong>${t(x)}</strong><small>${t(x+'ServiceHint')}</small>`,`role="radio" aria-checked="${state.settings.channel===x}" data-value="${x}"`)).join('')}</div>${
+    content = `<h2>${t("answerChannel")}</h2><div class="group service-options" role="radiogroup">${["official","api",...(state.account?.cli_enabled || state.settings.channel==='cli' ? ["cli"]:[])].map(x=>button("channel",`<strong>${t(x)}</strong><small>${t(x+'ServiceHint')}</small>`,`role="radio" aria-checked="${state.settings.channel===x}" data-value="${x}"`)).join('')}</div>${
       state.settings.channel === "api"
-        ? `<h2>${t("service")}</h2><div class="group">${row(
-            "protocol",
-            select("protocol", [
-              ["openai", "OpenAI compatible"],
-              ["anthropic", "Anthropic Messages"],
-            ]),
-          )}${field("endpoint")}${field("model")}${field("apiKey", "apiKey", "", "password")}</div>`
+        ? `<h2>${t("connection")}</h2><div class="group api-connection">${row("apiProvider", `<div class="provider-picker">${select("apiProvider", apiProviders.map(p => [p.id, p.id === 'custom' ? t('customProvider') : p.name]))}${apiProviders.find(p => p.id === state.settings.apiProvider)?.consoleURL ? button('providerConsole', t('getKey')) : ''}</div>`)}${state.settings.apiProvider === 'custom' ? row("protocol", select("protocol", [["openai", "OpenAI compatible"], ["anthropic", "Anthropic Messages"]])) + row("endpoint", `<input id="endpoint" name="endpoint" value="${escape(state.settings.endpoint)}" autocomplete="off">`) : ''}${row("providerKey", `<input id="providerKey" name="apiKey" type="password" autocomplete="off" disabled placeholder="${escape(apiProviders.find(p => p.id === state.settings.apiProvider)?.keyPlaceholder ?? '')}">`)}${row("model", `<input id="model" name="model" value="${escape(state.settings.model === apiProviders.find(p => p.id === state.settings.apiProvider)?.model ? '' : state.settings.model)}" placeholder="${escape(apiProviders.find(p => p.id === state.settings.apiProvider)?.model ?? '')}" autocomplete="off">`)}<p class="muted">${t("keyPreserved")}</p></div>`
         : state.settings.channel === "cli"
           ? `<h2>${t("cli")}</h2><div class="group">${row(
               "cli",
@@ -667,8 +664,8 @@ function settings(force = false) {
           : ""
     }`;
   if (settingsPage === "service")
-    content += `<h2>${t("updates")}</h2><div class="group"><p>${t("update_" + state.update.status)} ${state.update.version ?? ""} ${state.update.status === "downloading" ? state.update.percent + "%" : ""}</p><p class="muted">${escape(state.update.message)}</p>${button("checkUpdate", t("checkUpdate"), ["unconfigured", "checking", "downloading"].includes(state.update.status) ? "disabled" : "")}${state.update.status === "available" ? button("downloadUpdate", t("downloadUpdate")) : ""}${state.update.status === "downloaded" ? button("installUpdate", t("installUpdate")) : ""}</div>`;
-  app.innerHTML = `<div class="settings-shell"><div class="window-dragbar" aria-hidden="true"></div><aside class="sidebar"><div class="logo">NotchSPI</div><div class="muted">${t("settings")}</div><nav role="radiogroup" aria-label="${t("settings")}">${["general", "shortcuts", "account", "personas", "service"].map((k) => button("page", `<span>${icon(k)}</span>${t(k)}`, `role="radio" aria-checked="${settingsPage === k}" class="${settingsPage === k ? "selected" : ""}" data-value="${k}"`)).join("")}</nav><div class="version">NotchSPI · 3.0${state.dev ? `<div class="dev-banner">${escape(state.dev)}</div>` : ""}</div></aside><section class="settings-main" data-settings-page="${settingsPage}"><header><h1>${t(settingsPage)}</h1><p>${settingsPage === "general" ? t("rhythm") : settingsPage === "account" ? t("accountSubtitle") : settingsPage === "service" ? t("serviceSubtitle") : settingsPage === "personas" ? t("personaSubtitle") : settingsPage === "shortcuts" ? t("shortcutSubtitle") : ""}</p></header><form id="settings-form" class="settings-scroll">${content}</form><div class="settings-footer"><span class="toast" role="status"></span></div></section></div>`;
+    content += `<h2>${t("updates")}</h2><div class="group"><p>${t("update_" + state.update.status)} ${state.update.version ?? ""} ${state.update.status === "downloading" ? state.update.percent + "%" : ""}</p><p class="muted">${escape(state.update.message)}</p>${state.update.notes ? `<p class="update-notes">${escape(state.update.notes)}</p>` : ""}${button("checkUpdate", t("checkUpdate"), ["unconfigured", "checking", "downloading"].includes(state.update.status) ? "disabled" : "")}${state.update.status === "available" ? button("downloadUpdate", t("updateNow"), `title="${t("updateRestartHint")}"`) : ""}${state.update.status === "downloading" ? button("cancelUpdate", t("cancel")) : ""}${state.update.status === "downloaded" ? button("installUpdate", t("installUpdate")) : ""}</div>`;
+  app.innerHTML = `<div class="settings-shell"><div class="window-dragbar" aria-hidden="true"></div><aside class="sidebar"><div class="logo">NotchSPI</div><div class="muted">${t("settings")}</div><nav role="radiogroup" aria-label="${t("settings")}">${["general", "shortcuts", "account", "personas", "service"].map((k) => button("page", `<span>${icon(k)}</span>${t(k)}`, `role="radio" aria-checked="${settingsPage === k}" class="${settingsPage === k ? "selected" : ""}" data-value="${k}"`)).join("")}</nav><div class="version">NotchSPI · ${version.APP_VERSION} (${version.BUILD_NUMBER})${state.dev ? `<div class="dev-banner">${escape(state.dev)}</div>` : ""}</div></aside><section class="settings-main" data-settings-page="${settingsPage}"><header><h1>${t(settingsPage)}</h1><p>${settingsPage === "general" ? t("rhythm") : settingsPage === "account" ? t("accountSubtitle") : settingsPage === "service" ? t("serviceSubtitle") : settingsPage === "personas" ? t("personaSubtitle") : settingsPage === "shortcuts" ? t("shortcutSubtitle") : ""}</p></header><form id="settings-form" class="settings-scroll">${content}</form><div class="settings-footer"><span class="toast" role="status"></span></div></section></div>`;
   document.querySelector(".settings-scroll").scrollTop =
     scrollPositions[settingsPage] ?? 0;
   if (!navigating && focus)
@@ -694,6 +691,14 @@ function settings(force = false) {
     }
     const spend=document.querySelector('[name="allowPurchasedCredits"]');
     if(spend) spend.disabled=accountPresentation(state).busy||accountPresentation(state).external;
+  }
+  if (settingsPage === 'service' && state.settings.channel === 'api') {
+    const field = document.querySelector('[name="apiKey"]');
+    const provider = state.settings.apiProvider;
+    call('readProviderKey').then(result => {
+      if (!field?.isConnected || result?.provider !== provider) return;
+      field.value = result.key; field.disabled = false;
+    });
   }
   if (settingsPage === "general")
     call("targets").then((targets) => {
@@ -735,6 +740,7 @@ function receive(next) {
   else if (page === "history") history();
   else if (page === "preview") imagePreview();
   else if (page === "feedback") renderFeedback(app,state,call);
+  else if (page === "reader") renderReader(app, state, { escape, button, t, renderMath, call });
   else settings();
   if (page === 'notch' && state.paintTiming) {
     const token = {...state.paintTiming}, key = JSON.stringify(token);
@@ -751,7 +757,7 @@ async function save() {
     payload = {};
   for (const input of form?.querySelectorAll("[name]") ?? []) {
     const key = input.name;
-    if (key === "restoreToken") continue;
+    if (key === "restoreToken" || input.disabled) continue;
     if (key === "personaName" || key === "personaDescription") {
       payload.persona ??= { ...(state.settings.personas ?? []).find(x=>x.id===selectedPersonaID) };
       payload.persona[key === "personaName" ? "name" : "description"] =
@@ -935,6 +941,15 @@ document.addEventListener("input", (event) => {
   if (event.target.closest("#settings-form") && event.target.name) dirty = true;
 });
 document.addEventListener("change", async (event) => {
+  if (event.target.name === 'apiProvider') {
+    const id = event.target.value;
+    event.target.value = state.settings.apiProvider;
+    const saved = await save();
+    if (!saved?.ok) return;
+    const changed = await call('saveSettings', { apiProvider: id });
+    if (changed?.ok) { dirty = false; state = await call('state'); settings(true); }
+    return;
+  }
   if(event.target.name==='reliabilitySharing') {
     const result=await call('setReliability',event.target.checked);
     if(result?.ok){dirty=false;state=await call('state');settings(true);}
@@ -952,6 +967,12 @@ document.addEventListener("change", async (event) => {
 });
 document.addEventListener("keydown", async (event) => {
   if(page === "feedback") return;
+  if(page === "reader") {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && !String(window.getSelection())) {
+      event.preventDefault(); await call('readerCopy');
+    }
+    return;
+  }
   if (page === "settings" && !recording) {
     if (document.querySelector('dialog[open]')) return;
     const personaRow=event.target.closest('[data-action="editPersona"]');
@@ -1064,7 +1085,7 @@ document.addEventListener("keydown", async (event) => {
     const choices = [...radio.parentElement.children],
       i = choices.indexOf(radio),
       next = choices[(i + (event.key === "ArrowRight" ? 1 : choices.length-1)) % choices.length];
-    await call("saveSettings", { reasoning: next.dataset.value });
+    await call("saveSettings", { [radio.closest(".service-options") ? "channel" : "reasoning"]: next.dataset.value });
     document.querySelector(`[data-value="${next.dataset.value}"]`)?.focus();
   }
 });

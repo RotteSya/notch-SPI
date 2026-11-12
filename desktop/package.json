@@ -20,6 +20,7 @@
     "smoke:motion": "electron . --motion-smoke",
     "smoke:capture": "electron . --capture-smoke",
     "smoke:personality": "electron . --smoke --qa personality-warning && electron . --smoke --qa personality-error",
+    "smoke:alignment": "electron . --alignment-smoke",
     "smoke:settings": "electron . --settings-smoke"
   },
   "dependencies": {

@@ -12,6 +12,36 @@
   --sidebar: #f0f0f2;
   --accent: #aabcf0;
 }
+.reader-shell { height: 100vh; display: flex; flex-direction: column; padding: 22px 24px 16px; }
+.reader-shell > p { margin: 0 0 22px; font-size: 13px; }
+.reader-columns { display: grid; grid-template-columns: calc(38% - 8px) 1fr; gap: 16px; min-height: 0; flex: 1; }
+.reader-columns.without-images { grid-template-columns: 1fr; }
+.reader-images, .reader-answer { overflow: auto; background: var(--surface); padding: 16px; min-width: 0; }
+.reader-images img { display: block; width: 100%; height: auto; margin-bottom: 16px; }
+.reader-answer { user-select: text; }
+.reader-shell footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 16px; min-height: 48px; }
+.reader-shell footer > span { font-size: 12px; flex: 1; }
+.settings-main[data-settings-page="service"] { padding: 42px 0 0; }
+.settings-main[data-settings-page="service"] > header { margin: 0 36px; height: 72px; padding-bottom: 0; flex-shrink: 0; }
+.settings-main[data-settings-page="service"] .settings-scroll { padding: 0 20px 22px; }
+.settings-main[data-settings-page="service"] h2 { margin: 0 16px; height: 28px; line-height: 28px; }
+.settings-main[data-settings-page="service"] .group + h2 { margin-top: 16px; }
+.settings-main[data-settings-page="service"] .group { padding: 16px; border: 1px solid var(--line); }
+.settings-main[data-settings-page="service"] .service-options { gap: 10px; padding: 15px 15px 13px; }
+.settings-main[data-settings-page="service"] .service-options button { height: 68px; padding: 10px 13px; border-radius: 6px; position: relative; }
+.settings-main[data-settings-page="service"] .service-options [aria-checked="true"]::after { content: '●'; position: absolute; right: 14px; top: 12px; font-size: 9px; }
+.settings-main[data-settings-page="service"] .api-connection .row { display: grid; grid-template-columns: 152px minmax(0,1fr); gap: 12px; min-height: 44px; padding: 0 0 12px; border: 0; }
+.settings-main[data-settings-page="service"] .api-connection input, .settings-main[data-settings-page="service"] .api-connection select { height: 32px; width: 100%; }
+.settings-main[data-settings-page="service"] .api-connection label { font-weight: 500; }
+.settings-main[data-settings-page="service"] > header h1 { line-height: 32px; margin-bottom: 5px; }
+.settings-main[data-settings-page="service"] > header p { font-size: 12px; line-height: 20px; margin: 0; }
+.settings-main[data-settings-page="service"] .api-connection { padding: 11px 15px; }
+.settings-main[data-settings-page="service"] .api-connection .row:first-child { min-height: 40px; padding-bottom: 8px; }
+.settings-main[data-settings-page="service"] .api-connection input { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+.settings-main[data-settings-page="service"] .provider-picker { display: flex; gap: 12px; min-width: 0; }
+.settings-main[data-settings-page="service"] .provider-picker select { flex: 1; min-width: 0; }
+.settings-main[data-settings-page="service"] .provider-picker button { width: 132px; flex-shrink: 0; height: 32px; padding: 4px 8px; }
+.settings-main[data-settings-page="service"] .api-connection > p { margin: 0; min-height: 48px; font-size: 11px; }
 * {
   box-sizing: border-box;
 }
@@ -1242,3 +1272,5 @@ body:has(.feedback-dialog) { background: transparent; color: #eeeeef; overflow: 
 .feedback-dialog input[type=checkbox] { appearance:none;border:0;border-radius:4px;background:#ffffff12;padding:0; }
 .feedback-dialog input[type=checkbox]:checked { background:#087fff; }
 .feedback-dialog input[type=checkbox]:checked::after { content:"";position:absolute;left:4px;top:1px;width:5px;height:9px;border:solid white;border-width:0 2px 2px 0;transform:rotate(45deg); }
+
+.update-notes { white-space: pre-wrap; overflow-wrap: anywhere; }

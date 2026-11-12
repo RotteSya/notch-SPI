@@ -623,6 +623,23 @@
         "server/test/admin-operations.test.ts",
         "server/test/admin-entitlement.test.ts"
       ]
+    },
+    {
+      "path": "docs/windows/macos-alignment.md",
+      "kind": "reference",
+      "scope": [
+        "windows"
+      ],
+      "purpose": "Windows 对齐 macOS 3.1 的实现范围、逐项验收和环境边界",
+      "sources": [
+        "desktop/main.mjs",
+        "Sources/NotchSPI/Notch/NotchController.swift",
+        "VERSION.env"
+      ],
+      "checks": [
+        "desktop/package.json",
+        "scripts/verify.sh"
+      ]
     }
   ]
 }

@@ -35,6 +35,7 @@ import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Vault, LocalStore } from "./platform/storage.mjs";
 import { QuestionHistory } from "./platform/history.mjs";
+import { createUpdateFlow } from './core/update-state.mjs';
 import { createUpdater } from "./platform/updater.mjs";
 import { createCaptureVisibility } from "./platform/capture-visibility.mjs";
 import { createCaptureExclusion, requireCaptureExclusionSupport, requireCaptureCompositor, createWindowsCaptureProtection } from "./platform/capture-exclusion.mjs";
@@ -43,8 +44,10 @@ import { createFlights } from "./platform/flights.mjs";
 import { capture, listTargets, fromFile } from "./platform/capture.mjs";
 import { OfficialClient } from "./core/official.mjs";
 import { directAPI, localCLI } from "./core/providers.mjs";
-import { Intake, product } from "./core/product.mjs";
-import { compose, parseAnswer, personality } from "./core/answer.mjs";
+import { apiProviders, providerSettings, providerKey, apiCredentialKey } from "./core/api-providers.mjs";
+import { ReadingSnapshot } from "./core/reading-snapshot.mjs";
+import { Intake, product, explanationPrompt } from "./core/product.mjs";
+import { compose, parseAnswer, personality, visibleStream } from "./core/answer.mjs";
 import { AutoSession, PersonaSession } from "./core/sessions.mjs";
 // Keep transparent Windows overlays on DirectComposition even without a GPU.
 // The legacy layered-bitmap fallback cannot apply capture exclusion.
@@ -68,11 +71,12 @@ const dailySmoke = process.argv.includes("--daily-smoke");
 const feedbackSmoke = process.argv.includes("--feedback-smoke");
 const guideSmoke = process.argv.includes("--guide-smoke");
 const captureSmoke = process.argv.includes("--capture-smoke");
+const alignmentSmoke = process.argv.includes("--alignment-smoke");
 const settingsSmoke = process.argv.includes("--settings-smoke");
 const motionSmoke = process.argv.includes("--motion-smoke") || captureSmoke;
 const development = Boolean(arg("--dev-base")),
-  qa = arg("--qa") ?? (settingsSmoke ? "settings" : dailySmoke ? "daily" : feedbackSmoke ? "feedback" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
-  smoke = localReportSmoke || process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || feedbackSmoke || settingsSmoke;
+  qa = arg("--qa") ?? (alignmentSmoke ? "alignment" : settingsSmoke ? "settings" : dailySmoke ? "daily" : feedbackSmoke ? "feedback" : guideSmoke ? "onboarding" : motionSmoke ? "motion" : null),
+  smoke = alignmentSmoke || localReportSmoke || process.argv.includes("--smoke") || motionSmoke || guideSmoke || dailySmoke || feedbackSmoke || settingsSmoke;
 if (app.isPackaged && (development || qa || smoke))
   throw new Error("Development flags are unavailable in packaged builds");
 if (development || qa || smoke)
@@ -98,7 +102,7 @@ if (!app.requestSingleInstanceLock()) {
     setTimeout(() => {
       console.error("Renderer readiness timed out");
       app.exit(1);
-    }, settingsSmoke ? 60000 : captureSmoke || guideSmoke || dailySmoke ? 45000 : 15000).unref();
+    }, settingsSmoke || alignmentSmoke ? 60000 : captureSmoke || guideSmoke || dailySmoke ? 45000 : 15000).unref();
   app
     .whenReady()
     .then(start)
@@ -146,6 +150,8 @@ async function start() {
     answerSize: 13,
     showReasoning: false,
     allowPurchasedCredits: true,
+    apiProvider: null,
+    apiProfiles: {},
     protocol: "openai",
     endpoint: "https://api.openai.com/v1/chat/completions",
     model: "gpt-5",
@@ -165,6 +171,7 @@ async function start() {
     ...defaults,
     ...(development || qa || smoke ? {} : local.read("settings", {})),
   };
+  settings = providerSettings(settings);
   settings.answerSize=Math.min(19,Math.max(11,Number(settings.answerSize)||13));
   settings.collapseDelay=Math.min(30,Math.max(2,Number(settings.collapseDelay)||9));
   // Preserve a legacy single profile even if it never entered the old library.
@@ -249,6 +256,8 @@ async function start() {
   let win,
     settingsWin,
     historyWin,
+    readerWin, reader = null, readerSized = false, localRun = null, explanationAttempted = false,
+    settingsSaveQueue = Promise.resolve(), requestTimeoutMs = 110000,
     previewWin,
     feedbackWin, feedbackView = null, feedbackReview = null, feedbackTurn = null, feedbackFiles = null, feedbackSaving = false,
     feedbackSaveDialog = options => dialog.showSaveDialog(feedbackWin,options),
@@ -262,7 +271,7 @@ async function start() {
     singleDeadline = null,
     expiration = null;
   const windows = () =>
-    [win, settingsWin, historyWin, previewWin, feedbackWin].filter((w) => w && !w.isDestroyed());
+    [win, settingsWin, historyWin, previewWin, feedbackWin, readerWin].filter((w) => w && !w.isDestroyed());
   const snapshot = () => ({
     ...state,
     canFeedback: state.mode !== "personality" && Boolean(state.working || feedbackTurn),
@@ -284,15 +293,24 @@ async function start() {
       images: images.map(({ thumbnail, id }) => ({ thumbnail, id })),
     })),
     auto: { active: auto.active, count: auto.count, cap: auto.cap, reviewPending: Boolean(state.autoReviewPending) },
-    canExplain: Boolean(
-      run?.receipt?.explanation_available && !state.explanation,
-    ),
+    canExplain: canExplain(),
     canRecover: Boolean(run?.status?.can_recover ?? run?.receipt?.can_recover),
     canRetry: run?.status?.can_retry === true,
     hasKey: false,
     platform: process.platform,
   });
+  const canExplain = () => Boolean(state.mode === 'tutor' && state.status === 'done'
+    && state.answer && !state.working && !state.explanation && !explanationAttempted && images.length
+    && (localRun ? localRun.id === state.answerID && localRun.owner === client.owner() && Date.now() < localRun.expiresAt
+      : run?.id === state.answerID && run?.receipt?.explanation_available && canQueryCapture(run, client.owner(), Date.now(), product.capture.retentionSeconds)));
+  const readingContent = (includeImages = false) => ({
+    id: state.answerID, answer: state.answer, detail: state.explanation || state.working,
+    needsReview: state.resultState === 'review', canExplain: canExplain(),
+    explaining: Boolean(active && state.operation === 'explain'), failed: Boolean(state.explanationFailed),
+    images: includeImages ? images.map(x => ({ id: x.id, url: 'data:image/jpeg;base64,' + x.base64 })) : undefined,
+  });
   const emit = () => {
+    if (reader) reader.update(readingContent());
     if (!state.preview && previewWin && !previewWin.isDestroyed()) previewWin.close();
     if (!dailySmoke) state.remaining = intake.deadline === null
       ? null : Math.max(0, Math.ceil((intake.deadline - Date.now()) / 1000));
@@ -303,7 +321,7 @@ async function start() {
         exclusion.refresh(win);
       }
     }
-    for (const w of windows()) w.webContents.send("state", w === feedbackWin ? { ...snapshot(), feedback: feedbackView } : snapshot());
+    for (const w of windows()) w.webContents.send("state", w === feedbackWin ? { ...snapshot(), feedback: feedbackView } : w === readerWin ? { ...snapshot(), reader: reader?.value } : snapshot());
   };
   const updater = createUpdater(emit);
   const windowsCapture = process.platform === "win32";
@@ -331,16 +349,18 @@ async function start() {
   };
   const openWindow = (kind) => {
     const w = new BrowserWindow({
-      width: kind === "notch" ? 680 : kind === "feedback" ? 592 : 850,
-      height: kind === "notch" ? 780 : kind === "feedback" ? Math.min(685,screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea.height) : 620,
-      useContentSize: kind === "feedback",
+      width: kind === "notch" ? 680 : kind === "feedback" ? 592 : kind === "reader" ? (reader?.value.images.length ? 1000 : 680) : 850,
+      height: kind === "notch" ? 780 : kind === "reader" ? Math.min(720, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea.height - 48) : kind === "feedback" ? Math.min(685,screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea.height) : 620,
+      useContentSize: kind !== "notch",
+      minWidth: kind === "reader" ? (reader?.value.images.length ? 800 : 640) : undefined,
+      minHeight: kind === "reader" ? 360 : undefined,
       show: false,
       frame: !["notch","feedback"].includes(kind),
       parent: kind === "feedback" ? win : undefined,
       modal: kind === "feedback",
-      titleBarStyle: !["notch","preview","feedback"].includes(kind) ? "hidden" : undefined,
+      titleBarStyle: !["notch","preview","feedback","reader"].includes(kind) ? "hidden" : undefined,
       titleBarOverlay:
-        !["notch","preview","feedback"].includes(kind) && process.platform === "win32"
+        !["notch","preview","feedback","reader"].includes(kind) && process.platform === "win32"
           ? { color: "#282b30", symbolColor: "#eeeeee", height: 30 }
           : undefined,
       transparent: ["notch","feedback"].includes(kind),
@@ -369,7 +389,7 @@ async function start() {
     if (localReport) observeWindow(w, kind, (name, metadata) => localReport.record(name, metadata),
       () => kind === 'notch' ? state.visible : undefined);
     if (!windowsCapture && !motionSmoke) {
-      const protect = () => w.setContentProtection(["notch", "preview", "settings", "feedback"].includes(kind) && !development && !qa && !smoke);
+      const protect = () => w.setContentProtection(["notch", "preview", "settings", "feedback", "history", "reader"].includes(kind) && !development && !qa && !smoke);
       protect();
       w.on("show", protect);
     }
@@ -394,7 +414,7 @@ async function start() {
         }
       });
     }
-    if (["preview", "settings", "feedback"].includes(kind)) exclusion.register(w);
+    if (["preview", "settings", "feedback", "history", "reader"].includes(kind)) exclusion.register(w);
     w.loadFile(path.join(root, "ui/index.html"), { query: { page: kind } });
     w.webContents.once("did-finish-load", () => {
       emit();
@@ -527,6 +547,33 @@ async function start() {
     emit();
     if (page === "account") refreshAccount().catch(() => {});
   };
+  function presentReader(content, current = true) {
+    if (!reader || reader.value.id !== content.id || reader.current !== current) {
+      readerWin?.close();
+      readerSized = false;
+      reader = new ReadingSnapshot(content); reader.current = current;
+      readerWin = openWindow('reader');
+      const opened = readerWin;
+      opened.on('closed', () => { if (readerWin === opened) { readerWin = null; reader = null; } });
+    } else { readerWin.show(); readerWin.focus(); }
+    emit();
+  }
+  const updateFlow = createUpdateFlow({
+    controller: updater,
+    load: () => { try { return local.read('update-check', {}); } catch { return {}; } },
+    save: preference => local.write('update-check', preference),
+    show: () => openPage('service'),
+    canInstall: () => !active && !state.capturing && !intake.items.length,
+    choose: async (update, manual) => (await dialog.showMessageBox({
+      type: 'info', message: `${translate('update_available', settings.language)} ${update.version}`,
+      detail: [translate('updateRestartHint', settings.language), update.notes].filter(Boolean).join('\n\n').slice(0, 800),
+      buttons: [translate('updateNow', settings.language), translate('updateLater', settings.language),
+        ...(!manual ? [translate('updateSkip', settings.language)] : [])],
+      defaultId: 0, cancelId: 1,
+    })).response,
+    notify: update => dialog.showMessageBox({ type: update.status === 'error' ? 'warning' : 'info',
+      message: translate('update_' + update.status, settings.language), detail: update.message || '', buttons: ['OK'] }),
+  });
   async function refreshAccount() {
     if (qa || smoke) return;
     await client.refresh();
@@ -557,6 +604,7 @@ async function start() {
     emit();
   };
   function cancel({ guideTransition = true, userInitiated = false } = {}) {
+    const explaining = Boolean(active && state.operation === 'explain');
     const collecting = state.collecting || Boolean(intake.items.length);
     if (guideTransition) guide.cancel();
     saveGuide();
@@ -576,8 +624,9 @@ async function start() {
     state.remaining = null;
     auto.stop("stopButton");
     state.autoReviewPending = false;
-    state.status = "canceled";
-    if (userInitiated) {
+    state.status = explaining ? "done" : "canceled";
+    if (explaining) { state.explanation = ''; state.explanationFailed = true; state.message = translate('explanationFailed', settings.language); }
+    if (userInitiated && !explaining) {
       state.message = "";
       state.answer = ""; state.working = ""; state.explanation = "";
       state.resultState = null;
@@ -593,7 +642,8 @@ async function start() {
         "The answer is complete, but local history could not be saved.";
     }
   };
-  let waitTiming = null;
+  const alignmentImage = alignmentSmoke ? await fs.readFile(path.join(root,"test/fixtures/question.jpg")) : null;
+  let waitTiming = null, alignmentFetch;
   function revealNotch() {
     state.visible = true;
     if (!win.isVisible()) win.showInactive();
@@ -603,6 +653,11 @@ async function start() {
     batch,
     { mode = "tutor", operation = "solve", retry = false } = {},
   ) {
+    if (operation === 'explain' && (active || !canExplain())) return;
+    if (operation === 'recover' && (active || !run || !canQueryCapture(run, client.owner(), Date.now(), product.capture.retentionSeconds))) return;
+    if (operation === 'explain') explanationAttempted = true;
+    else { explanationAttempted = false; state.answerID = null; }
+    state.explanationFailed = false;
     localReport?.record('solve_attempt',{mode,operation});
     revealNotch();
     state.sessionMessage = null;
@@ -614,7 +669,7 @@ async function start() {
       current = ++generation;
     state.failureKind = null;
     state.requestStarted = false;
-    const frozen = structuredClone(settings);
+    const frozen = structuredClone(operation === "explain" && localRun ? localRun.settings : settings);
     const observationID=crypto.randomUUID(),observationStart=Date.now();
     let observationOwner=null,observationEnabled=false,observationParser="none",observationResult=null,observationError=null;
     const observation={capture_id:observationID,trigger:auto.active?'auto':mode==='personality'?'personality_hotkey':batch.length>1?'context_hotkey':'capture_hotkey',mode,operation,channel:frozen.channel==='api'?'custom_key':frozen.channel};
@@ -666,6 +721,18 @@ async function start() {
       height,
     }));
     emit();
+    // Same 110-second run deadline as native NotchController.beginRun().
+    const watchdog = setTimeout(() => {
+      if (current !== generation) return;
+      task.abort(); generation++; active = null;
+      if (operation === 'explain') {
+        Object.assign(state, old); state.status = 'done'; state.explanationFailed = true;
+        state.message = translate('explanationFailed', frozen.language);
+      } else {
+        fail(Object.assign(new Error(translate('requestTimeout', frozen.language)), { code: 'watchdog_timeout' }));
+      }
+      emit();
+    }, requestTimeoutMs);
     let raw = "", personaToken = null, personaCompleted = false, personaContextCleared = false;
     const completePersona = (transportOK, answerRaw = raw) => {
       personaCompleted = true;
@@ -689,7 +756,7 @@ async function start() {
       if (delta) {timing?.mark('first_delta');state.sessionMessage = null;}
       raw += delta;
       state.status = "streaming";
-      if (operation === "explain") state.explanation = raw;
+      if (operation === "explain") state.explanation = visibleStream(raw);
       else if (mode === "personality")
         state.answer = personality(raw, true).visible;
       else {
@@ -730,6 +797,7 @@ async function start() {
       let result;
       if (frozen.channel === "official") {
         if (operation === "solve" && !retry) {
+          localRun = null;
           const previous = run;
           const pendingRun = await client.freeze(batch, frozen, mode, context);
           if (current !== generation || task.signal.aborted) return;
@@ -755,9 +823,18 @@ async function start() {
           finalAnswer: old.answer,
         });
       } else {
-        if (operation !== "solve")
+        if (operation !== "solve" && operation !== "explain")
           throw new Error("Capture again to use this channel");
         run = null;
+        if (operation === 'solve') {
+          const key = frozen.channel === 'api' ? await providerKey(vault, frozen) : null;
+          if (current !== generation || task.signal.aborted) return;
+          localRun = {
+            id: crypto.randomUUID(), owner: client.owner(), settings: frozen,
+            expiresAt: Date.now() + product.capture.retentionSeconds * 1000, key,
+          };
+        }
+        task.signal.throwIfAborted();
         beginObservation();
         timing?.mark('request_sent');
         state.requestStarted = true;
@@ -768,25 +845,27 @@ async function start() {
           signal: task.signal,
           onDelta: update,
           sessionContext: context,
+          prompt: operation === "explain" ? explanationPrompt(frozen.language, old.answer) : undefined,
         };
         result =
           frozen.channel === "api"
             ? await directAPI({
                 ...options,
-                key: await vault.get("api:" + frozen.endpoint),
+                fetchImpl: alignmentSmoke ? alignmentFetch : undefined,
+                key: localRun.key,
               })
             : await localCLI(options);
       }
       if (current !== generation || task.signal.aborted) return;
       if (operation === "explain") {
-        state.explanation = result.raw;
+        state.explanation = visibleStream(result.raw);
         state.answer = old.answer;
         state.working = old.working;
         state.resultState = old.resultState;
         state.status = "done";
-        const h = history.find((x) => x.id === run?.id);
+        const h = history.find((x) => x.id === state.answerID);
         if (h) {
-          h.explanation = result.raw;
+          h.explanation = state.explanation;
           saveHistory();
         }
       } else {
@@ -818,12 +897,13 @@ async function start() {
           }
         }
         state.status = "done";
+        state.answerID = run?.id ?? localRun?.id ?? crypto.randomUUID();
         if (onboardingAttempt) {
           guide.finished(true);
           saveGuide();
         }
         if (mode !== "personality" && !onboardingAttempt) {
-          const id = run?.id ?? crypto.randomUUID();
+          const id = state.answerID;
           history = [
             {
               id,
@@ -853,6 +933,7 @@ async function start() {
       expiration = setTimeout(() => {
         if (!active) {
           run = null;
+          localRun = null;
           feedbackTurn = null;
           images = [];
           state.images = [];
@@ -860,13 +941,15 @@ async function start() {
         }
       }, product.capture.retentionSeconds * 1000);
     } catch (e) {
-      state.failureKind=failureKind(e);
-      localReport?.record('solve_failed',{failure_kind:state.failureKind,trial_status:client.account?.free_trial?.status,available_credits:client.account?.balance_questions,error_code:e.code??'unknown_error',http_status:e.status,stage:state.requestStarted?'request':'preparation'});
+      const failedKind = failureKind(e);
+      localReport?.record('solve_failed',{failure_kind:failedKind,trial_status:client.account?.free_trial?.status,available_credits:client.account?.balance_questions,error_code:e.code??'unknown_error',http_status:e.status,stage:state.requestStarted?'request':'preparation'});
       observationError=e.code??"transport_error";
       if (current !== generation || task.signal.aborted) return;
+      state.failureKind = failedKind;
       if (operation === "explain") {
         Object.assign(state, old);
-        state.message = e.message;
+        state.explanationFailed = true;
+        state.message = translate("explanationFailed", frozen.language);
         state.status = "done";
       } else {
         if (onboardingAttempt) {
@@ -883,6 +966,7 @@ async function start() {
       }
       auto.stop(autoFailureReason(e));
     } finally {
+      clearTimeout(watchdog);
       if (current === generation && !task.signal.aborted && (state.answer || state.working || state.explanation)) {
         timing?.mark('first_content');
         if (timing) state.paintTiming = {id:timing.id,phase:'content_frame'};
@@ -909,7 +993,7 @@ async function start() {
       emit();
       return;
     }
-    if (state.capturing && kind === 'single') return;
+    if (state.capturing) return;
     if (active) {
       cancel();
       return;
@@ -981,11 +1065,13 @@ async function start() {
           mode: kind === "personality" ? "personality" : "tutor",
         });
     } catch (e) {
+      if (current !== generation) return;
       localReport?.record('capture_pixels_failed',{error_code:'capture_failed'});
       if (token) intake.finish(token, null, Date.now());
       if (/permission|Capture target is unavailable/.test(e.message)) {
         guideTargetLabel = settings.target === "screen" ? null : settings.target;
         try { guideTargetLabel = (await listTargets()).find(target => target.id === settings.target)?.name ?? guideTargetLabel; } catch {}
+        if (current !== generation) return;
         permissionReturn = guide.multiple ? "multiCapture" : "capture";
         guide.permission();
       } else guide.finished(false);
@@ -1353,8 +1439,14 @@ async function start() {
     );
   ipcMain.handle("nspi", async (event, action, payload) => {
     if (!validSender(event)) throw new Error("Untrusted sender");
+    if (action === 'readProviderKey' && event.sender !== settingsWin?.webContents)
+      throw new Error('Provider credential requires its settings window');
     if (['feedbackOriginal','feedbackSave','feedbackCancel'].includes(action) && event.sender !== feedbackWin?.webContents)
       throw new Error('Feedback action requires its review window');
+    if (event.sender === readerWin?.webContents && !['state','readerExplain','readerCopy','readerCopyAll','readerSize'].includes(action))
+      throw new Error('Unsupported reading action');
+    if (['readerExplain','readerCopy','readerCopyAll','readerSize'].includes(action) && event.sender !== readerWin?.webContents)
+      throw new Error('Reading action requires its window');
     if (event.sender === feedbackWin?.webContents && !['state','feedbackOriginal','feedbackSave','feedbackCancel'].includes(action))
       throw new Error(`Unsupported feedback action: ${action}`);
     if(["capture","preview","remove","undo","submit","cancel","auto","expand","settings","guideNext","guideBack","guideDismiss","retry","copy","explain","confirmReview"].includes(action))localReport?.record("action",{action});
@@ -1369,10 +1461,35 @@ async function start() {
               ['waiting_frame','content_frame'].includes(payload.phase)) waitTiming.mark(payload.phase);
           break;
         case "state":
-          return event.sender === feedbackWin?.webContents ? { ...snapshot(), feedback:feedbackView } : snapshot();
+          return event.sender === feedbackWin?.webContents ? { ...snapshot(), feedback:feedbackView } : event.sender === readerWin?.webContents ? { ...snapshot(), reader: reader?.value } : snapshot();
         case "rendered":
           if (smoke && event.sender === win.webContents && payload === true) {
             console.log("NSPI_RENDERER_READY");
+            if (alignmentSmoke) {
+              import('./test/alignment-smoke.mjs').then(async ({verifyAlignment}) => {
+                openPage('service');
+                await new Promise(resolve => settingsWin.webContents.once('did-finish-load', resolve));
+                await verifyAlignment({ win, settingsWin, root, snapshot, readerWindow: () => readerWin,
+                  configure: async (fetcher) => {
+                    alignmentFetch = fetcher;
+                    settings = providerSettings(settings, { channel: 'api', apiProvider: 'openai' });
+                    await vault.set(apiCredentialKey(settings), 'offline-fixture');
+                    emit();
+                  },
+                  solve: () => solve([...images]),
+                  seed: () => { images = [fromFile(Buffer.from(alignmentImage))]; },
+                  requestDeadline: ms => { requestTimeoutMs = ms; },
+                  deferCredential: () => {
+                    const get = vault.get.bind(vault); let release;
+                    const pending = new Promise(resolve => { release = resolve; });
+                    vault.get = async key => { vault.get = get; await pending; return get(key); };
+                    return release;
+                  },
+                });
+                console.log('NSPI_ALIGNMENT_SMOKE_OK'); app.quit();
+              }).catch(error => { console.error(error); app.exit(1); });
+              break;
+            }
             if (settingsSmoke) {
               import("./test/settings-smoke.mjs").then(async ({verifySettings})=>{
                 openPage("general");
@@ -1583,8 +1700,14 @@ async function start() {
           emit();
           break;
         case "quickTarget": {
+          const targetGeneration = generation;
           const targets = await listTargets();
+          if (targetGeneration !== generation) break;
           if (payload !== "screen" && !targets.some(x => x.id === payload)) throw new Error("Capture target is unavailable");
+          if (payload === settings.target) break;
+          if (active || state.capturing || intake.items.length) cancel({ userInitiated: true });
+          else generation++;
+          auto.stop(); run = null; localRun = null; images = []; state.images = [];
           settings.target = payload;
           personaSession.reset();
           if (!qa && !smoke && !development) local.write("settings", settings);
@@ -1598,6 +1721,26 @@ async function start() {
           break;
         case "settings":
           openPage(payload ?? "general");
+          break;
+        case "fullAnswer":
+          if (state.mode !== 'tutor' || state.status !== 'done' || !state.answer || active) break;
+          presentReader(readingContent(true));
+          break;
+        case "readerSize":
+          if (!readerSized && readerWin && Number.isFinite(payload) && payload > 0) {
+            readerSized = true;
+            const area = screen.getDisplayMatching(readerWin.getBounds()).workArea;
+            const height = Math.min(720, Math.max(360, Math.ceil(payload) + 156), Math.max(360, area.height - 48));
+            readerWin.setContentSize(readerWin.getContentSize()[0], height);
+            readerWin.center();
+          }
+          break;
+        case "readerCopy":
+        case "readerCopyAll":
+          if (reader) clipboard.writeText((action === 'readerCopy' ? reader.value.answer : reader.copyAll).replace(/\*\*|__/g, ''));
+          break;
+        case "readerExplain":
+          if (reader?.current && reader.value.id === state.answerID && canExplain()) await solve(images, { operation: 'explain' });
           break;
         case "history":
           openPage("history");
@@ -1757,16 +1900,28 @@ async function start() {
           emit();
           break;
         }
+        case "readProviderKey": {
+          const requested = { ...settings };
+          return { provider: requested.apiProvider, key: await providerKey(vault, requested) };
+        }
+        case "providerConsole": {
+          const provider = apiProviders.find(p => p.id === settings.apiProvider);
+          if (provider?.consoleURL) await shell.openExternal(provider.consoleURL);
+          break;
+        }
         case "targets":
           return await listTargets();
         case "checkUpdate":
-          await updater.check();
+          await updateFlow.check();
           break;
         case "downloadUpdate":
-          await updater.download();
+          await updateFlow.download();
+          break;
+        case "cancelUpdate":
+          updater.cancel();
           break;
         case "installUpdate":
-          if (active)
+          if (active || state.capturing || intake.items.length)
             throw new Error("Finish the current question before restarting");
           updater.install();
           break;
@@ -1811,11 +1966,20 @@ async function start() {
           resumeGuide();
           break;
         case "saveSettings": {
-          if (active || intake.items.length)
-            throw new Error("Finish or cancel the current capture first");
-          const next = { ...settings };
+          const previousSave = settingsSaveQueue;
+          let releaseSave;
+          settingsSaveQueue = new Promise(resolve => { releaseSave = resolve; });
+          await previousSave;
+          try {
+          let next = { ...settings };
           for (const k of Object.keys(defaults))
             if (Object.hasOwn(payload, k)) next[k] = payload[k];
+          next = providerSettings(settings, next);
+          const keyChanged = typeof payload.apiKey === 'string' && payload.apiKey.trim() !== await providerKey(vault, next);
+          const scopeChanged = ['channel','target','apiProvider','protocol','endpoint','model','cliKind','cliPath','persona']
+            .some(key => JSON.stringify(next[key]) !== JSON.stringify(settings[key])) || keyChanged;
+          if (scopeChanged && (active || intake.items.length))
+            throw new Error("Finish or cancel the current capture first");
           if (Object.hasOwn(payload,'language') && !Object.hasOwn(payload,'languageMode')) next.languageMode=payload.language;
           if (next.languageMode != null && !['system','zh','ja','en'].includes(next.languageMode)) throw new Error('Invalid language preference');
           if (Object.hasOwn(payload,'languageMode')) next.language=next.languageMode==='system'?systemLanguage():next.languageMode;
@@ -1838,14 +2002,16 @@ async function start() {
             next.persona.description.length > 16000
           )
             throw new Error("Invalid persona");
+          if(typeof next.reliabilitySharing!=='boolean')throw new Error('Invalid reliability preference');
           try {
             registerHotkeys(next.hotkeys);
           } catch (e) {
             registerHotkeys(settings.hotkeys);
             throw e;
           }
-          if (typeof payload.apiKey === "string" && payload.apiKey) {
-            await vault.set("api:" + next.endpoint, payload.apiKey);
+          if (keyChanged) {
+            try { await vault.set(apiCredentialKey(next), payload.apiKey.trim()); }
+            catch (error) { registerHotkeys(settings.hotkeys); throw error; }
           }
           if (
             app.isPackaged &&
@@ -1855,47 +2021,26 @@ async function start() {
             app.setLoginItemSettings({
               openAtLogin: Boolean(next.launchAtLogin),
             });
-          if(typeof next.reliabilitySharing!=='boolean')throw new Error('Invalid reliability preference');
           if(localTestBuild)next.reliabilitySharing=false;
           const sharingChanged=next.reliabilitySharing!==settings.reliabilitySharing;
+          try { local.write("settings", next); }
+          catch (error) { registerHotkeys(settings.hotkeys); throw error; }
           settings = next;
           if(sharingChanged){reliability.setEnabled(next.reliabilitySharing);void reliability.flush();}
-          auto.stop();
-          personaSession.reset();
-          run = null;
-          local.write("settings", settings);
+          if (scopeChanged) {
+            auto.stop(); personaSession.reset(); run = null; localRun = null;
+          }
           emit();
+          } finally { releaseSave(); }
           break;
         }
         case "readHistory": {
           const h = historyStore.load(payload);
-          if (h) {
-            cancel({ guideTransition: false });
-            if (guide.active) {
-              guide.dismiss();
-              saveGuide();
-            }
-            run = null;
-            images = h.images;
-            Object.assign(state, {
-              status: "done",
-              answer: h.answer,
-              working: h.working,
-              explanation: h.explanation,
-              resultState: h.resultState,
-              resultKind: null,
-              images: h.images.map(({ id, thumbnail, width, height }) => ({
-                id,
-                thumbnail,
-                width,
-                height,
-              })),
-              expanded: true,
-              onboarding: false,
-            });
-            win.show();
-            emit();
-          }
+          if (h) presentReader({
+            id: h.id, answer: h.answer, detail: h.explanation || h.working,
+            needsReview: h.resultState === 'review', canExplain: false, explaining: false, failed: false,
+            images: h.images.map(x => ({ id: x.id, url: 'data:image/jpeg;base64,' + x.base64 })),
+          }, false);
           break;
         }
         case "clearHistory": {
@@ -2009,7 +2154,7 @@ async function start() {
     }
   });
   setInterval(async () => {
-    if (dailySmoke || settingsSmoke) return; // Offline fixtures must never capture or submit.
+    if (dailySmoke || settingsSmoke || alignmentSmoke) return; // Offline fixtures must never capture or submit.
     if (removed && Date.now() >= removed.until) {
       removed = null;
       state.undo = false;
@@ -2043,6 +2188,7 @@ async function start() {
       }
     }
   }, 500).unref();
+  if (!qa && !smoke && !development) void updateFlow.check(false).catch(() => {});
   if (guide.active && guide.step === "trial" && !guideSmoke) void loadGuideTrial();
   if (qa && qa !== "onboarding" && !dailySmoke && !feedbackSmoke) {
     state.onboarding = false;

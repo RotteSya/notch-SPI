@@ -78,6 +78,13 @@ export async function verifySettings({win,root,setFixture,snapshot}) {
  await run(`document.querySelector('[data-action="newPersona"]').click()`);await settle();
  assert.equal(snapshot().settings.personas.length,2);assert.equal(snapshot().settings.persona.id,first);
  const second=snapshot().settings.personas[1].id;
+ // Main-process creation can precede renderer selection under compositor load.
+ // Wait for the editor to bind to the new row before entering its description.
+ const editorDeadline=Date.now()+4000;
+ while(await run(`document.querySelector('[data-action="editPersona"][aria-selected="true"]')?.dataset.value`)!==second){
+  if(Date.now()>editorDeadline)throw new Error('New persona editor did not become selected');await settle();
+ }
+
  await run(`(() => {const n=document.querySelector('[name="personaDescription"]');n.value='Test profile';n.dispatchEvent(new Event('input',{bubbles:true}));})()`);await settle();
  assert.equal(snapshot().settings.personas[1].description,'Test profile');assert.equal(snapshot().settings.persona.description,'');
  await run(`document.querySelector('[data-action="editPersona"]').click()`);await settle();

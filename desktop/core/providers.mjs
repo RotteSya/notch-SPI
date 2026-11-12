@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { capturePrompt, taskText, contextTask } from "./product.mjs";
 import { SSEFramer, readJSON } from "./stream.mjs";
-import { serviceURL } from "./official.mjs";
+import { apiEndpoint } from "./api-providers.mjs";
 export async function directAPI({
   fetchImpl = fetch,
   images,
@@ -15,18 +15,20 @@ export async function directAPI({
   signal,
   onDelta,
   sessionContext = "",
+  prompt: suppliedPrompt,
 }) {
+  signal.throwIfAborted();
   if (!key) throw new Error("Configure your provider API key first");
-  const endpoint = serviceURL(settings.endpoint, false),
+  const endpoint = apiEndpoint(settings.endpoint),
     anthropic = settings.protocol === "anthropic";
-  const prompt = capturePrompt({
+  const prompt = suppliedPrompt ?? capturePrompt({
     language: settings.language,
     objective: mode === "tutor",
     mode,
     persona: settings.persona,
     sessionContext,
   });
-  if (images.length > 1 && mode !== "personality") prompt.task = contextTask;
+  if (!suppliedPrompt && images.length > 1 && mode !== "personality") prompt.task = contextTask;
   const text = taskText(prompt.task, images.length);
   const body = anthropic
     ? {
@@ -152,7 +154,12 @@ export async function localCLI({
   signal,
   onDelta,
   sessionContext = "",
+  prompt: suppliedPrompt,
+  spawnImpl = spawn,
+  terminateImpl = terminateTree,
+  timeoutMs = 120000,
 }) {
+  signal.throwIfAborted();
   if (
     !path.isAbsolute(settings.cliPath) ||
     /\.(cmd|bat)$/i.test(settings.cliPath)
@@ -168,14 +175,15 @@ export async function localCLI({
       await writeFile(p, Buffer.from(image.base64, "base64"), { mode: 0o600 });
       paths.push(p);
     }
-    const prompt = capturePrompt({
+    signal.throwIfAborted();
+    const prompt = suppliedPrompt ?? capturePrompt({
       language: settings.language,
       objective: mode === "tutor",
       mode,
       persona: settings.persona,
       sessionContext,
     });
-    if (images.length > 1 && mode !== "personality") prompt.task = contextTask;
+    if (!suppliedPrompt && images.length > 1 && mode !== "personality") prompt.task = contextTask;
     const isClaude = settings.cliKind === "claude";
     const args = isClaude
       ? [
@@ -205,7 +213,8 @@ export async function localCLI({
           ...paths.flatMap((p) => ["-i", p]),
         ];
     return await new Promise((resolve, reject) => {
-      const child = spawn(settings.cliPath, args, {
+      signal.throwIfAborted();
+      const child = spawnImpl(settings.cliPath, args, {
         cwd: directory,
         shell: false,
         windowsHide: true,
@@ -215,32 +224,41 @@ export async function localCLI({
       let raw = "",
         buffer = "",
         stderr = "";
-      const stop = () => terminateTree(child);
+      let overflow = false, resultText = '';
+      const stop = () => terminateImpl(child);
       signal.addEventListener("abort", stop, { once: true });
       if (signal.aborted) stop();
       const timeout = setTimeout(() => {
         timedOut = true;
         stop();
-      }, 120000);
+      }, timeoutMs);
       let timedOut = false;
 
       child.stderr.on("data", (x) => {
         stderr = (stderr + x).slice(-600);
       });
       child.stdout.setEncoding("utf8");
+      const append = text => {
+        if (signal.aborted || overflow) return;
+        if (Buffer.byteLength(raw + text) > 65536) { overflow = true; stop(); return; }
+        raw += text; onDelta(text);
+      };
+      const claudeLine = line => {
+        try {
+          const v = JSON.parse(line);
+          if (v.type === 'stream_event' && v.event?.delta?.type === 'text_delta') append(v.event.delta.text);
+          else if (v.type === 'result' && !v.is_error && typeof v.result === 'string') resultText = v.result;
+        } catch {}
+      };
       child.stdout.on("data", (chunk) => {
         if (signal.aborted) return;
         if (!isClaude) {
-          raw += chunk;
-          if (Buffer.byteLength(raw) > 65536) {
-            stop();
-            return;
-          }
-          onDelta(chunk);
+          append(chunk);
           return;
         }
         buffer += chunk;
         if (buffer.length > 524288) {
+          overflow = true;
           stop();
           return;
         }
@@ -248,17 +266,7 @@ export async function localCLI({
         while ((end = buffer.indexOf("\n")) >= 0) {
           const line = buffer.slice(0, end);
           buffer = buffer.slice(end + 1);
-          try {
-            const v = JSON.parse(line);
-            const delta =
-              v.type === "stream_event" && v.event?.delta?.type === "text_delta"
-                ? v.event.delta.text
-                : "";
-            if (delta) {
-              raw += delta;
-              onDelta(delta);
-            }
-          } catch {}
+          claudeLine(line);
         }
       });
       child.on("error", (error) => {
@@ -269,8 +277,10 @@ export async function localCLI({
       child.on("close", (code) => {
         clearTimeout(timeout);
         signal.removeEventListener("abort", stop);
+        if (isClaude && buffer.trim()) claudeLine(buffer);
+        if (!raw && resultText) append(resultText);
         if (signal.aborted) reject(signal.reason);
-        else if (code !== 0 || timedOut || Buffer.byteLength(raw) > 65536)
+        else if (code !== 0 || timedOut || overflow)
           reject(new Error(stderr || "CLI failed or timed out"));
         else resolve({ raw });
       });
