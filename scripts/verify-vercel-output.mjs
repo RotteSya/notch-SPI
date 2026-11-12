@@ -10,6 +10,12 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const self = fileURLToPath(import.meta.url);
+const smokeMarker = 'NSPI_BUNDLE_SMOKE_RESULT ';
+export function parseSmokeOutput(output) {
+  const results = output.split(/\r?\n/).filter(line => line.startsWith(smokeMarker));
+  assert.equal(results.length, 1, 'Bundled smoke must emit exactly one marked result');
+  return JSON.parse(results[0].slice(smokeMarker.length));
+}
 
 async function files(directory) {
   const entries = [];
@@ -112,7 +118,7 @@ async function smoke(functionDirectory) {
 }
 
 if (process.argv[2] === '--smoke') {
-  console.log(JSON.stringify(await smoke(resolve(process.argv[3]))));
+  console.log(smokeMarker + JSON.stringify(await smoke(resolve(process.argv[3]))));
 } else if (process.argv[1] && resolve(process.argv[1]) === self) {
   const args = process.argv.slice(2), allowHost = args.includes('--allow-host-platform');
   const paths = args.filter(arg => arg !== '--allow-host-platform');
@@ -149,7 +155,7 @@ if (process.argv[2] === '--smoke') {
   const child = spawnSync(process.execPath, [self, '--smoke', functionDirectory], {env, encoding: 'utf8', timeout: 45_000, maxBuffer: 1024 * 1024});
   assert.equal(child.error, undefined); assert.equal(child.signal, null);
   assert.equal(child.status, 0, 'Bundled smoke failed: ' + child.stderr);
-  const result = JSON.parse(child.stdout);
+  const result = parseSmokeOutput(child.stdout);
   console.log(JSON.stringify({schema_version: 1, passed: true, recorded_at: new Date().toISOString(),
     node: process.versions.node, platform: process.platform, architecture: process.arch,
     scope: allowHost ? 'host diagnostic; not a Linux release artifact' : 'native Linux packaged function verification; not a deployed Vercel runtime',

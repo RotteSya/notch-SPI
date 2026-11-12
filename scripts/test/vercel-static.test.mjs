@@ -4,7 +4,15 @@ import {cp, mkdtemp, mkdir, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {verifyStaticOutput} from '../verify-vercel-output.mjs';
+import {verifyStaticOutput,parseSmokeOutput} from '../verify-vercel-output.mjs';
+
+test('bundle smoke result is distinct from runtime diagnostics', () => {
+  const result = {checks:['bundled_handler_health'],paid_model_calls:0};
+  const line = 'NSPI_BUNDLE_SMOKE_RESULT ' + JSON.stringify(result);
+  assert.deepEqual(parseSmokeOutput('{"requestLifetimeExtension":false}\n'+line+'\n'), result);
+  assert.throws(() => parseSmokeOutput('{"requestLifetimeExtension":false}\n'), /exactly one/);
+  assert.throws(() => parseSmokeOutput(line+'\n'+line), /exactly one/);
+});
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'nspi-vercel-static-'));
