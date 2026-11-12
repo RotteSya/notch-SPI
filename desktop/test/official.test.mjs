@@ -153,7 +153,11 @@ test("Actual server solve, multi-image ordering, full receipt, one debit, duplic
   assert.equal(compose(result.raw).finalAnswer, "B");
   assert.equal(result.receipt.questions_charged, 1);
   assert.equal(c.account.balance_questions, 399);
-  await assert.rejects(() => c.stream(run));
+  const replay = await c.stream(run);
+  assert.equal(replay.raw, result.raw);
+  assert.equal(replay.receipt.capture_id, result.receipt.capture_id);
+  assert.equal(replay.receipt.questions_charged, 1);
+  assert.equal(c.account.balance_questions, 399);
   assert.equal(providerCalls, before + 1);
   await c.refresh();
   assert.equal(c.account.balance_questions, 399);
