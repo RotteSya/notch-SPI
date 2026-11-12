@@ -4,6 +4,18 @@ import Foundation
 /// No launch agent, installed helper or persistent script is needed.
 enum PermissionRelaunch {
     enum Failure: Error { case notApplicationBundle }
+    static let probeArgument = "--check-screen-capture-permission"
+
+    /// Ask a fresh instance of the same signed executable. This only reads permission;
+    /// it never requests access, captures pixels, starts AppKit or opens the Keychain.
+    @MainActor static func hasFreshPermission(executable: URL? = Bundle.main.executableURL,
+                                              timeout: Duration = .seconds(2)) async -> Bool {
+        guard let executable else { return false }
+        do {
+            try await CaptureCommand().run(executable: executable, arguments: [probeArgument], timeout: timeout)
+            return !Task.isCancelled
+        } catch { return false }
+    }
 
     static let script = """
     attempts=0

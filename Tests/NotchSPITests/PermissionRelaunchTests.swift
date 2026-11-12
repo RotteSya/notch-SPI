@@ -3,6 +3,66 @@ import XCTest
 @testable import NotchSPI
 
 final class PermissionRelaunchTests: XCTestCase {
+    @MainActor func testFreshGrantRestartsWhenCurrentProcessPreflightStaysDenied() async throws {
+        let name = "permission-fresh-\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let controller = NotchController(activateServices: false, onboardingDefaults: defaults)
+        defer { controller.prepareForTermination(); defaults.removePersistentDomain(forName: name) }
+        var freshGranted = false, probes = 0, restarts = 0
+        controller.qaOnboardingPermission = { false }
+        controller.qaRequestOnboardingPermission = { false }
+        controller.qaFreshOnboardingPermission = { probes += 1; return freshGranted }
+        controller.qaOnboardingRelaunch = { restarts += 1; XCTAssertFalse(controller.qaOnboardingPanelVisible) }
+        controller.qaPresentOnboarding(.permission)
+        controller.qaCheckOnboardingPermission()
+        await Task.yield()
+        XCTAssertEqual(probes, 0, "Do not probe before the explicit permission action")
+        controller.qaAdvanceOnboarding()
+        controller.qaCheckOnboardingPermission()
+        controller.qaCheckOnboardingPermission()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(probes, 1, "Only one probe may be in flight")
+        XCTAssertEqual(restarts, 0, "Denied probes must not cause restart loops")
+        freshGranted = true
+        controller.qaCheckOnboardingPermission()
+        try await Task.sleep(for: .milliseconds(30))
+        controller.qaCheckOnboardingPermission()
+        XCTAssertEqual(restarts, 1)
+        XCTAssertFalse(controller.qaOnboardingPanelVisible)
+        XCTAssertEqual(NotchOnboardingProgress(defaults: defaults).permissionResumeMultiple, false)
+    }
+
+    @MainActor func testLatePermissionProbeCannotRestartAfterLeavingOrTerminating() async throws {
+        for terminate in [false, true] {
+            let name = "permission-probe-cancel-\(UUID())"
+            let defaults = UserDefaults(suiteName: name)!
+            let controller = NotchController(activateServices: false, onboardingDefaults: defaults)
+            defer { controller.prepareForTermination(); defaults.removePersistentDomain(forName: name) }
+            var completion: CheckedContinuation<Bool, Never>?
+            controller.qaOnboardingPermission = { false }
+            controller.qaRequestOnboardingPermission = { false }
+            controller.qaFreshOnboardingPermission = { await withCheckedContinuation { completion = $0 } }
+            controller.qaOnboardingRelaunch = { XCTFail("A late probe cannot restart an inactive guide") }
+            controller.qaPresentOnboarding(.permission)
+            controller.qaAdvanceOnboarding()
+            controller.qaCheckOnboardingPermission()
+            try await Task.sleep(for: .milliseconds(30))
+            XCTAssertNotNil(completion)
+            if terminate { controller.prepareForTermination() } else { controller.qaDismissOnboarding() }
+            completion?.resume(returning: true)
+            try await Task.sleep(for: .milliseconds(30))
+        }
+    }
+
+    @MainActor func testFreshProbeFailsClosedWithoutAValidSuccessfulExecutable() async {
+        let allowed = await PermissionRelaunch.hasFreshPermission(executable: URL(fileURLWithPath: "/usr/bin/true"))
+        let denied = await PermissionRelaunch.hasFreshPermission(executable: URL(fileURLWithPath: "/usr/bin/false"))
+        let missing = await PermissionRelaunch.hasFreshPermission(executable: nil)
+        XCTAssertTrue(allowed)
+        XCTAssertFalse(denied)
+        XCTAssertFalse(missing)
+    }
+
     @MainActor func testPermissionActionHidesBeforeRequestAndPollingNeverReopensPanel() async throws {
         let name = "permission-hidden-\(UUID())"
         let defaults = UserDefaults(suiteName: name)!

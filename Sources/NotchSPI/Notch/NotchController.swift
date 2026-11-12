@@ -147,6 +147,7 @@ final class NotchController: NSObject {
     private var onboardingPermissionRestartScheduled = false
     private var onboardingRelaunchProcess: Process?
     private var onboardingPermissionTimer: Timer?
+    private var onboardingPermissionProbeTask: Task<Void, Never>?
     private var onboardingTrialTask: Task<Void, Never>?
     private var onboardingTrialAccount: OfficialAPI.CaptureAccount?
     private var observers: [NSObjectProtocol] = []
@@ -343,7 +344,7 @@ final class NotchController: NSObject {
         }
     }
 
-    deinit { screenRefreshWork?.cancel(); onboardingTrialTask?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
+    deinit { screenRefreshWork?.cancel(); onboardingTrialTask?.cancel(); onboardingPermissionProbeTask?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
 
     /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
     /// reads the key of the active third-party provider.
@@ -463,6 +464,7 @@ final class NotchController: NSObject {
     }
 
     private func setOnboardingStep(_ step: NotchOnboardingStep) {
+        if step != .permission { onboardingPermissionProbeTask?.cancel() }
         model.onboardingStep = step
         model.onboardingPracticeFailed = false
         model.onboardingPermissionGranted = onboardingHasAccess
@@ -483,6 +485,7 @@ final class NotchController: NSObject {
 
     #if DEBUG
     var qaOnboardingPermission: (() -> Bool)?
+    var qaFreshOnboardingPermission: (() async -> Bool)?
     var qaOnboardingRelaunch: (() throws -> Void)?
     var qaRequestOnboardingPermission: (() -> Bool)?
     var qaOpenOnboardingPermissionSettings: (() -> Bool)?
@@ -541,12 +544,42 @@ final class NotchController: NSObject {
         model.onboardingPermissionGranted = granted
         if granted && onboardingPermissionRestartRequired && !onboardingPermissionRestartScheduled {
             restartAfterOnboardingPermission()
+        } else if !granted {
+            checkFreshOnboardingPermission()
         }
         resizeToFit()
     }
 
+    private func checkFreshOnboardingPermission() {
+        guard onboardingPermissionHidden, onboardingPermissionRestartRequired,
+              !onboardingPermissionRestartScheduled, !terminating,
+              onboardingPermissionProbeTask == nil else { return }
+        let probe: () async -> Bool
+        #if DEBUG
+        if let qaFreshOnboardingPermission { probe = qaFreshOnboardingPermission }
+        else {
+            guard activatesServices else { return }
+            probe = { await PermissionRelaunch.hasFreshPermission() }
+        }
+        #else
+        guard activatesServices else { return }
+        probe = { await PermissionRelaunch.hasFreshPermission() }
+        #endif
+        onboardingPermissionProbeTask = Task { [weak self] in
+            let granted = await probe()
+            guard let self else { return }
+            self.onboardingPermissionProbeTask = nil
+            guard !Task.isCancelled, granted, !self.terminating,
+                  self.model.onboardingStep == .permission, self.onboardingPermissionHidden,
+                  !self.onboardingPermissionRestartScheduled else { return }
+            self.model.onboardingPermissionGranted = true
+            self.restartAfterOnboardingPermission()
+        }
+    }
+
     private func restartAfterOnboardingPermission() {
         guard !onboardingPermissionRestartScheduled else { return }
+        onboardingPermissionProbeTask?.cancel()
         onboardingPermissionRestartScheduled = true
         model.captureFeedback = ""
         onboardingProgress.preparePermissionResume(multiple: model.onboardingMultiple)
@@ -678,6 +711,7 @@ final class NotchController: NSObject {
     }
 
     private func endOnboardingPresentation() {
+        onboardingPermissionProbeTask?.cancel()
         if onboardingPermissionHidden {
             onboardingPermissionHidden = false
             visible = true
@@ -1673,6 +1707,7 @@ final class NotchController: NSObject {
     }
 
     func prepareForTermination() {
+        onboardingPermissionProbeTask?.cancel()
         onboardingTrialTask?.cancel(); onboardingTrialTask = nil
         materialTimer?.invalidate(); materialTimer = nil
         screenRefreshWork?.cancel(); screenRefreshWork = nil

@@ -1,6 +1,12 @@
 import AppKit
 import Darwin
 
+// Permission preflight can remain stale until this process exits. The onboarding
+// waiter runs this short-lived check without initializing UI, accounts or capture.
+if CommandLine.arguments.contains(PermissionRelaunch.probeArgument) {
+    exit(CGPreflightScreenCaptureAccess() ? 0 : 1)
+}
+
 #if DEBUG
 // Set the vault switch before any singleton or ProcessInfo snapshot is initialized.
 let launchBundle = Bundle.main.bundleIdentifier
