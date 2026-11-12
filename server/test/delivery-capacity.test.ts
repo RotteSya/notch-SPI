@@ -1,3 +1,4 @@
+import {WorkerLease} from '../src/capture-deadline.ts';
 import {test} from 'node:test';
 import {serveRequest} from '../src/request-lifecycle.ts';
 import {createServer} from 'node:http';
@@ -40,6 +41,38 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   return {store,users,call,apps,stores,connectionURL,async close(){await Promise.all(apps.map(a=>a.close()));await Promise.all(stores.map(s=>s.close()));await cleanup();}};
  }
 
+ test(`${kind}: transient renewal acknowledgement loss keeps the same healthy answer and attempt`,{timeout:12000},async()=>{
+  let calls=0,renewals=0;
+  const f=await fixture(async(_r,delta,signal,onProgress)=>{calls++;onProgress?.();await delay(6500,undefined,{signal});delta(ready);return {inputTokens:50,outputTokens:50};});
+  const original=f.store.billing.heartbeat.bind(f.store.billing);
+  f.store.billing.heartbeat=async(...args)=>{const ok=await original(...args);if(++renewals<=2)throw Error('COMMIT acknowledgement lost');return ok;};
+  try{const id=randomUUID(),r=await f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers:{authorization:'Bearer '+f.users[0]!.token},payload:{capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}});
+   assert.match(r.body,/FINAL: B/);assert.match(r.body,/\[DONE\]/);assert.match(r.body,/"questions_charged":1/);assert.equal(calls,1);assert.ok(renewals>=3);
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
+  }finally{await f.close();}
+ });
+ test(`${kind}: durable completion recovers after every final settlement call loses its connection`,async()=>{
+  let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
+  const original=f.store.billing.finishWithCapture.bind(f.store.billing);
+  f.store.billing.finishWithCapture=async()=>{throw Error('DB connection unavailable');};
+  try{const id=randomUUID(),headers={authorization:'Bearer '+f.users[0]!.token};
+   await f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers,payload:{capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}});
+   f.store.billing.finishWithCapture=original;
+   for(let i=0;i<3;i++){const r=await f.apps.at(-1)!.inject({url:`/v1/captures/${id}/delivery`,headers});assert.match(r.body,/FINAL: B/);assert.match(r.body,/"questions_charged":1/);assert.match(r.body,/\[DONE\]/);}
+   assert.equal(calls,1);assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
+  }finally{await f.close();}
+ });
+ test(`${kind}: late verified metering reconciles a provisional cost once without clearing unknown attempts`,async()=>{
+  const f=await fixture(async()=>{throw Error('usage missing');});
+  try{
+   await f.call();await f.call();const attempts=await f.store.billing.attempts(f.users[0]!.token),first=attempts[0]!;
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,2000000);
+   await f.store.billing.recordAttemptUsage(f.users[0]!.token,first.attemptId,{inputTokens:50,outputTokens:50,costMicros:1000,source:'upstream_usage:'+first.attemptId});
+   await f.store.billing.reap();await f.store.billing.reap();
+   const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1001000);assert.equal(b.provisional.length,1);assert.equal(b.provisional[0]!.booked,1000000);
+  }finally{await f.close();}
+ });
  test(`${kind}: recovery capability survives pre-stream database failures and missing captures`,async()=>{
   let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
   const account=f.store.getAccount.bind(f.store);
@@ -186,3 +219,13 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   }finally{await f.close();}
  });
 }
+
+for (const outcome of ['throw','hang','lost'] as const) test(`worker lease ${outcome}: uncertainty never extends confirmed ownership`,async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+ let stopped=0,calls=0;
+ const lease=new WorkerLease(9000,async()=>{calls++;if(outcome==='throw')throw Error('DB down');if(outcome==='hang')return new Promise<boolean>(()=>{});return false;},()=>{stopped++;},121000);
+ t.mock.timers.tick(2000);await Promise.resolve();await Promise.resolve();
+ if(outcome==='lost')assert.equal(stopped,1);else assert.equal(stopped,0);
+ t.mock.timers.tick(6000);await Promise.resolve();assert.equal(stopped,1);assert.ok(calls>=1);
+ t.mock.timers.tick(10000);assert.equal(stopped,1);lease.stop();
+});

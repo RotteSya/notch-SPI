@@ -1,3 +1,4 @@
+import {CAPTURE_DEADLINE} from './capture-deadline.ts';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { BudgetInspection } from './budget-policy.ts';
 import type { FreeTrialSnapshot } from './free-trial.ts';
@@ -37,6 +38,7 @@ export interface CaptureRecord {
   resultProtocol: string | null; responseContract: string | null; configRevision: string;
   settlementStatus: SettlementState; terminalState: TerminalState; usableResult: boolean;
   deliveryOwner?: string; workerAliveUntil?: number; workerAttemptId?: string; deliveryAttempts?: number;
+  completion?: {recordedAt: string; input: Omit<FinishCapture, 'token'> & {captureId: string}};
   sealedAnswer?: string;
   answerHmac: string | null; resultState: string | null; questionKind: string | null;
   parserPath: string | null; terminalReason: string | null;
@@ -72,11 +74,22 @@ export interface FinishCapture {
   compensateGoodwill?: boolean;
 }
 export interface Attempt {
+  /** Server-validated metering, retained even if the final stream/COMMIT acknowledgement is lost. */
+  usageEvidence?: AttemptUsageEvidence;
   attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover';
   provider: string; model: string; policyVersion: string;
   status: 'running' | 'succeeded' | 'failed' | 'unknown';
   inputTokens: number | null; outputTokens: number | null; costMicros: string | null;
   currency: string; pricingVersion: string; startedAt: string; finishedAt: string | null;
+}
+export interface AttemptUsageEvidence {
+  inputTokens: number; outputTokens: number; costMicros: number; source: string;
+}
+export function validateUsageEvidence(value: AttemptUsageEvidence): void {
+  if (![value.inputTokens, value.outputTokens, value.costMicros].every(n => Number.isSafeInteger(n) && n >= 0)
+    || value.inputTokens + value.outputTokens === 0 || !/^upstream_usage:[A-Za-z0-9._-]{1,160}$/.test(value.source)) {
+    throw new Error('Invalid metering evidence');
+  }
 }
 /** Account and capture metadata from the same committed settlement. */
 export interface CaptureSettlement {
@@ -97,6 +110,8 @@ export class BudgetAdmissionError extends Error {
   }
 }
 export interface BillingStore {
+  checkpointCompletion(input: FinishCapture & {captureId: string}): Promise<void>;
+  recordAttemptUsage(token: string, attemptId: string, evidence: AttemptUsageEvidence): Promise<void>;
   cancelCapture(token:string,id:string):Promise<void>;
   heartbeat(token:string,id:string,owner:string,now?:number):Promise<boolean>;
   acquireCapacity(token:string,id:string,tokens:number,now?:number):Promise<boolean>;
@@ -146,10 +161,10 @@ export function newCapture(input: BeginCapture): CaptureRecord {
     profileId: input.profileId ?? null, profileVersion: input.profileVersion ?? null,
     promptVersion: input.promptVersion ?? null, resultProtocol: input.resultProtocol ?? null,
     responseContract: input.responseContract ?? null, configRevision: input.configRevision ?? 'legacy',
-    ...(input.deliveryRecovery?{deliveryOwner:input.requestId,workerAliveUntil:Date.now()+8000,deliveryAttempts:0}:{}),
+    ...(input.deliveryRecovery?{deliveryOwner:input.requestId,workerAliveUntil:Date.now()+CAPTURE_DEADLINE.workerLeaseMs,deliveryAttempts:0}:{}),
     settlementStatus: 'held', terminalState: 'pending', usableResult: false,
     answerHmac: null, resultState: null, questionKind: null, parserPath: null, terminalReason: null,
-    createdAt, expiresAt: new Date(Date.parse(createdAt) + (input.leaseMs ?? 120_000)).toISOString(), finishedAt: null,
+    createdAt, expiresAt: new Date(Date.parse(createdAt) + (input.leaseMs ?? CAPTURE_DEADLINE.leaseMs)).toISOString(), finishedAt: null,
   };
 }
 export function duplicateCapture(existing: CaptureRecord, input: BeginCapture): BeginResult {

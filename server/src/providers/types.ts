@@ -14,6 +14,8 @@ export interface CaptureRequest {
   /** Internal observation only; never serialized or populated from client JSON. */
   onTiming?: (stage: ProviderTimingStage) => void;
   onHeaders?: (headers:Record<string,string>)=>void;
+  /** Validated vendor metering, independent of the answer transport completing. */
+  onUsage?: (usage: Usage) => void;
   system: string;
   task: string;
   images: CaptureImage[];

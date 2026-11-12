@@ -67,18 +67,18 @@ enum OfficialAPI {
         private let absoluteDeadline: TimeInterval
         private var deadline: TimeInterval
         init(startedAt: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-            absoluteDeadline = startedAt + 120
-            deadline = min(absoluteDeadline, now + 20)
+            absoluteDeadline = startedAt + OfficialCaptureDeadline.total
+            deadline = min(absoluteDeadline, now + OfficialCaptureDeadline.recovery)
         }
         func protectWorker(remainingMilliseconds: Double, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
             guard remainingMilliseconds.isFinite, remainingMilliseconds > 0 else { return }
-            deadline = max(deadline, min(absoluteDeadline, now + min(20, remainingMilliseconds / 1000)))
+            deadline = max(deadline, min(absoluteDeadline, now + min(OfficialCaptureDeadline.recovery, remainingMilliseconds / 1000)))
         }
         func protectResumeStream(now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-            deadline = min(absoluteDeadline, now + 90)
+            deadline = min(absoluteDeadline, now + OfficialCaptureDeadline.generation)
         }
         func transportLost(now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-            deadline = min(deadline, now + 20)
+            deadline = min(deadline, now + OfficialCaptureDeadline.recovery)
         }
         func remaining(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval { deadline - now }
     }
@@ -117,6 +117,7 @@ enum OfficialAPI {
         let receiveUsage: @MainActor (OfficialUsageReceipt) -> Void
         let receiveSettlement: @MainActor (SettlementSnapshot) -> Void
         let rejectCredential: @MainActor () -> Void
+        var journal: PendingCaptureStore? = nil
 
         static var live: Self { connected(to: .live) }
 
@@ -141,7 +142,7 @@ enum OfficialAPI {
                 receive(status.balanceQuestions, status.balanceVersion, status.accountTotals, status.freeTrial)
             }, rejectCredential: {
                 if let owner { state.rejectCredential(for: owner) }
-            })
+            }, journal: state === accountState ? .shared : nil)
         }
     }
 
@@ -613,6 +614,7 @@ enum OfficialAPI {
         captureID: UUID? = nil, screenQuery: ScreenQueryRequest? = nil, auxiliary: AuxiliaryCaptureRequest? = nil,
         reasoningEffort: String? = nil, tutorResultV1: Bool = false,
         environment: CaptureEnvironment = .live,
+        recoveryMode: String = "tutor", onSubmitted: (() -> Void)? = nil,
         onUsage: ((OfficialUsageReceipt) -> Void)? = nil,
         onDelta: @escaping (String) -> Void,
         onDone: @escaping (_ ok: Bool, _ stderr: String) -> Void
@@ -674,8 +676,17 @@ enum OfficialAPI {
             guard let body = request.httpBody, body.count <= OfficialCaptureMaterials.requestBodyLimit else {
                 await MainActor.run { onDone(false, captureTooLargeMessage) }; return
             }
-            if operation == "solve" { request.timeoutInterval = 8 }
+            if operation == "solve" { request.timeoutInterval = OfficialCaptureDeadline.inactivity }
             let requestStartedAt = ProcessInfo.processInfo.systemUptime
+            if operation == "solve", let journal = environment.journal {
+                do { try journal.save(.init(id: id, createdAt: Date(), body: body, mode: recoveryMode,
+                    structured: resultProtocol == "objective_v1" || tutorResultV1, screenQuery: screenQuery != nil), account: account) }
+                catch { await MainActor.run { onDone(false, L10n.t("无法保存本次请求，请检查磁盘空间后重试。本次未扣题。", "リクエストを保存できません。空き容量を確認してください。", "Unable to save this request. Check available disk space. This request was not charged.")) }; return }
+            }
+            guard await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else {
+                environment.journal?.remove(id, account: account); return
+            }
+            await MainActor.run { onSubmitted?() }
             var deliveredText = ""
             var deliveredUsage = false
             var supportsDelivery: Bool? = nil
@@ -692,7 +703,11 @@ enum OfficialAPI {
                 // metrics show earlier responseStart. This legacy stage measures API delivery,
                 // not wire-level header arrival (see the delayed-body loopback regression).
                 timing?.mark(.responseHeaders)
-                defer { bytes.task.cancel() }
+                let deadlineTask = Task {
+                    let remaining = max(0, requestStartedAt + OfficialCaptureDeadline.total - ProcessInfo.processInfo.systemUptime)
+                    do { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)); bytes.task.cancel() } catch {}
+                }
+                defer { deadlineTask.cancel(); bytes.task.cancel() }
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
                 timing?.recordResponse(http)
                 supportsDelivery = http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1"
@@ -730,6 +745,7 @@ enum OfficialAPI {
                             if !Task.isCancelled, environment.account() == account { environment.receiveSettlement(status) }
                         }
                     }
+                    environment.journal?.remove(id, account: account)
                     let message = localizedErrorBody(body, statusCode: http.statusCode)
                     await MainActor.run { onDone(false, message) }; return
                 }
@@ -761,7 +777,7 @@ enum OfficialAPI {
             } catch { streamError = cannotConnectMessage }
             // A broken connection has a short, actual wall-clock recovery budget.
             // A verified live worker may still be producing the original answer after a disconnect.
-            let recoveryDeadline = Date().addingTimeInterval(20)
+            let recoveryDeadline = Date().addingTimeInterval(OfficialCaptureDeadline.recovery)
             if !completed, operation == "solve", supportsDelivery != false {
                 do {
                     if let replay = try await recoverDelivery(request: request, id: id, account: account,
@@ -795,11 +811,14 @@ enum OfficialAPI {
                 }
             }
             let delivered = completed && sawContent && streamError == nil
+            if completed && !delivered && !Task.isCancelled { environment.journal?.remove(id, account: account) }
             let message = streamError ?? ""
             await MainActor.run {
                 onDone(delivered && environment.account() == account && !Task.isCancelled, message)
             }
           } onCancel: {
+            guard environment.journal?.preservesCancellation != true else { return }
+            environment.journal?.remove(id, account: account)
             guard operation == "solve", deliveryCancellation.shouldSend else { return }
             Task.detached {
                 var cancel = URLRequest(url: endpointURL(base: base, path: "v1/captures/" + id.uuidString.lowercased() + "/cancel"))
@@ -813,6 +832,53 @@ enum OfficialAPI {
         }
     }
 
+    /// A restart reads the same account-bound capture first. Only an unexpired request
+    /// can resume generation; cached-answer lookup gets a separate bounded transport window.
+    static func resumePending(_ entry: PendingCaptureStore.Entry, account: CaptureAccount,
+        environment: CaptureEnvironment = .live,
+        onDelta: @escaping (String) -> Void, onDone: @escaping (Bool, String) -> Void
+    ) -> Task<Void, Never> {
+        Task.detached(priority: .userInitiated) {
+          await withTaskCancellationHandler {
+            var request = URLRequest(url: endpointURL(base: account.baseURL, path: "v1/captures"))
+            request.httpMethod = "POST"; request.httpBody = entry.body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+            let age = max(0, Date().timeIntervalSince(entry.createdAt))
+            let canResume = age < OfficialCaptureDeadline.total
+            let started = ProcessInfo.processInfo.systemUptime - (canResume ? age : 0)
+            do {
+                if let replay = try await recoverDelivery(request: request, id: entry.id, account: account,
+                    environment: environment, screenQuery: entry.screenQuery, supportsDelivery: true,
+                    deliveredText: "", startedAt: started, allowResume: canResume) {
+                    try await MainActor.run {
+                        try Task.checkCancellation()
+                        guard environment.account() == account else { throw CancellationError() }
+                        environment.receiveUsage(replay.receipt)
+                        onDelta(replay.text); onDone(replay.hasContent, "")
+                    }
+                    return
+                }
+            } catch {}
+            await MainActor.run {
+                guard !Task.isCancelled, environment.account() == account else { return }
+                onDone(false, cannotConnectMessage)
+            }
+          } onCancel: {
+            guard environment.journal?.preservesCancellation != true else { return }
+            environment.journal?.remove(entry.id, account: account)
+            Task.detached {
+                var cancel = URLRequest(url: endpointURL(base: account.baseURL, path: "v1/captures/" + entry.id.uuidString.lowercased() + "/cancel"))
+                cancel.httpMethod = "POST"; cancel.timeoutInterval = 3
+                cancel.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
+                let session = URLSession(configuration: .ephemeral)
+                defer { session.invalidateAndCancel() }
+                _ = try? await session.data(for: cancel)
+            }
+          }
+        }
+    }
+
     private struct DeliveryReplay {
         let text: String
         let receipt: OfficialUsageReceipt
@@ -820,13 +886,13 @@ enum OfficialAPI {
     }
 
     private static func recoverDelivery(request original: URLRequest, id: UUID, account: CaptureAccount,
-        environment: CaptureEnvironment, screenQuery: Bool, supportsDelivery: Bool?, deliveredText: String, startedAt: TimeInterval
+        environment: CaptureEnvironment, screenQuery: Bool, supportsDelivery: Bool?, deliveredText: String, startedAt: TimeInterval, allowResume: Bool = true
     ) async throws -> DeliveryReplay? {
         let budget = DeliveryRecoveryBudget(startedAt: startedAt)
         return try await withThrowingTaskGroup(of: DeliveryReplay?.self) { group in
             defer { group.cancelAll() }
             group.addTask {
-                var resumed = false, resumeNext = false
+                var resumed = !allowResume, resumeNext = false
                 for _ in 0..<480 {
                     try Task.checkCancellation()
                     guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
@@ -835,7 +901,7 @@ enum OfficialAPI {
                     resumeNext = false
                     var request = isResume ? original : URLRequest(url: endpointURL(base: account.baseURL,
                         path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))
-                    request.timeoutInterval = 8
+                    request.timeoutInterval = OfficialCaptureDeadline.inactivity
                     request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
                     do {
                         let (bytes, response) = try await environment.session.bytes(for: request)

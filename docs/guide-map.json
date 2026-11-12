@@ -252,7 +252,9 @@
       "purpose": "NotchSPI 官方服务 — 客户端 HTTP 契约",
       "sources": [
         "server/src/routes.ts",
-        "server/src/plus-routes.ts"
+        "server/src/plus-routes.ts",
+        "server/src/capture-deadline.ts",
+        "Sources/NotchSPI/Cloud/PendingCaptureStore.swift"
       ],
       "checks": [
         "server/test/route-inventory.test.ts"

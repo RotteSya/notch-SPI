@@ -1,8 +1,9 @@
+import {CAPTURE_DEADLINE} from './capture-deadline.ts';
 import {CAPACITY,capacityAvailable,type CapacityLease} from './capacity-policy.ts';
 import {withCompensation,type PlusCompensation} from './plus-compensation.ts';
 import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS,compensationPaidPeriod,plusEntitlement,type PlusRecord} from './plus.ts';
-import { BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+import { validateUsageEvidence, type AttemptUsageEvidence, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
@@ -171,6 +172,7 @@ export class MemoryBilling implements BillingStore {
   }
   async capture(token: string, captureId: string): Promise<CaptureRecord | null> {
     const d = this.lookup(token);
+    if (d) this.recoverCompletion(d,captureId);
     return d ? this.captureFor(d, captureId) : null;
   }
   private captureFor(d: MemoryQuotaDevice, captureId: string): CaptureRecord | null {
@@ -186,7 +188,7 @@ export class MemoryBilling implements BillingStore {
   async heartbeat(token:string,id:string,owner:string,now=Date.now()):Promise<boolean> {
     const d=this.lookup(token),c=d?this.state(d).captures.get(id)?.record:null;
     if(!c||c.settlementStatus!=='held'||c.deliveryOwner!==owner||Date.parse(c.expiresAt)<=now)return false;
-    c.workerAliveUntil=now+8000;return true;
+    c.workerAliveUntil=now+CAPTURE_DEADLINE.workerLeaseMs;return true;
   }
   async beginWithAttempt(input: BeginCapture, attempt: NewAttempt): Promise<BeginResult> {
     assertAttemptBinding(input, attempt);
@@ -199,7 +201,7 @@ export class MemoryBilling implements BillingStore {
       if(attempts.length<2){
         for(const a of attempts){this.finishAttemptFor(d,a.attemptId,{status:'unknown',inputTokens:null,outputTokens:null,costMicros:null});this.settleBudgetFor(d,a.attemptId,null);
           const lease=this.capacity.get(a.attemptId);if(lease)lease.active=false;}
-        previous.deliveryOwner=input.requestId;previous.workerAliveUntil=Date.now()+8000;
+        previous.deliveryOwner=input.requestId;previous.workerAliveUntil=Date.now()+CAPTURE_DEADLINE.workerLeaseMs;
         if(!this.startAttemptNow(input.token,attempt))throw Error('Recovery attempt unavailable');
         return {ok:true,capture:{...previous},quota:this.snapshot(d)};
       }
@@ -267,7 +269,8 @@ export class MemoryBilling implements BillingStore {
       }
       return;
     }
-    const now=new Date().toISOString(), charge=input.charge && capture.record.expiresAt>now;
+    const now=new Date().toISOString(), charge=input.charge && (capture.record.expiresAt>now || (!!capture.record.completion && capture.record.completion.recordedAt<capture.record.expiresAt && capture.record.completion.input.owner===input.owner));
+    delete capture.record.completion;
     capture.record={...capture.record,settlementStatus:charge?'settled':'released',
       terminalState:input.charge&&!charge?'failed':input.terminalState,usableResult:charge&&input.terminalState==='usable',
       sealedAnswer:input.sealedAnswer,answerHmac:charge?input.answerHmac??null:null,resultState:input.resultState??null,
@@ -280,6 +283,21 @@ export class MemoryBilling implements BillingStore {
     state.version++; d.totalInputTokens+=input.inputTokens??0; d.totalOutputTokens+=input.outputTokens??0; d.updatedAt=now;
     this.usage({deviceId:d.id,captureId:input.usageCaptureId??capture.record.captureId,inputTokens:input.inputTokens??0,
       outputTokens:input.outputTokens??0,questions:charge?1:0,estimatedCostMicros:input.estimatedCostMicros??null,createdAt:now});
+  }
+  async checkpointCompletion(input: FinishCapture & {captureId: string}): Promise<void> {
+    const d=this.lookup(input.token), c=d ? this.state(d).captures.get(input.captureId)?.record : null;
+    if (!c || c.settlementStatus !== 'held') return;
+    if (!input.owner || c.deliveryOwner !== input.owner || c.expiresAt <= new Date().toISOString()) throw new Error('Completion lease lost');
+    if (c.completion) return;
+    const {token: _token, ...saved}=input;
+    c.completion={recordedAt:new Date().toISOString(),input:structuredClone(saved)};
+  }
+  private recoverCompletion(d: MemoryQuotaDevice, id: string) {
+    const c=this.state(d).captures.get(id)?.record, saved=c?.completion;
+    if (!c || c.settlementStatus !== 'held' || !saved || saved.input.owner !== c.deliveryOwner || saved.recordedAt >= c.expiresAt) return;
+    const input={...saved.input,token:''}, a=input.attemptSettlement;
+    if(a){this.finishAttemptFor(d,a.id,a.result);this.settleBudgetFor(d,a.id,a.actual,a.anomaly);}
+    this.finishDevice(d,input);
   }
   async finish(input:FinishCapture):Promise<AccountSnapshot|null> {
     const d=this.lookup(input.token); if(!d) return null;
@@ -295,11 +313,18 @@ export class MemoryBilling implements BillingStore {
     return {account: this.accountFor(d), capture: this.captureFor(d, input.captureId)};
   }
   async reap(now=new Date().toISOString()):Promise<number> {
+    for (const state of this.states.values()) for (const attempt of state.attempts.values()) {
+      const proof = attempt.usageEvidence;
+      if (proof && this.accounting.get(attempt.attemptId)?.state === 'provisional') {
+        await this.reconcileBudget(attempt.attemptId, proof.costMicros, proof.source);
+      }
+    }
     let count=0;
     for(const [key,expiry] of this.canceled)if(expiry<=Date.parse(now))this.canceled.delete(key);
     for(const [id,state] of this.states) for(const {record} of state.captures.values()) {
       if(count>=100) break;
-      if(record.settlementStatus==='held' && record.expiresAt<=now) {
+      if (record.completion) this.recoverCompletion(this.devices.get(id)!,record.captureId);
+      if(this.state(this.devices.get(id)!).captures.get(record.captureId)?.record.settlementStatus==='held' && record.expiresAt<=now) {
         this.finishDevice(this.devices.get(id)!,{token:'',captureId:record.captureId,charge:false,terminalState:'failed',
           terminalReason:'lease_expired',compensateGoodwill:record.operation==='recover'}); count++;
       }
@@ -332,6 +357,13 @@ export class MemoryBilling implements BillingStore {
     if(!capture || capture.record.settlementStatus!=='held' || state.attempts.has(input.attemptId) || [...state.attempts.values()].filter(a=>a.captureId===input.captureId).length>=2 || [...state.attempts.values()].some(a=>a.captureId===input.captureId&&!['failed','unknown'].includes(a.status))) return false;
     if(capture.record.deliveryOwner){capture.record.workerAttemptId=input.attemptId;capture.record.deliveryAttempts=(capture.record.deliveryAttempts??0)+1;}
     state.attempts.set(input.attemptId,{...input,status:'running',inputTokens:null,outputTokens:null,costMicros:null,startedAt:new Date().toISOString(),finishedAt:null}); return true;
+  }
+  async recordAttemptUsage(token: string, attemptId: string, evidence: AttemptUsageEvidence): Promise<void> {
+    validateUsageEvidence(evidence);
+    const d = this.lookup(token), attempt = d ? this.state(d).attempts.get(attemptId) : undefined;
+    if (!attempt) throw new Error('Metering attempt missing');
+    if (attempt.usageEvidence && JSON.stringify(attempt.usageEvidence) !== JSON.stringify(evidence)) throw new Error('Conflicting metering evidence');
+    attempt.usageEvidence = {...evidence};
   }
   async finishAttempt(token:string,id:string,input:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>):Promise<void> {
     const d=this.lookup(token); if(!d) return;
@@ -380,6 +412,7 @@ export class MemoryBilling implements BillingStore {
     this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
   private settleBudgetFor(d: MemoryQuotaDevice, attemptId: string, actualMicros: number | null, anomaly = false): void {
+    if (actualMicros === null && !anomaly) actualMicros = this.state(d).attempts.get(attemptId)?.usageEvidence?.costMicros ?? null;
     const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     const budget=this.budgets.get(hold.key); if (!budget) return;
     const observed=validCost(actualMicros)&&!anomaly, actual=observed?actualMicros!:hold.reserved;

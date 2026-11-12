@@ -54,10 +54,14 @@ export class AstraProvider implements Provider {
   }
 
   async stream(req: CaptureRequest, onDelta: (text: string) => void, signal: AbortSignal, onProgress?: () => void): Promise<Usage> {
+    const mayReview = !!this.fast && (req.purpose === undefined || req.purpose === 'answer') && !req.tutorResultV1;
+    // A review route owns one aggregate reservation. A first-leg meter must never
+    // reconcile the still-unknown second leg as though it had cost nothing.
+    const meteredRequest = mayReview ? {...req, onHeaders: req.onHeaders, onUsage: undefined} : req;
     const collect = async (provider: OpenAIProvider) => {
       signal.throwIfAborted();
       let raw = '';
-      const usage = await provider.stream(req, chunk => {
+      const usage = await provider.stream(meteredRequest, chunk => {
         raw += chunk;
         if (Buffer.byteLength(raw) > 64 * 1024) throw new Error('Astra answer is too large');
       }, signal, onProgress);
@@ -70,6 +74,7 @@ export class AstraProvider implements Provider {
     const pair = this.fast && answering && !req.tutorResultV1 && first.usage.finishReason === 'stop' ? reviewPair(first.raw) : null;
     if (!this.fast || !pair) {
       if (first.usage.finishReason === 'stop' && first.raw) onDelta(first.raw);
+      if (mayReview) req.onUsage?.(first.usage);
       return first.usage;
     }
 
@@ -90,11 +95,13 @@ export class AstraProvider implements Provider {
       { pricingModel: ASTRA_STANDARD_PRICE_KEY, inputTokens: first.usage.inputTokens!, outputTokens: first.usage.outputTokens! },
       { pricingModel: ASTRA_FAST_PRICE_KEY, inputTokens: second.usage.inputTokens!, outputTokens: second.usage.outputTokens! },
     ];
-    return {
+    const combined: Usage = {
       inputTokens: attempts[0]!.inputTokens + attempts[1]!.inputTokens,
       outputTokens: attempts[0]!.outputTokens + attempts[1]!.outputTokens,
       finishReason,
       attempts,
     };
+    req.onUsage?.(combined);
+    return combined;
   }
 }

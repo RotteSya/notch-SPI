@@ -15,6 +15,7 @@ final class CaptureLatency {
     private let now: () -> TimeInterval
     private let startedAt: TimeInterval
     private(set) var offsets: [Stage: Double] = [.triggered: 0]
+    var onRendered: (() -> Void)?
     private(set) var succeeded = false
     var needsCompletedDraw: Bool { succeeded && offsets[.renderCompleted] == nil }
     var elapsedMS: Int { Int(max(0, (now() - startedAt) * 1_000)) }
@@ -39,6 +40,7 @@ final class CaptureLatency {
         let milliseconds = max(0, (now() - startedAt) * 1_000)
         offsets[stage] = milliseconds
         trace(stage, milliseconds: milliseconds)
+        if stage == .renderCompleted { let callback = onRendered; onRendered = nil; callback?() }
     }
 
     func complete(success: Bool) {

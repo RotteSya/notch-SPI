@@ -1,3 +1,4 @@
+import {CAPTURE_DEADLINE, WorkerLease} from './capture-deadline.ts';
 import {CAPACITY} from './capacity-policy.ts';
 import {trackRequestWork} from './request-lifecycle.ts';
 import {sealAnswer,openAnswer,settleReliably} from './answer-delivery.ts';
@@ -366,7 +367,7 @@ export class CaptureService {
     const reservedMicros = await this.reservation(req,captureProvider,providerInput);
     await this.admitted(req,reply,abort,{token,captureId,requestHmac,inputHmac,keyVersion,allowPurchasedCredits,parentCaptureId:parent,
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
-        configRevision:config.clientConfigRevision,deliveryRecovery:body.delivery_recovery_v1===true,exclusive:screen,leaseMs:120_000,legacy:!suppliedId},
+        configRevision:config.clientConfigRevision,deliveryRecovery:body.delivery_recovery_v1===true,exclusive:screen,leaseMs:CAPTURE_DEADLINE.leaseMs,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},reservedMicros,
       (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,providerInput,captureProvider,model,screen,abort,admission));
   }
@@ -516,13 +517,14 @@ export class CaptureService {
     let {attemptId}=admission;
     let raw='',overflow=false,deliveredChars=0,accepting=true,usage:Usage|null=null,upstreamFailed=false,timedOut=false;
     const recoverable=!!capture.deliveryOwner;
-    let heartbeatRunning=false,lostLease=false;
+    let lostLease=false;
+    const lease=recoverable ? new WorkerLease(capture.workerAliveUntil ?? Date.now(),
+      now=>store.billing.heartbeat(token,capture.captureId,capture.deliveryOwner!,now),
+      ()=>{lostLease=true;abort.abort();}, Date.parse(capture.expiresAt)) : undefined;
     const heartbeat=recoverable?setInterval(()=>{
-      // Transport liveness is separate from model progress and never becomes answer text.
       if(reply.raw.headersSent&&!reply.raw.destroyed&&!reply.raw.writableEnded) {try{reply.raw.write(': keepalive\n\n');}catch{}}
-      if(heartbeatRunning)return;heartbeatRunning=true;
-      store.billing.heartbeat(token,capture.captureId,capture.deliveryOwner!).then(ok=>{if(!ok){lostLease=true;abort.abort();}},()=>{lostLease=true;abort.abort();}).finally(()=>{heartbeatRunning=false;});
-    },2000):undefined;
+    },CAPTURE_DEADLINE.heartbeatMs):undefined;
+    let usageWrite: Promise<void> = Promise.resolve();
     let firstTimer:ReturnType<typeof setTimeout>|undefined,totalTimer:ReturnType<typeof setTimeout>|undefined;
     let send:(event:StreamEvent)=>void=()=>{};
     const fullModel=provider.name+':'+model;
@@ -536,7 +538,7 @@ export class CaptureService {
       if(abort.signal.aborted)return;
       const deadline=new Promise<never>((_,reject)=>{
         const stop=()=>{timedOut=true;abort.abort();reject(new Error('deadline'));};
-        totalTimer=setTimeout(stop,Math.min(90_000,Math.max(1,Date.parse(capture.expiresAt)-Date.now()-2000)));
+        totalTimer=setTimeout(stop,Math.min(CAPTURE_DEADLINE.generationMs,Math.max(1,Date.parse(capture.expiresAt)-Date.now()-CAPTURE_DEADLINE.settlementMarginMs)));
         abort.signal.addEventListener('abort',()=>reject(new Error('canceled')),{once:true});
       });
       try {
@@ -547,11 +549,20 @@ export class CaptureService {
           const observedInput=Object.defineProperty(timing?{...input,onTiming:(stage:import('./capture-timing.ts').ProviderTimingStage)=>timing.mark(stage)}:{...input},'onHeaders',
             {value:(headers:Record<string,string>)=>req.log.info({providerCapacity:headers},'upstream capacity confirmed'),enumerable:false});
           const invoke=async()=>{
+            const physicalAttempt = attemptId;
+            const meteredInput = {...observedInput, onHeaders: observedInput.onHeaders, onUsage: (observed: Usage) => {
+              const micros = captureCost(config.modelPricingJSON,provider.name,model,observed);
+              if (micros === undefined || observed.inputTokens === null || observed.outputTokens === null || this.budgetAnomaly(req,observed)) return;
+              const proof = {inputTokens: observed.inputTokens, outputTokens: observed.outputTokens, costMicros: micros,
+                source: 'upstream_usage:' + physicalAttempt};
+              usageWrite = settleReliably(()=>store.billing.recordAttemptUsage(token,physicalAttempt,proof))
+                .catch(()=>{req.log.error({attemptId:physicalAttempt},'validated usage persistence pending');});
+            }};
             const attemptAbort=new AbortController(),signal=AbortSignal.any([abort.signal,attemptAbort.signal]);
             const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
               timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
-            },20_000);});
-            try{return await Promise.race([provider.stream(observedInput,chunk=>{
+            },CAPTURE_DEADLINE.firstProgressMs);});
+            try{return await Promise.race([provider.stream(meteredInput,chunk=>{
             if(!accepting||signal.aborted) return;
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
             if(Buffer.byteLength(raw+chunk)<=64*1024) raw+=chunk; else {overflow=true;abort.abort();}
@@ -566,6 +577,7 @@ export class CaptureService {
             // Retry only an explicit transient HTTP rejection, before visible output.
             // Unknown first-call cost stays fully booked; retry owns a separate hold.
             if(!(error instanceof TransientProviderError)||error.retryAfterMs>3000||(deliveredChars&&!recoverable)||abort.signal.aborted)throw error;
+            await usageWrite;
             await store.billing.releaseCapacity(token,attemptId);
             await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null},null);
             await delay(error.retryAfterMs,undefined,{signal:abort.signal});
@@ -585,6 +597,7 @@ export class CaptureService {
         if (usage?.upstreamModel) req.log.info({upstreamModel:usage.upstreamModel,serviceTier:usage.serviceTier,operation:'answer'},'upstream model confirmed');
         this.timings.get(req)?.mark('providerCompleted');
       } catch {upstreamFailed=true;} finally {accepting=false;clearTimeout(firstTimer);clearTimeout(totalTimer);}
+      await usageWrite;
       if(lostLease){admission.recoverableAbandon=true;return;}
       const truncated=usage?.finishReason==='length';
       const rejectedFinish=usage?.finishReason!==undefined && usage.finishReason!=='stop';
@@ -594,7 +607,7 @@ export class CaptureService {
       const objectiveMode=capture.resultProtocol==='objective_v1'||input.tutorResultV1===true;
       const charge=!invalidCompletion && (screen?result!.charge:objectiveMode?objectiveResultIsBillable(objective):
         (!upstreamFailed?deliveredChars>0:abort.signal.aborted&&deliveredChars>=200));
-      const terminalState=screen?result!.terminalState:objectiveMode&&objective.state==='retake'?'retake':charge?'usable':'failed';
+      const terminalState: import('./billing.ts').FinishCapture['terminalState']=screen?result!.terminalState:objectiveMode&&objective.state==='retake'?'retake':charge?'usable':'failed';
       const finalAnswer=objective.finalAnswer;
       if(!admission.providerStarted) {
         // A retry admission can fail after committing its attempt record. There was
@@ -603,12 +616,14 @@ export class CaptureService {
         await store.billing.releaseBudget(token,attemptId);
       }
       const sealedAnswer=charge&&!invalidCompletion?sealAnswer(this.keys,token,capture.captureId,capture.keyVersion,{text:raw,usage}):undefined;
-      const settlement=await settleReliably(()=>store.billing.finishWithCapture({token,captureId:capture.captureId,charge,terminalState,sealedAnswer,owner:capture.deliveryOwner,
+      const completion = {token,captureId:capture.captureId,charge,terminalState,sealedAnswer,owner:capture.deliveryOwner,
         ...(admission.providerStarted?{attemptSettlement:{id:attemptId,result:{status:upstreamFailed||invalidCompletion?'failed' as const:'succeeded' as const,inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},actual:cost()??null,anomaly:this.budgetAnomaly(req,usage)}}:{}),
         inputTokens:usage?.inputTokens,outputTokens:usage?.outputTokens,model:fullModel,
         resultState:objective.state??undefined,questionKind:objective.result?.kind,parserPath:objectiveMode?objective.parserPath:'legacy',
         answerHmac:finalAnswer?this.keys.digest('answer',normalizeObjectiveAnswer(finalAnswer),capture.keyVersion):undefined,
-        terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion}));
+        terminalReason:result?.reason??undefined,estimatedCostMicros:cost(),pricingVersion:config.modelPricingVersion};
+      if (recoverable && charge && sealedAnswer) await settleReliably(()=>store.billing.checkpointCompletion(completion));
+      const settlement=await settleReliably(()=>store.billing.finishWithCapture(completion));
       const quota=settlement?.account,committed=settlement?.capture;
       if(!quota||!committed||committed.settlementStatus==='held') throw new Error('Settlement pending');
       if(recoverable&&committed.deliveryOwner!==capture.deliveryOwner)return;
@@ -637,7 +652,7 @@ export class CaptureService {
       req.log.error({captureId:capture.captureId},'capture requires settlement reconciliation');
       if(!recoverable)send({type:'error',error:{code:'internal',message:'正在核对本次额度，请查询请求状态'}});
     } finally {
-      void initial;clearInterval(heartbeat);accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
+      void initial;lease?.stop();clearInterval(heartbeat);accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
       this.logTiming(req,'responseFinishing');
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.end();
     }

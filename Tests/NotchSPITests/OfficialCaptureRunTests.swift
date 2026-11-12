@@ -128,6 +128,7 @@ private final class CaptureRunFixture {
     var completions: [(Bool, String)] = []
     var callbackOrder: [String] = []
     var rejected = 0
+    var journal: PendingCaptureStore?
     var onReceipt: (() -> Void)?
     var onDelta: (() -> Void)?
     init() throws {
@@ -144,7 +145,7 @@ private final class CaptureRunFixture {
             XCTAssertTrue(Thread.isMainThread); receipts.append(receipt); callbackOrder.append("usage"); onReceipt?()
         }, receiveSettlement: { [self] status in
             XCTAssertTrue(Thread.isMainThread); settlements.append(status); callbackOrder.append("status")
-        }, rejectCredential: { [self] in XCTAssertTrue(Thread.isMainThread); rejected += 1 })
+        }, rejectCredential: { [self] in XCTAssertTrue(Thread.isMainThread); rejected += 1 }, journal: journal)
     }
     func run(legacy: Bool = false, auxiliary: AuxiliaryCaptureRequest? = nil, images: [String]? = nil,
              onUsage: ((OfficialUsageReceipt) -> Void)? = nil) throws -> Task<Void, Never> {
@@ -180,6 +181,70 @@ private final class CaptureRunFixture {
 
 @MainActor
 final class OfficialCaptureRunTests: XCTestCase {
+    func testRestartJournalRecoversSameAnswerWithoutNewPostOrCharge() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        f.journal = PendingCaptureStore(directory: f.root.appendingPathComponent("pending"))
+        let submitted = expectation(description: "original submitted")
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" {
+                reply.start(extra: "X-NotchSPI-Delivery: v1\r\n"); reply.send(Data(": connected\n\n".utf8))
+                submitted.fulfill()
+            } else { reply.respond(body: payload) }
+        }
+        defer { server.stop(); f.cleanup() }
+        let first = try f.run()
+        await fulfillment(of: [submitted], timeout: 2)
+        let account = try XCTUnwrap(f.account.value)
+        f.journal!.preserveForTermination(true)
+        first.cancel(); await first.value
+        let restarted = PendingCaptureStore(directory: f.journal!.directory)
+        let saved = try XCTUnwrap(restarted.pending(account: account).first)
+        XCTAssertEqual(saved.id, f.id)
+        f.completions = []; f.receipts = []; f.deltas = []
+        let resume = OfficialAPI.resumePending(saved, account: account, environment: f.environment,
+            onDelta: { f.deltas.append($0) }, onDone: { f.completions.append(($0,$1)) })
+        await finish(resume, fixture: f)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B"); XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertTrue(f.requests.last!.path.hasSuffix("/delivery"))
+        // Completion of HTTP alone must not erase the restart record before drawing.
+        XCTAssertEqual(restarted.pending(account: account).count, 1)
+        let latency = CaptureLatency(entry: .direct)
+        latency.onRendered = { restarted.remove(saved.id, account: account) }
+        latency.complete(success: true); latency.mark(.renderStarted); latency.mark(.renderCompleted)
+        XCTAssertTrue(restarted.pending(account: account).isEmpty)
+    }
+
+    func testExpiredPendingCaptureOnlyReadsCachedAnswerAndNeverStartsAnotherModel() async throws {
+        let f=try CaptureRunFixture(), payload=try f.answer()
+        let server=try await connect(f) { request, reply in
+            XCTAssertEqual(request.method,"GET"); reply.respond(body:payload)
+        }
+        defer { server.stop(); f.cleanup() }
+        let account=try XCTUnwrap(f.account.value)
+        let entry=PendingCaptureStore.Entry(id:f.id,createdAt:Date().addingTimeInterval(-130),body:Data("{}".utf8),mode:"tutor",structured:false,screenQuery:true)
+        await finish(OfficialAPI.resumePending(entry,account:account,environment:f.environment,
+            onDelta:{f.deltas.append($0)},onDone:{f.completions.append(($0,$1))}),fixture:f)
+        XCTAssertEqual(f.completions.first?.0,true); XCTAssertEqual(f.requests.count,1)
+    }
+
+    func testPendingJournalEncryptsMaterialAndSeparatesAccountsAndExpires() throws {
+        let f=try CaptureRunFixture(); defer {f.cleanup()}
+        let store=PendingCaptureStore(directory:f.root.appendingPathComponent("pending"))
+        let account=OfficialAPI.CaptureAccount(token:"credential-one",baseURL:"https://example.invalid")
+        let other=OfficialAPI.CaptureAccount(token:"credential-two",baseURL:account.baseURL)
+        let entry=PendingCaptureStore.Entry(id:f.id,createdAt:Date(),body:Data("private image and prompt".utf8),mode:"tutor",structured:true,screenQuery:false)
+        try store.save(entry,account:account)
+        let path=try XCTUnwrap(FileManager.default.contentsOfDirectory(at:store.directory,includingPropertiesForKeys:nil).first)
+        let data=try Data(contentsOf:path)
+        XCTAssertNil(String(data:data,encoding:.utf8)); XCTAssertFalse(String(decoding:data,as:UTF8.self).contains("private image"))
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath:path.path)[.posixPermissions] as? NSNumber)?.intValue,0o600)
+        XCTAssertTrue(store.pending(account:other).isEmpty)
+        XCTAssertEqual(store.pending(account:account),[entry])
+        XCTAssertTrue(store.pending(account:account,now:Date().addingTimeInterval(901)).isEmpty)
+    }
+
     func testSharedCaptureIsolationFixtures() async throws {
         struct Scenario: Decodable {
             let id: String

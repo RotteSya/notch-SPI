@@ -159,6 +159,10 @@ export class OpenAIProvider implements Provider {
             (ev.usage.completion_tokens ?? 0) > maxTokens)) throw new Error('Invalid Astra usage');
         usage.inputTokens = typeof ev.usage.prompt_tokens === 'number' ? ev.usage.prompt_tokens : usage.inputTokens;
         usage.outputTokens = typeof ev.usage.completion_tokens === 'number' ? ev.usage.completion_tokens : usage.outputTokens;
+        if ((!tier || tierConfirmed) && Number.isSafeInteger(usage.inputTokens) && Number.isSafeInteger(usage.outputTokens)
+          && usage.inputTokens! >= 0 && usage.outputTokens! >= 0) {
+          req.onUsage?.({...usage, upstreamModel: responseModel, ...(tier ? {serviceTier: tier} : {})});
+        }
       }
     }, tier ? () => { done = true; } : undefined).catch(error=>{
       if(error instanceof TypeError&&!signal.aborted)throw new TransientProviderError(0,250);

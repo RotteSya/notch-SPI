@@ -30,6 +30,8 @@ final class NotchController: NSObject {
     var qaCaptureRunID: UUID? { currentCaptureID }
     var qaRunReasoningEffort: String? { currentRunSnapshot?.reasoningEffort }
     var qaRequestRunning: Bool { running }
+    var qaRunWatchdogActive: Bool { runWatchdog?.isValid == true }
+    func qaBeginRun() { beginRun() }
     func qaSuspendCaptureWork() { suspendCaptureWork() }
     func qaMaintainIdleState() { maintainIdleState() }
     var qaMaintenanceTimerActive: Bool { materialTimer?.isValid == true }
@@ -290,7 +292,7 @@ final class NotchController: NSObject {
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: OfficialAPI.accountDidChange, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in self?.synchronizeMaterialScope() } })
+        ) { [weak self] _ in Task { @MainActor in self?.synchronizeMaterialScope(); self?.recoverPendingAnswer() } })
 
         // Language / theme switches re-render the always-visible notch immediately.
         observers.append(NotificationCenter.default.addObserver(
@@ -308,7 +310,7 @@ final class NotchController: NSObject {
 
         // Pre-enumerate shareable content so the first hotkey press skips the ~100–300ms
         // window-server enumeration; kept fresh after each shot and across display changes.
-        if activateServices { Task { @MainActor in ScreenCapture.prefetchShareableContent() } }
+        if activateServices { Task { @MainActor [weak self] in ScreenCapture.prefetchShareableContent(); self?.recoverPendingAnswer() } }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -1516,11 +1518,13 @@ final class NotchController: NSObject {
         screenRefreshWork?.cancel(); screenRefreshWork = nil
         onboardingPermissionTimer?.invalidate(); onboardingPermissionTimer = nil
         terminating = true
+        if activatesServices { PendingCaptureStore.shared.preserveForTermination(true) }
         newQuestionGroup()
     }
 
     func cancelTermination() {
         terminating = false
+        if activatesServices { PendingCaptureStore.shared.preserveForTermination(false); recoverPendingAnswer() }
         startMaterialMaintenance()
     }
 
@@ -2982,11 +2986,18 @@ final class NotchController: NSObject {
                     onDelta: onDelta, onDone: onDone
                 )
             case .official:
+                if let account = snapshot.binding.officialAccount {
+                    latency.onRendered = { PendingCaptureStore.shared.remove(snapshot.captureID, account: account) }
+                }
                 self.officialTask = OfficialAPI.run(
                     imagePaths: imagePaths, prompt: prompt,
                     resultProtocol: snapshot.resultProtocol, captureID: snapshot.captureID, screenQuery: snapshot.screenQuery,
                     reasoningEffort: snapshot.reasoningEffort, tutorResultV1: snapshot.tutorResultV1,
                     environment: .connected(to: .live, expectedAccount: snapshot.binding.officialAccount),
+                    recoveryMode: snapshot.mode, onSubmitted: { [weak self] in
+                        guard let self, self.accepts(snapshot, generation: generation) else { return }
+                        self.officialTransportSubmitted()
+                    },
                     onUsage: { [weak self] value in
                         guard let self, self.accepts(snapshot, generation: generation) else { return }
                         latency.mark(.receiptApplied)
@@ -3162,14 +3173,49 @@ final class NotchController: NSObject {
         ))
     }
 
-    /// Hard deadline for one capture, comfortably past the 120 s request timeout.
-    ///
-    /// `running` serializes pipeline entry (the single hotkey explicitly invalidates first), so any await
-    /// in the pipeline that never returns — a ScreenCaptureKit enumeration blocked on a busy
-    /// WindowServer, a CLI probe, a stream held open by URLSession's week-long resource timeout —
-    /// used to disable the app silently and permanently. The user sees nothing at all: no panel,
-    /// no error, no log. This timer is what makes that state impossible.
+    /// Preparation and non-official runners retain a watchdog. Once official transport
+    /// starts, its single deadline owns completion; this timer must not cancel it early.
     private static let runDeadline: TimeInterval = 110
+
+    func officialTransportSubmitted() {
+        runWatchdog?.invalidate(); runWatchdog = nil
+    }
+
+    private var attemptedPending = Set<UUID>()
+    func recoverPendingAnswer() {
+        guard activatesServices, !terminating, !running, model.onboardingStep == nil,
+              Settings.shared.serviceMode == "official",
+              let account = OfficialAPI.accountState.account,
+              let entry = PendingCaptureStore.shared.pending(account: account).first(where: { !attemptedPending.contains($0.id) }) else { return }
+        attemptedPending.insert(entry.id)
+        beginRun(); officialTransportSubmitted()
+        let generation = runGeneration
+        currentCaptureID = entry.id; currentAnswerCaptureID = entry.id
+        model.mode = entry.mode; model.answer = ""; model.explanation = ""
+        model.resultState = nil; model.parserPath = .none; model.explanationAvailable = false
+        model.status = .running
+        model.statusText = L10n.t("正在恢复上次答案…", "前回の回答を復元中…", "Restoring your previous answer…")
+        let latency = CaptureLatency(entry: .direct, mode: entry.mode)
+        model.answerLatency = latency
+        latency.onRendered = { PendingCaptureStore.shared.remove(entry.id, account: account) }
+        visible = true; pinned = true; panel.orderFrontRegardless(); setExpanded(true)
+        var filter = ObjectiveResultStreamFilter()
+        officialTask = OfficialAPI.resumePending(entry, account: account,
+            environment: .connected(to: .live, expectedAccount: account), onDelta: { [weak self] text in
+                guard let self, self.runGeneration == generation, OfficialAPI.accountState.matches(account) else { return }
+                self.model.answer = entry.structured ? filter.append(text) : text
+            }, onDone: { [weak self] ok, error in
+                guard let self, self.runGeneration == generation, OfficialAPI.accountState.matches(account) else { return }
+                let parsed = entry.structured ? filter.finish() : nil
+                if let parsed { self.model.answer = parsed.visibleText; self.model.resultState = parsed.state
+                    self.model.resultReason = parsed.result?.reason; self.model.parserPath = parsed.parserPath }
+                let complete = ok && !self.model.answer.isEmpty && (!entry.structured || parsed?.finalAnswer != nil)
+                self.model.status = complete ? .idle : .error
+                self.model.statusText = complete ? L10n.statusDone : error
+                latency.complete(success: complete)
+                self.resizeToFit(); self.endRun(); self.pinned = false
+            })
+    }
 
     private func beginRun() {
         capturePreparation.cancel()
