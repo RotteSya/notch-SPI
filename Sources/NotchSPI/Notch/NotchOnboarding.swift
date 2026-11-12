@@ -93,6 +93,7 @@ final class NotchOnboardingView: NSView {
         wantsLayer = true
         addSubview(surface); addSubview(copyPlate)
         [illustration, heading, detail, note].forEach(copyPlate.addSubview)
+        [heading, detail, note].forEach { $0.wantsLayer = true }
         addSubview(footerRule)
         [primary, secondary, back, targetButton].forEach { $0.onboardingChrome = true }
         primary.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -221,7 +222,9 @@ final class NotchOnboardingView: NSView {
     func update(step: NotchOnboardingStep, granted: Bool, denied: Bool, failed: Bool,
                 practiceFailed: Bool = false, screenshotCount: Int = 0, capturing: Bool = false, previewing: Bool = false, multiple: Bool = false,
                 trial: OnboardingTrialState = .unavailable, trialExpiration: String? = nil, failureMessage: String? = nil) {
-        let changed = self.step != step
+        let previousStep = self.step
+        let previousCopy = [heading.stringValue, detail.stringValue, note.stringValue, primary.title]
+        let changed = previousStep != step
         let shouldTransition = changed && self.step != nil
         self.step = step
         let t = L10n.t
@@ -240,8 +243,8 @@ final class NotchOnboardingView: NSView {
             if screenshotCount < 2 { detail.stringValue = t("正在预览。关闭后可继续截图，至少两张才会自动查题。", "プレビュー中です。閉じて撮影を続けられます。自動送信には2枚以上必要です。", "Previewing. Close it to keep capturing; auto-send needs at least two images.") }
         }
         primary.style = step.showsLiveContent && step != .success && step != .firstAnswer ? .secondary : .primary
-        if changed || step == .permission { illustration.present(step: step, granted: granted, animated: changed && !step.showsLiveContent) }
         illustration.isHidden = step.showsLiveContent
+        if changed || step == .permission { illustration.present(step: step, granted: granted, animated: !step.showsLiveContent) }
         heading.alignment = .center
         detail.alignment = step.showsLiveContent ? .left : .center
         note.alignment = .center
@@ -249,7 +252,9 @@ final class NotchOnboardingView: NSView {
         primary.isHidden = [.capture, .multiCapture, .collecting, .working].contains(step)
         primary.isEnabled = !primary.isHidden && !capturing && !(step == .trial && [.unavailable, .loading, .claiming].contains(trial))
         shortcutPrompt.combo = multiple || [.multiCapture, .collecting].contains(step) ? Settings.shared.contextCombo : Settings.shared.captureCombo
+        let wasShortcutHidden = shortcutPrompt.isHidden
         shortcutPrompt.isHidden = !captureStep || capturing || previewing || (step == .collecting && screenshotCount >= 4)
+        if !shortcutPrompt.isHidden && (wasShortcutHidden || changed) { shortcutPrompt.present(animated: true) }
         if capturing { detail.stringValue = t("正在截图…", "撮影中…", "Capturing…") }
         if primary.isHidden, window?.firstResponder === primary { window?.makeFirstResponder(self) }
         surface.isHidden = step.showsLiveContent
@@ -270,7 +275,10 @@ final class NotchOnboardingView: NSView {
         primary.shortcut = nil
         primary.showsForwardArrow = !primary.isHidden && step != .permission
         needsLayout = true
-        if shouldTransition { transitionCopy() }
+        let copyChanged = previousCopy != [heading.stringValue, detail.stringValue, note.stringValue, primary.title]
+        if let previousStep, shouldTransition || (!step.showsLiveContent && copyChanged) {
+            transitionCopy(from: previousStep)
+        }
         if changed { NSAccessibility.post(element: self, notification: .layoutChanged) }
     }
 
@@ -410,18 +418,32 @@ final class NotchOnboardingView: NSView {
         secondary.frame = NSRect(x: width - inset - helpWidth + 8, y: y, width: helpWidth, height: 38)
     }
 
-    private func transitionCopy() {
-        // Core Animation retains the previous rendered contents for this crossfade. Keeping
-        // one plate avoids individual labels blinking or drifting at different times.
-        copyPlate.layer?.removeAnimation(forKey: "page-handoff")
-        primary.layer?.removeAnimation(forKey: "page-handoff")
-        guard !onboardingReduceMotion(), window != nil else { return }
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = onboardingMotionDuration(0.24)
-        fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.68, 0, 1)
-        copyPlate.layer?.add(fade, forKey: "page-handoff")
-        primary.layer?.add(fade, forKey: "page-handoff")
+    private func transitionCopy(from previous: NotchOnboardingStep) {
+        // The illustration owns its continuous pose. Only the typography crossfades; fading
+        // its ancestor would double-fade the drawing and briefly erase the shared screen.
+        let direction: CGFloat = (step?.motionOrder ?? 0) >= previous.motionOrder ? 1 : -1
+        for (index, view) in [heading, detail, note, primary, secondary, back].enumerated() {
+            guard let layer = view.layer else { continue }
+            let current = layer.presentation()?.transform.m41 ?? 0
+            layer.removeAnimation(forKey: "page-handoff")
+            layer.removeAnimation(forKey: "copy-settle")
+            guard !onboardingReduceMotion(), window?.isVisible == true, !view.isHidden else { continue }
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = onboardingMotionDuration(0.22)
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.68, 0, 1)
+            layer.add(fade, forKey: "page-handoff")
+            // Controls stay glued to the panel edge and its hit regions. Text travels only
+            // a few points, with no opacity gap or delayed availability of the next action.
+            if index < 3 && !previous.showsLiveContent && step?.showsLiveContent == false {
+                let settle = CABasicAnimation(keyPath: "transform.translation.x")
+                settle.fromValue = abs(current) > 0.1 ? current : direction * CGFloat(5 + index * 2)
+                settle.toValue = 0
+                settle.duration = onboardingMotionDuration(0.34 + Double(index) * 0.035)
+                settle.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+                layer.add(settle, forKey: "copy-settle")
+            }
+        }
     }
     private static func label(_ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: "")

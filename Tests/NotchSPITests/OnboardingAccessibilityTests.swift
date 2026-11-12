@@ -3,6 +3,24 @@ import XCTest
 @testable import NotchSPI
 
 final class OnboardingAccessibilityTests: XCTestCase {
+    @MainActor func testChangingWelcomeLanguageRefreshesExistingCaptureActions() {
+        let previous = L10n.setting
+        defer { L10n.setting = previous }
+        L10n.setting = .ja
+        let tray = ScreenshotTray(frame: .init(x: 0, y: 0, width: 600, height: 160))
+        for locale in [AppLanguage.zhHans, .en, .ja] {
+            L10n.setting = locale
+            tray.update(assets: [], images: [:], flying: [], message: "", remaining: nil,
+                        cancellable: true, undoAvailable: true)
+            let buttons = tray.subviews.compactMap { $0 as? NSButton }.filter { !$0.isHidden }
+            let expected = [L10n.t("现在查题", "今すぐ質問", "Ask now"),
+                            L10n.t("撤销删除", "削除を元に戻す", "Undo removal"),
+                            L10n.t("取消本轮", "今回を取消", "Cancel round")]
+            XCTAssertEqual(Set(buttons.map(\.title)), Set(expected))
+            XCTAssertEqual(Set(buttons.compactMap { $0.accessibilityLabel() }), Set(expected))
+        }
+    }
+
     @MainActor func testActionAndConfirmationExposeDifferentSemantics() {
         var clicks = 0
         let button = GlowButton(title: "Continue", action: { clicks += 1 })

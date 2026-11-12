@@ -7,6 +7,7 @@ import AppKit
 @MainActor
 enum DesignVisualQA {
     private static var shelfReplay: ShelfMotionReplay?
+    private static var guideControls: GuideQAControls?
     static func start(_ scenario: String) -> NotchController {
         let defaults = UserDefaults(suiteName: "com.rottesya.notchspi.design-fixtures")!
         let history = RecentQuestionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-preview-\(UUID())"))
@@ -24,7 +25,11 @@ enum DesignVisualQA {
         controller.qaPinDesignPreview()
         controller.show()
         if scenario == "guide-walkthrough" {
-            controller.qaEnableOnboardingHotkeys()
+            if CommandLine.arguments.contains("--qa-local-controls") {
+                // Native UI automation can exercise the real intake without competing with
+                // a user's running release app for global Carbon hotkeys.
+                guideControls = GuideQAControls(controller: controller)
+            } else { controller.qaEnableOnboardingHotkeys() }
             controller.qaOpenPracticePage = { NSWorkspace.shared.open($0) }
             controller.qaScreenshotCapture = {
                 let image = NSImage(size: NSSize(width: 640, height: 360))
@@ -290,6 +295,29 @@ enum DesignVisualQA {
         return controller
     }
 }
+@MainActor
+private final class GuideQAControls: NSObject {
+    private weak var controller: NotchController?
+    init(controller: NotchController) {
+        self.controller = controller
+        super.init()
+        let menu = NSMenu(title: "引导验收 · 离线")
+        for (title, action) in [
+            ("模拟单图快捷键", #selector(single)), ("模拟多图快捷键", #selector(multiple)),
+            ("查看权限页", #selector(permission)), ("返回欢迎页", #selector(welcome))
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self; menu.addItem(item)
+        }
+        let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
+        item.submenu = menu; NSApp.mainMenu?.addItem(item)
+    }
+    @objc private func single() { controller?.qaPressScreenshot(multiple: false) }
+    @objc private func multiple() { controller?.qaPressScreenshot(multiple: true) }
+    @objc private func permission() { controller?.qaPresentOnboarding(.permission) }
+    @objc private func welcome() { controller?.qaPresentOnboarding(.welcome) }
+}
+
 @MainActor
 private final class ShelfMotionReplay: NSObject {
     weak var controller: NotchController?

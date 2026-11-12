@@ -42,6 +42,7 @@ final class GlowButton: NSControl {
     var title: String { didSet { needsDisplay = true; invalidateIntrinsicContentSize() } }
     var style: Style {
         didSet {
+            if !isActionable { resetInteraction() }
             needsDisplay = true
             invalidateIntrinsicContentSize()
             window?.invalidateCursorRects(for: self)
@@ -55,12 +56,33 @@ final class GlowButton: NSControl {
     var showsForwardArrow = false { didSet { needsDisplay = true; invalidateIntrinsicContentSize() } }
 
     private var hovering = false {
-        didSet { if hovering != oldValue { needsDisplay = true } }
+        didSet {
+            guard hovering != oldValue else { return }
+            if onboardingChrome {
+                hoverLight.onChange = { [weak self] _ in self?.needsDisplay = true }
+                if onboardingReduceMotion() || window?.isVisible != true {
+                    hoverLight.set(hovering ? 1 : 0)
+                } else {
+                    hoverLight.animate(to: hovering ? 1 : 0, duration: hovering ? 0.18 : 0.26)
+                }
+            }
+            needsDisplay = true
+        }
     }
     private var pressed = false {
         didSet { if pressed != oldValue { setDepressed(pressed) } }
     }
     private var trackingAreaRef: NSTrackingArea?
+    private lazy var hoverLight = DisplayTween(host: self)
+    private var mousePressArmed = false
+    private var keyboardRelease: DispatchWorkItem?
+    private var hoverAmount: CGFloat { onboardingChrome ? hoverLight.value : (hovering ? 1 : 0) }
+    override var isEnabled: Bool {
+        didSet { if !isEnabled { resetInteraction() }; needsDisplay = true }
+    }
+    override var isHidden: Bool {
+        didSet { if isHidden { resetInteraction() } }
+    }
 
     init(title: String, style: Style = .primary, action: (() -> Void)? = nil) {
         self.title = title
@@ -84,8 +106,11 @@ final class GlowButton: NSControl {
         if ignoresRepeatedClicks {
             window?.makeKey()
             window?.makeFirstResponder(self)
+            keyboardRelease?.cancel()
             setDepressed(true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075) { [weak self] in self?.setDepressed(false) }
+            let release = DispatchWorkItem { [weak self] in self?.setDepressed(false) }
+            keyboardRelease = release
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075, execute: release)
         }
         onClick?()
         return true
@@ -101,6 +126,22 @@ final class GlowButton: NSControl {
 
     /// `.confirm` is state, not a control — no pointer, no press, no glow.
     private var isActionable: Bool { style != .confirm && isEnabled }
+
+    private func resetInteraction() {
+        keyboardRelease?.cancel(); keyboardRelease = nil
+        mousePressArmed = false
+        hovering = false; pressed = false
+        hoverLight.set(0)
+        layer?.removeAnimation(forKey: "press")
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer?.transform = CATransform3DIdentity
+        CATransaction.commit()
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { resetInteraction() }
+    }
+    override func viewDidHide() { super.viewDidHide(); resetInteraction() }
 
     private var titleFont: NSFont { font ?? .systemFont(ofSize: 13.5, weight: style == .primary ? .semibold : .medium) }
 
@@ -139,12 +180,16 @@ final class GlowButton: NSControl {
             return
         }
         if ignoresRepeatedClicks {
-            let feedback = CABasicAnimation(keyPath: "transform")
+            let feedback = CASpringAnimation(keyPath: "transform")
             feedback.fromValue = NSValue(caTransform3D: layer.presentation()?.transform ?? layer.transform)
             feedback.toValue = NSValue(caTransform3D: m)
-            feedback.duration = down ? 0.075 : 0.16
-            feedback.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
+            feedback.mass = 1
+            feedback.stiffness = down ? 900 : 520
+            feedback.damping = down ? 60 : 36
+            feedback.duration = feedback.settlingDuration
+            CATransaction.begin(); CATransaction.setDisableActions(true)
             layer.transform = m
+            CATransaction.commit()
             layer.add(feedback, forKey: "press")
             return
         }
@@ -172,25 +217,29 @@ final class GlowButton: NSControl {
         case .primary:
             // Flat accent fill; hover lifts it one step toward the highlight tint. Color does
             // the work — no gradient body, no glow.
-            let fill = hovering
-                ? (NotchPalette.accent.blended(withFraction: 0.35, of: NotchPalette.accentHi) ?? NotchPalette.accent)
-                : NotchPalette.accent
+            let fill = NotchPalette.accent.blended(withFraction: 0.35 * hoverAmount, of: NotchPalette.accentHi) ?? NotchPalette.accent
             (isEnabled ? fill : NSColor(white: 1, alpha: 0.07)).setFill()
             capsule.fill()
             if onboardingChrome && isEnabled {
-                NSColor(white: 1, alpha: hovering ? 0.32 : 0.2).setStroke()
+                NSColor(white: 1, alpha: 0.2 + 0.12 * hoverAmount).setStroke()
                 capsule.lineWidth = 0.5; capsule.stroke()
+                // A restrained top light makes the pressed surface feel machined, not glossy.
+                NSGraphicsContext.saveGraphicsState()
+                capsule.addClip()
+                NSGradient(starting: NSColor(white: 1, alpha: 0.10 + 0.06 * hoverAmount),
+                           ending: NSColor(white: 1, alpha: 0))?.draw(in: r, angle: -90)
+                NSGraphicsContext.restoreGraphicsState()
             }
             textColor = isEnabled ? NSColor(srgbRed: 0.04, green: 0.05, blue: 0.10, alpha: 1) : NotchPalette.secondary
         case .secondary:
-            NSColor(white: 1, alpha: hovering ? 0.12 : 0.06).setFill()
+            NSColor(white: 1, alpha: 0.06 + 0.06 * hoverAmount).setFill()
             capsule.fill()
             capsule.lineWidth = 1
-            NSColor(white: 1, alpha: hovering ? 0.35 : 0.22).setStroke()
+            NSColor(white: 1, alpha: 0.22 + 0.13 * hoverAmount).setStroke()
             capsule.stroke()
             textColor = NSColor(white: 1, alpha: isEnabled ? 0.92 : 0.4)
         case .ghost:
-            textColor = NSColor(white: 1, alpha: hovering ? 0.85 : 0.55)
+            textColor = NSColor(white: 1, alpha: 0.55 + 0.30 * hoverAmount)
         case .confirm:
             let mint = NSColor(srgbRed: 0.45, green: 0.85, blue: 0.60, alpha: 1)
             mint.withAlphaComponent(0.13).setFill()
@@ -215,7 +264,7 @@ final class GlowButton: NSControl {
             let keySize = (shortcut as NSString).size(withAttributes: keyAttrs)
             (shortcut as NSString).draw(at: NSPoint(x: start + 15, y: b.midY - keySize.height / 2), withAttributes: keyAttrs)
         } else if showsForwardArrow {
-            let x = b.midX + (ts.width - shortcutWidth) / 2 + 15
+            let x = b.midX + (ts.width - shortcutWidth) / 2 + 15 + (onboardingChrome && !onboardingReduceMotion() ? 2 * hoverAmount : 0)
             let arrow = NSBezierPath()
             arrow.move(to: NSPoint(x: x, y: b.midY)); arrow.line(to: NSPoint(x: x + 9, y: b.midY))
             arrow.move(to: NSPoint(x: x + 5, y: b.midY - 3.5))
@@ -243,17 +292,22 @@ final class GlowButton: NSControl {
     override func mouseExited(with event: NSEvent) { hovering = false; pressed = false }
     override func mouseDown(with event: NSEvent) {
         if isActionable {
+            keyboardRelease?.cancel()
+            mousePressArmed = true
             if ignoresRepeatedClicks { window?.makeFirstResponder(self) }
             pressed = true
         }
     }
     override func mouseDragged(with event: NSEvent) {
-        pressed = isActionable && bounds.contains(convert(event.locationInWindow, from: nil))
+        pressed = mousePressArmed && isActionable && bounds.contains(convert(event.locationInWindow, from: nil))
     }
     override func mouseUp(with event: NSEvent) {
         let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        let shouldActivate = mousePressArmed && inside && isActionable && !isHiddenOrHasHiddenAncestor
+        mousePressArmed = false
         pressed = false
-        if inside && (!ignoresRepeatedClicks || event.clickCount <= 1) { _ = accessibilityPerformPress() }
+        // The mouse already supplied down/up feedback. AX/keyboard have their own one-shot press.
+        if shouldActivate && (!ignoresRepeatedClicks || event.clickCount <= 1) { onClick?() }
     }
 }
 

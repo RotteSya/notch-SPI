@@ -139,6 +139,10 @@ final class NotchOnboardingTests: XCTestCase {
         var activations = 0
         button.onClick = { activations += 1 }
         for count in [1, 2] {
+            let down = NSEvent.mouseEvent(with: .leftMouseDown, location: .init(x: 20, y: 20),
+                modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                eventNumber: count, clickCount: count, pressure: 1)!
+            button.mouseDown(with: down)
             let event = NSEvent.mouseEvent(with: .leftMouseUp, location: .init(x: 20, y: 20),
                 modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
                 eventNumber: count, clickCount: count, pressure: 0)!

@@ -56,6 +56,15 @@ final class ScreenshotTray: NSView {
     func update(assets: [ContextAsset], images: [UUID: NSImage], flying: Set<UUID>,
                 message: String, remaining: TimeInterval?, cancellable: Bool,
                 capturing: Bool = false, notice: String = "", undoAvailable: Bool = false, compact: Bool = false) {
+        // The welcome language picker can change locale after this tray was constructed.
+        for (button, title) in [(submit, L10n.t("现在查题", "今すぐ質問", "Ask now")),
+                                (undo, L10n.t("撤销删除", "削除を元に戻す", "Undo removal")),
+                                (cancel, L10n.t("取消本轮", "今回を取消", "Cancel round"))] where button.title != title {
+            button.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: CaptureStyle.caption, .foregroundColor: NotchPalette.primary,
+            ])
+            button.setAccessibilityLabel(title)
+        }
         if self.compact != compact {
             finishReorder()
             animateReferenceLayout = !onboardingReduceMotion() && !ids.isEmpty
