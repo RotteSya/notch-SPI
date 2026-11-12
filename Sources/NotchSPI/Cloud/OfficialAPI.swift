@@ -61,6 +61,28 @@ enum OfficialAPI {
         var shouldSend: Bool { lock.lock(); defer { lock.unlock() }; return submitted && supported }
     }
 
+    /// A fast failure budget is renewed only by an authenticated live worker or our
+    /// accepted resume stream. Neither can extend the original 120-second capture lease.
+    actor DeliveryRecoveryBudget {
+        private let absoluteDeadline: TimeInterval
+        private var deadline: TimeInterval
+        init(startedAt: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            absoluteDeadline = startedAt + 120
+            deadline = min(absoluteDeadline, now + 20)
+        }
+        func protectWorker(remainingMilliseconds: Double, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            guard remainingMilliseconds.isFinite, remainingMilliseconds > 0 else { return }
+            deadline = max(deadline, min(absoluteDeadline, now + min(20, remainingMilliseconds / 1000)))
+        }
+        func protectResumeStream(now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            deadline = min(absoluteDeadline, now + 90)
+        }
+        func transportLost(now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            deadline = min(deadline, now + 20)
+        }
+        func remaining(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval { deadline - now }
+    }
+
     struct CaptureAccount: Equatable {
         let token: String
         let baseURL: String
@@ -653,6 +675,7 @@ enum OfficialAPI {
                 await MainActor.run { onDone(false, captureTooLargeMessage) }; return
             }
             if operation == "solve" { request.timeoutInterval = 8 }
+            let requestStartedAt = ProcessInfo.processInfo.systemUptime
             var deliveredText = ""
             var deliveredUsage = false
             var supportsDelivery: Bool? = nil
@@ -737,13 +760,13 @@ enum OfficialAPI {
                 streamError = outcome.serviceError.map { localizedMessage(code: $0.code, fallback: $0.message) }
             } catch { streamError = cannotConnectMessage }
             // A broken connection has a short, actual wall-clock recovery budget.
-            // Healthy model progress is handled on the original stream, not this timer.
+            // A verified live worker may still be producing the original answer after a disconnect.
             let recoveryDeadline = Date().addingTimeInterval(20)
             if !completed, operation == "solve", supportsDelivery != false {
                 do {
                     if let replay = try await recoverDelivery(request: request, id: id, account: account,
                         environment: environment, screenQuery: screenQuery != nil, supportsDelivery: supportsDelivery,
-                        deliveredText: deliveredText) {
+                        deliveredText: deliveredText, startedAt: requestStartedAt) {
                         let suffix = String(replay.text.dropFirst(deliveredText.count))
                         let needsReceipt = !deliveredUsage
                         try await MainActor.run {
@@ -797,20 +820,22 @@ enum OfficialAPI {
     }
 
     private static func recoverDelivery(request original: URLRequest, id: UUID, account: CaptureAccount,
-        environment: CaptureEnvironment, screenQuery: Bool, supportsDelivery: Bool?, deliveredText: String
+        environment: CaptureEnvironment, screenQuery: Bool, supportsDelivery: Bool?, deliveredText: String, startedAt: TimeInterval
     ) async throws -> DeliveryReplay? {
-        try await withThrowingTaskGroup(of: DeliveryReplay?.self) { group in
+        let budget = DeliveryRecoveryBudget(startedAt: startedAt)
+        return try await withThrowingTaskGroup(of: DeliveryReplay?.self) { group in
             defer { group.cancelAll() }
             group.addTask {
                 var resumed = false, resumeNext = false
-                for _ in 0..<80 {
+                for _ in 0..<480 {
                     try Task.checkCancellation()
                     guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
+                    var pollInterval: UInt64 = 250_000_000
                     let isResume = resumeNext
                     resumeNext = false
                     var request = isResume ? original : URLRequest(url: endpointURL(base: account.baseURL,
                         path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))
-                    request.timeoutInterval = isResume ? 8 : 2
+                    request.timeoutInterval = 8
                     request.setValue("Bearer \(account.token)", forHTTPHeaderField: "Authorization")
                     do {
                         let (bytes, response) = try await environment.session.bytes(for: request)
@@ -818,6 +843,9 @@ enum OfficialAPI {
                         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
                         if http.statusCode == 200 {
                             guard http.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/event-stream") == true else { return nil }
+                            if isResume, http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
+                                await budget.protectResumeStream()
+                            }
                             var text = ""
                             var receipt: OfficialUsageReceipt?
                             let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id,
@@ -838,6 +866,12 @@ enum OfficialAPI {
                         }
                         let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                         if http.statusCode == 202 {
+                            if value?["capture_id"] as? String == id.uuidString.lowercased(),
+                               value?["worker_active"] as? Bool == true,
+                               let remaining = value?["recovery_remaining_ms"] as? Double, remaining.isFinite, remaining > 0 {
+                                await budget.protectWorker(remainingMilliseconds: remaining)
+                                pollInterval = 1_000_000_000
+                            }
                             if value?["can_resume"] as? Bool == true, !resumed { resumeNext = true; resumed = true }
                         } else if http.statusCode == 404, !resumed,
                                   supportsDelivery == true || http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
@@ -849,15 +883,20 @@ enum OfficialAPI {
                         } else if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { return nil }
                     } catch {
                         try Task.checkCancellation()
+                        await budget.transportLost()
                     }
                     // A known absent/expired worker can be resumed immediately; no poll sleep.
-                    if !resumeNext { try await Task.sleep(nanoseconds: 250_000_000) }
+                    if !resumeNext { try await Task.sleep(nanoseconds: pollInterval) }
                 }
                 return nil
             }
             group.addTask {
-                try await Task.sleep(nanoseconds: 20_000_000_000)
-                throw URLError(.timedOut)
+                while true {
+                    try Task.checkCancellation()
+                    let remaining = await budget.remaining()
+                    guard remaining > 0 else { throw URLError(.timedOut) }
+                    try await Task.sleep(nanoseconds: UInt64(min(0.25, remaining) * 1_000_000_000))
+                }
             }
             return try await group.next() ?? nil
         }

@@ -91,7 +91,13 @@ export class CaptureService {
     const {token}=await requireAccount(req,this.ctx.store),id=text((req.params as Record<string,unknown>).id).toLowerCase();
     const c=await this.ctx.store.billing.capture(token,id);
     if(!c)throw new ApiError(404,'未找到请求','not_found');
-    if(c.settlementStatus==='held')return reply.code(202).header('Retry-After','1').header('Cache-Control','no-store').send({pending:true,can_resume:!!c.deliveryOwner&&(c.workerAliveUntil??Infinity)<Date.now()&&(c.deliveryAttempts??2)<2&&Date.parse(c.expiresAt)>Date.now()});
+    if(c.settlementStatus==='held'){
+      const now=Date.now(),remaining=Math.max(0,Date.parse(c.expiresAt)-now);
+      const active=!!c.deliveryOwner&&(c.workerAliveUntil??0)>now&&remaining>0;
+      return reply.code(202).header('Retry-After','1').send({pending:true,capture_id:c.captureId,
+        worker_active:active,recovery_remaining_ms:remaining,
+        can_resume:!!c.deliveryOwner&&(c.workerAliveUntil??Infinity)<now&&(c.deliveryAttempts??2)<2&&remaining>0});
+    }
     if(!c.sealedAnswer)throw new ApiError(410,'答案恢复期限已结束','expired');
     return this.replay(reply,token,c);
   }
@@ -544,7 +550,7 @@ export class CaptureService {
             const attemptAbort=new AbortController(),signal=AbortSignal.any([abort.signal,attemptAbort.signal]);
             const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
               timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
-            },8_000);});
+            },20_000);});
             try{return await Promise.race([provider.stream(observedInput,chunk=>{
             if(!accepting||signal.aborted) return;
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}

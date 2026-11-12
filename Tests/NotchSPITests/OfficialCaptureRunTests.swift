@@ -510,6 +510,94 @@ final class OfficialCaptureRunTests: XCTestCase {
         XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
     }
 
+    func testDisconnectedHealthyWorkerCanCompleteAfterFastRecoveryWindowWithoutRepost() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer(), started = Date()
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" {
+                reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                reply.send(Data(": connected\n\n".utf8)); reply.truncated(); return
+            }
+            XCTAssertTrue(request.path.hasSuffix("/delivery"))
+            if Date().timeIntervalSince(started) < 22 {
+                reply.respond(status: 202, type: "application/json", body: Data("{\"pending\":true,\"can_resume\":false,\"capture_id\":\"\(f.id.uuidString.lowercased())\",\"worker_active\":true,\"recovery_remaining_ms\":90000}".utf8))
+            } else { reply.respond(body: payload) }
+        }
+        defer { server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f, timeout: 26)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+    }
+
+    func testAcceptedResumeStreamMayFinishAfterTwentySecondsWithoutAnotherModelAttempt() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        var posts = 0
+        var sender: Task<Void, Never>?
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" {
+                posts += 1
+                reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                reply.send(Data(": connected\n\n".utf8))
+                if posts == 1 { reply.truncated(); return }
+                sender = Task {
+                    for _ in 0..<22 {
+                        reply.send(Data(": keepalive\n\n".utf8))
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        if Task.isCancelled { return }
+                    }
+                    reply.send(payload); reply.finish()
+                }
+            } else { reply.respond(status: 202, type: "application/json", body: Data("{\"can_resume\":true}".utf8)) }
+        }
+        defer { sender?.cancel(); server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f, timeout: 26)
+        XCTAssertEqual(posts, 2)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+    }
+
+    func testThreeSecondRecoveryReadIsNotAbortedAndPolledAgain() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        var sender: Task<Void, Never>?
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" {
+                reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                reply.send(Data(": connected\n\n".utf8)); reply.truncated(); return
+            }
+            sender = Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !Task.isCancelled { reply.respond(body: payload) }
+            }
+        }
+        defer { sender?.cancel(); server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f, timeout: 6)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.requests.count, 2)
+        XCTAssertEqual(f.receipts.count, 1)
+    }
+
+    func testLiveWorkerAndResumeCannotMoveOriginalAbsoluteDeadline() async throws {
+        let budget = OfficialAPI.DeliveryRecoveryBudget(startedAt: 0, now: 5)
+        var remaining = await budget.remaining(now: 5)
+        XCTAssertEqual(remaining, 20)
+        await budget.protectWorker(remainingMilliseconds: 90000, now: 24)
+        remaining = await budget.remaining(now: 24)
+        XCTAssertEqual(remaining, 20)
+        await budget.protectResumeStream(now: 100)
+        remaining = await budget.remaining(now: 100)
+        XCTAssertEqual(remaining, 20)
+        await budget.protectWorker(remainingMilliseconds: 90000, now: 119)
+        remaining = await budget.remaining(now: 120)
+        XCTAssertEqual(remaining, 0)
+        let disconnected = OfficialAPI.DeliveryRecoveryBudget(startedAt: 0, now: 0)
+        await disconnected.protectResumeStream(now: 0)
+        await disconnected.transportLost(now: 2)
+        remaining = await disconnected.remaining(now: 2)
+        XCTAssertEqual(remaining, 20)
+    }
+
     func testCompleteRunReadsFilesBuildsBoundRequestAndDeliversExactlyOnceOnMainThread() async throws {
         let f = try CaptureRunFixture(), payload = try f.answer()
         let server = try await connect(f) { _, reply in reply.respond(body: payload) }

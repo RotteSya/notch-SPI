@@ -89,12 +89,20 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    const b=await f.store.billing.inspectBudget();assert.equal(b.provisional.length,3);assert.equal(b.windows[0]!.spent,3_001_000);assert.equal(b.controls[0]!.blockedUntil,0);
   }finally{await f.close();}
  });
+ if(kind==='sqlite')test('SQLite: a healthy ten-second silent startup succeeds once near the budget limit',{timeout:15000},async()=>{
+  let calls=0;const f=await fixture(async(_r,delta,signal)=>{
+   calls++;await delay(10000,undefined,{signal});delta(ready);return {inputTokens:50,outputTokens:50};
+  },1_260_000);
+  try{const r=await f.call();assert.match(r.body,/"terminal_state":"usable"/);assert.match(r.body,/"questions_charged":1/);
+   assert.equal(calls,1);const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1000);assert.equal(b.windows[0]!.held,0);assert.equal(b.provisional.length,0);
+  }finally{await f.close();}
+ });
  if(kind==='sqlite')test('SQLite: real startup deadline recovers the same request, charging one question and preserving first cost',{timeout:30_000},async()=>{
   let calls=0;const f=await fixture(async(_r,delta,signal)=>{
    if(++calls===1)await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));
    delta(ready);return {inputTokens:50,outputTokens:50};
   });
-  try{const started=performance.now(),recovered=await f.call();assert.ok(performance.now()-started<11000);assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.match(recovered.body,/\[DONE\]/);assert.equal(calls,2);
+  try{const started=performance.now(),recovered=await f.call();assert.ok(performance.now()-started<23000);assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.match(recovered.body,/\[DONE\]/);assert.equal(calls,2);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.windows[0]!.held,0);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
   }finally{await f.close();}

@@ -50,6 +50,20 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    const failed=await f.call();assert.equal(failed.statusCode,500);assert.equal(failed.headers['x-notchspi-delivery'],'v1');assert.equal(calls,0);
   }finally{f.store.getAccount=account;await f.close();}
  });
+ test(`${kind}: pending delivery proves a live worker without starting another model call`,async()=>{
+  let calls=0,release!:()=>void,started!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),running=new Promise<void>(resolve=>{started=resolve;});
+  const f=await fixture(async(_r,delta,_signal,onProgress)=>{calls++;onProgress?.();started();await gate;delta(ready);return {inputTokens:50,outputTokens:50};});
+  try{const id=randomUUID(),headers={authorization:'Bearer '+f.users[0]!.token};
+   const capture=f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers,payload:{capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}}).then(r=>r);
+   await running;
+   const pending=await f.apps.at(-1)!.inject({url:`/v1/captures/${id}/delivery`,headers}),body=pending.json();
+   assert.equal(pending.statusCode,202);assert.equal(body.capture_id,id);assert.equal(body.worker_active,true);assert.equal(body.can_resume,false);
+   assert.ok(body.recovery_remaining_ms>0&&body.recovery_remaining_ms<=120000);assert.equal(calls,1);
+   release();assert.match((await capture).body,/"questions_charged":1/);
+   const replay=await f.apps.at(-1)!.inject({url:`/v1/captures/${id}/delivery`,headers});assert.match(replay.body,/FINAL: B/);assert.equal(calls,1);
+  }finally{release();await f.close();}
+ });
  test(`${kind}: 24 active users complete three rounds including a concentrated slow wave`,{timeout:45_000},async()=>{
   let active=0,peak=0,calls=0;const latencies:number[]=[];
   const f=await fixture(async(_r,delta,_signal,onProgress)=>{onProgress?.();calls++;active++;peak=Math.max(peak,active);await delay(kind==='postgres'?12000:150);delta(ready);active--;return {inputTokens:50,outputTokens:50};});
