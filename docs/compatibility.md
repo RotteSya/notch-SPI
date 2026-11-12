@@ -35,3 +35,5 @@ Intel SHA-256 为 b365a4e5f5afe40b40870220b709ac81175e58e0b2fdafa33126ffbbb919bc
 独立 Intel 3.1 候选使用 `/update/intel` 与 `/dl/intel`，最低 macOS 12.3；主线 Apple Silicon 仍用 `/update` 与 `/dl`。安装前同时核验签名、CPU 架构及最低系统，失败保留旧包。旧 Intel 3.0 无法通过服务端开启已禁用的更新入口，需手动安装一次新客户端。
 
 2026-11-08 用户在知悉暂无 Intel 实机验收后，明确要求将已签名、公证的 Intel 3.1 build 31 设为正式 Intel 下载包。资产名为 NotchSPI-3.1-build31-Intel.dmg，SHA-256 为 52b27b1a14878fd4f773902c4706e375fad538aae2cdddf6a367a28a37801ca9；构建来源为独立 Intel 提交 304419ba7537787b6bee6387764be68dc59d2be8。交叉构建、签名、公证、Gatekeeper 和 arm64 上的兼容源码回归通过；Intel 真机安装、运行和应用内升级仍未验证。Catalina 冻结版及其手动更新方式不变。
+
+2026-11-12 可靠性更新：Apple Silicon 3.1.1 build 32 来源 `dc4fd6523bf410e13e3f24b01ab896ee4216e131`；Intel 3.1.1 build 33 来源独立分支 `7ae277c`，仅回移相同的官方网络恢复代码与测试。已发布 3.1 继续兼容服务端；自动补回答需要 3.1.1。两个架构使用不同安装包及更新入口，保留 Bundle ID、设备凭证、偏好与所有权益。Intel 兼容代码在 arm64 主机的 59 项相关测试中 58 通过、1 项已有跳过，并完成 x86_64/macOS 12.3 交叉构建、签名和公证；Intel 真机运行及实际应用内升级仍未验证。

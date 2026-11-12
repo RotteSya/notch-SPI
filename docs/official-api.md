@@ -1032,7 +1032,7 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 
 与 `/update` 同形。来源固定为 `INTEL_RELEASE_API_URL`，不跟随 Apple Silicon latest。
 仅当稳定发布包含与 `INTEL_DMG_URL` 完全一致的资产时返回版本；缺少资产、草稿或预发布返回 502，不回退至 arm64。
-默认固定 Intel 3.1 build 31 的稳定发布资产；此次用户明确授权发布，但 Intel 实机安装、运行及应用内升级仍未验收。
+默认固定 Intel 3.1.1 build 33 的稳定发布资产；此次用户明确授权发布，但 Intel 实机安装、运行及应用内升级仍未验收。
 
 ## GET /dl/intel — Intel 专用 DMG
 
