@@ -79,7 +79,7 @@ const S = {
       },
       {
         "q": "系统要求？",
-        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。Intel 老 Mac 兼容版：macOS 12.3 及以上。Intel 3.0 用户需先手动安装 3.1.1，之后支持应用内更新。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
+        "a": "正式版：Apple Silicon Mac，macOS 14 及以上。Intel 老 Mac 兼容版：macOS 12.3 及以上。Intel 3.0 用户需先手动安装 3.1.2，之后支持应用内更新。无刘海屏幕使用顶部面板；首次使用需授予屏幕录制权限。Windows 版 Coming soon，尚未正式发布。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記（日本法定披露）",
@@ -125,7 +125,7 @@ const S = {
       },
       {
         "q": "動作環境は？",
-        "a": "通常版：Apple Silicon Mac、macOS 14 以降。Intel Mac 互換版：macOS 12.3 以降。Intel 3.0 からは 3.1.1 を一度手動でインストールし、その後はアプリ内更新に対応します。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
+        "a": "通常版：Apple Silicon Mac、macOS 14 以降。Intel Mac 互換版：macOS 12.3 以降。Intel 3.0 からは 3.1.2 を一度手動でインストールし、その後はアプリ内更新に対応します。ノッチのない画面では上部パネルを使います。初回に画面収録の許可が必要です。Windows 版は Coming soon、正式公開前です。"
       }
     ],
     "legalTitle": "特定商取引法に基づく表記",
@@ -171,7 +171,7 @@ const S = {
       },
       {
         "q": "Requirements?",
-        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later. Intel 3.0 users must install 3.1.1 manually once; subsequent versions support in-app updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
+        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later. Intel 3.0 users must install 3.1.2 manually once; subsequent versions support in-app updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
       }
     ],
     "legalTitle": "特定商取引法に基づく表記 (Japanese commerce disclosure)",
@@ -285,9 +285,9 @@ export function renderLandingPage(input: SiteInput): string {
   }[input.lang];
   const chipDownloads = (id='') => `<div class="chip-downloads"${id?` id="${id}" tabindex="-1"`:''} role="group" aria-label="${chipCopy.label}"><div class="chip-options"><div><a class="button" href="${DOWNLOAD}"><span class="chip-label">${symbol('arrow.down.to.line')} ${chipCopy.silicon}</span><span class="chip-requirements">${chipCopy.siliconNote}</span></a></div><div><a class="button secondary" href="${INTEL_DOWNLOAD}"><span class="chip-label">${symbol('arrow.down.to.line')} ${chipCopy.intel}</span><span class="chip-requirements">${chipCopy.intelNote}</span></a></div></div><details class="chip-help"><summary>${chipGuide.prompt} <span>${chipGuide.action}</span></summary><div class="chip-guide"><h3>${chipGuide.title}</h3><div class="chip-guide-steps"><div><p><b>1</b><span>${chipGuide.step1}</span></p><img src="${chipMenuImage}" alt="" width="189" height="123"></div><div><p><b>2</b><span>${chipGuide.step2}</span></p><img src="${chipInfoImage}" alt="" width="189" height="123"></div></div></div></details></div>`;
   const intelCopy = {
-    zh: {note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.1.1 build 33 · 3.0 用户需手动安装一次，之后可应用内更新'},
-    ja: {note:'Intel プロセッサ · macOS 12.3 以降 · 3.1.1 build 33 · 3.0 から一度手動でインストール後、アプリ内更新に対応'},
-    en: {note:'Intel processor · macOS 12.3 or later · 3.1.1 build 33 · Install manually once from 3.0; then use in-app updates'},
+    zh: {note:'Intel 处理器 · 支持 macOS 12.3 及以上 · 3.1.2 build 35 · 3.0 用户需手动安装一次，之后可应用内更新'},
+    ja: {note:'Intel プロセッサ · macOS 12.3 以降 · 3.1.2 build 35 · 3.0 から一度手動でインストール後、アプリ内更新に対応'},
+    en: {note:'Intel processor · macOS 12.3 or later · 3.1.2 build 35 · Install manually once from 3.0; then use in-app updates'},
   }[input.lang];
   const intelDownload = () => `<div class="intel-download"><a class="button secondary" href="${INTEL_DOWNLOAD}"><span aria-hidden="true">↓</span> ${chipCopy.intel}</a><p class="requirements">${intelCopy.note}</p></div>`;
   const c=continuationCopy[input.lang];

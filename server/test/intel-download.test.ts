@@ -19,7 +19,7 @@ test('Intel and standard downloads coexist in all languages and entries',()=>{
   assert.ok(trial.includes('href="#downloads"'));
   const faq=html.slice(html.indexOf('<section id="faq"'),html.indexOf('<div class="scenic-footer"'));
   assert.ok(faq.includes('Intel')); assert.ok(faq.includes('macOS 12.3'));
-  assert.ok(html.includes('3.1.1 build 33'));
+  assert.ok(html.includes('3.1.2 build 35'));
   assert.ok(html.includes('href="/dl"')); assert.ok(html.includes('macOS 12.3')); assert.ok(html.includes('macOS 14'));
   assert.ok(html.includes(({zh:'之后可应用内更新',ja:'アプリ内更新に対応',en:'then use in-app updates'})[lang]));
  }
