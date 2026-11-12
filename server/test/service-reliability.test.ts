@@ -37,7 +37,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   return {store,users,call,async close(){await Promise.all(apps.map(a=>a.close()));await Promise.all(stores.map(s=>s.close()));await cleanup();}};
  }
  test(`${kind}: eight simultaneous users finish, eight independently admitted calls, one charge each`,async()=>{
-  let active=0,peak=0,calls=0;const f=await fixture(async(_r,delta)=>{calls++;active++;peak=Math.max(peak,active);await delay(300);delta(ready);active--;return {inputTokens:50,outputTokens:50};});
+  let active=0,peak=0,calls=0;const f=await fixture(async(_r,delta,_signal,onProgress)=>{onProgress?.();calls++;active++;peak=Math.max(peak,active);await delay(300);delta(ready);active--;return {inputTokens:50,outputTokens:50};});
   try{
    const responses=await Promise.all(f.users.map((_,i)=>f.call(i)));
    for(const r of responses){assert.equal(r.statusCode,200);assert.match(r.body,/"questions_charged":1/);assert.match(r.body,/"terminal_state":"usable"/);assert.match(r.body,/\[DONE\]/);}
@@ -47,8 +47,8 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   }finally{await f.close();}
  });
  if(kind==='postgres')test('PostgreSQL: eight slow requests across two services finish beyond the old eight-second queue limit',{timeout:35_000},async()=>{
-  let active=0,peak=0,calls=0;const f=await fixture(async(_r,delta)=>{
-   calls++;active++;peak=Math.max(peak,active);await delay(12_000);delta(ready);active--;return {inputTokens:50,outputTokens:50};
+  let active=0,peak=0,calls=0;const f=await fixture(async(_r,delta,_signal,onProgress)=>{
+   onProgress?.();calls++;active++;peak=Math.max(peak,active);await delay(12_000);delta(ready);active--;return {inputTokens:50,outputTokens:50};
   });
   try{
    const responses=await Promise.all(f.users.map((_,i)=>f.call(i)));
@@ -94,7 +94,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    if(++calls===1)await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));
    delta(ready);return {inputTokens:50,outputTokens:50};
   });
-  try{const recovered=await f.call();assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.match(recovered.body,/\[DONE\]/);assert.equal(calls,2);
+  try{const started=performance.now(),recovered=await f.call();assert.ok(performance.now()-started<11000);assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.match(recovered.body,/\[DONE\]/);assert.equal(calls,2);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.windows[0]!.held,0);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
   }finally{await f.close();}

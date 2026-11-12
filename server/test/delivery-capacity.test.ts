@@ -52,7 +52,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
  });
  test(`${kind}: 24 active users complete three rounds including a concentrated slow wave`,{timeout:45_000},async()=>{
   let active=0,peak=0,calls=0;const latencies:number[]=[];
-  const f=await fixture(async(_r,delta)=>{calls++;active++;peak=Math.max(peak,active);await delay(kind==='postgres'?12000:150);delta(ready);active--;return {inputTokens:50,outputTokens:50};});
+  const f=await fixture(async(_r,delta,_signal,onProgress)=>{onProgress?.();calls++;active++;peak=Math.max(peak,active);await delay(kind==='postgres'?12000:150);delta(ready);active--;return {inputTokens:50,outputTokens:50};});
   try{
    for(let round=0;round<3;round++)await Promise.all(f.users.map(async(_,i)=>{
     const start=performance.now(),r=await f.call(i);latencies.push(performance.now()-start);
@@ -100,6 +100,21 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
    assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
   }finally{await closeAdapter();await f.close();}
+ });
+
+ if(kind==='sqlite')test('SQLite: live heartbeats preserve a healthy slow answer without a second model call',{timeout:12000},async()=>{
+  let calls=0;const f=await fixture(async(_r,delta,_signal,onProgress)=>{
+   calls++;onProgress?.();await delay(9000);delta(ready);return {inputTokens:50,outputTokens:50};
+  });
+  try{
+   await f.apps[0]!.listen({host:'127.0.0.1',port:0});const address=f.apps[0]!.server.address() as {port:number};
+   const started=performance.now(),r=await fetch(`http://127.0.0.1:${address.port}/v1/captures`,{method:'POST',headers:{authorization:'Bearer '+f.users[0]!.token,'content-type':'application/json'},body:JSON.stringify({capture_id:randomUUID(),delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'})});
+   assert.equal(r.status,200);assert.ok(performance.now()-started<2000);
+   const body=await r.text();assert.match(body,/: connected/);assert.match(body,/: keepalive/);
+   assert.match(body,/FINAL: B/);assert.match(body,/"questions_charged":1/);assert.match(body,/\[DONE\]/);
+   assert.equal(calls,1);assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
+  }finally{await f.close();}
  });
 
  if(kind==='postgres')test('PostgreSQL: killed worker is automatically replaced once, unknown cost retained and late owner fenced',{timeout:25000},async()=>{

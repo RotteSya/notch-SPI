@@ -293,7 +293,7 @@ for(const [kind,make] of implementations) {
 }
 
 
-test('thinking progress survives the 20-second startup deadline without leaking reasoning', {timeout:30_000}, async()=>{
+test('healthy thinking still completes after 20 seconds without startup retry or leaked reasoning', {timeout:30_000}, async()=>{
   const f=await fixture(()=>new MemoryStore());
   try {
     f.provider.stream=async(_request,delta,signal,onProgress)=>{

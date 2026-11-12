@@ -397,11 +397,75 @@ final class OfficialCaptureRunTests: XCTestCase {
         fixture.account.value = .init(token: "dev_isolated_test", baseURL: try await server.start())
         return server
     }
-    private func finish(_ task: Task<Void, Never>, fixture: CaptureRunFixture) async {
+    private func finish(_ task: Task<Void, Never>, fixture: CaptureRunFixture, timeout: TimeInterval = 5) async {
         let done = expectation(description: "capture handler completed")
         Task { await task.value; done.fulfill() }
-        await fulfillment(of: [done], timeout: 5)
+        await fulfillment(of: [done], timeout: timeout)
         XCTAssertEqual(fixture.completions.count, 1)
+    }
+
+    func testSilentInitialConnectionRecoversCompleteAnswerWithinTenSeconds() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" { return } // Connected peer stops sending any bytes.
+            XCTAssertTrue(request.path.hasSuffix("/delivery"))
+            reply.respond(body: payload)
+        }
+        defer { server.stop(); f.cleanup() }
+        let started = Date()
+        await finish(try f.run(), fixture: f, timeout: 12)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+    }
+
+    func testHealthySlowAnswerWithHeartbeatsIsNotRestartedOrCutShort() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        var sender: Task<Void, Never>?
+        let server = try await connect(f) { request, reply in
+            XCTAssertEqual(request.method, "POST")
+            reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+            sender = Task {
+                for _ in 0..<10 {
+                    reply.send(Data(": keepalive\n\n".utf8))
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    if Task.isCancelled { return }
+                }
+                reply.send(payload); reply.finish()
+            }
+        }
+        defer { sender?.cancel(); server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f, timeout: 13)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.requests.count, 1)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+    }
+
+    func testRecoveryCannotBeExtendedIndefinitelyByDrippingHeartbeatBytes() async throws {
+        let f = try CaptureRunFixture()
+        var sender: Task<Void, Never>?
+        let server = try await connect(f) { request, reply in
+            reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+            if request.method == "POST" { reply.send(Data(": connected\n\n".utf8)); reply.truncated(); return }
+            XCTAssertTrue(request.path.hasSuffix("/delivery"))
+            sender = Task {
+                while !Task.isCancelled {
+                    reply.send(Data(": keepalive\n\n".utf8))
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+            }
+        }
+        defer { sender?.cancel(); server.stop(); f.cleanup() }
+        let started = Date()
+        await finish(try f.run(), fixture: f, timeout: 15)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 14)
+        XCTAssertEqual(f.completions.first?.0, false)
+        XCTAssertEqual(f.requests.count, 2, "A final status lookup must not add another ten seconds")
+        XCTAssertTrue(f.receipts.isEmpty)
+        XCTAssertTrue(f.deltas.isEmpty)
     }
 
     func testCompleteRunReadsFilesBuildsBoundRequestAndDeliversExactlyOnceOnMainThread() async throws {

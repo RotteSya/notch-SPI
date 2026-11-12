@@ -512,6 +512,8 @@ export class CaptureService {
     const recoverable=!!capture.deliveryOwner;
     let heartbeatRunning=false,lostLease=false;
     const heartbeat=recoverable?setInterval(()=>{
+      // Transport liveness is separate from model progress and never becomes answer text.
+      if(reply.raw.headersSent&&!reply.raw.destroyed&&!reply.raw.writableEnded) {try{reply.raw.write(': keepalive\n\n');}catch{}}
       if(heartbeatRunning)return;heartbeatRunning=true;
       store.billing.heartbeat(token,capture.captureId,capture.deliveryOwner!).then(ok=>{if(!ok){lostLease=true;abort.abort();}},()=>{lostLease=true;abort.abort();}).finally(()=>{heartbeatRunning=false;});
     },2000):undefined;
@@ -523,6 +525,7 @@ export class CaptureService {
       if(abort.signal.aborted)return;
       reply.hijack();
       const rawSend=beginSSE(reply);
+      if(recoverable)reply.raw.write(': connected\n\n');
       send=event=>{if(!reply.raw.destroyed&&!reply.raw.writableEnded){try{rawSend(event);}catch{/* peer closed */}}};
       if(abort.signal.aborted)return;
       const deadline=new Promise<never>((_,reject)=>{
@@ -541,7 +544,7 @@ export class CaptureService {
             const attemptAbort=new AbortController(),signal=AbortSignal.any([abort.signal,attemptAbort.signal]);
             const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
               timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
-            },20_000);});
+            },8_000);});
             try{return await Promise.race([provider.stream(observedInput,chunk=>{
             if(!accepting||signal.aborted) return;
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
