@@ -738,7 +738,7 @@ enum OfficialAPI {
             } catch { streamError = cannotConnectMessage }
             // A broken connection has a short, actual wall-clock recovery budget.
             // Healthy model progress is handled on the original stream, not this timer.
-            let recoveryDeadline = Date().addingTimeInterval(12)
+            let recoveryDeadline = Date().addingTimeInterval(20)
             if !completed, operation == "solve", supportsDelivery != false {
                 do {
                     if let replay = try await recoverDelivery(request: request, id: id, account: account,
@@ -803,7 +803,7 @@ enum OfficialAPI {
             defer { group.cancelAll() }
             group.addTask {
                 var resumed = false, resumeNext = false
-                for _ in 0..<48 {
+                for _ in 0..<80 {
                     try Task.checkCancellation()
                     guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
                     let isResume = resumeNext
@@ -856,7 +856,7 @@ enum OfficialAPI {
                 return nil
             }
             group.addTask {
-                try await Task.sleep(nanoseconds: 12_000_000_000)
+                try await Task.sleep(nanoseconds: 20_000_000_000)
                 throw URLError(.timedOut)
             }
             return try await group.next() ?? nil
