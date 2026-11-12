@@ -1,6 +1,6 @@
 # NotchSPI 工程交接
 
-> 本工作树为 3.1 build 31 Intel 本地候选，基于 main `603c97f`。此候选的平台为 x86_64 / macOS 12.3+；`scripts/package.sh` 只构建 x86_64，并记录相应平台。下文主线 arm64/macOS 14+ 描述不适用于此候选的构建目标。旧系统截图、动画、登录项及手动更新保护单独适配，其余功能与当前主线同源。测试保留 TestNetworkIsolation。未完成 Intel 实机验收，不得将编译或当前 arm64 主机上的测试写成 Intel 运行通过。3.0 冻结源码与安装包未修改。
+> 本工作树为 3.1.1 build 33 Intel 可靠性候选，基于已发布 Intel `304419b`，仅回移官方查题传输恢复与对应测试。此候选的平台为 x86_64 / macOS 12.3+；`scripts/package.sh` 只构建 x86_64，并记录相应平台。下文主线 arm64/macOS 14+ 描述不适用于此候选的构建目标。旧系统截图、动画、登录项及更新保护保留。测试保留 TestNetworkIsolation。未完成 Intel 实机验收，不得将编译或当前 arm64 主机上的测试写成 Intel 运行通过。历史冻结源码与安装包未修改。
 
 本文件是唯一工程入口；README、AGENTS、CLAUDE 只负责导航。命令均在包含本文件、`Package.swift`、`VERSION.env` 的 Git 根目录运行，用 `git rev-parse --show-toplevel` 确认。
 代码、锁文件和测试定义行为与数值；领域文档说明契约。日期证据不代表当前线上状态，也不授予新的安装、付款、迁移、推送或部署权限。默认只做本地工作。

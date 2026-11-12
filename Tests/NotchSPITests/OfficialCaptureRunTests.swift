@@ -279,6 +279,118 @@ final class OfficialCaptureRunTests: XCTestCase {
         XCTAssertEqual(f.requests.filter { $0.method == "GET" }.count, 1)
     }
 
+    func testAutomaticDeliveryRecoveryAppendsOnlyMissingTextAndNeverReposts() async throws {
+        for phase in ["delta", "receipt"] {
+            let f = try CaptureRunFixture()
+            var posts = 0, deliveries = 0
+            let full = try f.answer()
+            let partial = phase == "delta" ? try f.frame(["type": "delta", "text": "中文 🔎 "]) : try f.answer(done: false)
+            let server = try await connect(f) { request, reply in
+                if request.method == "POST" {
+                    posts += 1
+                    let body = try! JSONSerialization.jsonObject(with: request.body) as! [String: Any]
+                    XCTAssertEqual(body["delivery_recovery_v1"] as? Bool, true)
+                    reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                    reply.send(partial); reply.truncated()
+                } else {
+                    deliveries += 1
+                    XCTAssertTrue(request.path.hasSuffix("/delivery"))
+                    reply.respond(body: full)
+                }
+            }
+            await finish(try f.run(), fixture: f)
+            XCTAssertEqual(posts, 1); XCTAssertEqual(deliveries, 1)
+            XCTAssertEqual(f.completions.first?.0, true)
+            XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+            XCTAssertEqual(Set(f.receipts.compactMap { $0.balanceVersion }), ["3"])
+            XCTAssertEqual(f.receipts.count, 1)
+            server.stop(); f.cleanup()
+        }
+    }
+
+    func testExpiredWorkerResumesOriginalSubmissionOnceAndDeliversAnswer() async throws {
+        for missing in [false, true] {
+            let f = try CaptureRunFixture(), full = try f.answer()
+            var posts = 0
+            var original = Data()
+            let server = try await connect(f) { request, reply in
+                if request.method == "POST" {
+                    posts += 1
+                    if posts == 1 {
+                        original = request.body
+                        reply.start(extra: "X-NotchSPI-Delivery: v1\r\n")
+                        reply.send(Data(": connected\n\n".utf8)); reply.truncated()
+                    } else {
+                        XCTAssertEqual(request.body, original)
+                        reply.respond(body: full)
+                    }
+                } else {
+                    XCTAssertTrue(request.path.hasSuffix("/delivery"))
+                    reply.respond(status: missing ? 404 : 202, type: "application/json",
+                                  body: Data("{\"can_resume\":true}".utf8))
+                }
+            }
+            defer { server.stop(); f.cleanup() }
+            await finish(try f.run(), fixture: f)
+            XCTAssertEqual(posts, 2); XCTAssertEqual(f.requests.count, 3)
+            XCTAssertEqual(f.completions.first?.0, true)
+            XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+            XCTAssertEqual(f.receipts.count, 1)
+        }
+    }
+
+    func testTransientHTTPFailureBeforeStreamingRecoversSameSubmissionOnce() async throws {
+        for status in [500, 502, 503, 504] {
+            let f = try CaptureRunFixture(), full = try f.answer()
+            var posts = 0, original = Data()
+            let server = try await connect(f) { request, reply in
+                if request.method == "POST" {
+                    posts += 1
+                    if posts == 1 {
+                        original = request.body
+                        reply.respond(status: status, type: "application/json", body: Data("{}".utf8))
+                    } else {
+                        XCTAssertEqual(request.body, original)
+                        reply.respond(body: full)
+                    }
+                } else {
+                    XCTAssertTrue(request.path.hasSuffix("/delivery"))
+                    reply.start(status: 404, type: "application/json", extra: "X-NotchSPI-Delivery: v1\r\n")
+                    reply.send(Data("{}".utf8)); reply.finish()
+                }
+            }
+            await finish(try f.run(), fixture: f)
+            XCTAssertEqual(posts, 2); XCTAssertEqual(f.requests.count, 3)
+            XCTAssertEqual(f.completions.first?.0, true); XCTAssertEqual(f.receipts.count, 1)
+            server.stop(); f.cleanup()
+        }
+    }
+
+    func testExplicitBudgetFailureNeverTriggersAutomaticResubmission() async throws {
+        let f = try CaptureRunFixture()
+        let server = try await connect(f) { _, reply in
+            reply.respond(status: 503, type: "application/json", body: Data("{\"error\":{\"code\":\"budget_exceeded\",\"message\":\"budget\"}}".utf8))
+        }
+        defer { server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(f.requests.count, 1); XCTAssertEqual(f.completions.first?.0, false)
+        XCTAssertTrue(f.receipts.isEmpty)
+    }
+
+    func testTransientFailureOnLegacyServerDoesNotAssumeReplayCapability() async throws {
+        let f = try CaptureRunFixture()
+        var posts = 0
+        let server = try await connect(f) { request, reply in
+            if request.method == "POST" { posts += 1 }
+            reply.respond(status: request.method == "POST" ? 502 : 404,
+                          type: "application/json", body: Data("{}".utf8))
+        }
+        defer { server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(posts, 1); XCTAssertEqual(f.completions.first?.0, false)
+        XCTAssertTrue(f.receipts.isEmpty)
+    }
+
     private func connect(_ fixture: CaptureRunFixture,
         handler: @escaping @MainActor (CaptureHTTPRequest, CaptureHTTPReply) -> Void) async throws -> CaptureHTTPServer {
         let server = try CaptureHTTPServer { request, reply in fixture.requests.append(request); handler(request, reply) }
@@ -554,7 +666,7 @@ final class OfficialCaptureRunTests: XCTestCase {
             defer { server.stop(); f.cleanup() }
             await finish(try f.run(), fixture: f)
             XCTAssertTrue(f.settlements.isEmpty, variant); XCTAssertEqual(f.completions.first?.0, false, variant)
-            XCTAssertEqual(f.requests.map(\.method), ["POST", "GET"], variant)
+            XCTAssertEqual(f.requests.map(\.method), ["POST", "GET", "GET"], variant)
         }
     }
 

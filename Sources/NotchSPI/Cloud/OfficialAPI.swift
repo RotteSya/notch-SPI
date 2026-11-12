@@ -53,6 +53,13 @@ actor RegistrationGate {
 /// This file is used ONLY by the `.official` service channel — the custom-key and CLI paths
 /// (`APIKeyRunner`, `CLIRunner`) never touch it.
 enum OfficialAPI {
+    private final class DeliveryCancellation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var submitted = false, supported = true
+        func start() { lock.lock(); submitted = true; lock.unlock() }
+        func negotiate(_ value: Bool) { lock.lock(); supported = value; lock.unlock() }
+        var shouldSend: Bool { lock.lock(); defer { lock.unlock() }; return submitted && supported }
+    }
 
     struct CaptureAccount: Equatable {
         let token: String
@@ -596,12 +603,14 @@ enum OfficialAPI {
         let id = captureID ?? UUID()
         let timing = OfficialTransportTiming.make(captureID: id)
         let operation = auxiliary?.operation ?? "solve"
+        let deliveryCancellation = DeliveryCancellation()
         let allowPurchased = Settings.shared.allowPurchasedCredits
         if !allowPurchased && operation == "solve" && accountState.value("spendingPolicySupported") as? Bool != true {
             DispatchQueue.main.async { onDone(false, L10n.t("当前服务尚未确认题包保护支持。请刷新账户后重试；本次未发起求解。", "パック保護を確認できません。アカウントを更新してください。", "Pack protection is not confirmed by this service. Refresh your account before trying again.")) }
             return nil
         }
         return Task.detached(priority: .userInitiated) {
+          await withTaskCancellationHandler {
             defer { timing?.mark(.streamFinished) }
             guard await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else {
                 await MainActor.run { onDone(false, cannotConnectMessage) }; return
@@ -635,9 +644,18 @@ enum OfficialAPI {
                 }
                 request.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: [.withoutEscapingSlashes])
             }
+            if operation == "solve", let data = request.httpBody,
+               var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                payload["delivery_recovery_v1"] = true
+                request.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: [.withoutEscapingSlashes])
+            }
             guard let body = request.httpBody, body.count <= OfficialCaptureMaterials.requestBodyLimit else {
                 await MainActor.run { onDone(false, captureTooLargeMessage) }; return
             }
+            let recoveryDeadline = Date().addingTimeInterval(105)
+            var deliveredText = ""
+            var deliveredUsage = false
+            var supportsDelivery: Bool? = nil
             var completed = false, sawContent = false
             var streamError: String?
             do {
@@ -645,6 +663,7 @@ enum OfficialAPI {
                 guard await MainActor.run(body: { environment.account() == account }) else { throw CancellationError() }
                 timing?.recordRequestContract(screenQuery: screenQuery != nil, resultProtocol: resultProtocol)
                 timing?.mark(.requestReady)
+                deliveryCancellation.start()
                 let (bytes, response) = try await environment.session.bytes(for: request, delegate: timing)
                 // AsyncBytes may return only with the first body bytes even when transport
                 // metrics show earlier responseStart. This legacy stage measures API delivery,
@@ -653,14 +672,33 @@ enum OfficialAPI {
                 defer { bytes.task.cancel() }
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
                 timing?.recordResponse(http)
+                supportsDelivery = http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1"
+                deliveryCancellation.negotiate(supportsDelivery == true)
                 if http.statusCode != 200 {
                     var body = Data()
                     for try await byte in bytes { try Task.checkCancellation(); body.append(byte); if body.count > 65_536 { break } }
                     bytes.task.cancel()
+                    let failure = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any]
+                    let failureCode = failure?["code"] as? String
+                    if operation == "solve", [500, 502, 503, 504].contains(http.statusCode),
+                       failureCode == nil || failureCode == "internal" {
+                        // A proxy/DB failure can happen before SSE negotiation. First read
+                        // the original capture; resend only after the recovery endpoint
+                        // confirms support. Budget and entitlement rejections never retry.
+                        if supportsDelivery != true { supportsDelivery = nil }
+                        throw URLError(.networkConnectionLost)
+                    }
                     if http.statusCode == 401 {
                         await MainActor.run {
                             if !Task.isCancelled, environment.account() == account { environment.rejectCredential() }
                         }
+                    }
+                    if http.statusCode == 409, supportsDelivery == true,
+                       let payload = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                       let error = payload["error"] as? [String: Any],
+                       let code = error["code"] as? String,
+                       ["capture_in_progress", "capture_already_finalized"].contains(code) {
+                        throw URLError(.networkConnectionLost)
                     }
                     if http.statusCode == 409,
                        await MainActor.run(body: { !Task.isCancelled && environment.account() == account }),
@@ -677,6 +715,8 @@ enum OfficialAPI {
                 let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id, screenQuery: screenQuery != nil,
                                                                        operation: operation) { event in
                     timing?.mark(.firstEvent)
+                    if case .delta(let text) = event { deliveredText += text }
+                    if case .usage = event { deliveredUsage = true }
                     try await MainActor.run {
                         try Task.checkCancellation()
                         guard environment.account() == account else { throw CancellationError() }
@@ -696,6 +736,78 @@ enum OfficialAPI {
                 completed = true; sawContent = outcome.hasContent
                 streamError = outcome.serviceError.map { localizedMessage(code: $0.code, fallback: $0.message) }
             } catch { streamError = cannotConnectMessage }
+            if !completed, operation == "solve", supportsDelivery != false {
+                // Replay never invokes the model. Decode a complete, authenticated receipt
+                // before appending only the missing suffix; preserve the original capture ID.
+                var resumeNext = false, resumed = false
+                for poll in 0..<60 {
+                    guard Date() < recoveryDeadline,
+                          await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else { break }
+                    var recovery = URLRequest(url: endpointURL(base: base, path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))
+                    let isResume = resumeNext
+                    resumeNext = false
+                    recovery.timeoutInterval = min(5, max(0.1, recoveryDeadline.timeIntervalSinceNow))
+                    recovery.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    do {
+                        let bytes: URLSession.AsyncBytes
+                        let response: URLResponse
+                        if isResume {
+                            request.timeoutInterval = min(90, max(0.1, recoveryDeadline.timeIntervalSinceNow))
+                            (bytes, response) = try await environment.session.bytes(for: request)
+                        } else {
+                            (bytes, response) = try await environment.session.bytes(for: recovery)
+                        }
+                        defer { bytes.task.cancel() }
+                        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                        if http.statusCode == 200 {
+                            guard http.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/event-stream") == true else { break }
+                            var replay = ""
+                            var receipt: OfficialUsageReceipt?
+                            let outcome = try await OfficialStreamDecoder.consumeBuffered(bytes, captureID: id,
+                                screenQuery: screenQuery != nil, operation: operation) { event in
+                                switch event {
+                                case .delta(let text): replay += text
+                                case .usage(let value): receipt = value
+                                case .error, .done: break
+                                }
+                            }
+                            guard outcome.serviceError == nil, let receipt, replay.hasPrefix(deliveredText) else { break }
+                            let suffix = String(replay.dropFirst(deliveredText.count))
+                            let needsReceipt = !deliveredUsage
+                            try await MainActor.run {
+                                try Task.checkCancellation()
+                                guard environment.account() == account else { throw CancellationError() }
+                                if !suffix.isEmpty { onDelta(suffix) }
+                                if needsReceipt { environment.receiveUsage(receipt); onUsage?(receipt) }
+                            }
+                            completed = true; sawContent = outcome.hasContent; streamError = nil
+                            break
+                        }
+                        if http.statusCode == 202 {
+                            var data = Data()
+                            for try await byte in bytes { data.append(byte); if data.count > 16384 { break } }
+                            if let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                               value["can_resume"] as? Bool == true, !resumed {
+                                resumeNext = true; resumed = true
+                            }
+                        } else if http.statusCode == 404, !resumed,
+                                  supportsDelivery == true || http.value(forHTTPHeaderField: "X-NotchSPI-Delivery") == "v1" {
+                            // The first transport may have failed before admission. Same ID
+                            // makes the single resend safe even if the original arrives late.
+                            resumeNext = true; resumed = true
+                        } else if isResume, http.statusCode != 200 {
+                            // The single resend was rejected. Do not turn an exhausted
+                            // budget or unavailable entitlement into a pretend wait loop.
+                            var data = Data()
+                            for try await byte in bytes { data.append(byte); if data.count > 16384 { break } }
+                            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                            let code = (value?["error"] as? [String: Any])?["code"] as? String
+                            if let code, !["internal", "capture_in_progress", "capture_already_finalized"].contains(code) { break }
+                        } else if ![409, 429, 500, 502, 503, 504].contains(http.statusCode) { break }
+                    } catch { if Task.isCancelled { break } }
+                    if poll < 59 { try? await Task.sleep(nanoseconds: 500_000_000) }
+                }
+            }
             if !completed, await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) {
                 if let status = await captureStatus(id, base: base, token: token, operation: operation, session: environment.session), status.isTerminal,
                    await MainActor.run(body: {
@@ -715,6 +827,17 @@ enum OfficialAPI {
             await MainActor.run {
                 onDone(delivered && environment.account() == account && !Task.isCancelled, message)
             }
+          } onCancel: {
+            guard operation == "solve", deliveryCancellation.shouldSend else { return }
+            Task.detached {
+                var cancel = URLRequest(url: endpointURL(base: base, path: "v1/captures/" + id.uuidString.lowercased() + "/cancel"))
+                cancel.httpMethod = "POST"; cancel.timeoutInterval = 3
+                cancel.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let cancellationSession = URLSession(configuration: .ephemeral)
+                defer { cancellationSession.invalidateAndCancel() }
+                _ = try? await cancellationSession.data(for: cancel)
+            }
+          }
         }
     }
 
