@@ -216,6 +216,20 @@ final class OfficialCaptureRunTests: XCTestCase {
         XCTAssertTrue(restarted.pending(account: account).isEmpty)
     }
 
+    func testUnavailableRestartJournalDoesNotFailNormalAnswer() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        let blockedDirectory = f.root.appendingPathComponent("not-a-directory")
+        try Data("occupied".utf8).write(to: blockedDirectory)
+        f.journal = PendingCaptureStore(directory: blockedDirectory)
+        let server = try await connect(f) { _, reply in reply.respond(body: payload) }
+        defer { server.stop(); f.cleanup() }
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(f.completions.first?.0, true)
+        XCTAssertEqual(f.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertEqual(f.receipts.count, 1)
+        XCTAssertEqual(f.deltas.joined(), "中文 🔎 FINAL: B")
+    }
+
     func testExpiredPendingCaptureOnlyReadsCachedAnswerAndNeverStartsAnotherModel() async throws {
         let f=try CaptureRunFixture(), payload=try f.answer()
         let server=try await connect(f) { request, reply in
