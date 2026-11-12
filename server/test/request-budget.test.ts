@@ -93,7 +93,7 @@ for(const kind of ['memory','sqlite'] as const){
       assert.ok(f.sent[2]!.task.includes('B'));assert.equal(f.sent[2]!.maxTokens,8192);
       assert.ok(f.sent.every(x=>x.images[0]!.base64===png));
       assert.equal((await f.store.getAccount(f.token))?.totalQuestions,1);
-      const dup=await f.post('/v1/captures',b);assert.equal(dup.statusCode,409);assert.equal(f.quotes.length,3);
+      const dup=await f.post('/v1/captures',b);assert.equal(dup.statusCode,200);assert.match(dup.body,/FINAL: B/);assert.equal(f.quotes.length,3);
     }finally{await f.close();}
   });
   test(`${kind}: legacy direct requests use the same reservation path; client prices are ignored`,async()=>{

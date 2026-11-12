@@ -121,8 +121,8 @@ for (const kind of ['memory', 'sqlite'] as const) {
       const status=await updated.inject({url:`/v1/captures/${parent.capture_id}/status`,headers:f.headers});
       assert.equal(status.json().can_recover,false);assert.equal(status.json().questions_charged,1);
       const duplicate=await updated.inject({method:'POST',url:'/v1/captures',headers:f.headers,payload:parent});
-      assert.equal(duplicate.statusCode,409);assert.equal(duplicate.json().settlement.can_recover,false);
-      assert.equal(duplicate.json().settlement.questions_charged,1);assert.equal(calls,1);
+      assert.equal(duplicate.statusCode,200);assert.equal(usage(duplicate.payload).explanation_available,false);
+      assert.equal(usage(duplicate.payload).questions_charged,1);assert.equal(calls,1);
       const samePolicy=await f.post(url,payload);
       assert.equal(samePolicy.statusCode,200);assert.equal(usage(samePolicy.payload).questions_charged,0);
       assert.equal(calls,2);assert.equal((await f.store.billing.capture(f.token,childID))?.configRevision,'original-policy');
@@ -162,9 +162,13 @@ for (const kind of ['memory', 'sqlite'] as const) {
         assert.equal(status.json().usable_result, charged === 1);
         assert.deepEqual(status.json().account_totals, usage(response.payload).account_totals);
         const duplicate = await f.post('/v1/captures', body);
-        assert.equal(duplicate.statusCode, 409);
-        assert.equal(duplicate.json().error.code, 'capture_already_finalized');
-        assert.deepEqual(duplicate.json().settlement.account_totals, usage(response.payload).account_totals);
+        if(charged){
+          assert.equal(duplicate.statusCode,200);assert.match(duplicate.payload,/\[DONE\]/);
+          assert.deepEqual(usage(duplicate.payload).account_totals,usage(response.payload).account_totals);
+        }else{
+          assert.equal(duplicate.statusCode,409);assert.equal(duplicate.json().error.code,'capture_already_finalized');
+          assert.deepEqual(duplicate.json().settlement.account_totals,usage(response.payload).account_totals);
+        }
         assert.equal(calls, 1);
         assert.equal((await f.store.billing.attempts(f.token)).length, 1);
         assert.equal((await f.store.billing.quota(f.token))?.heldQuestions, 0);

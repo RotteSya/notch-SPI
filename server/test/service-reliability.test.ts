@@ -64,7 +64,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    const id=randomUUID(),r=await f.call(0,id);assert.match(r.body,/"questions_charged":1/);assert.equal(calls,2);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.provisional.length,1);assert.equal(b.provisional[0]!.booked,1_000_000);
    assert.equal((await f.store.billing.attempts(f.users[0]!.token)).length,2);
-   const duplicate=await f.call(0,id);assert.equal(duplicate.statusCode,409);assert.equal(calls,2);
+   const duplicate=await f.call(0,id);assert.equal(duplicate.statusCode,200);assert.match(duplicate.body,/FINAL: B/);assert.match(duplicate.body,/\[DONE\]/);assert.equal(calls,2);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1_001_000);
   }finally{await f.close();}
  });

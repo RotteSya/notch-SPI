@@ -351,7 +351,7 @@ export class CaptureService {
       &&!!previous.deliveryOwner&&(previous.workerAliveUntil??Infinity)<Date.now()&&(previous.deliveryAttempts??2)<2&&Date.parse(previous.expiresAt)>Date.now();
     if(resuming&&previous.workerAttemptId)await store.billing.releaseCapacity(token,previous.workerAttemptId);
     if(previous&&!resuming) {
-      if(previous.requestHmac===requestHmac&&previous.sealedAnswer&&body.delivery_recovery_v1===true)return this.replay(reply,token,previous);
+      if(previous.requestHmac===requestHmac&&previous.sealedAnswer)return this.replay(reply,token,previous);
       const code=previous.requestHmac!==requestHmac?'idempotency_conflict':previous.settlementStatus==='held'?'capture_in_progress':'capture_already_finalized';
       reply.header('X-NotchSPI-Delivery','v1').code(409).send({error:{code,message:'请查询原请求状态'},status_path:`/v1/captures/${captureId}/status`,
         ...(code==='idempotency_conflict'?{}:{settlement:this.currentSnapshot(previous,(await store.billing.accountSnapshot(token))!)})}); return;
