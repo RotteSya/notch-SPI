@@ -2,6 +2,17 @@ import Foundation
 
 /// Local, capturable practice material. It follows the guide's language and never contains an answer.
 enum OnboardingPractice {
+    static var answerChunks: [String] {
+        let explanation = L10n.t(
+            "平均速度 = 路程 ÷ 时间。\n\n120 千米 ÷ 2 小时 = 60 千米/小时。\n\n",
+            "平均の速さ = 距離 ÷ 時間。\n\n120 km ÷ 2時間 = 60 km/h。\n\n",
+            "Average speed = distance ÷ time.\n\n120 km ÷ 2 hours = 60 km/h.\n\n")
+        let characters = Array(explanation)
+        return stride(from: 0, to: characters.count, by: 6).map {
+            String(characters[$0..<min($0 + 6, characters.count)])
+        } + ["FINAL: B. 60 km/h"]
+    }
+
     static func write(multiple: Bool) throws -> URL {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(multiple ? "NotchSPI-Multiple-Practice.html" : "NotchSPI-Practice.html")
         try html(multiple: multiple).write(to: file, atomically: true, encoding: .utf8)

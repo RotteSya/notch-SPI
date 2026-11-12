@@ -367,7 +367,9 @@ final class NotchView: NSView {
                                 && (model.status == .error || !model.captureFeedback.isEmpty || model.resultState == .retake),
                               practiceFailed: model.onboardingPracticeFailed, screenshotCount: model.screenshots.count,
                               capturing: model.screenshotCapturing, previewing: model.screenshotPreviewing, multiple: model.onboardingMultiple,
-                              trial: model.onboardingTrialState, trialExpiration: model.onboardingTrialExpiration)
+                              trial: model.onboardingTrialState, trialExpiration: model.onboardingTrialExpiration,
+                              failureMessage: step == .permission ? model.captureFeedback : model.resultState == .retake ? nil
+                                : (!model.captureFeedback.isEmpty ? model.captureFeedback : model.statusText))
         }
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = model.onboardingStep != nil }
         let tint = ghostTint()

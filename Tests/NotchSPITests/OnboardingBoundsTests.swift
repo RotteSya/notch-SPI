@@ -21,7 +21,7 @@ final class OnboardingBoundsTests: XCTestCase {
             view.update(step: .permission, granted: false, denied: true, failed: false)
             view.layoutSubtreeIfNeeded()
             let fields = (view.subviews + view.subviews.flatMap(\.subviews)).compactMap { $0 as? NSTextField }
-            let detail = try XCTUnwrap(fields.first { $0.stringValue.contains("Study application") })
+            let detail = try XCTUnwrap(fields.first { $0.stringValue.contains("允许权限后") || $0.stringValue.contains("許可後に") || $0.stringValue.contains("After permission") })
             let measurement = NSTextField(wrappingLabelWithString: detail.stringValue)
             measurement.font = detail.font; measurement.maximumNumberOfLines = 0
             let needed = ceil(measurement.sizeThatFits(NSSize(width: detail.frame.width, height: 10000)).height)

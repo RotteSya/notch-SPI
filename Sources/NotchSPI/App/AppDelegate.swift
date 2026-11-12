@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        controller?.resumeHiddenOnboardingPermission()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         let designArguments = CommandLine.arguments

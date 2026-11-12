@@ -260,11 +260,20 @@ final class CaptureFlowStabilityTests: XCTestCase {
                     try await waitFor { controller.model.screenshots.count == count && !controller.model.screenshotCapturing }
                 }
                 controller.qaSubmitScreenshotRound()
-                try await waitFor { gate.callbacks.count == 1 }
-                gate.finish(0)
+                if guiding {
+                    for _ in 0..<400 where controller.model.onboardingStep != .success {
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
+                    XCTAssertEqual(controller.model.onboardingStep, .success)
+                    XCTAssertTrue(gate.callbacks.isEmpty)
+                    XCTAssertEqual(controller.model.statusText, L10n.statusDone)
+                    XCTAssertTrue(controller.model.answer.contains("FINAL: B. 60 km/h"))
+                } else {
+                    try await waitFor { gate.callbacks.count == 1 }
+                    gate.finish(0)
+                    XCTAssertTrue(controller.model.answer.contains("FINAL: A"))
+                }
                 XCTAssertEqual(controller.model.statusText.contains(L10n.statusContextAttached), !guiding)
-                if guiding { XCTAssertEqual(controller.model.statusText, L10n.statusDone) }
-                XCTAssertTrue(controller.model.answer.contains("FINAL: A"))
             }
         }
     }

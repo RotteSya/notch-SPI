@@ -100,7 +100,7 @@ final class UXOptimizationTests: XCTestCase {
         XCTAssertFalse(store.undoRemoval())
     }
 
-    @MainActor func testOnboardingExplainsTargetUsesCurrentShortcutAndHasChangeTargetAction() throws {
+    @MainActor func testOnboardingPermissionIsCompactAndCaptureUsesCurrentShortcut() throws {
         let language = L10n.setting, combo = Settings.shared.captureCombo
         let target = Settings.shared.captureTargetBundleID, name = Settings.shared.captureTargetName
         defer { L10n.setting = language; Settings.shared.captureCombo = combo; Settings.shared.captureTargetBundleID = target; Settings.shared.captureTargetName = name }
@@ -111,13 +111,10 @@ final class UXOptimizationTests: XCTestCase {
         view.update(step: .permission, granted: false, denied: true, failed: false)
         view.layoutSubtreeIfNeeded()
         let text = collect(view)
-        XCTAssertTrue(text.contains("练习应用")); XCTAssertTrue(text.contains("未运行")); XCTAssertTrue(text.contains("题图"))
-        let fields = descendants(view).compactMap { $0 as? NSTextField }
-        let scope = try XCTUnwrap(fields.first { $0.stringValue.contains("截图目标") })
-        let recovery = try XCTUnwrap(fields.first { $0.stringValue.contains("在系统设置中允许") })
-        XCTAssertFalse(scope.frame.intersects(recovery.frame), "Permission scope and recovery must remain readable")
-        XCTAssertLessThanOrEqual(recovery.frame.maxY, view.bounds.maxY)
-        XCTAssertTrue(view.subviews.contains { ($0 as? GlowButton)?.title == "更改截图目标" && !$0.isHidden })
+        XCTAssertTrue(text.contains("允许权限后将会强制退出，静候片刻将自动重新打开。"))
+        XCTAssertFalse(text.contains("截图目标"))
+        XCTAssertFalse(text.contains("题图将发送"))
+        XCTAssertFalse(view.subviews.contains { ($0 as? GlowButton)?.title == "更改截图目标" && !$0.isHidden })
         view.update(step: .capture, granted: true, denied: false, failed: false)
         XCTAssertTrue(view.primary.isHidden)
         XCTAssertEqual(view.shortcutPrompt.displayString, Settings.displayString(Settings.shared.captureCombo))
