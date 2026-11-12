@@ -1,4 +1,6 @@
 import {test} from 'node:test';
+import {serveRequest} from '../src/request-lifecycle.ts';
+import {createServer} from 'node:http';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -71,19 +73,23 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
  });
 
  test(`${kind}: real HTTP disconnect completes the same durable answer and recovers across instances`,async()=>{
-  let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta('FINAL: ');await delay(250);delta(ready.slice(7));return {inputTokens:50,outputTokens:50};});
+  let calls=0,invocationFinished=false;let closeAdapter=async()=>{};const f=await fixture(async(_r,delta)=>{calls++;delta('FINAL: ');await delay(250);delta(ready.slice(7));return {inputTokens:50,outputTokens:50};});
   try{
-   await f.apps[0]!.listen({host:'127.0.0.1',port:0});const address=f.apps[0]!.server.address() as {port:number};
+   await f.apps[0]!.ready();
+   const adapter=createServer((req,res)=>{void serveRequest(req,res,()=>{f.apps[0]!.server.emit('request',req,res);}).finally(()=>{invocationFinished=true;});});
+   await new Promise<void>(resolve=>adapter.listen(0,'127.0.0.1',resolve));
+   const address=adapter.address() as {port:number};
+   closeAdapter=()=>new Promise<void>(resolve=>adapter.close(()=>resolve()));
    const id=randomUUID(),auth={authorization:'Bearer '+f.users[0]!.token};
    const r=await fetch(`http://127.0.0.1:${address.port}/v1/captures`,{method:'POST',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'})});
-   const reader=r.body!.getReader();await reader.read();await reader.cancel();
+   await r.body!.cancel();await delay(25);assert.equal(invocationFinished,false,'Invocation must stay alive after the transport disconnect');
    let replay;for(let i=0;i<20;i++){
     replay=await f.apps.at(-1)!.inject({url:`/v1/captures/${id}/delivery`,headers:auth});if(replay.statusCode!==202)break;await delay(50);
    }
-   assert.equal(replay!.statusCode,200);assert.match(replay!.body,/FINAL: B/);assert.match(replay!.body,/\[DONE\]/);assert.equal(calls,1);
+   assert.equal(replay!.statusCode,200);assert.match(replay!.body,/FINAL: B/);assert.match(replay!.body,/\[DONE\]/);assert.equal(calls,1);assert.equal(invocationFinished,true);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
    assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
-  }finally{await f.close();}
+  }finally{await closeAdapter();await f.close();}
  });
 
  if(kind==='postgres')test('PostgreSQL: killed worker is automatically replaced once, unknown cost retained and late owner fenced',{timeout:25000},async()=>{

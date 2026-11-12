@@ -1,4 +1,5 @@
 import {CAPACITY} from './capacity-policy.ts';
+import {trackRequestWork} from './request-lifecycle.ts';
 import {sealAnswer,openAnswer,settleReliably} from './answer-delivery.ts';
 import {reserveWithWait} from './admission-wait.ts';
 import {TransientProviderError} from './providers/types.ts';
@@ -115,7 +116,10 @@ export class CaptureService {
   async solve(req:FastifyRequest,reply:FastifyReply):Promise<void> {
     return this.connected(req,reply,abort=>this.solveConnected(req,reply,abort));
   }
-  private async connected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {
+  private connected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {
+    return trackRequestWork(req.raw,()=>this.runConnected(req,reply,run));
+  }
+  private async runConnected(req:FastifyRequest,reply:FastifyReply,run:(abort:AbortController)=>Promise<void>):Promise<void> {
     const timing=process.env.NSPI_SERVER_LATENCY_TRACE==='1'?new CaptureTiming():undefined;
     if(timing)this.timings.set(req,timing);
     const abort=new AbortController(),closed=()=>{
