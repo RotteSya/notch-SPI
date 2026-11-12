@@ -2,7 +2,7 @@ import {SQLAdmin} from './admin-sql.ts';
 import {SQLPlus} from './plus-sql.ts';
 import {SQLPurchaseSessions} from './purchase-session-sql.ts';
 import {SQLQuotaMigration} from './quota-migration.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { SQLBilling, BILLING_SCHEMA, type Transaction } from './billing-sql.ts';
 import { SQLPaymentLedger, PAYMENT_SCHEMA } from './payment-ledger-sql.ts';
 import { SQLObservationStore, OBSERVATION_SCHEMA } from './observation-sql.ts';
@@ -260,9 +260,19 @@ export class PostgresStore implements Store {
   private ensureSchema(): Promise<void> {
     if (!this.ready) {
       this.ready = this.tx(async client => {
-        // Serialize expand DDL across cold instances in this schema; retry the whole transaction.
+        const revision=createHash('sha256').update(SCHEMA).digest('hex');
+        const applied=async()=>{
+          if(!(await client.query("SELECT to_regclass('app_schema_revisions') AS present")).rows[0]?.present)return false;
+          return (await client.query('SELECT revision FROM app_schema_revisions WHERE revision=$1',[revision])).rowCount===1;
+        };
+        // A cold instance only reads an already applied revision. Repeating ALTER TABLE
+        // on every instance can queue an exclusive lock behind otherwise harmless readers.
+        if(await applied())return;
         await client.query("SELECT pg_advisory_xact_lock(7342291, hashtext(current_schema()))");
+        if(await applied())return;
         await client.query(SCHEMA);
+        await client.query('CREATE TABLE IF NOT EXISTS app_schema_revisions(revision TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+        await client.query('INSERT INTO app_schema_revisions(revision) VALUES($1) ON CONFLICT DO NOTHING',[revision]);
       }).then(
         () => undefined,
         (err: unknown) => {
@@ -524,7 +534,9 @@ export class PostgresStore implements Store {
     const connectionError = () => { discard = true; };
     client.on('error', connectionError);
     try {
-      await client.query('BEGIN');
+      // Transaction-pool endpoints can ignore startup session parameters. Set the
+      // deadlines inside every transaction so abandoned locks expire at the database.
+      await client.query("BEGIN; SET LOCAL statement_timeout='15s'; SET LOCAL lock_timeout='5s'; SET LOCAL idle_in_transaction_session_timeout='15s'");
       const result = await fn(client);
       await client.query('COMMIT');
       return result;

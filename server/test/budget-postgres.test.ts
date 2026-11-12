@@ -1,4 +1,5 @@
 import {test,after} from 'node:test';
+import {setTimeout as delay} from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import pg from 'pg';
@@ -111,6 +112,23 @@ else {
       const w=await window(scope);assert.equal(Number(w.spent_micros),400);assert.equal(Number(w.held_micros),0);
       for(let i=0;i<4;i++)assert.equal((await stores[i%2]!.getAccount(users[i]!.token))!.balanceQuestions,30);
     }
+  });
+  test('PostgreSQL: cold instances reuse the applied schema without requesting table DDL locks',async()=>{
+    const reader=await inspect.connect(),cold=new PostgresStore(url.toString(),false);
+    try{await reader.query('BEGIN');await reader.query('SELECT id FROM devices LIMIT 1');
+      const start=Date.now();const account=await cold.getAccount(users[0]!.token);
+      assert.equal(account!.balanceQuestions,30);assert.ok(Date.now()-start<2000);
+    }finally{await reader.query('ROLLBACK');reader.release();await cold.close();}
+  });
+  test('PostgreSQL: transaction-local deadlines release an abandoned worker lock without clearing its ledger',{timeout:22000},async()=>{
+    const run=(stores[0] as unknown as {tx:<T>(f:(c:pg.PoolClient)=>Promise<T>)=>Promise<T>}).tx.bind(stores[0]);
+    await assert.rejects(run(async client=>{
+      const settings=(await client.query("SELECT current_setting('statement_timeout') AS statement,current_setting('lock_timeout') AS lock,current_setting('idle_in_transaction_session_timeout') AS idle")).rows[0];
+      assert.deepEqual(settings,{statement:'15s',lock:'5s',idle:'15s'});
+      await client.query('SELECT id FROM devices WHERE id=$1 FOR UPDATE',[users[0]!.id]);
+      await delay(16000);await client.query('SELECT 1');
+    }));
+    assert.equal((await stores[1]!.getAccount(users[0]!.token))!.balanceQuestions,30);
   });
   test('PostgreSQL: idle backend loss is handled and the pool replaces its connection',async()=>{
     const pool=(stores[0] as unknown as {pool:pg.Pool}).pool;
