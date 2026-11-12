@@ -6,6 +6,18 @@ import XCTest
 /// Real controller intake/composition, with only image acquisition and provider transport gated.
 /// No model, user credentials, system sleep or real network configuration is involved.
 final class CaptureFlowStabilityTests: XCTestCase {
+    @MainActor
+    func testOfficialTransportOwnsDeadlineWithoutEarlierUIWatchdogCancellation() {
+        let controller=NotchController(activateServices:false)
+        controller.qaBeginRun()
+        XCTAssertTrue(controller.qaRunWatchdogActive)
+        XCTAssertTrue(controller.qaRequestRunning)
+        controller.officialTransportSubmitted()
+        XCTAssertFalse(controller.qaRunWatchdogActive)
+        XCTAssertTrue(controller.qaRequestRunning, "Submitting transfers deadline ownership; it must not end or cancel the request")
+        controller.prepareForTermination()
+    }
+
     @MainActor private func withController(questionNow: @escaping () -> Date = Date.init,
                                           recentQuestions: RecentQuestionStore? = nil,
                                           _ body: (NotchController, StreamGate) async throws -> Void) async throws {
