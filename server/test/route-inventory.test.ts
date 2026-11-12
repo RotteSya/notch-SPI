@@ -182,8 +182,8 @@ test('client route failures come from the checker on a source copy', () => {
     {
       name: 'capture status method',
       file: 'Sources/NotchSPI/Cloud/OfficialAPI.swift',
-      from: 'let path = "v1/captures/" + id.uuidString.lowercased() + "/status"\n        var request = URLRequest(url: endpointURL(base: base ?? baseURL, path: path))\n        request.timeoutInterval = 10',
-      to: 'let path = "v1/captures/" + id.uuidString.lowercased() + "/status"\n        var request = URLRequest(url: endpointURL(base: base ?? baseURL, path: path))\n        request.httpMethod = "DELETE"\n        request.timeoutInterval = 10',
+      from: 'let path = "v1/captures/" + id.uuidString.lowercased() + "/status"\n        var request = URLRequest(url: endpointURL(base: base ?? baseURL, path: path))',
+      to: 'let path = "v1/captures/" + id.uuidString.lowercased() + "/status"\n        var request = URLRequest(url: endpointURL(base: base ?? baseURL, path: path))\n        request.httpMethod = "DELETE"',
       expectFile: 'OfficialAPI.swift',
       expectContract: 'DELETE /v1/captures/:id/status',
     },
@@ -456,5 +456,51 @@ test('a conditional assignment of a listed POST method is still reported', () =>
     assert.deepEqual(contractKeys(copy), baseline);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+
+test('conditional request initialization preserves branch methods and paths', () => {
+  const source = (branch: string, mutation = '') => `
+    func send() async {
+      var original = URLRequest(url: endpointURL(base: baseURL, path: "v1/captures"))
+      original.httpMethod = "POST"
+      var request: URLRequest = resume ? original : ${branch}
+      ${mutation}
+      let result = try await session.bytes(for: request)
+    }
+  `;
+  const delivery = 'URLRequest(url: endpointURL(base: baseURL, path: "v1/captures/" + id.uuidString.lowercased() + "/delivery"))';
+  const scan = (branch: string, mutation = '') => scanClientSources([{file: 'Example.swift', source: source(branch, mutation)}]);
+  const keys = (result: ReturnType<typeof scan>) => result.calls.map(call => `${call.method} ${call.path}`).sort();
+  const result = scan(delivery);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(keys(result), ['GET /v1/captures/:id/delivery', 'POST /v1/captures']);
+  // A mutation must affect both possible requests, without changing the original alias.
+  const changed = scan(delivery, 'request.httpMethod = "DELETE"');
+  assert.deepEqual(changed.errors, []);
+  assert.deepEqual(keys(changed), ['DELETE /v1/captures', 'DELETE /v1/captures/:id/delivery']);
+  const missing = scan('URLRequest(url: endpointURL(base: baseURL, path: "v1/missing"))');
+  assert.ok(keys(missing).includes('GET /v1/missing'));
+  for (const branch of ['unknownRequest', 'URLRequest(url: unknownURL)', 'nested ? original : original']) {
+    assert.ok(scan(branch).errors.length > 0, branch);
+  }
+  const alias = scan(delivery, 'request.httpMethod = "DELETE"\n let originalResult = try await session.bytes(for: original)');
+  assert.ok(keys(alias).includes('POST /v1/captures'));
+});
+
+test('conditional request initialization accepts a parameter on either side and checks the concrete branch', () => {
+  for (const expression of [
+    'resume ? original : URLRequest(url: endpointURL(base: baseURL, path: "v1/missing"))',
+    'resume ? URLRequest(url: endpointURL(base: baseURL, path: "v1/missing")) : original',
+  ]) {
+    const result = scanClientSources([{file: 'Example.swift', source: `
+      func replay(request original: URLRequest) async {
+        let request = ${expression}
+        let result = try await session.bytes(for: request)
+      }
+    `}]);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.calls, [{file: 'Example.swift', method: 'GET', path: '/v1/missing'}]);
   }
 });

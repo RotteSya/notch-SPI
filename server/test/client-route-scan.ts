@@ -468,7 +468,7 @@ function analyze(file: string, fn: Fn, fileEnv: Map<string, string[]>, sigs: Sig
   const calls: ClientCall[] = [];
   const errors: string[] = [];
   const env = new Map(fileEnv);
-  const requests = new Map<string, State>();
+  const requests = new Map<string, State[]>();
   const requestParams = parameterNames(fn.signature, 'URLRequest');
   const urlParams = parameterNames(fn.signature, 'URL');
   const base = path.basename(file);
@@ -480,24 +480,26 @@ function analyze(file: string, fn: Fn, fileEnv: Map<string, string[]>, sigs: Sig
 
   const emitState = (name: string) => {
     if (requestParams.has(name)) return;
-    const state = requests.get(name);
-    if (!state) {
+    const states = requests.get(name);
+    if (!states) {
       fail(`${name} is sent but its URLRequest was not parsed`);
       return;
     }
-    if (state.parametric) return;
-    if (state.bad) {
-      fail(state.bad);
-      return;
-    }
-    if (!state.paths || state.paths.length === 0) {
-      fail(`${name} request path could not be parsed`);
-      return;
-    }
-    for (const route of state.paths) {
-      for (const method of methodNames(state.method)) {
-        calls.push({ file: base, method, path: route });
-        if (state.conditional) fail(`${name}.httpMethod conditional assignment includes ${method} ${route}`);
+    for (const state of states) {
+      if (state.bad) {
+        fail(state.bad);
+        continue;
+      }
+      if (state.parametric) continue;
+      if (!state.paths || state.paths.length === 0) {
+        fail(`${name} request path could not be parsed`);
+        continue;
+      }
+      for (const route of state.paths) {
+        for (const method of methodNames(state.method)) {
+          calls.push({ file: base, method, path: route });
+          if (state.conditional) fail(`${name}.httpMethod conditional assignment includes ${method} ${route}`);
+        }
       }
     }
   };
@@ -509,27 +511,29 @@ function analyze(file: string, fn: Fn, fileEnv: Map<string, string[]>, sigs: Sig
         : 'httpMethod assignment could not be parsed');
       return;
     }
-    const state = requests.get(assignment.name);
-    if (!state) {
+    const states = requests.get(assignment.name);
+    if (!states) {
       fail(`${assignment.name}.httpMethod is not attached to a parsed URLRequest`);
       return;
     }
-    const parsed = parseMethod(assignment.rhs);
-    if (assignment.conditional) {
-      if (!parsed) {
-        state.bad = `${assignment.name}.httpMethod conditional assignment could not be parsed`;
+    for (const state of states) {
+      const parsed = parseMethod(assignment.rhs);
+      if (assignment.conditional) {
+        if (!parsed) {
+          state.bad = `${assignment.name}.httpMethod conditional assignment could not be parsed`;
+          state.conditional = true;
+          continue;
+        }
+        if (state.bad) continue;
+        state.method = mergeMethod(state.method, parsed);
         state.conditional = true;
-        return;
+        continue;
       }
-      if (state.bad) return;
-      state.method = mergeMethod(state.method, parsed);
-      state.conditional = true;
-      return;
+      if (parsed) {
+        state.method = parsed;
+        state.conditional = false;
+      } else state.bad = `${assignment.name}.httpMethod could not be parsed`;
     }
-    if (parsed) {
-      state.method = parsed;
-      state.conditional = false;
-    } else state.bad = `${assignment.name}.httpMethod could not be parsed`;
   };
 
   const control: Control = { blocks: [], pending: null, directive: 0 };
@@ -539,42 +543,61 @@ function analyze(file: string, fn: Fn, fileEnv: Map<string, string[]>, sigs: Sig
     const urlSet = statement.match(/^(\w+)\.url\s*=\s*([\s\S]+)$/);
     if (urlSet?.[1] && urlSet[2] !== undefined) {
       const paths = urlSet[2].includes('endpointURL(') ? endpointPaths(urlSet[2], env) : resolveExpr(urlSet[2], env)?.map(canon) ?? null;
-      const state = requests.get(urlSet[1]);
-      if (!state) {
+      const states = requests.get(urlSet[1]);
+      if (!states) {
         fail(`${urlSet[1]}.url is not attached to a parsed URLRequest`);
         continue;
       }
-      if (paths) state.paths = paths;
-      else state.bad = `${urlSet[1]} request path could not be parsed`;
+      for (const state of states) {
+        if (paths) { state.paths = paths; state.parametric = false; }
+        else state.bad = `${urlSet[1]} request path could not be parsed`;
+      }
       continue;
     }
-    if (statement.includes('URLRequest(')) {
-      const assigned = statement.match(/^(?:(?:var|let)\s+)?([A-Za-z_]\w*)(?:\s*:\s*[A-Za-z_][\w.]*(?:\?)?)?\s*=\s*URLRequest\b/);
-      if (!assigned?.[1]) {
-        fail('URLRequest construction could not be parsed');
+    const initializer = statement.match(/^(?:(?:var|let)\s+)?([A-Za-z_]\w*)(?:\s*:\s*[A-Za-z_][\w.]*(?:\?)?)?\s*=\s*([\s\S]+)$/);
+    const resolveRequest = (expression: string): State[] | null => {
+      const text = expression.trim();
+      // Only accept a fully understood conditional; never silently drop a branch.
+      const conditional = splitTop(text, '?');
+      if (conditional.length === 2) {
+        const branches = splitTop(conditional[1] ?? '', ':');
+        if (branches.length !== 2) return null;
+        const left = resolveRequest(branches[0] ?? ''), right = resolveRequest(branches[1] ?? '');
+        return left && right ? [...left, ...right] : null;
+      }
+      if (conditional.length !== 1) return null;
+      if (/^URLRequest\(/.test(text)) {
+        const resolved = requestPaths(text, env, urlParams);
+        return [{method: 'GET', paths: resolved.paths, parametric: resolved.parametric,
+          bad: resolved.parametric || resolved.paths ? null : 'request path could not be parsed', conditional: false}];
+      }
+      if (requests.has(text)) return requests.get(text)!.map(state => ({...state}));
+      // Passed-in requests are checked at their construction sites, as with direct sends.
+      if (requestParams.has(text)) return [{method: 'GET', paths: null, parametric: true, bad: null, conditional: false}];
+      return null;
+    };
+    if (initializer?.[1] && initializer[2]) {
+      const states = resolveRequest(initializer[2]);
+      if (states) {
+        requests.set(initializer[1], states);
         continue;
       }
-      const resolved = requestPaths(statement, env, urlParams);
-      requests.set(assigned[1], {
-        method: 'GET',
-        paths: resolved.paths,
-        parametric: resolved.parametric,
-        bad: resolved.parametric || resolved.paths ? null : `${assigned[1]} request path could not be parsed`,
-        conditional: false,
-      });
+    }
+    if (statement.includes('URLRequest(')) {
+      fail('URLRequest construction could not be parsed');
       continue;
     }
     const factory = statement.match(/^(?:(?:var|let)\s+)?(\w+)\s*=\s*(?:Self\.)?(\w+)\s*\(/);
     if (factory?.[1] && factory[2]) {
       const sig = lookup(sigs, file, factory[2]);
       if (sig) {
-        requests.set(factory[1], {
+        requests.set(factory[1], [{
           method: sig.method,
           paths: sig.paths,
           bad: null,
           parametric: sig.paths === null,
           conditional: false,
-        });
+        }]);
         continue;
       }
     }
@@ -607,7 +630,8 @@ function analyze(file: string, fn: Fn, fileEnv: Map<string, string[]>, sigs: Sig
   const returned = fn.body.match(/\breturn\s+(\w+)/);
   const returnedName = returned?.[1];
   if (returnedName && requests.has(returnedName)) {
-    const state = requests.get(returnedName);
+    const states = requests.get(returnedName);
+    const state = states?.length === 1 ? states[0] : undefined;
     if (state && !state.bad) sig = { file, name: fn.name, method: state.method, paths: state.parametric ? null : state.paths };
   }
   if (emit) {

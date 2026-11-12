@@ -16,6 +16,8 @@ import {pngBase64 as png} from './helpers/images.ts';
 const pricing=JSON.stringify([{model:'openai:gpt-6-astra',input_micros_per_million_tokens:25000000,output_micros_per_million_tokens:75000000},
   {model:'openai:gpt-6-astra:fast',input_micros_per_million_tokens:50000000,output_micros_per_million_tokens:150000000}]);
 const answer='FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
+// Transport callbacks are runtime hooks, not part of the serialized model request.
+const requestSnapshot = ({onHeaders, onUsage, onTiming, ...data}: CaptureRequest) => structuredClone(data);
 const body=()=>({capture_id:randomUUID(),result_protocol:'objective_v1',response_contract:'screen_query_v1',operation:'solve',
   images_base64:[png],image_media_type:'image/png',profile_id:'reading_practice',profile_version:SCREEN_QUERY_VERSION,
   prompt_version:SCREEN_QUERY_VERSION,ui_language:'en',scope:{target_count:1,question_image_index:0,rect:{x:0,y:0,width:1,height:1}}});
@@ -63,8 +65,13 @@ for(const kind of ['memory','sqlite'] as const){
     let failEstimate=false,unknownUsage=false,excessInput=false,wait:(()=>Promise<void>)|undefined;
     const provider:Provider={name:'openai',async estimateReservation(req,p){
       if(failEstimate)throw new Error('private details');
-      quotes.push(structuredClone(req));return astra.estimateReservation(req,p);
-    },async stream(req,delta){sent.push(structuredClone(req));if(wait)await wait();
+      quotes.push(requestSnapshot(req));return astra.estimateReservation(req,p);
+    },async stream(req,delta){
+      if (!req.purpose) {
+        assert.equal(typeof req.onHeaders, 'function');
+        assert.equal(typeof req.onUsage, 'function');
+      }
+      sent.push(requestSnapshot(req));if(wait)await wait();
       if(unknownUsage)throw new Error('missing final usage');
       delta(req.purpose==='explain'?JSON.stringify({consistent:true,explanation:'B follows from the full passage.'}):answer);
       return {inputTokens:excessInput?10000:100,outputTokens:20,finishReason:'stop'};
