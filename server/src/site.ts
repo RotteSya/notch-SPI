@@ -63,7 +63,7 @@ const S = {
       {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
         "q": "截图会被保存吗？",
-        "a": "默认服务端不保存图片和答案正文。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
+        "a": "服务端不保存题图；为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
       },
       {
         "q": "答题失败会扣题吗？",
@@ -86,7 +86,7 @@ const S = {
     "privacyTitle": "隐私与数据使用",
     "privacyBody": [
       "服务记录包含随机设备凭证、额度、请求结算、模型用量与成本及付款核对信息。正常注册无需姓名和邮箱。",
-      "官方服务将截图和必要指令交给 AI 服务方（{{AI_PROVIDER}}）处理，实际模型按服务配置选择。图片、题目和答案正文不写入默认数据库或日志。自带 Key 时由你选择的服务处理。",
+      "官方服务将截图和必要指令交给 AI 服务方（{{AI_PROVIDER}}）处理，实际模型按服务配置选择。图片和题目不写入默认数据库或日志。为自动恢复断线，答案在数据库中加密缓存 15 分钟，到期不可读取并由定期任务清理；答案正文不进入日志。自带 Key 时由你选择的服务处理。",
       "支付由 Stripe 处理，我方不接收卡片信息。支持邮件及你主动提交的材料按相应用途单独处理。",
       "自愿的可靠性数据可在设置关闭。关闭即删除待发送队列并停止行为上传，必要的计费记录仍保留。详细事件保留 90 天，本机待发送队列最多 7 天。",
       "来源选择可在首次引导跳过。你选择的来源与本机注册关联，不根据题目场景或界面语言推断来源。",
@@ -109,7 +109,7 @@ const S = {
       {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
         "q": "スクリーンショットは保存されますか？",
-        "a": "サーバーは通常、画像・回答を保存しません。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
+        "a": "サーバーに問題画像は保存しません。切断から自動復旧するため、回答を15分間暗号化してキャッシュします。期限後は取得できず、定期処理で削除します。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
       },
       {
         "q": "回答に失敗したら？",
@@ -132,7 +132,7 @@ const S = {
     "privacyTitle": "プライバシーとデータ利用",
     "privacyBody": [
       "サービス記録にはランダムなデバイス認証情報、残高、依頼の精算、モデル利用量・費用、決済の照合情報を含みます。通常の登録に氏名やメールは不要です。",
-      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像・問題・回答本文は通常のデータベースやログに保存しません。自分のキーでは選択したサービスを利用します。",
+      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像と問題は通常のデータベースやログに保存しません。切断からの自動復旧用に回答を15分間暗号化して保存し、期限後は取得できず定期処理で削除します。回答本文はログに記録しません。自分のキーでは選択したサービスを利用します。",
       "決済は Stripe が処理し、カード情報は当方には届きません。問い合わせメールや自発的に提供された材料は、その用途に沿って別に扱います。",
       "任意の信頼性データは設定で停止できます。停止時に未送信キューを消去し、行動記録を送りません。必要な請求記録は残ります。詳細イベントは 90 日、本機の送信待ちは最大 7 日です。",
       "入口の回答は任意で、初回案内からスキップできます。選んだ回答はデバイス登録と関連付けます。問題の種類や表示言語から入口を推測しません。",
@@ -155,7 +155,7 @@ const S = {
       {"q": "How do I upgrade to 3.0?", "a": "From 2.17, download the Mac version and install it manually once. From 3.0 onward, updates can download, verify, install and restart within the app."},
       {
         "q": "Are my screenshots stored?",
-        "a": "The server does not store images or answers by default. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
+        "a": "The server does not store question images. Answers are encrypted and cached for 15 minutes to recover interrupted delivery, then become unavailable and are removed by scheduled cleanup. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
       },
       {
         "q": "What if an answer fails?",
@@ -178,7 +178,7 @@ const S = {
     "privacyTitle": "Privacy and data use",
     "privacyBody": [
       "Service records include a random device credential, balance, request settlement, model usage and costs, and payment reconciliation. Normal registration needs no name or email.",
-      "The official service processes screenshots and necessary instructions through the AI provider ({{AI_PROVIDER}}); actual model routing follows service configuration. Images, questions and answer text are excluded from the default database and logs. Your own key uses the service you select.",
+      "The official service processes screenshots and necessary instructions through the AI provider ({{AI_PROVIDER}}); actual model routing follows service configuration. Images and questions are excluded from the default database and logs. Answers are encrypted in a 15-minute delivery cache, then become unavailable and are removed by scheduled cleanup. Answer text is not logged. Your own key uses the service you select.",
       "Stripe processes payments; card details do not reach us. Support emails and material you voluntarily submit are handled separately for their stated purpose.",
       "Optional reliability sharing can be disabled in Settings. Disabling clears queued events and stops behavioral uploads; necessary billing records remain. Detailed events are kept for 90 days, with up to 7 days queued locally.",
       "The onboarding source question is optional. A selected answer is linked to this device registration. Question profile and display language do not determine your source.",

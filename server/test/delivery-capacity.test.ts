@@ -9,7 +9,7 @@ import {MemoryStore} from '../src/db-memory.ts';
 import {SqliteStore} from '../src/db-sqlite.ts';
 import type {Store} from '../src/db.ts';
 import {StubPaymentProvider} from '../src/payments.ts';
-import {type Provider} from '../src/providers/types.ts';
+import {TransientProviderError,type Provider} from '../src/providers/types.ts';
 import {pngBase64} from './helpers/images.ts';
 const ready='FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
 for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgres']:[])]){
@@ -110,6 +110,14 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    const a=await f.store.billing.attempts(token),b=await f.store.billing.inspectBudget();assert.equal(a.length,2);assert.equal(a.filter(x=>x.status==='unknown').length,1);
    assert.equal(b.windows[0]!.spent,1001000);assert.equal(b.windows[0]!.held,0);assert.equal((await f.store.billing.quota(token))!.balanceQuestions,99);
   }finally{child.kill('SIGKILL');await f.close();}
+ });
+ test(`${kind}: a broken upstream stream before durable delivery recovers without mixing answers`,async()=>{
+  let calls=0;const f=await fixture(async(_r,delta)=>{if(++calls===1){delta('unfinished wrong answer');throw new TransientProviderError(0,1);}delta(ready);return {inputTokens:50,outputTokens:50};});
+  try{const id=randomUUID(),r=await f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers:{authorization:'Bearer '+f.users[0]!.token},payload:{capture_id:id,delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}});
+   assert.equal(r.statusCode,200);assert.match(r.body,/FINAL: B/);assert.doesNotMatch(r.body,/unfinished wrong answer/);assert.match(r.body,/\[DONE\]/);assert.equal(calls,2);
+   assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+   assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1001000);
+  }finally{await f.close();}
  });
  test(`${kind}: explicit cancellation arriving before submission prevents late model invocation`,async()=>{
   let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});

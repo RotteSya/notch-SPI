@@ -25,3 +25,5 @@
 
 /dist-intel-compat/
 /dist-qa-intel-compat/
+
+/.vercel/

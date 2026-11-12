@@ -550,7 +550,7 @@ export class CaptureService {
           try{return await invoke();}catch(error){
             // Retry only an explicit transient HTTP rejection, before visible output.
             // Unknown first-call cost stays fully booked; retry owns a separate hold.
-            if(!(error instanceof TransientProviderError)||error.retryAfterMs>3000||deliveredChars||abort.signal.aborted)throw error;
+            if(!(error instanceof TransientProviderError)||error.retryAfterMs>3000||(deliveredChars&&!recoverable)||abort.signal.aborted)throw error;
             await store.billing.releaseCapacity(token,attemptId);
             await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null},null);
             await delay(error.retryAfterMs,undefined,{signal:abort.signal});
@@ -562,6 +562,7 @@ export class CaptureService {
             abort.signal.throwIfAborted();
             admission.providerStarted=true;
             req.log.info({captureId:capture.captureId,status:error.status,attempt:2},'bounded upstream retry');
+            if(recoverable){raw='';deliveredChars=0;}
             return invoke();
           }
         };

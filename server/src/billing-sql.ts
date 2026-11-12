@@ -172,6 +172,7 @@ function* syncPlus(d: Row): Transaction<void> {
   const id=Number(d.id), now=new Date().toISOString();
   const row=(yield* query('SELECT * FROM plus_subscriptions WHERE device_id=?',id))[0];
   const paid=row?plusRow(row):null;
+  const manual=(yield* query('SELECT * FROM admin_plus_entitlements WHERE device_id=?',id))[0];
   const plan=withCompensation(plusEntitlement(paid,manual?{startsAt:String(manual.starts_at),expiresAt:String(manual.expires_at),version:Number(manual.version)}:null),yield* readCompensation(id),
     compensationPaidPeriod(paid));
   if (!plan.active) {
@@ -427,9 +428,10 @@ export class SQLBilling implements BillingStore {
     return this.run((function* (): Transaction<number> {
       const expired = yield* query("SELECT device_id,client_capture_id FROM capture_requests WHERE state='held' AND lease_expires_at<=? ORDER BY device_id LIMIT 100", now);
       const stale = yield* query("SELECT attempt_id,device_id FROM attempt_budget_holds WHERE state='held' AND created_at<=? ORDER BY device_id LIMIT 100",new Date(Date.parse(now)-BUDGET_POLICY.orphanMs).toISOString());
-      // Acquire every device before any shared guard, consistently ordered across reapers.
+      const delivered=yield* query(`SELECT request_id,device_id,metadata FROM capture_requests WHERE state<>'held' AND created_at<=? AND metadata LIKE '%"sealedAnswer":%' LIMIT 100`,new Date(Date.parse(now)-900000).toISOString());
+      // Acquire every device before any shared guard, including ciphertext cleanup.
       // Otherwise a batch could hold a guard while waiting for another request's device.
-      for (const id of [...new Set([...expired,...stale].map(r=>Number(r.device_id)))].sort((a,b)=>a-b)) {
+      for (const id of [...new Set([...expired,...stale,...delivered].map(r=>Number(r.device_id)))].sort((a,b)=>a-b)) {
         yield* query('SELECT id FROM devices WHERE id=? FOR UPDATE',id);
       }
       if(expired.length||stale.length)yield* query('SELECT scope,currency FROM request_budget_guards ORDER BY scope,currency FOR UPDATE');
@@ -459,7 +461,6 @@ export class SQLBilling implements BillingStore {
         if (d) yield* settleBudgetForDevice(d,String(row.attempt_id),null);
       }
       // Remove expired ciphertext independently of shared budget guards.
-      const delivered=yield* query(`SELECT request_id,metadata FROM capture_requests WHERE state<>'held' AND created_at<=? AND metadata LIKE '%"sealedAnswer":%' LIMIT 100`,new Date(Date.parse(now)-900000).toISOString());
       for(const row of delivered){const c=JSON.parse(String(row.metadata)) as CaptureRecord;delete c.sealedAnswer;c.answerHmac=null;
         yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=? AND metadata=?',JSON.stringify(c),String(row.request_id),String(row.metadata));}
       yield* query('DELETE FROM capture_cancellations WHERE expires<?',Date.parse(now));

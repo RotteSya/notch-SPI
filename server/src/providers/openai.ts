@@ -160,7 +160,11 @@ export class OpenAIProvider implements Provider {
         usage.inputTokens = typeof ev.usage.prompt_tokens === 'number' ? ev.usage.prompt_tokens : usage.inputTokens;
         usage.outputTokens = typeof ev.usage.completion_tokens === 'number' ? ev.usage.completion_tokens : usage.outputTokens;
       }
-    }, tier ? () => { done = true; } : undefined);
+    }, tier ? () => { done = true; } : undefined).catch(error=>{
+      if(error instanceof TypeError&&!signal.aborted)throw new TransientProviderError(0,250);
+      throw error;
+    });
+    if(tier&&!done&&!signal.aborted)throw new TransientProviderError(0,250);
     if (tier && (!done || !tierConfirmed || usage.inputTokens === null || !usage.finishReason)) {
       throw new Error('Incomplete Astra response');
     }
