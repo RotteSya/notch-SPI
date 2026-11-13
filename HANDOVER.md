@@ -121,21 +121,19 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 
 ### 已完成的治理与检查修复
 
-- 起点 `7366e21`：修正 3.0/3.1.5 导航，清理4类编译缓存1,593个文件；回归重建后主树 `.build` 净减788,724 KiB（约770.2 MiB）。代码、发布包、兼容路径和原有草稿保留。证据 `output/governance-20261113/`；原文及初始清单可从本地提交 `b2bc7aa` 回读。
-- `b2bc7aa` 修复嵌套工作树导致快照器 EISDIR、bootstrap 夹具复制失败：快照递归绑定独立仓库 HEAD/dirty/内容摘要，夹具只复制所属源码；未知目录/特殊文件报错。完整 verify 报告 `output/verification/20261113T055241Z-54572/results.json` 的 automation_passed/source_consistent 为 true；治理92项、Desktop/server/scheduler、Swift661项（8跳过、0失败）、arm64 Release及资源检查通过。Postgres未配置跳过，硬件blocked，签名skipped。
-- `401cd05` 修复 delivery 误报：只区分同仓库已注册、精确根路径且不与已跟踪文件重叠的工作树。普通新文件、未暂存修改/删除、未注册仓库、失效注册、符号链接和依赖未交付材料的文档仍失败；未扩大忽略规则。定向25/25、quick治理95/95、提交后delivery通过，报告 `output/verification/20261113T060413Z-72573/results.json`。详细证据在 `output/nested-worktree-fix-20261113/`、`output/delivery-worktree-fix-20261113/`。
+缓存清理与嵌套工作树快照/夹具修复见b2bc7aa，delivery修复见401cd05。完整验证、后续quick及delivery通过；测试计数和Postgres/硬件/签名限制详见这两个提交与各轮output证据。未扩大忽略规则或降低检查标准。
 
 ### 旧 Intel 可靠性草稿退役
 
-`778e141` 记录移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346` 的祖先。五个草稿中 OfficialAPI及测试整个文件同时等于主线/正式Intel，VERSION.env和desktop生成版本等于正式Intel；HANDOVER仅首段不同，正式说明更完整。原文件及补丁保全后，定点restore并验证补丁可重新应用，再用非强制worktree remove退役；分支 `codex/intel-reliability-20261112` 保留。
+`778e141` 记录移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346` 的祖先。五个草稿中 OfficialAPI及测试整个文件同时等于主线/正式Intel，VERSION.env和desktop生成版本等于正式Intel；HANDOVER仅首段不同，正式说明更完整。原文件及补丁保全后，定点restore并验证补丁可重新应用，再用非强制worktree remove退役；分支后续已删除，来源仍在正式Intel历史中。
 
 保全目录 `output/intel-worktree-retirement-20261113/` 内：`inventory-before.json` 是文件SHA-256/权限/链接清单，`draft.patch`及`draft-files/`保全草稿，`payload/`原样保存旧树 `.build/`、`dist/`、`output/`，共7,098个普通文件。五个候选目录的十份DMG（每目录两份相同）及App摘要匹配manifest；五个候选的 hdiutil verify、codesign --verify --deep --strict 通过。原验收缺口不变，未声称Intel真机或升级通过。旧树与保全目录的分配空间差为32,272 KiB（约31.5 MiB，验收日志写入前），不算全盘可用空间增量。
 
-历史 recovery-safety/recovery-latency/reliability-remediation 等记录中的旧路径不改写：将旧根替换为保全目录 `payload/`，见 `path-map.json`。恢复前确认目标路径空缺、旧分支仍指向上述212f094；在Git根目录执行以下恢复步骤（不是当前操作）：
+历史 recovery-safety/recovery-latency/reliability-remediation 等记录中的旧路径不改写：将旧根替换为保全目录 `payload/`，见 `path-map.json`。恢复前确认目标路径及同名分支空缺、上述212f094仍可读取；在Git根目录执行以下恢复步骤（不是当前操作）：
 
 ```sh
 retirement="$PWD/output/intel-worktree-retirement-20261113"
-git worktree add tmp/intel-reliability-20261112 codex/intel-reliability-20261112
+git worktree add -b codex/intel-reliability-20261112 tmp/intel-reliability-20261112 212f094a308dcb93706aa45f38364ff7bbb60c14
 git -C tmp/intel-reliability-20261112 apply "$retirement/draft.patch"
 cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 ```
@@ -151,7 +149,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 | 工作树 | 分支 / HEAD | 本轮决定与依据 |
 | --- | --- | --- |
 | mac-release-3.1-20261108/apple-silicon | mac-3-1-candidate / 6e9bf1e | 已退役；源码被v3.1及v3.1.5覆盖，发布记录已闭环，证据保全。分支以 `git branch -d` 删除。 |
-| mac-release-3.1-20261108/intel | intel-auto-update / 304419b | 已退役；被正式Intel f1c9346包含，v3.1-intel-build31精确指向旧来源。分支和标签保留，未强制删分支。 |
+| mac-release-3.1-20261108/intel | intel-auto-update / 304419b | 已退役；被正式Intel f1c9346包含，v3.1-intel-build31精确指向旧来源。标签保留；分支后续已非强制删除。 |
 | release-3.0-execution/source | release-3-0 / 84d6870 | 保留：4个主线之外提交，涉及数据库恢复保护及原发布证据，尚无完整吸收证明。 |
 | release-3.1-execution/source | release-3-1 / dd3a45a | 保留：虽然已合并，但同目录 deploy.mjs读取source配置，acceptance.mjs直接导入source模块；不拆断历史执行链路。 |
 | release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 保留：v3.1.5精确来源及当前arm64发布/验收依据。 |
@@ -168,3 +166,12 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 本轮计量：工作树9→6（主树及5个保留树），本地分支15→13；迁移保全27,974个普通文件。三个旧树合计2,394,180 KiB，保全目录在最终日志前2,296,348 KiB，差值97,832 KiB（约95.5 MiB）；不是全盘空闲空间变化。
 
 本轮验收：quick全通过（治理95/95），起止摘要一致；报告 `output/verification/20261113T063327Z-22709/results.json`。delivery、文档引用、空白及保全复核通过；5个保留树状态不变。未改产品代码，未重跑硬件验收。
+
+
+### 其他分支复核
+
+基点f9ff0b5，证据 `output/remaining-branches-20261113/`。从正式Intel工作树用普通 `git branch -d` 删除三个已完全包含于f1c9346、无工作树的旧别名（均为codex/前缀）：intel-3-1-candidate（06183a5）、intel-auto-update（304419b）、intel-reliability-20261112（212f094）。标签及既有保全材料不变；恢复用 `git branch <原名> <branches-before.json中的完整HEAD>`。
+
+保留两个archive实验分支：预读代码和预算实现/测试尚未完全吸收。保留fix-math-resources-hover-ci：旧方案移除字体检查，主线0e7cfa4保留检查并修复路径，补丁不等价；保留objective-legacy-baseline：历史评测/评分材料尚未证明全部归入权威归档。五个非主工作树的既有独有提交、脚本依赖及正式来源用途不变。
+
+本地分支13→10，工作树仍6；工作树状态和其他引用不变。仅文档及本机证据变更，不改产品代码、不推送；验收见本次证据目录。
