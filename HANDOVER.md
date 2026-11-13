@@ -117,36 +117,21 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 
 ## 本地治理记录（2026-11-13）
 
-核对基点为 `7366e21372c9f0fda68451491f2b8ac775c9bac0`；本节是本机快照，不代表重新核验生产。主线原有状态仅 `?? tmp/`，Git 根目录为外层 NotchSPI 下的 `native/`。发布事实对照兼容账本、版本文件、服务端渠道配置及本机 `output/release-315-both-20261113/report.md`；最后一项为本机发布证据，不是克隆仓库的必备文件。
+以下是本机治理快照，不代替生产状态或硬件验收。权威入口仍是本文上方的构建、交付和兼容说明。清理证据在本机 output 下，未纳入 Git；迁移电脑时须一并保全，不能仅依靠克隆仓库恢复安装包。
 
-| 对象 | 决定、依据与恢复方式 |
-| --- | --- |
-| 本文件的版本和平台入口 | 修正仍以 3.0 为主要发布参照的说明，区分当前独立 Intel 维护与历史冻结版；旧文可从上述基点的 `HANDOVER.md` 恢复。 |
-| Swift debug ModuleCache；Xcode out 下 ModuleCache.noindex、CompilationCache.noindex、SDKStatCaches.noindex | 已逐文件记录摘要后清理；内容为 swiftmodule/pcm、编译缓存索引及 SDK stat cache。由现有 Swift/Xcode 工具链重新生成；不属于交付 manifest、签名包或验收日志。未删除 checkout、repositories、Products、dSYM 和打包 App。 |
-| 15 个本地分支、10 个注册工作树 | 全部保留。10 个非主线分支有主线之外的提交；其余候选来源/渠道工作树即使已合并也承担追溯用途。没有删除远端或本地引用。 |
-| `tmp/intel-reliability-20261112` | HEAD `212f094`，仍有 HANDOVER、OfficialAPI、OfficialCaptureRunTests、VERSION.env、desktop/generated/product.mjs 五个未提交修改，标注为 3.1.5 build 43；不得因版本号相同就认定等于已发布来源 `f1c9346`。这是清理初始状态；后续逐文件核验后已收口草稿并移除旧树，材料和恢复步骤见下方退役记录。 |
-| 发布、Windows 和外层旧副本 | 保留全部 output/dist 候选、签名包、安装升级证据及外层 release-worktrees 三份未注册副本；尚未证明没有独有文件或外部任务依赖。Intel 真机启动、截图、升级仍待验收。 |
+### 已完成的治理与检查修复
 
-本机审计证据位于 `output/governance-20261113/`：清理前状态、缓存逐文件摘要、原 Intel 补丁及交接备份。缓存回退指用原工具链重建，不承诺逐字节恢复缓存。未安装工具、修改全局环境、提交、推送或发布。
+- 起点 `7366e21`：修正 3.0/3.1.5 导航，清理4类编译缓存1,593个文件；回归重建后主树 `.build` 净减788,724 KiB（约770.2 MiB）。代码、发布包、兼容路径和原有草稿保留。证据 `output/governance-20261113/`；原文及初始清单可从本地提交 `b2bc7aa` 回读。
+- `b2bc7aa` 修复嵌套工作树导致快照器 EISDIR、bootstrap 夹具复制失败：快照递归绑定独立仓库 HEAD/dirty/内容摘要，夹具只复制所属源码；未知目录/特殊文件报错。完整 verify 报告 `output/verification/20261113T055241Z-54572/results.json` 的 automation_passed/source_consistent 为 true；治理92项、Desktop/server/scheduler、Swift661项（8跳过、0失败）、arm64 Release及资源检查通过。Postgres未配置跳过，硬件blocked，签名skipped。
+- `401cd05` 修复 delivery 误报：只区分同仓库已注册、精确根路径且不与已跟踪文件重叠的工作树。普通新文件、未暂存修改/删除、未注册仓库、失效注册、符号链接和依赖未交付材料的文档仍失败；未扩大忽略规则。定向25/25、quick治理95/95、提交后delivery通过，报告 `output/verification/20261113T060413Z-72573/results.json`。详细证据在 `output/nested-worktree-fix-20261113/`、`output/delivery-worktree-fix-20261113/`。
 
-清理前 `scripts/verify.sh --quick` 在 verification-report 的 sourceSnapshot 阶段报 EISDIR：Git 将未忽略的嵌套 Intel 工作树列为目录，快照器按文件读取。原日志在 `output/governance-baseline-20261113.log`。该失败是本轮清理前基线，后续修复见下段；未扩大忽略规则。独立检查结果与清理后计量记录在本次证据目录。
+### 旧 Intel 可靠性草稿退役
 
-待后续决策：其他历史发布副本及对应分支何时停止保留。旧 Intel 未提交候选已按下方退役记录收口。操作前需补齐逐文件差异、任务依赖与恢复来源，再明确目标清单；本轮不提出强删、远端删除或生产变更。
+`778e141` 记录移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346` 的祖先。五个草稿中 OfficialAPI及测试整个文件同时等于主线/正式Intel，VERSION.env和desktop生成版本等于正式Intel；HANDOVER仅首段不同，正式说明更完整。原文件及补丁保全后，定点restore并验证补丁可重新应用，再用非强制worktree remove退役；分支 `codex/intel-reliability-20261112` 保留。
 
+保全目录 `output/intel-worktree-retirement-20261113/` 内：`inventory-before.json` 是文件SHA-256/权限/链接清单，`draft.patch`及`draft-files/`保全草稿，`payload/`原样保存旧树 `.build/`、`dist/`、`output/`，共7,098个普通文件。五个候选目录的十份DMG（每目录两份相同）及App摘要匹配manifest；五个候选的 hdiutil verify、codesign --verify --deep --strict 通过。原验收缺口不变，未声称Intel真机或升级通过。旧树与保全目录的分配空间差为32,272 KiB（约31.5 MiB，验收日志写入前），不算全盘可用空间增量。
 
-计量：清理时移除 1,593 个缓存文件，原分配占用 869,760 KiB；回归重建后 `.build` 从 3,385,600 KiB 降至 2,596,876 KiB，净减少 788,724 KiB（约 770.2 MiB）。这是构建目录净变化，不是全项目或磁盘可用空间增量；本次证据和日志另占少量空间。分支/工作树数量未变。
-
-嵌套工作树检查已在本地提交 `b2bc7aa`、`401cd05` 修复：快照器验证独立仓库身份并递归绑定 HEAD、dirty 和内容摘要；bootstrap 夹具只复制主仓库源码；delivery 仅区分同仓库已注册、精确根路径和已跟踪路径不重叠的工作树。普通新文件、未暂存修改/删除、未注册仓库、失效注册、符号链接和依赖未交付材料的文档仍报错。未扩大忽略规则或降低检查标准，原 Intel 草稿在两次提交前后保持不变。
-
-修复验收替代前述 EISDIR/67通过1失败基线：完整 verify 报告 `output/verification/20261113T055241Z-54572/results.json` 的 automation_passed/source_consistent 均为 true；治理92项、Desktop、server、scheduler、Worker dry-run、Swift661项（8跳过、0失败）、arm64 Release、资源和路由检查通过。Postgres未配置而跳过，硬件blocked、签名skipped。后续delivery修复定向25/25、quick治理95/95、提交后delivery通过；报告 `output/verification/20261113T060413Z-72573/results.json`。详细证据分别在 `output/nested-worktree-fix-20261113/` 和 `output/delivery-worktree-fix-20261113/`。
-
-旧 Intel 工作树退役（2026-11-13）：用户授权核验并保全材料后移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346c03763dfa8122f9e81e1a9732311f809c` 的祖先；OfficialAPI 与对应测试整个文件同时等于主线和正式 Intel，VERSION.env 与 desktop 生成版本等于正式 Intel。HANDOVER 草稿仅首段与正式来源不同，后者描述更完整。五个草稿无待补合并的独有功能，保存补丁及原文件后定点 restore，先后通过补丁反向/恢复适用检查，再用不带 force 的 `git worktree remove` 移除。未删除旧分支 `codex/intel-reliability-20261112`，正式分支/标签及 `output/release-315-both-20261113/intel` 保留。
-
-本机保全目录为 `output/intel-worktree-retirement-20261113/`：`inventory-before.json` 记录完整原树的文件 SHA-256、权限及链接目标；`draft.patch` 和 `draft-files/` 保存五份草稿；`comparison.json`、`candidate-checks.json`、`local-artifact-validation.json` 记录核对依据。原树的 `.build/`、`dist/`、`output/` 已原样迁入此目录的 `payload/`，7,098 个普通文件及全部目录/符号链接完成迁移前后校验。五个候选共十份 DMG（每目录两份相同），DMG/App 摘要匹配各自 manifest；五个候选的 hdiutil verify 和 codesign --verify --deep --strict 均通过。构建来源提交仍可从 Git 获取。保留旧产物的验收状态，不把当前校验写成 Intel 实机、Gatekeeper 或升级验收通过。
-
-历史材料里的原绝对路径与 manifest 相对路径未改写：查询旧 `.build/`、`dist/`、`output/` 时，将旧工作树根替换为保全目录的 `payload/`，详见 `path-map.json`。包括 recovery-safety、recovery-latency、reliability-remediation 记录引用的旧包。上述保全资料仅在本机，Git 提交不包含安装包；迁移电脑时须一并复制保全目录。`.build` 中历史编译产品也保留，本次不声称节省这部分缓存。
-
-若需恢复旧工作树及原始未提交状态，在 Git 根目录执行（这是恢复说明，不是当前操作）：
+历史 recovery-safety/recovery-latency/reliability-remediation 等记录中的旧路径不改写：将旧根替换为保全目录 `payload/`，见 `path-map.json`。恢复前确认目标路径空缺、旧分支仍指向上述212f094；在Git根目录执行以下恢复步骤（不是当前操作）：
 
 ```sh
 retirement="$PWD/output/intel-worktree-retirement-20261113"
@@ -155,8 +140,31 @@ git -C tmp/intel-reliability-20261112 apply "$retirement/draft.patch"
 cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 ```
 
-恢复前先确认目标路径空缺、旧分支仍指向上述 212f094；不要把此草稿误作正式 build 43 源码。正常维护和实机验收仍从正式 Intel 来源及对应发布包开展。
+该草稿不等于正式build43来源。退役时工作树10→9、分支15不变，其他工作树及引用不变；quick治理95/95及delivery通过，报告 `output/verification/20261113T062103Z-5002/results.json`。首次文档超限失败日志保留；通过合并重复记录解决，未提高预算。
 
-退役计量：注册工作树从 10 降为 9，本地分支仍为 15；移除时所有 Git 引用不变，其他 8 个非主工作树 HEAD/状态/补丁摘要保持不变。旧树 555,860 KiB；本机保全目录在验收日志写入前为 523,588 KiB，差值 32,272 KiB（约 31.5 MiB），主要来自移除可由 Git 恢复的重复源码，不是删除发布包。此数值是两个指定目录的分配空间差，非全盘空闲空间变化。
+### 剩余八树核验与收口
 
-退役验收：首次因文档超限失败，合并重复记录后重跑 quick 全通过（治理95/95），起止摘要一致；报告 `output/verification/20261113T062103Z-5002/results.json`。delivery、文档引用、空白及保全文件复核通过。未改产品代码，未重跑硬件验收。
+核验基点 `778e141`；八树工作区均干净。检查提交归属、标签、发布报告、运行脚本和CI引用、全项目外部符号链接及活动构建进程；最近聊天清单未显示其他活动NotchSPI任务，此项不等同于历史任务均已完成。未发现指向三个退役树的外部符号链接或挂载DMG。按实际依赖保留以下五树，不能仅凭已合并或干净就删除。
+
+下表路径均相对 `output/`，本地分支统一省略 `codex/` 前缀。
+
+| 工作树 | 分支 / HEAD | 本轮决定与依据 |
+| --- | --- | --- |
+| mac-release-3.1-20261108/apple-silicon | mac-3-1-candidate / 6e9bf1e | 已退役；源码被v3.1及v3.1.5覆盖，发布记录已闭环，证据保全。分支以 `git branch -d` 删除。 |
+| mac-release-3.1-20261108/intel | intel-auto-update / 304419b | 已退役；被正式Intel f1c9346包含，v3.1-intel-build31精确指向旧来源。分支和标签保留，未强制删分支。 |
+| release-3.0-execution/source | release-3-0 / 84d6870 | 保留：4个主线之外提交，涉及数据库恢复保护及原发布证据，尚无完整吸收证明。 |
+| release-3.1-execution/source | release-3-1 / dd3a45a | 保留：虽然已合并，但同目录 deploy.mjs读取source配置，acceptance.mjs直接导入source模块；不拆断历史执行链路。 |
+| release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 保留：v3.1.5精确来源及当前arm64发布/验收依据。 |
+| release-315-both-20261113/channels | release-3-1-5-channels / 7366e21 | 已退役：渠道源码已在main，发布报告记录部署和下载核验完成。分支以 `git branch -d` 删除。 |
+| release-315-both-20261113/intel | release-3-1-5-intel / f1c9346 | 保留：v3.1.5-intel-build43精确来源，独立兼容平台及待实机验收入口。 |
+| windows-2022-flight-branch | windows-2022-flight-diagnostics / e2a54b4 | 保留：3个独有诊断提交及飞行动画/CI差异，未证明被正式来源吸收或任务结束。 |
+
+本轮保全根为 `output/worktree-review-20261113/`；`baseline.json`、`refs-before.txt`记录原路径、完整HEAD、分支、状态与占用，`path-map.json`映射旧根到 `mac31-arm64/payload`、`mac31-intel/payload`、`channels315/payload`。三份 `*-inventory.json`记录完整旧树；`retirement-journal.json`记录迁移和非强制移除。所有非Git文件（含历史构建产品、依赖、.vercel部署材料及原文件权限/链接目标）迁移前后逐项相同，未删除独有材料；不将迁移算作缓存瘦身。原父目录的发布报告、公证记录、源码归档、回滚包及private材料均未动。历史文档/manifest继续表达当时路径，查阅时按path-map替换根；未把旧证据改挂新源码。
+
+四个Mac3.1候选的DMG/App与各自manifest匹配，hdiutil verify和严格codesign检查通过；其中正式Apple Silicon包摘要84442f…、正式Intel包52b27b…与发布记录一致。ad-hoc候选与正式包均保留，不混淆验收强度。3.1.5渠道部署材料仅本地保全，不触发重新部署。
+
+恢复任一退役树时，从baseline取完整HEAD和原路径：若分支已删除，先用 `git branch <原分支> <完整HEAD>` 恢复；然后 `git worktree add <原路径> <原分支>`，将对应 `payload/.` 以 `cp -a` 复制回原路径。目标须空缺，分支须仍指向记录HEAD。恢复删除的两分支分别使用6e9bf1e38c9c1d8a38561ef1f993fc933e92c2e8、7366e21372c9f0fda68451491f2b8ac775c9bac0；仍可从main/正式标签到达。其他引用、远端分支均不删除，不推送。未触碰本轮八树之外的本地分支。
+
+本轮计量：工作树9→6（主树及5个保留树），本地分支15→13；迁移保全27,974个普通文件。三个旧树合计2,394,180 KiB，保全目录在最终日志前2,296,348 KiB，差值97,832 KiB（约95.5 MiB）；不是全盘空闲空间变化。
+
+本轮验收：quick全通过（治理95/95），起止摘要一致；报告 `output/verification/20261113T063327Z-22709/results.json`。delivery、文档引用、空白及保全复核通过；5个保留树状态不变。未改产品代码，未重跑硬件验收。
