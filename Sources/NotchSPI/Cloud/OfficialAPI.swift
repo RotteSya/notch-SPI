@@ -681,7 +681,11 @@ enum OfficialAPI {
             if operation == "solve", let journal = environment.journal {
                 do { try journal.save(.init(id: id, createdAt: Date(), body: body, mode: recoveryMode,
                     structured: resultProtocol == "objective_v1" || tutorResultV1, screenQuery: screenQuery != nil), account: account) }
-                catch { await MainActor.run { onDone(false, L10n.t("无法保存本次请求，请检查磁盘空间后重试。本次未扣题。", "リクエストを保存できません。空き容量を確認してください。", "Unable to save this request. Check available disk space. This request was not charged.")) }; return }
+                catch {
+                    // Restart recovery is best effort when local storage is unavailable.
+                    // Preserve the live request and its normal delivery/settlement path.
+                    journal.remove(id, account: account)
+                }
             }
             guard await MainActor.run(body: { !Task.isCancelled && environment.account() == account }) else {
                 environment.journal?.remove(id, account: account); return

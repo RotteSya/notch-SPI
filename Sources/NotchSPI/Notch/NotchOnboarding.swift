@@ -26,6 +26,18 @@ struct NotchOnboardingProgress {
     func save(_ step: NotchOnboardingStep, multiple: Bool = false) {
         defaults.set(multiple && [.working, .permission].contains(step) ? "multiple" : step.checkpoint, forKey: "onboarding.v3.step")
     }
+    var permissionResumeMultiple: Bool? {
+        defaults.object(forKey: "onboarding.v3.permissionResumeMultiple") as? Bool
+    }
+    func preparePermissionResume(multiple: Bool) {
+        defaults.set(multiple, forKey: "onboarding.v3.permissionResumeMultiple")
+        defaults.set(multiple ? "multiCapture" : "capture", forKey: "onboarding.v3.step")
+        defaults.synchronize() // Persist before the system permission dialog can terminate us.
+    }
+    func clearPermissionResume() {
+        defaults.removeObject(forKey: "onboarding.v3.permissionResumeMultiple")
+        defaults.synchronize()
+    }
     func dismiss() { defaults.set(true, forKey: "onboarding.v3.dismissed") }
     func complete() {
         defaults.set(true, forKey: "onboardingDone")
@@ -81,6 +93,7 @@ final class NotchOnboardingView: NSView {
         wantsLayer = true
         addSubview(surface); addSubview(copyPlate)
         [illustration, heading, detail, note].forEach(copyPlate.addSubview)
+        [heading, detail, note].forEach { $0.wantsLayer = true }
         addSubview(footerRule)
         [primary, secondary, back, targetButton].forEach { $0.onboardingChrome = true }
         primary.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -152,9 +165,8 @@ final class NotchOnboardingView: NSView {
                 action: t("试一道题", "練習してみる", "Try a question"))
         case .permission:
             return Copy(title: granted ? t("已允许屏幕录制。", "画面収録が許可されました。", "Screen recording allowed.") : t("允许截取这道题。", "問題を撮影するための許可。", "Allow question capture."),
-                body: permissionDetailText,
-                action: granted ? t("返回练习", "練習に戻る", "Back to practice") : denied ? t("打开系统设置", "システム設定を開く", "Open System Settings") : t("允许屏幕录制", "画面収録を許可", "Allow screen recording"),
-                note: denied && !granted ? t("在系统设置中允许后返回；若系统要求，请重启应用。", "システム設定で許可してから戻ってください。必要な場合はアプリを再起動してください。", "Allow access in System Settings, then return. Relaunch the app if macOS asks.") : t("用于截取题目。授权后返回练习，再按快捷键开始截图。", "問題の撮影に使います。許可後は練習に戻り、ショートカットで撮影してください。", "Used to capture questions. After allowing access, return to the practice and press the shortcut."))
+                body: t("允许权限后将会强制退出，静候片刻将自动重新打开。", "許可後にアプリは強制終了し、しばらくすると自動で再起動します。", "After permission is granted, the app will quit and reopen automatically after a short wait."),
+                action: granted ? t("返回练习", "練習に戻る", "Back to practice") : denied ? t("打开系统设置", "システム設定を開く", "Open System Settings") : t("允许屏幕录制", "画面収録を許可", "Allow screen recording"))
         case .practice:
             return Copy(title: failed ? t("练习题没有打开。", "練習問題を開けませんでした。", "Practice didn’t open.") : t("从一道练习题开始。", "練習問題から始めましょう。", "Start with a practice question."),
                 body: failed ? t("请确认已设置默认浏览器，然后重新打开练习题。", "デフォルトのブラウザを設定してから、もう一度開いてください。", "Check that a default browser is set, then open the practice again.") : t("练习题会在默认浏览器中打开。", "練習問題をデフォルトのブラウザで開きます。", "The practice opens in your default browser."),
@@ -209,14 +221,19 @@ final class NotchOnboardingView: NSView {
 
     func update(step: NotchOnboardingStep, granted: Bool, denied: Bool, failed: Bool,
                 practiceFailed: Bool = false, screenshotCount: Int = 0, capturing: Bool = false, previewing: Bool = false, multiple: Bool = false,
-                trial: OnboardingTrialState = .unavailable, trialExpiration: String? = nil) {
-        let changed = self.step != step
+                trial: OnboardingTrialState = .unavailable, trialExpiration: String? = nil, failureMessage: String? = nil) {
+        let previousStep = self.step
+        let previousCopy = [heading.stringValue, detail.stringValue, note.stringValue, primary.title]
+        let changed = previousStep != step
         let shouldTransition = changed && self.step != nil
         self.step = step
         let t = L10n.t
         let copy = Self.copy(step, granted: granted, denied: denied,
                              failed: step == .practice || step == .multiple ? practiceFailed : failed, count: screenshotCount, multiple: multiple, trial: trial, trialExpiration: trialExpiration)
         heading.stringValue = copy.title; detail.stringValue = copy.body; note.stringValue = copy.note
+        if (step == .working && failed || step == .permission), let failureMessage, !failureMessage.isEmpty {
+            detail.stringValue = failureMessage
+        }
         primary.title = copy.action
         if step == .collecting, screenshotCount >= 4 {
             detail.stringValue = t("已达 4 张上限。停顿 4 秒自动查题，或删除一张后按快捷键重截。", "上限の4枚です。4秒後に自動送信します。撮り直すには1枚削除してショートカットを押します。", "Four-image limit reached. A 4-second pause sends them; remove an image before capturing again.")
@@ -226,16 +243,18 @@ final class NotchOnboardingView: NSView {
             if screenshotCount < 2 { detail.stringValue = t("正在预览。关闭后可继续截图，至少两张才会自动查题。", "プレビュー中です。閉じて撮影を続けられます。自動送信には2枚以上必要です。", "Previewing. Close it to keep capturing; auto-send needs at least two images.") }
         }
         primary.style = step.showsLiveContent && step != .success && step != .firstAnswer ? .secondary : .primary
-        if changed || step == .permission { illustration.present(step: step, granted: granted, animated: changed && !step.showsLiveContent) }
         illustration.isHidden = step.showsLiveContent
+        if changed || step == .permission { illustration.present(step: step, granted: granted, animated: !step.showsLiveContent) }
         heading.alignment = .center
-        detail.alignment = step.showsLiveContent || step == .permission ? .left : .center
-        note.alignment = step == .permission ? .left : .center
+        detail.alignment = step.showsLiveContent ? .left : .center
+        note.alignment = .center
         let captureStep = [.capture, .multiCapture, .collecting].contains(step) || (step == .working && failed)
         primary.isHidden = [.capture, .multiCapture, .collecting, .working].contains(step)
         primary.isEnabled = !primary.isHidden && !capturing && !(step == .trial && [.unavailable, .loading, .claiming].contains(trial))
         shortcutPrompt.combo = multiple || [.multiCapture, .collecting].contains(step) ? Settings.shared.contextCombo : Settings.shared.captureCombo
+        let wasShortcutHidden = shortcutPrompt.isHidden
         shortcutPrompt.isHidden = !captureStep || capturing || previewing || (step == .collecting && screenshotCount >= 4)
+        if !shortcutPrompt.isHidden && (wasShortcutHidden || changed) { shortcutPrompt.present(animated: true) }
         if capturing { detail.stringValue = t("正在截图…", "撮影中…", "Capturing…") }
         if primary.isHidden, window?.firstResponder === primary { window?.makeFirstResponder(self) }
         surface.isHidden = step.showsLiveContent
@@ -251,12 +270,15 @@ final class NotchOnboardingView: NSView {
         closeButton.toolTip = step == .trial && trial == .claimed ? t("完成引导", "ガイドを完了", "Finish setup") : t("收起引导 · 可在刘海菜单中继续", "閉じる・ノッチメニューで再開", "Close · resume from the notch menu")
         languages.isHidden = step != .welcome
         languages.selectItem(at: L10n.setting == .ja ? 1 : L10n.setting == .en ? 2 : 0)
-        targetButton.isHidden = step != .permission
+        targetButton.isHidden = true // Permission page contains only the permission explanation.
         targetButton.title = t("更改截图目标", "撮影対象を変更", "Change target")
         primary.shortcut = nil
         primary.showsForwardArrow = !primary.isHidden && step != .permission
         needsLayout = true
-        if shouldTransition { transitionCopy() }
+        let copyChanged = previousCopy != [heading.stringValue, detail.stringValue, note.stringValue, primary.title]
+        if let previousStep, shouldTransition || (!step.showsLiveContent && copyChanged) {
+            transitionCopy(from: previousStep)
+        }
         if changed { NSAccessibility.post(element: self, notification: .layoutChanged) }
     }
 
@@ -310,12 +332,11 @@ final class NotchOnboardingView: NSView {
         let variants = [copy(step), copy(step, granted: true), copy(step, denied: true, failed: true),
                         copy(step, trial: .claimed, trialExpiration: "2026-10-19 12:00"), copy(step, trial: .failed),
                         copy(step, trial: .available), copy(step, trial: .ineligible), copy(step, trial: .expired)]
-        let alignment: NSTextAlignment = step == .permission ? .left : .center
+        let alignment: NSTextAlignment = .center
         let title = variants.map { measured($0.title, size: titleSize, width: textWidth, weight: .semibold, alignment: .center) }.max() ?? 30
         let body = variants.map { measuredBody($0.body, width: textWidth, alignment: alignment) }.max() ?? 32
         let note = variants.map { $0.note.isEmpty ? 0 : measuredBody($0.note, width: textWidth, alignment: alignment) + paragraphGap }.max() ?? 0
-        let target: CGFloat = step == .permission ? 34 : 0
-        let copyHeight = title + paragraphGap + body + note + target
+        let copyHeight = title + paragraphGap + body + note
         return NotchLayout.headerHeight + 16 + illustrationHeight + 16 + copyHeight + 28 + 64 + NotchLayout.answerBottomPad
     }
     override func layout() {
@@ -384,15 +405,11 @@ final class NotchOnboardingView: NSView {
         layoutShortcutRow(y: actionY, width: w, inset: inset, live: false)
         if step == .trial { secondary.frame.origin.x = inset - 8 }
         languages.frame = .init(x: inset - 6, y: actionY + 5, width: 116, height: 28)
-        // Taller permission copy enters only once it has room above the moving action row.
-        // This also prevents invisible controls from intercepting the primary action mid-resize.
-        let copyBottom = step == .permission ? targetButton.frame.maxY : y
-        let clearance = footerRule.frame.minY - copyBottom
         // Keep the illustration and heading present throughout the handoff. Only copy that
         // would collide with the action row waits for space; the entire page never goes blank.
         detail.alphaValue = min(1, max(0, (footerRule.frame.minY - detail.frame.maxY - 4) / 12))
         note.alphaValue = min(1, max(0, (footerRule.frame.minY - note.frame.maxY - 4) / 12))
-        targetButton.isHidden = step != .permission || clearance < 4
+        targetButton.isHidden = true // Permission page contains only the permission explanation.
     }
     private func layoutShortcutRow(y: CGFloat, width: CGFloat, inset: CGFloat, live: Bool) {
         let size = shortcutPrompt.intrinsicContentSize
@@ -401,27 +418,32 @@ final class NotchOnboardingView: NSView {
         secondary.frame = NSRect(x: width - inset - helpWidth + 8, y: y, width: helpWidth, height: 38)
     }
 
-    private static var permissionDetailText: String {
-        L10n.t("截图目标：", "撮影対象：", "Capture target: ") + captureTargetLabel + "\n" + CaptureProcessing.channelNote
-    }
-    private static var captureTargetLabel: String {
-        guard let id = Settings.shared.captureTargetBundleID else { return L10n.t("整个屏幕", "画面全体", "Entire screen") }
-        let name = Settings.shared.captureTargetName ?? ""
-        return (name.isEmpty ? id : name) + (NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty
-            ? L10n.t("（未运行，请先打开）", "（未起動）", " (not running; open it first)") : "")
-    }
-    private func transitionCopy() {
-        // Core Animation retains the previous rendered contents for this crossfade. Keeping
-        // one plate avoids individual labels blinking or drifting at different times.
-        copyPlate.layer?.removeAnimation(forKey: "page-handoff")
-        primary.layer?.removeAnimation(forKey: "page-handoff")
-        guard !onboardingReduceMotion(), window != nil else { return }
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = onboardingMotionDuration(0.24)
-        fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.68, 0, 1)
-        copyPlate.layer?.add(fade, forKey: "page-handoff")
-        primary.layer?.add(fade, forKey: "page-handoff")
+    private func transitionCopy(from previous: NotchOnboardingStep) {
+        // The illustration owns its continuous pose. Only the typography crossfades; fading
+        // its ancestor would double-fade the drawing and briefly erase the shared screen.
+        let direction: CGFloat = (step?.motionOrder ?? 0) >= previous.motionOrder ? 1 : -1
+        for (index, view) in [heading, detail, note, primary, secondary, back].enumerated() {
+            guard let layer = view.layer else { continue }
+            let current = layer.presentation()?.transform.m41 ?? 0
+            layer.removeAnimation(forKey: "page-handoff")
+            layer.removeAnimation(forKey: "copy-settle")
+            guard !onboardingReduceMotion(), window?.isVisible == true, !view.isHidden else { continue }
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = onboardingMotionDuration(0.22)
+            fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.68, 0, 1)
+            layer.add(fade, forKey: "page-handoff")
+            // Controls stay glued to the panel edge and its hit regions. Text travels only
+            // a few points, with no opacity gap or delayed availability of the next action.
+            if index < 3 && !previous.showsLiveContent && step?.showsLiveContent == false {
+                let settle = CABasicAnimation(keyPath: "transform.translation.x")
+                settle.fromValue = abs(current) > 0.1 ? current : direction * CGFloat(5 + index * 2)
+                settle.toValue = 0
+                settle.duration = onboardingMotionDuration(0.34 + Double(index) * 0.035)
+                settle.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+                layer.add(settle, forKey: "copy-settle")
+            }
+        }
     }
     private static func label(_ size: CGFloat, _ weight: NSFont.Weight, _ color: NSColor) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: "")

@@ -3,6 +3,82 @@ import XCTest
 @testable import NotchSPI
 
 final class OnboardingJourneyTests: XCTestCase {
+    @MainActor func testLocalDemoWaitsStreamsAndPreservesSingleAndMultipleJourneyWithoutProvider() async throws {
+        let service = Settings.shared.serviceMode, mode = Settings.shared.mode
+        let locale = L10n.setting
+        let token = OfficialAPI.deviceToken, balance = OfficialAPI.balanceQuestions
+        defer { Settings.shared.serviceMode = service; Settings.shared.mode = mode; L10n.setting = locale }
+        L10n.setting = .zhHans
+        Settings.shared.serviceMode = ServiceMode.official
+        let name = "guide-local-demo-\(UUID())"
+        let defaults = UserDefaults(suiteName: name)!
+        let controller = NotchController(activateServices: false, onboardingDefaults: defaults)
+        defer { controller.prepareForTermination(); defaults.removePersistentDomain(forName: name) }
+        controller.qaOnboardingPermission = { true }
+        controller.qaOpenPracticePage = { _ in true }
+        controller.qaScreenshotCapture = { [self] in .success(try! shot()) }
+        var warmups = 0, providerCalls = 0, now: Double = 0
+        controller.qaScreenshotWarmUp = { warmups += 1 }
+        controller.qaAnswerStream = { _, _ in providerCalls += 1 }
+        controller.qaScreenshotClock = { now }
+        controller.qaPresentOnboarding(.capture)
+        for multiple in [false, true] {
+            controller.qaPressScreenshot(multiple: multiple)
+            try await settle { !controller.model.screenshotCapturing }
+            if multiple {
+                XCTAssertEqual(controller.model.onboardingStep, .collecting)
+                controller.qaPressScreenshot(multiple: true)
+                try await settle { controller.model.screenshots.count == 2 && !controller.model.screenshotCapturing }
+                now += 4
+                controller.qaTickScreenshotRound()
+            }
+            try await settle { controller.qaRequestRunning }
+            XCTAssertEqual(controller.model.onboardingStep, .working)
+            XCTAssertTrue(controller.model.answer.isEmpty)
+            try await Task.sleep(nanoseconds: 500000000)
+            XCTAssertTrue(controller.model.answer.isEmpty, "Demo must not answer immediately")
+            for _ in 0..<100 where controller.model.answer.isEmpty { try await Task.sleep(nanoseconds: 20000000) }
+            XCTAssertEqual(controller.model.status, .streaming)
+            XCTAssertFalse(controller.model.answer.contains("FINAL:"))
+            for _ in 0..<250 where controller.qaRequestRunning { try await Task.sleep(nanoseconds: 20000000) }
+            XCTAssertEqual(controller.model.onboardingStep, multiple ? .success : .firstAnswer)
+            XCTAssertTrue(controller.model.answer.hasSuffix("FINAL: B. 60 km/h"))
+            XCTAssertNil(controller.qaSettingsWindow)
+            XCTAssertFalse(defaults.bool(forKey: "onboardingDone"))
+            if !multiple { controller.qaAdvanceOnboarding() }
+        }
+        XCTAssertEqual(warmups, 0)
+        XCTAssertEqual(providerCalls, 0)
+        XCTAssertEqual(OfficialAPI.deviceToken, token)
+        XCTAssertEqual(OfficialAPI.balanceQuestions, balance)
+        controller.qaAdvanceOnboarding()
+        XCTAssertEqual(controller.model.onboardingStep, .trial)
+    }
+
+    @MainActor func testDismissingDemoCancelsDelayedAnswer() async throws {
+        let controller = NotchController(activateServices: false)
+        let mode = Settings.shared.mode
+        defer { controller.prepareForTermination(); Settings.shared.mode = mode }
+        controller.qaOnboardingPermission = { true }
+        controller.qaScreenshotCapture = { [self] in .success(try! shot()) }
+        controller.qaPresentOnboarding(.capture)
+        controller.qaPressScreenshot(multiple: false)
+        try await settle { controller.qaRequestRunning }
+        controller.qaDismissOnboarding()
+        try await Task.sleep(nanoseconds: 1800000000)
+        XCTAssertNil(controller.model.onboardingStep)
+        XCTAssertFalse(controller.qaRequestRunning)
+        XCTAssertTrue(controller.model.answer.isEmpty)
+    }
+
+    @MainActor func testServiceFailureShowsActualReasonInsteadOfRetakeInstruction() {
+        let view = NotchOnboardingView(frame: .init(x: 0, y: 0, width: 600, height: 300))
+        let message = "Service temporarily unavailable"
+        view.update(step: .working, granted: true, denied: false, failed: true, failureMessage: message)
+        let fields = (view.subviews + view.subviews.flatMap(\.subviews)).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(fields.contains { $0.stringValue == message })
+    }
+
     @MainActor func testRetakeHintMatchesLessonAndUpdatedShortcutAcrossLanguages() async throws {
         let language = L10n.setting, single = Settings.shared.captureCombo, multi = Settings.shared.contextCombo
         let controller = NotchController(activateServices: false)
@@ -266,7 +342,10 @@ final class OnboardingJourneyTests: XCTestCase {
         controller.qaPressScreenshot(multiple: true)
         XCTAssertEqual(controller.model.onboardingStep, .permission)
         XCTAssertEqual(calls, 0)
+        controller.qaOnboardingRelaunch = {}
         allowed = true; controller.qaAdvanceOnboarding()
+        controller.qaOpenPracticePage = { _ in true }
+        controller.showOnboardingIfNeeded() // Simulate the next launch consuming the checkpoint.
         XCTAssertEqual(controller.model.onboardingStep, .multiCapture)
         XCTAssertEqual(calls, 0)
         controller.qaPressScreenshot(multiple: true)

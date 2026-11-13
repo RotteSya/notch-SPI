@@ -139,9 +139,15 @@ final class NotchController: NSObject {
     private var recentQuestionsWindow: RecentQuestionsWindowController?
     private var expandedAnswerWindow: ExpandedAnswerWindowController?
     private let onboardingProgress: NotchOnboardingProgress
+    private var onboardingDemoRunning = false
     private var onboardingAttempt = false
     private var onboardingPermissionReturnStep: NotchOnboardingStep = .capture
+    private var onboardingPermissionHidden = false
+    private var onboardingPermissionRestartRequired = false
+    private var onboardingPermissionRestartScheduled = false
+    private var onboardingRelaunchProcess: Process?
     private var onboardingPermissionTimer: Timer?
+    private var onboardingPermissionProbeTask: Task<Void, Never>?
     private var onboardingTrialTask: Task<Void, Never>?
     private var onboardingTrialAccount: OfficialAPI.CaptureAccount?
     private var observers: [NSObjectProtocol] = []
@@ -338,7 +344,7 @@ final class NotchController: NSObject {
         }
     }
 
-    deinit { screenRefreshWork?.cancel(); onboardingTrialTask?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
+    deinit { screenRefreshWork?.cancel(); onboardingTrialTask?.cancel(); onboardingPermissionProbeTask?.cancel(); onboardingPermissionTimer?.invalidate(); materialTimer?.invalidate(); screenshotTimer?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) } }
 
     /// The channel the NEXT capture will use, resolved from the current settings. Custom-key mode
     /// reads the key of the active third-party provider.
@@ -397,6 +403,18 @@ final class NotchController: NSObject {
             return
         }
         #endif
+        if let multiple = onboardingProgress.permissionResumeMultiple {
+            if onboardingHasAccess {
+                onboardingProgress.clearPermissionResume()
+                onboardingPermissionRestartRequired = false
+                onboardingPermissionRestartScheduled = false
+                presentOnboarding(multiple ? .multiCapture : .capture)
+                openOnboardingPractice(multiple: multiple)
+            } else {
+                presentOnboarding(.permission)
+            }
+            return
+        }
         guard onboardingProgress.shouldPresent || force else { return }
         presentOnboarding(force ? .welcome : onboardingProgress.resumeStep)
     }
@@ -411,15 +429,18 @@ final class NotchController: NSObject {
         // If the user has moved to their practice page, leave that page focused.
         guard model.onboardingStep != nil, panel.isKeyWindow else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.model.onboardingStep != nil, self.panel.isKeyWindow,
+            guard let self, !self.onboardingPermissionHidden, self.model.onboardingStep != nil, self.panel.isKeyWindow,
                   !self.notchView.onboarding.primary.isHidden, self.notchView.onboarding.primary.isEnabled else { return }
             self.panel.makeFirstResponder(self.notchView.onboarding.primary)
         }
     }
 
     private func presentOnboarding(_ step: NotchOnboardingStep) {
+        onboardingPermissionHidden = false
         if model.onboardingStep != step {
-            model.onboardingMultiple = [.multiple, .multiCapture, .collecting, .success].contains(step)
+            model.onboardingMultiple = step == .permission
+                ? (onboardingProgress.permissionResumeMultiple ?? model.onboardingMultiple)
+                : [.multiple, .multiCapture, .collecting, .success].contains(step)
         }
         cancelPendingCollapse()
         visible = true; panel.orderFrontRegardless()
@@ -430,29 +451,32 @@ final class NotchController: NSObject {
         // The model commits before the hidden plate is shown by NotchView's coalesced refresh.
         // Focus after that refresh so re-entry can accept Return/Escape without a mouse click.
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.model.onboardingStep != nil else { return }
+            guard let self, !self.onboardingPermissionHidden, self.model.onboardingStep != nil else { return }
             let guide = self.notchView.onboarding
             self.panel.makeFirstResponder(guide.primary.isHidden ? guide : guide.primary)
         }
         onboardingPermissionTimer?.invalidate()
         onboardingPermissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.model.onboardingStep == .permission else { return }
-                let granted = self.onboardingHasAccess
-                if granted != self.model.onboardingPermissionGranted {
-                    self.model.onboardingPermissionGranted = granted
-                    self.resizeToFit()
-                    if granted { self.notchView.screenshotLanded() }
-                }
+                self?.checkOnboardingPermission()
             }
         }
     }
 
     private func setOnboardingStep(_ step: NotchOnboardingStep) {
+        if step != .permission { onboardingPermissionProbeTask?.cancel() }
         model.onboardingStep = step
         model.onboardingPracticeFailed = false
         model.onboardingPermissionGranted = onboardingHasAccess
         onboardingProgress.save(step, multiple: model.onboardingMultiple)
+        if step == .permission {
+            onboardingPermissionReturnStep = model.onboardingMultiple ? .multiCapture : .capture
+            model.captureFeedback = ""
+            if !model.onboardingPermissionGranted {
+                onboardingPermissionRestartRequired = true
+                onboardingProgress.preparePermissionResume(multiple: model.onboardingMultiple)
+            }
+        }
         cancelPendingCollapse()
         setExpanded(true)
         resizeToFit()
@@ -461,6 +485,13 @@ final class NotchController: NSObject {
 
     #if DEBUG
     var qaOnboardingPermission: (() -> Bool)?
+    var qaFreshOnboardingPermission: (() async -> Bool)?
+    var qaOnboardingRelaunch: (() throws -> Void)?
+    var qaRequestOnboardingPermission: (() -> Bool)?
+    var qaOpenOnboardingPermissionSettings: (() -> Bool)?
+    var qaOnboardingPanelVisible: Bool { panel.isVisible }
+    var qaOnboardingPanelKey: Bool { panel.isKeyWindow }
+    func qaCheckOnboardingPermission() { checkOnboardingPermission() }
     var qaOpenPracticePage: ((URL) -> Bool)?
     var qaOnboardingClaimTrial: (() async -> Bool)?
     func qaOnboardingSecondary() { onboardingSecondary() }
@@ -480,8 +511,100 @@ final class NotchController: NSObject {
         return CGPreflightScreenCaptureAccess()
     }
 
+    private func hideOnboardingForPermission() {
+        onboardingPermissionHidden = true
+        cancelPendingCollapse()
+        hovering = false
+        visible = false
+        panel.resignKey()
+        panel.orderOut(nil)
+    }
+
+    /// Finder/Dock reopen and the guide menu are explicit user actions. Background permission
+    /// polling never restores the elevated panel over System Settings.
+    func resumeHiddenOnboardingPermission() {
+        guard onboardingPermissionHidden, model.onboardingStep == .permission else { return }
+        checkOnboardingPermission()
+        guard !onboardingPermissionRestartScheduled || !model.captureFeedback.isEmpty else { return }
+        let failure = model.captureFeedback
+        presentOnboarding(.permission)
+        model.captureFeedback = failure
+    }
+
+    private func openOnboardingPermissionSettings() -> Bool {
+        #if DEBUG
+        if let qaOpenOnboardingPermissionSettings { return qaOpenOnboardingPermissionSettings() }
+        #endif
+        return NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+    }
+
+    private func checkOnboardingPermission() {
+        guard model.onboardingStep == .permission else { return }
+        let granted = onboardingHasAccess
+        model.onboardingPermissionGranted = granted
+        if granted && onboardingPermissionRestartRequired && !onboardingPermissionRestartScheduled {
+            restartAfterOnboardingPermission()
+        } else if !granted {
+            checkFreshOnboardingPermission()
+        }
+        resizeToFit()
+    }
+
+    private func checkFreshOnboardingPermission() {
+        guard onboardingPermissionHidden, onboardingPermissionRestartRequired,
+              !onboardingPermissionRestartScheduled, !terminating,
+              onboardingPermissionProbeTask == nil else { return }
+        let probe: () async -> Bool
+        #if DEBUG
+        if let qaFreshOnboardingPermission { probe = qaFreshOnboardingPermission }
+        else {
+            guard activatesServices else { return }
+            probe = { await PermissionRelaunch.hasFreshPermission() }
+        }
+        #else
+        guard activatesServices else { return }
+        probe = { await PermissionRelaunch.hasFreshPermission() }
+        #endif
+        onboardingPermissionProbeTask = Task { [weak self] in
+            let granted = await probe()
+            guard let self else { return }
+            self.onboardingPermissionProbeTask = nil
+            guard !Task.isCancelled, granted, !self.terminating,
+                  self.model.onboardingStep == .permission, self.onboardingPermissionHidden,
+                  !self.onboardingPermissionRestartScheduled else { return }
+            self.model.onboardingPermissionGranted = true
+            self.restartAfterOnboardingPermission()
+        }
+    }
+
+    private func restartAfterOnboardingPermission() {
+        guard !onboardingPermissionRestartScheduled else { return }
+        onboardingPermissionProbeTask?.cancel()
+        onboardingPermissionRestartScheduled = true
+        model.captureFeedback = ""
+        onboardingProgress.preparePermissionResume(multiple: model.onboardingMultiple)
+        do {
+            #if DEBUG
+            if let qaOnboardingRelaunch { try qaOnboardingRelaunch(); return }
+            guard activatesServices else { throw PermissionRelaunch.Failure.notApplicationBundle }
+            #endif
+            onboardingRelaunchProcess = try PermissionRelaunch.schedule()
+            // As in InAppUpdater, enter terminateLater from the run loop, not a main
+            // dispatch block: AppKit's nested loop must let async cleanup run and reply.
+            RunLoop.main.perform { NSApp.terminate(nil) }
+        } catch {
+            // Keep the app and checkpoint intact. An explicit click may retry, but polling
+            // must not spawn an endless series of failed helpers.
+            model.captureFeedback = L10n.t("未能自动重启，请退出并重新打开 NotchSPI，练习进度已保存。",
+                "自動再起動できません。NotchSPIを終了して開き直してください。練習の進行状況は保存済みです。",
+                "Could not restart automatically. Quit and reopen NotchSPI; your practice progress is saved.")
+            resizeToFit()
+        }
+    }
+
     private func requestOnboardingPermission() -> Bool {
         #if DEBUG
+        if let qaRequestOnboardingPermission { return qaRequestOnboardingPermission() }
         if ProcessInfo.processInfo.environment["NSPI_QA_EPHEMERAL"] == "1",
            ProcessInfo.processInfo.environment["NSPI_QA_ONBOARDING_DENIED"] == "1" { return false }
         #endif
@@ -494,15 +617,30 @@ final class NotchController: NSObject {
             model.onboardingMultiple = false
             openOnboardingPractice()
         case .permission:
-            if onboardingHasAccess { setOnboardingStep(onboardingPermissionReturnStep) }
+            if onboardingHasAccess {
+                if onboardingPermissionRestartRequired {
+                    if onboardingPermissionRestartScheduled {
+                        guard !model.captureFeedback.isEmpty else { return }
+                        onboardingPermissionRestartScheduled = false
+                    }
+                    restartAfterOnboardingPermission()
+                } else { openOnboardingPractice(multiple: model.onboardingMultiple) }
+            }
             else if model.onboardingPermissionDenied {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                hideOnboardingForPermission()
+                if !openOnboardingPermissionSettings() {
+                    resumeHiddenOnboardingPermission()
+                    model.captureFeedback = L10n.t("未能打开系统设置，请手动打开屏幕录制设置后授权。",
+                        "システム設定を開けません。画面収録の設定を手動で開いて許可してください。",
+                        "Could not open System Settings. Open Screen Recording settings manually to allow access.")
+                }
             } else {
+                hideOnboardingForPermission()
                 let granted = requestOnboardingPermission()
                 model.onboardingPermissionGranted = granted
                 model.onboardingPermissionDenied = !granted
                 resizeToFit()
-                if granted { notchView.screenshotLanded() }
+                if granted { restartAfterOnboardingPermission() }
             }
         case .practice: openOnboardingPractice()
         case .firstAnswer:
@@ -527,7 +665,10 @@ final class NotchController: NSObject {
     private func backOnboarding() {
         guard !running, intakeTask == nil else { return }
         switch model.onboardingStep {
-        case .permission: setOnboardingStep(onboardingPermissionReturnStep)
+        case .permission:
+            onboardingProgress.clearPermissionResume()
+            onboardingPermissionRestartRequired = false
+            setOnboardingStep(onboardingPermissionReturnStep)
         case .practice, .capture: setOnboardingStep(.welcome)
         case .multiCapture: setOnboardingStep(.multiple)
         case .multiple:
@@ -541,6 +682,7 @@ final class NotchController: NSObject {
     }
 
     private func dismissOnboarding() {
+        if !onboardingPermissionRestartScheduled { onboardingProgress.clearPermissionResume() }
         if model.onboardingStep == .trial && model.onboardingTrialState == .claimed {
             finishNotchOnboarding(collapse: true)
             return
@@ -571,6 +713,13 @@ final class NotchController: NSObject {
     }
 
     private func endOnboardingPresentation() {
+        onboardingPermissionProbeTask?.cancel()
+        if onboardingPermissionHidden {
+            onboardingPermissionHidden = false
+            visible = true
+            panel.orderFrontRegardless()
+        }
+        if onboardingDemoRunning { newQuestionGroup() }
         onboardingTrialTask?.cancel(); onboardingTrialTask = nil
         onboardingTrialAccount = nil
         if model.onboardingTrialState == .claiming { model.onboardingTrialState = .available }
@@ -693,6 +842,48 @@ final class NotchController: NSObject {
         }
     }
 
+    /// The guide teaches capture controls with fixed local material, independent of account quota.
+    /// Reuse the normal answer model and streaming layout without entering any provider pipeline.
+    private func runOnboardingDemo(latency: CaptureLatency?) {
+        officialTask?.cancel()
+        beginRun()
+        let generation = runGeneration
+        onboardingDemoRunning = true
+        currentRunSnapshot = nil; currentCaptureID = nil; currentAnswerCaptureID = nil
+        model.answer = ""; model.resultState = nil; model.resultReason = nil; model.parserPath = .none
+        model.captureFeedback = ""; model.explanation = ""; model.explanationAvailable = false
+        model.recoveryAvailable = false; model.reasoningRevealed = false
+        model.answerDepth = "brief"
+        model.answerLatency = latency
+        model.status = .running; model.statusText = L10n.statusReasoning
+        resizeToFit()
+        let chunks = OnboardingPractice.answerChunks
+        officialTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 1500000000)
+                for chunk in chunks {
+                    guard let self, !Task.isCancelled, self.runGeneration == generation,
+                          self.model.onboardingStep == .working, self.onboardingDemoRunning else { return }
+                    if self.model.answer.isEmpty { latency?.mark(.firstDelta) }
+                    self.model.answer += chunk
+                    self.model.status = .streaming
+                    self.model.statusText = AnswerComposer.hasMarker(self.model.answer) ? L10n.statusAnswering : L10n.statusReasoning
+                    self.resizeForStreamedAnswer()
+                    try await Task.sleep(nanoseconds: 180000000)
+                }
+                guard let self, !Task.isCancelled, self.runGeneration == generation,
+                      self.model.onboardingStep == .working, self.onboardingDemoRunning else { return }
+                self.model.status = .idle; self.model.statusText = L10n.statusDone
+                latency?.complete(success: true)
+                self.onboardingDemoRunning = false
+                self.onboardingCaptureFinished(success: true)
+                self.endRun()
+                self.resizeToFit()
+                self.officialTask = nil
+            } catch { /* Leaving the guide, sleep, termination or recapture cancels this local stream. */ }
+        }
+    }
+
     private func onboardingCaptureFinished(success: Bool) {
         guard onboardingAttempt, model.onboardingStep == .working else { return }
         onboardingAttempt = false
@@ -714,7 +905,10 @@ final class NotchController: NSObject {
         model.personaLabel = PersonaStore.shared.active?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    func show() { panel.orderFrontRegardless() }
+    func show() {
+        guard !onboardingPermissionHidden else { return }
+        panel.orderFrontRegardless()
+    }
 
     #if DEBUG
     /// Visual-QA hook: drive one full capture programmatically (same path as the hotkey),
@@ -927,6 +1121,7 @@ final class NotchController: NSObject {
     }
 
     private func toggleVisibility() {
+        if onboardingPermissionHidden { resumeHiddenOnboardingPermission(); return }
         visible.toggle()
         if visible { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
     }
@@ -1390,6 +1585,7 @@ final class NotchController: NSObject {
         capturePreparation.cancel()
         officialTask?.cancel()
         officialTask = nil
+        onboardingDemoRunning = false
         reconciliationTask?.cancel(); reconciliationTask = nil
         pendingRegistrationSelection = nil
         runGeneration &+= 1
@@ -1513,6 +1709,7 @@ final class NotchController: NSObject {
     }
 
     func prepareForTermination() {
+        onboardingPermissionProbeTask?.cancel()
         onboardingTrialTask?.cancel(); onboardingTrialTask = nil
         materialTimer?.invalidate(); materialTimer = nil
         screenRefreshWork?.cancel(); screenRefreshWork = nil
@@ -1523,6 +1720,8 @@ final class NotchController: NSObject {
     }
 
     func cancelTermination() {
+        onboardingRelaunchProcess?.terminate(); onboardingRelaunchProcess = nil
+        onboardingPermissionRestartScheduled = false
         terminating = false
         if activatesServices { PendingCaptureStore.shared.preserveForTermination(false); recoverPendingAnswer() }
         startMaterialMaintenance()
@@ -1546,6 +1745,7 @@ final class NotchController: NSObject {
     }
 
     private func warmCaptureConnection() {
+        guard model.onboardingStep == nil else { return }
         #if DEBUG
         if let qaScreenshotWarmUp { qaScreenshotWarmUp(); return }
         #endif
@@ -1825,7 +2025,7 @@ final class NotchController: NSObject {
             }
             guard !shot.blank else { failed(Self.message(for: .captureFailed)); return }
             latency?.mark(.captureReady)
-            if !multiple, mode == "tutor", case .official = self.currentChannel() {
+            if self.model.onboardingStep == nil, !multiple, mode == "tutor", case .official = self.currentChannel() {
                 let cropped = await OptionCropGuard.shouldRetake(path: shot.path)
                 guard valid() else { return }
                 if cropped {
@@ -2223,6 +2423,7 @@ final class NotchController: NSObject {
     private static let autoPollInterval: TimeInterval = 0.5
 
     private func autoModeTapped() {
+        guard !onboardingPermissionHidden else { return }
         if screenshotRound.isActive || intakeTask != nil { cancelScreenshotRound() }
         if autoEngine.isActive {
             stopAutoSession(.userToggled)
@@ -2418,6 +2619,10 @@ final class NotchController: NSObject {
         guard !terminating else { return }
         synchronizeMaterialScope()
         guard !running else { return }
+        if onboardingAttempt, model.onboardingStep == .working, mode == "tutor", let prepared, !prepared.isEmpty {
+            runOnboardingDemo(latency: inheritedLatency)
+            return
+        }
         officialTask?.cancel()
         let latency = inheritedLatency ?? CaptureLatency(entry: fromAuto ? .automatic : .direct,
             channel: currentChannel(), mode: mode, triggeredAt: triggeredAt)
