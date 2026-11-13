@@ -104,7 +104,7 @@ Desktop 图形检查为 `npm --prefix desktop run smoke`、`smoke:motion`、Wind
 Windows 打包 `npm --prefix desktop run pack:win`，固定 `--publish never`；Windows x64 产出 NSIS/ZIP，Apple Silicon 仅 ZIP，位于独立候选目录。签名/更新需要独立授权和配置，见[候选包源码身份与 ZIP 核验](docs/windows/architecture.md#候选包源码身份与-zip-核验)。
 Electron Mac 本地审核用 `npm --prefix desktop run pack:mac`，统一版本与独立候选身份，核验 arm64 App bundle；它不替代原生 Mac 发行包，见[审核候选](docs/windows/architecture.md#electron-mac-本地审核候选)。
 
-Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候选目录，并校验 DMG 内 App，见[Mac 追溯](docs/windows/mac-provenance.md)。用户包名见Mac追溯；正式签名、公证、发布另需授权。
+Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候选目录，并校验 DMG 内 App，见[Mac 追溯](docs/windows/mac-provenance.md)。正式签名、公证、发布另需授权。本机正式发布入口 `node scripts/release.mjs publish vX.Y.Z` 同步夸克并下载验摘要；前置条件与失败恢复见Mac追溯。
 交付时运行 `node scripts/repo-health.mjs --delivery`：检查 Git index，拒绝遗漏新文件及未暂存改动。同仓库已注册的独立嵌套工作树使用各自 index，不作为主仓库漏交付文件；检查精确根路径、实时仓库身份及已跟踪路径不重叠，不豁免同目录下的普通新文件、未注册仓库或符号链接。交付文档仍不能依赖工作树中未交付的文件。本地普通检查包含未忽略的新文件，不代表已提交可克隆。未获提交要求时可在隔离临时 index 验证交付集合，保留用户原 index。
 
 ## 专项操作与历史
@@ -172,6 +172,6 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 基点f9ff0b5，证据 `output/remaining-branches-20261113/`。从正式Intel工作树用普通 `git branch -d` 删除三个已完全包含于f1c9346、无工作树的旧别名（均为codex/前缀）：intel-3-1-candidate（06183a5）、intel-auto-update（304419b）、intel-reliability-20261112（212f094）。标签及既有保全材料不变；恢复用 `git branch <原名> <branches-before.json中的完整HEAD>`。
 
-后续四分支逐项核验：预算实验已由66e1cc6适配整合，预读仍有独有功能；公式旧方案被0e7cfa4替代，legacy仍有独立评分材料。完整历史及88个变更文件经bundle独立恢复验证后，普通-d删除公式和legacy本地别名；预读保留，预算因未合并保护拒绝普通删除而保留。判定、证据与恢复见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。五个非主工作树不变。
+四分支核验：公式和legacy别名已删除，预算与预读实验保留；替代关系、独有价值、bundle恢复验证见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。
 
 分支先13→10→8，后续8→5；工作树6→3：main、Intel、Windows诊断。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。未推送main；后经用户确认远端10→3，保留main、Intel及Windows诊断，恢复见归档说明。

@@ -445,9 +445,12 @@
       "purpose": "Mac 候选包追溯",
       "sources": [
         "scripts/cross-platform/mac-provenance.mjs",
-        "scripts/package.sh"
+        "scripts/package.sh",
+        "scripts/release.mjs",
+        "scripts/lib/release-publish.mjs"
       ],
       "checks": [
+        "scripts/test/release-publish.test.mjs",
         "scripts/test/provenance.test.mjs"
       ]
     },
