@@ -145,10 +145,43 @@ export function indexedPaths(root) {
   return gitZ(root, ['ls-files', '-z']);
 }
 
+// A registered linked worktree belongs to its own index. Match the exact root,
+// not a directory prefix, and verify its live Git identity against registration.
+function retainedWorktreeRoots(root) {
+  const paths = gitZ(root, ['worktree', 'list', '--porcelain', '-z'])
+    .filter(field => field.startsWith('worktree ')).map(field => field.slice(9));
+  const roots = new Set();
+  for (const entry of paths) {
+    try { roots.add(fs.realpathSync(entry)); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; } // prunable registration
+  }
+  roots.delete(fs.realpathSync(root));
+  return roots;
+}
+
+function isRetainedWorktree(root, file, registered, tracked) {
+  const candidate = path.join(root, file);
+  const stat = fs.lstatSync(candidate);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+  const actual = fs.realpathSync(candidate);
+  if (!registered.has(actual)) return false;
+  const relative = file.replace(/\/$/, '');
+  if (tracked.some(name => name === relative || name.startsWith(`${relative}/`))) return false;
+  const identity = (cwd, key) => fs.realpathSync(execFileSync('git',
+    ['rev-parse', '--path-format=absolute', key], {cwd, encoding:'utf8'}).trim());
+  try {
+    return identity(candidate, '--show-toplevel') === actual
+      && identity(candidate, '--git-common-dir') === identity(root, '--git-common-dir');
+  } catch { return false; } // stale/replaced registrations are not exemptions
+}
+
 /** Delivery must be reproducible from the index, including new source and docs. */
 export function checkDelivery(root) {
   const errors = [];
+  const registered = retainedWorktreeRoots(root);
+  const tracked = indexedPaths(root);
   for (const file of gitZ(root, ['ls-files', '-z', '--others', '--exclude-standard'])) {
+    if (isRetainedWorktree(root, file, registered, tracked)) continue;
     errors.push(`delivery: untracked file must be included or explicitly excluded: ${file}`);
   }
   for (const file of gitZ(root, ['diff', '--name-only', '-z'])) {

@@ -340,3 +340,50 @@ test('offline acceptance material switches all scenarios and Escape restores the
     keydown({key:'Escape'});assert.equal(menu.hidden,false);assert.equal(question.hidden,true);
   }
 });
+
+
+test('delivery keeps a dirty registered worktree separate but rejects adjacent delivery files', () => {
+  const root = fixture();
+  write(root, 'README.md', 'source'); commit(root);
+  const nested = 'tmp/intel candidate\nretained';
+  git(root, ['worktree', 'add', '-q', '--detach', nested, 'HEAD']);
+  write(root, `${nested}/README.md`, 'unfinished Intel edit');
+  write(root, `${nested}/untracked.txt`, 'unfinished Intel source');
+  assert.deepEqual(checkDelivery(root), []);
+  write(root, 'tmp/new-source.mjs', 'export default 1');
+  assert.match(checkDelivery(root).join('\n'), /untracked file.*tmp\/new-source.mjs/);
+  git(root, ['add', 'tmp/new-source.mjs']);
+  assert.deepEqual(checkDelivery(root), []);
+  write(root, 'tmp/new-source.mjs', 'export default 2');
+  assert.match(checkDelivery(root).join('\n'), /unstaged change.*tmp\/new-source.mjs/);
+  fs.unlinkSync(path.join(root, 'tmp/new-source.mjs'));
+  assert.match(checkDelivery(root).join('\n'), /unstaged change.*tmp\/new-source.mjs/);
+  assert.equal(fs.readFileSync(path.join(root, nested, 'README.md'), 'utf8'), 'unfinished Intel edit');
+});
+
+test('delivery rejects unregistered repositories, symlink aliases and references into retained trees', () => {
+  const root = fixture();
+  write(root, 'README.md', 'source'); commit(root);
+  git(root, ['worktree', 'add', '-q', '--detach', 'tmp/intel', 'HEAD']);
+  fs.symlinkSync('intel', path.join(root, 'tmp/alias'));
+  git(root, ['init', '-q', 'tmp/unregistered']);
+  write(root, 'tmp/unregistered/source.txt', 'unique source');
+  const errors = checkDelivery(root).join('\n');
+  assert.match(errors, /untracked file.*tmp\/alias/);
+  assert.match(errors, /untracked file.*tmp\/unregistered/);
+  write(root, 'README.md', '[required source](tmp/intel/README.md)');
+  git(root, ['add', 'README.md']);
+  assert.match(checkDocumentLinks(root, indexedPaths(root)).join('\n'), /outside the delivery file set/);
+});
+
+test('stale worktree registration cannot exempt a replacement unrelated repository', () => {
+  const root = fixture();
+  write(root, 'README.md', 'source'); commit(root);
+  git(root, ['worktree', 'add', '-q', '--detach', 'tmp/intel', 'HEAD']);
+  fs.renameSync(path.join(root, 'tmp/intel'), path.join(root, 'tmp/moved'));
+  git(root, ['init', '-q', 'tmp/intel']);
+  write(root, 'tmp/intel/new.txt', 'unrelated source');
+  const errors = checkDelivery(root).join('\n');
+  assert.match(errors, /untracked file.*tmp\/intel/);
+  assert.match(errors, /untracked file.*tmp\/moved/);
+});

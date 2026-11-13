@@ -105,7 +105,7 @@ Windows 打包 `npm --prefix desktop run pack:win`，固定 `--publish never`；
 Electron Mac 本地审核用 `npm --prefix desktop run pack:mac`，统一版本与独立候选身份，核验 arm64 App bundle；它不替代原生 Mac 发行包，见[审核候选](docs/windows/architecture.md#electron-mac-本地审核候选)。
 
 Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候选目录，并校验 DMG 内 App，见[Mac 追溯](docs/windows/mac-provenance.md)。正式签名、公证和发布不属于本地 verify。
-交付时运行 `node scripts/repo-health.mjs --delivery`：检查 Git index，拒绝遗漏新文件及未暂存改动。本地普通检查包含未忽略的新文件，不代表已提交可克隆。未获提交要求时可在隔离临时 index 验证交付集合，保留用户原 index。
+交付时运行 `node scripts/repo-health.mjs --delivery`：检查 Git index，拒绝遗漏新文件及未暂存改动。同仓库已注册的独立嵌套工作树使用各自 index，不作为主仓库漏交付文件；检查精确根路径、实时仓库身份及已跟踪路径不重叠，不豁免同目录下的普通新文件、未注册仓库或符号链接。交付文档仍不能依赖工作树中未交付的文件。本地普通检查包含未忽略的新文件，不代表已提交可克隆。未获提交要求时可在隔离临时 index 验证交付集合，保留用户原 index。
 
 ## 专项操作与历史
 
@@ -141,3 +141,7 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 后续修复嵌套工作树处理：`scripts/lib/verification-report.mjs` 对 Git 返回的目录验证其独立仓库根身份，递归记录 HEAD、dirty 与源码摘要，并纳入父快照一致性判断；普通文件、删除、符号链接继续受检查，未知目录/特殊文件报错。bootstrap 测试夹具仅复制所属仓库文件，显式区分已验证的嵌套仓库，避免复制独立发布工作树或其 Git 管理指针；完整验证报告仍绑定该工作树内容，不会静默排除其变化。回归覆盖嵌套 dirty 内容再次修改、新文件、删除、HEAD 变化、原有忽略缓存边界、悬空符号链接及异常目录。未修改任何忽略规则、工作树或产品代码。验证证据位于 `output/nested-worktree-fix-20261113/`，最终结果另记于下。
 
 后续修复验收：定向测试 28/28 通过；完整 `scripts/verify.sh` 于本轮退出 0，报告 `output/verification/20261113T055241Z-54572/results.json` 的 `automation_passed` 与 `source_consistent` 均为 true。治理 92/92 通过；Desktop、server、scheduler、Worker dry-run、Swift 661 项（8 条件跳过、0 失败）、arm64 Release、资源、不可变证据、路由与空白检查通过。未配置 TEST_POSTGRES_URL，Postgres 跳过；硬件 blocked，签名 skipped，不计作完成。旧 Intel 补丁字节一致，全部工作树注册信息及 9 个非主工作树的状态/补丁摘要保持不变。前段 67/1 与 EISDIR 为修复前结果，已被此次验收替代。仅在验证结束后追加本结果说明，再运行文档健康及空白检查。
+
+交付检查后续修复：`checkDelivery` 仅区分 Git 已注册且实际属于同一 common-dir 的独立工作树，使用 NUL 分隔注册信息和精确路径匹配，不新增忽略规则或路径前缀豁免。工作树自身的 dirty 内容仍由验证快照绑定；主仓库的新文件、未暂存修改/删除、未注册仓库、符号链接和失效注册替换继续报错。回归包含带空格/换行的工作树路径、未完成文件、相邻交付文件与文档依赖。证据目录为 `output/delivery-worktree-fix-20261113/`。本轮只修复治理检查，不改变产品行为；验证完成后单独本地提交，不推送。
+
+交付修复验收：定向测试 25/25 通过，quick 治理测试 95/95 通过，全部 quick 步骤通过，报告 `output/verification/20261113T060413Z-72573/results.json` 的 automation_passed/source_consistent 均为 true。真实仓库暂存本轮三文件后 `node scripts/repo-health.mjs --delivery` 通过，保留的 Intel 未提交工作树不再误报。仅修改治理检查/测试/文档，未重复运行上轮已通过且未受影响的产品全量测试或硬件验收。提交前后核对非主工作树 HEAD、状态及补丁，保持原状。
