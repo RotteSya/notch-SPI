@@ -1,5 +1,7 @@
 # NotchSPI 工程交接
 
+2026-11-13命名维护：未来package.sh产出NotchSPIx.x.x-intel.dmg，两段版本补.0。仅外层文件名改变，CFBundleVersion、架构与签名流程不变；已发布v3.1.5-intel-build43仍指向f1c9346，旧包及原manifest保持原样。
+
 > 本工作树为 3.1.5 build 43 Intel 发布候选，基于已发布 Intel `304419b`，在 3.1.4 来源 212f094 上回移本次引导动效、本地练习、首次录屏授权恢复及恢复记录失败保护，并保留对应测试。此候选的平台为 x86_64 / macOS 12.3+；`scripts/package.sh` 只构建 x86_64，并记录相应平台。下文主线 arm64/macOS 14+ 描述不适用于此候选的构建目标。旧系统截图、动画、登录项及更新保护保留。测试保留 TestNetworkIsolation。未完成 Intel 实机验收，不得将编译或当前 arm64 主机上的测试写成 Intel 运行通过。历史冻结源码与安装包未修改。
 
 本文件是唯一工程入口；README、AGENTS、CLAUDE 只负责导航。命令均在包含本文件、`Package.swift`、`VERSION.env` 的 Git 根目录运行，用 `git rev-parse --show-toplevel` 确认。
