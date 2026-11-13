@@ -589,9 +589,9 @@ final class NotchController: NSObject {
             guard activatesServices else { throw PermissionRelaunch.Failure.notApplicationBundle }
             #endif
             onboardingRelaunchProcess = try PermissionRelaunch.schedule()
-            // terminateLater waits in AppKit while the delegate performs async cleanup.
-            // Leave the probe's MainActor task first so that cleanup can run and reply.
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            // As in InAppUpdater, enter terminateLater from the run loop, not a main
+            // dispatch block: AppKit's nested loop must let async cleanup run and reply.
+            RunLoop.main.perform { NSApp.terminate(nil) }
         } catch {
             // Keep the app and checkpoint intact. An explicit click may retry, but polling
             // must not spawn an endless series of failed helpers.
