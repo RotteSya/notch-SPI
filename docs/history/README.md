@@ -85,3 +85,33 @@ cp -a output/resident-worktrees-20261113/release31/payload/. "$after_restore/"
 其他树替换为表中的精确路径/分支和对应payload；release30无非Git材料，不需要复制payload。恢复后核对HEAD、工作区及inventory，再审查历史脚本的网络、生产配置和隔离边界；本次恢复验证没有执行历史业务代码。旧依赖和绝对路径缓存可能需重新准备，不能将归档恢复等同于旧工具链运行通过。
 
 本轮工作树6→3、本地分支8→5，未清理两个实验引用。产品代码不变；检查结果记录在本机outcome.json。未重跑付费模型、真实数据库或硬件验收，不把历史已通过报告表述为本轮实机结果。
+
+
+## 2026-11-13 远端分支授权收口
+
+用户审阅精确七分支清单后明确确认，原“不删远端”限制仅对本次名单解除。使用普通 `git push --atomic origin --delete` 一次删除下列七个引用，无强制参数；未推送本地main、创建发布或修改保护规则。
+
+| 删除的远端分支（均为codex/前缀） | 删除前HEAD | 依据 |
+| --- | --- | --- |
+| fix-math-resources-hover-ci | 595cde7678f072c877ca58dc5b9a91d6187f6d55 | 主线已有替代实现，原代码完整保全 |
+| intel-auto-update | 304419ba7537787b6bee6387764be68dc59d2be8 | 已包含于正式Intel f1c9346 |
+| intel-reliability-20261112 | 212f094a308dcb93706aa45f38364ff7bbb60c14 | 已包含于正式Intel f1c9346 |
+| intel-update-channel | 2a9292eef13b15b70f01fae62f5c7ad0bb406b1c | 已包含于远端main 7366e21 |
+| objective-legacy-baseline | 619c9d085b351f3e7cfa7dbf9ad07830d182e5a1 | 独有评分器及六份历史评测原文保全，原失败/待审结论不变 |
+| release-3-0 | 84d68702798c04d3ad1a85599d154348ad6c8554 | 数据库保护已纳入主线，历史提交完整保全 |
+| release-3-1 | dd3a45abf1c936f5b0339b3e7dd91a3cf46b66d7 | 已包含于远端main，历史脚本及恢复契约保全 |
+
+删除前重新核对全部HEAD、标签、分支保护、rulesets和开放PR；候选无保护、无开放PR或活动运行。此前仅查询最近100次运行未发现活动项，后按queued/in_progress/waiting/pending/requested补查发现main旧任务34749651409仍queued（2026-09-13创建），与删除名单无关，未取消或修改。仓库当前及远端main的CI/脚本/部署配置未发现对七个分支名的依赖；未声称审计了外部第三方自动化。
+
+删除后远端10→3：main仍为7366e21372c9f0fda68451491f2b8ac775c9bac0，codex/release-3-1-5-intel仍为f1c9346c03763dfa8122f9e81e1a9732311f809c，codex/windows-2022-flight-diagnostics仍为e2a54b4798e0ba91f14a0c3754d76c5ec7e78e1c。全部标签逐项不变；本地5分支和3工作树保持原用途，只有对应远端跟踪引用随删除同步移除。旧分支名URL不再可用，历史复现使用完整提交和保全材料。
+
+证据根 `output/remote-branch-review-20261113/`：manifest.json记录完整HEAD与判定，deletion.json记录授权及删除结果，heads/tags前后快照用于回读核验。candidates.bundle SHA-256为 `c002bba8880339669c459f1728be5fc003762d413778a8e56cc97602fdd3e681`；独立恢复、fsck及5963个树条目对象可读性核验通过。bundle存储refs/remotes/origin/*，默认bare clone未导入这些引用；修正为显式fetch后独立验证通过，原日志保留。此材料未纳入Git，是同盘回退材料，迁移需另行复制。
+
+恢复前校验摘要、运行bundle verify并确认本地目标分支不存在。以下示例只恢复本地历史，不访问远端：
+
+```sh
+git bundle verify output/remote-branch-review-20261113/candidates.bundle
+git fetch output/remote-branch-review-20261113/candidates.bundle refs/remotes/origin/codex/release-3-0:refs/heads/codex/release-3-0
+```
+
+应恢复到表中完整HEAD；其他分支替换同名ref即可。重新创建远端分支属于另一次远端写入，需要相应授权，并先确认远端同名引用空缺；不得覆盖后续新工作。验收结果见本机outcome.json；本次仅引用和文档治理，不重跑未受影响的产品构建、真实模型或硬件验收。

@@ -174,4 +174,4 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 后续四分支逐项核验：预算实验已由66e1cc6适配整合，预读仍有独有功能；公式旧方案被0e7cfa4替代，legacy仍有独立评分材料。完整历史及88个变更文件经bundle独立恢复验证后，普通-d删除公式和legacy本地别名；预读保留，预算因未合并保护拒绝普通删除而保留。判定、证据与恢复见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。五个非主工作树不变。
 
-分支先13→10→8，后续8→5；工作树6→3：main、Intel、Windows诊断。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。不改产品行为、不推送、不删远端。
+分支先13→10→8，后续8→5；工作树6→3：main、Intel、Windows诊断。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。未推送main；后经用户确认远端10→3，保留main、Intel及Windows诊断，恢复见归档说明。
