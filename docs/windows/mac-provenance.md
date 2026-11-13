@@ -32,6 +32,8 @@ build号仍用于CFBundleVersion、升级比较、签名manifest和内部追溯�
 
 主线package.sh输出mac后缀；独立Intel维护树package.sh输出intel后缀。已有正式标签仍标识旧源码，不因命名维护移动标签。官网/dl及/dl/intel从同一稳定发布快照选择具体资产，Content-Disposition使用版本与平台名；优先规范资产，兼容内部旧别名。发布元数据不可用或资产缺失时返回502，不把未知字节标为新版本。下载因此依赖发布元数据可用性；更新接口和已有内部存储别名继续兼容，未来发布可只上传规范名称。
 
-本轮夸克共享目录NotchSPI Releases的两个旧3.1包已分别改为NotchSPI3.1.0-mac.dmg和NotchSPI3.1.0-intel.dmg，未改变分享权限或替换内容。当前3.1.5规范副本及原字节摘要见本机output/public-filenames-20261113/delivery/和manifest.json；未代表已上传或生产服务已部署。线上迁移需先准备规范资产，再发布兼容新旧资产名的服务并核验两渠道；旧生产代码仍依赖旧名，不能提前删除旧存储别名。历史旧路径保留为回退依据。
+本轮夸克共享目录NotchSPI Releases的两个旧3.1包已分别改为NotchSPI3.1.0-mac.dmg和NotchSPI3.1.0-intel.dmg，未改变分享权限或替换内容。用户后续明确授权上线：2026-11-13已向v3.1.5新增两个规范名称DMG及NotchSPI3.1.5-SHA256SUMS.txt，原资产ID、名称、摘要和发布说明不变。源码de823ca以生产配置暂存验证后提升为部署dpl_5YinJkasz4hZyxXECDCsTofvZC6W，官网别名已回读确认；未推送代码、移动标签或重签包。两个公开下载响应均为200、无重定向，文件名、大小和SHA-256匹配原签名包；两个更新接口的版本/说明、三语言入口及进程健康检查通过。
 
 下载元数据按通道在进程内最多缓存600秒，缓存具体资产URL与规范文件名的配对，不缓存失败，不在过期查询失败时冒用旧结果；新发布的可见延迟与更新元数据的10分钟窗口一致。
+
+上线证据在本机output/public-filenames-20261113/production/：stage/public-verification.json、promotion.json及源码/资产清单。135个部署源文件逐项匹配审阅快照；实际运行变更仅routes.ts及新增release-download.ts，生产环境配置未改。回退点为dpl_25HF1bcgD58Bnze3p3Hhz6WBwnyQ；原存储别名保留，可在获授权后恢复旧部署，禁止删除旧包或覆盖数据库。检查窗口内新部署未见error/fatal日志，不代表长期负载验收。未调用模型、操作付款或重做Intel实机验收。
