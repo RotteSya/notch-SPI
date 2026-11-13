@@ -50,3 +50,38 @@ git fetch output/branch-value-review-20261113/branches.bundle refs/heads/codex/o
 这是本地文件恢复，不访问远端。应恢复到595cde7678f072c877ca58dc5b9a91d6187f6d55、619c9d085b351f3e7cfa7dbf9ad07830d182e5a1；没有强制覆盖参数。其他两分支的恢复使用manifest中的原分支名和完整HEAD，正常情况下无需恢复。历史代码可能缺少当前隔离/依赖保护，恢复不意味着可以直接运行旧付费评测或应用测试。
 
 本轮只减少两个本地引用，分支10→8，工作树仍6；保全会新增本地证据占用，不声称节省磁盘。验证：当前预算/评分回归34/34、治理回归25/25、repo-health文档映射/链接检查通过；六个工作树注册及五个非主工作区HEAD/状态/差异摘要与基线相同，其他引用未变。交付检查结果随本机outcome.json保留；未重复未受影响的产品全量构建、真实模型或硬件验收。
+
+## 2026-11-13 常驻工作树收口
+
+基点 `6efd26f`。目标为main与Intel两个常驻工作树，Windows未闭环调查按用户允许的例外暂留。三棵退役树原工作区均干净；未覆盖未提交成果。最近新用户测试聊天已明确“测试完了，归位吧”并完成恢复；本次未触碰其备份、账户、偏好或系统权限。
+
+| 退役工作树（相对output） | 固定源码及依据 |
+| --- | --- |
+| release-3.0-execution/source | 84d68702798c04d3ad1a85599d154348ad6c8554。4个主线之外提交中，a62d11d的8个实现/配置/测试文件补丁与main祖先696883f完全一致：鉴权readyz、无DB探测healthz、独立有界只读连接、serverless无维护定时器及15分钟维护均仍在当前实现；readiness测试整个文件相同。其余3提交为历史发布/权限记录，原文随完整历史保留，不移植过时生产配置。 |
+| release-3.1-execution/source | dd3a45abf1c936f5b0339b3e7dd91a3cf46b66d7，已包含于main。父目录deploy.mjs与acceptance.mjs仍是历史原文；后者包含真实模型调用，前者包含部署动作，均非日常验证入口。需要重现时先恢复固定source和原node_modules，再单独审查所需授权，不直接执行。 |
+| release-315-arm64-prep-20261113/source | a005b09b242ec20de90c3b8ab56d2b200722b62f，与v3.1.5标签及最终候选来源一致。permission-acceptance.json、upgrade-acceptance.json均绑定最终来源；同一DMG的SHA-256 c9b7520ae2443dea349084e68a79af72af89803ded8a2024e689b328ff8b76ee重新核验，hdiutil verify和严格App签名通过。原单图/多图练习在RC1验收，其后未改对应实现；不将RC1/RC2/RC3权限失败计为成功。后续双架构report.md记录该包正式发布，早期publication-plan/report“尚未发布”是阶段快照，保留原文。 |
+
+Windows `codex/windows-2022-flight-diagnostics` / e2a54b4暂留原目录。`output/windows-2022-investigation/report.md`与remote-results.json保存108轮结果；原始Windows Server 2022空白未重现，缺少原失败后续帧，无法确定是首次采样还是持续绘制问题。诊断可能改变时序，不能将后续运行通过当作根因修复。下次复现需保留连续像素、图片就绪与renderer时间线；有充分诊断结论并处理独有工具后再退役。当前主线和Intel源码、Windows诊断及两个archive实验分支不变。
+
+### 本机保全与恢复契约
+
+保全根 `output/resident-worktrees-20261113/`，未纳入Git，迁移电脑须另行复制。这是同盘回退材料，不宣称已具备异机备份。
+
+- `sources.bundle`保存三棵树完整Git历史，SHA-256 `38853525ac1711e888fac4ca2d99a649e2c3ca2a06d90e0823a27178b145de70`；无前置对象，已独立bare恢复、fsck并核对2800个跟踪文件的原始内容。临时恢复仓库已移除。
+- `path-map.json`、`baseline.json`记录原路径/HEAD和保全路径；三个inventory记录原字节摘要、权限及符号链接。`release31/payload/`保存原server/node_modules；`arm64/payload/`保存全部.build、dist、output、三个node_modules及scheduler/.wrangler。未删除失败候选、验收材料或私有配置，不将搬迁算作磁盘节省。
+- 三个原父目录的发布记录、安装包、回滚材料及private目录保持原位。历史manifest的source下路径按path-map将根替换为相应payload读取；源码由bundle或精确提交恢复，不能用当前main冒充。
+- `release30-integration.json`、`arm64-evidence.json`、`restoration.json`保存替代及核验依据；`retirement-journal.json`记录迁移和普通删除。release30本地分支与其本地upstream相等，Git允许普通-d；不是声称其历史已合入main。其余两个分支是main祖先。未改变远端引用或标签。
+
+需要恢复某一历史执行环境时：先校验bundle摘要并运行 `git bundle verify output/resident-worktrees-20261113/sources.bundle`；确认原路径和原分支均空缺，从baseline取完整HEAD并对应下列分支：release30为codex/release-3-0，release31为codex/release-3-1，arm64为codex/release-3-1-5-arm64-prep。
+
+```sh
+# 示例：只恢复3.1的原执行目录，不运行历史部署或验收脚本。
+git fetch output/resident-worktrees-20261113/sources.bundle refs/heads/codex/release-3-1:refs/heads/codex/release-3-1
+git worktree add output/release-3.1-execution/source codex/release-3-1
+after_restore=output/release-3.1-execution/source
+cp -a output/resident-worktrees-20261113/release31/payload/. "$after_restore/"
+```
+
+其他树替换为表中的精确路径/分支和对应payload；release30无非Git材料，不需要复制payload。恢复后核对HEAD、工作区及inventory，再审查历史脚本的网络、生产配置和隔离边界；本次恢复验证没有执行历史业务代码。旧依赖和绝对路径缓存可能需重新准备，不能将归档恢复等同于旧工具链运行通过。
+
+本轮工作树6→3、本地分支8→5，未清理两个实验引用。产品代码不变；检查结果记录在本机outcome.json。未重跑付费模型、真实数据库或硬件验收，不把历史已通过报告表述为本轮实机结果。

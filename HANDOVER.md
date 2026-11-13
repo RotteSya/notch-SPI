@@ -142,7 +142,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 ### 剩余八树核验与收口
 
-核验基点 `778e141`；八树工作区均干净。检查提交归属、标签、发布报告、运行脚本和CI引用、全项目外部符号链接及活动构建进程；最近聊天清单未显示其他活动NotchSPI任务，此项不等同于历史任务均已完成。未发现指向三个退役树的外部符号链接或挂载DMG。按实际依赖保留以下五树，不能仅凭已合并或干净就删除。
+核验基点 `778e141`；八树工作区均干净。检查提交归属、标签、发布报告、运行脚本和CI引用、全项目外部符号链接及活动构建进程；最近聊天清单未显示其他活动NotchSPI任务，此项不等同于历史任务均已完成。未发现指向三个退役树的外部符号链接或挂载DMG。以下为当时保留及后续退役状态。
 
 下表路径均相对 `output/`，本地分支统一省略 `codex/` 前缀。
 
@@ -150,12 +150,12 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 | --- | --- | --- |
 | mac-release-3.1-20261108/apple-silicon | mac-3-1-candidate / 6e9bf1e | 已退役；源码被v3.1及v3.1.5覆盖，发布记录已闭环，证据保全。分支以 `git branch -d` 删除。 |
 | mac-release-3.1-20261108/intel | intel-auto-update / 304419b | 已退役；被正式Intel f1c9346包含，v3.1-intel-build31精确指向旧来源。标签保留；分支后续已非强制删除。 |
-| release-3.0-execution/source | release-3-0 / 84d6870 | 保留：4个主线之外提交，涉及数据库恢复保护及原发布证据，尚无完整吸收证明。 |
-| release-3.1-execution/source | release-3-1 / dd3a45a | 保留：虽然已合并，但同目录 deploy.mjs读取source配置，acceptance.mjs直接导入source模块；不拆断历史执行链路。 |
-| release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 保留：v3.1.5精确来源及当前arm64发布/验收依据。 |
+| release-3.0-execution/source | release-3-0 / 84d6870 | 已退役：恢复保护8文件补丁等同main祖先696883f；历史及发布证据保全。 |
+| release-3.1-execution/source | release-3-1 / dd3a45a | 已退役：已合并；历史脚本原文保留，复现前按固定HEAD恢复source及依赖。 |
+| release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 已退役：最终权限恢复、升级及发布闭环；标签、全部候选和验收材料保留。 |
 | release-315-both-20261113/channels | release-3-1-5-channels / 7366e21 | 已退役：渠道源码已在main，发布报告记录部署和下载核验完成。分支以 `git branch -d` 删除。 |
 | release-315-both-20261113/intel | release-3-1-5-intel / f1c9346 | 保留：v3.1.5-intel-build43精确来源，独立兼容平台及待实机验收入口。 |
-| windows-2022-flight-branch | windows-2022-flight-diagnostics / e2a54b4 | 保留：3个独有诊断提交及飞行动画/CI差异，未证明被正式来源吸收或任务结束。 |
+| windows-2022-flight-branch | windows-2022-flight-diagnostics / e2a54b4 | 暂留：3个独有诊断提交；108次运行未复现原故障，根因未闭环。 |
 
 本轮保全根为 `output/worktree-review-20261113/`；`baseline.json`、`refs-before.txt`记录原路径、完整HEAD、分支、状态与占用，`path-map.json`映射旧根到 `mac31-arm64/payload`、`mac31-intel/payload`、`channels315/payload`。三份 `*-inventory.json`记录完整旧树；`retirement-journal.json`记录迁移和非强制移除。所有非Git文件（含历史构建产品、依赖、.vercel部署材料及原文件权限/链接目标）迁移前后逐项相同，未删除独有材料；不将迁移算作缓存瘦身。原父目录的发布报告、公证记录、源码归档、回滚包及private材料均未动。历史文档/manifest继续表达当时路径，查阅时按path-map替换根；未把旧证据改挂新源码。
 
@@ -174,4 +174,4 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 后续四分支逐项核验：预算实验已由66e1cc6适配整合，预读仍有独有功能；公式旧方案被0e7cfa4替代，legacy仍有独立评分材料。完整历史及88个变更文件经bundle独立恢复验证后，普通-d删除公式和legacy本地别名；预读保留，预算因未合并保护拒绝普通删除而保留。判定、证据与恢复见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。五个非主工作树不变。
 
-本地分支先13→10，本轮再10→8；工作树仍6。其余引用及工作树状态不变，不改产品代码、不推送、不删远端。
+分支先13→10→8，后续8→5；工作树6→3：main、Intel、Windows诊断。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。不改产品行为、不推送、不删远端。
