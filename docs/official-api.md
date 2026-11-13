@@ -1031,12 +1031,14 @@ Bearer 鉴权，返回该设备 Stripe customer 的短时账单门户链接，�
 ## GET /update/intel — 独立 Intel 更新元数据
 
 与 `/update` 同形。来源固定为 `INTEL_RELEASE_API_URL`，不跟随 Apple Silicon latest。
-仅当稳定发布包含与 `INTEL_DMG_URL` 完全一致的资产时返回版本；缺少资产、草稿或预发布返回 502，不回退至 arm64。
-默认固定 Intel 3.1.1 build 33 的稳定发布资产；此次用户明确授权发布，但 Intel 实机安装、运行及应用内升级仍未验收。
+仅当稳定发布包含对应版本的规范Intel资产（NotchSPIx.x.x-intel.dmg），或与 `INTEL_DMG_URL` 完全一致的旧资产时返回版本；固定URL的tag必须匹配。缺少资产、草稿或预发布返回502，不回退至arm64。
+当前源码默认固定Intel 3.1.5稳定发布，Intel实机安装、运行及应用内升级验收边界见兼容账本。
 
 ## GET /dl/intel — Intel 专用 DMG
 
-从 `INTEL_DMG_URL` 流式代理，与 `/dl` 保持独立。推进 Intel 渠道必须同步两个环境变量并核验签名、公证、架构和最低系统。
+与 `/dl` 保持独立。两渠道先读取各自发布元数据，并从同一快照选择具体资产流式代理，避免latest切换导致版本名与字节不一致。Content-Disposition分别为NotchSPIx.x.x-intel.dmg、NotchSPIx.x.x-mac.dmg；两段版本补.0。缺少稳定元数据或匹配资产返回502。推进Intel渠道仍须同步两个环境变量并核验签名、公证、架构和最低系统。
+下载元数据按通道在进程内最多缓存600秒，缓存具体资产URL与规范文件名的配对，不缓存失败，不在过期查询失败时冒用旧结果；新发布的可见延迟与更新元数据的10分钟窗口一致。
+
 已发布 Intel 3.0 禁用了应用内更新，首次迁移到支持独立通道的版本仍需手动安装；Catalina 不属于此通道。
 
 ## One-time Plus compensation: 2026-11-11

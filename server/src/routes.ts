@@ -1,3 +1,4 @@
+import {releaseDownload} from './release-download.ts';
 import {budgetStatus} from './budget-policy.ts';
 import {registerAdminRoutes} from './admin-routes.ts';
 import {siteMedia} from './site-media.ts';
@@ -230,7 +231,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Counting is best-effort: a DB hiccup must never block the download, so a failure is logged
   // and ignored. Browser prefetch can inflate this slightly — it measures button clicks, not
   // completed downloads.
-  for (const [path, dmgUrl] of [['/dl', config.dmgUrl], ['/dl/intel', config.intelDmgUrl]] as const) {
+  for (const [path, dmgUrl, releaseApiUrl, platform] of [['/dl', config.dmgUrl, config.releaseApiUrl, 'mac'], ['/dl/intel', config.intelDmgUrl, config.intelReleaseApiUrl, 'intel']] as const) {
+    let cached: { download: NonNullable<ReturnType<typeof releaseDownload>>; expires: number } | undefined;
     app.get(path, async (req, reply) => {
       try {
         await store.bumpCounter('download_clicks');
@@ -238,7 +240,19 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
         req.log.error({ err }, 'download counter bump failed');
       }
 
-      const upstream = await fetch(dmgUrl, { redirect: 'follow' });
+      let download = cached && cached.expires > Date.now() ? cached.download : null;
+      if (!download) {
+        const metadata = await fetch(releaseApiUrl, {
+          headers: { accept: 'application/vnd.github+json', 'user-agent': 'NotchSPI' },
+        });
+        download = metadata.ok ? releaseDownload(await metadata.json(), dmgUrl, platform) : null;
+        if (!download) {
+          return reply.code(502).type('text/plain; charset=utf-8').send('Download temporarily unavailable.');
+        }
+        // Match the update metadata's 10-minute window; keep the selected immutable URL and name together.
+        cached = { download, expires: Date.now() + 600_000 };
+      }
+      const upstream = await fetch(download.url, { redirect: 'follow' });
       if (!upstream.ok || !upstream.body) {
         req.log.error({ status: upstream.status }, 'DMG fetch failed');
         return reply.code(502).type('text/plain; charset=utf-8').send('Download temporarily unavailable.');
@@ -250,7 +264,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       if (len) reply.header('Content-Length', len);
       return reply
         .header('Cache-Control', 'no-store')
-        .header('Content-Disposition', 'attachment; filename="NotchSPI.dmg"')
+        .header('Content-Disposition', `attachment; filename="${download.filename}"`)
         .type('application/x-apple-diskimage')
         .send(upstream.body);
     });
@@ -278,10 +292,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
         return reply.code(502).send(errorBody('Latest release has no tag.', 'upstream_error'));
       }
       // A pinned Intel tag must contain the configured Intel asset. Never fall back to arm64/latest.
-      if (intel && (rel.draft === true || rel.prerelease === true
-          || !/^v?\d+\.\d+(?:\.\d+)?$/i.test(tag)
-          || !Array.isArray(rel.assets)
-          || !rel.assets.some(asset => asset?.browser_download_url === config.intelDmgUrl))) {
+      if (intel && !releaseDownload(rel, config.intelDmgUrl, 'intel')) {
         return reply.code(502).send(errorBody('Intel release is not ready.', 'upstream_error'));
       }
       return reply.header('Cache-Control', 'public, max-age=600').send({

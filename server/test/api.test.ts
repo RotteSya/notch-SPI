@@ -21,7 +21,7 @@ process.env.LOG_LEVEL = 'silent';
 export const DMG_FIXTURE_BODY = 'not-a-real-dmg';
 process.env.DMG_URL = `data:application/octet-stream,${encodeURIComponent(DMG_FIXTURE_BODY)}`;
 process.env.RELEASE_API_URL = `data:application/json,${encodeURIComponent(
-  JSON.stringify({ tag_name: 'v9.9', body: 'Fixture notes' }),
+  JSON.stringify({ tag_name: 'v9.9', body: 'Fixture notes', assets: [{browser_download_url: process.env.DMG_URL}] }),
 )}`;
 
 const { buildApp } = await import('../src/index.ts');
@@ -242,7 +242,7 @@ test('GET /dl counts the click and streams the DMG from this origin; /stats repo
   // Deliberately NOT a redirect: a 302 would put the upstream host in the user's address bar and
   // download list. The bytes must come back from us, with no Location leaking where they live.
   assert.equal(res.headers.get('location'), null);
-  assert.match(res.headers.get('content-disposition') ?? '', /filename="NotchSPI\.dmg"/);
+  assert.match(res.headers.get('content-disposition') ?? '', /filename="NotchSPI9\.9\.0-mac\.dmg"/);
   assert.match(res.headers.get('cache-control') ?? '', /no-store/);
   assert.equal(await res.text(), DMG_FIXTURE_BODY);
   const after = (await (await fetch(`${base}/stats`)).json()) as { download_clicks: number };

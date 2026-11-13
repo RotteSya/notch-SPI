@@ -8,7 +8,7 @@ cd "$REPO_ROOT"
 usage() {
   echo "Usage: $0 qa|release [--unsigned]" >&2
   echo "  qa       → dist-qa/NotchSPI.app" >&2
-  echo "  release  → dist/candidates/<id>/NotchSPI.dmg (Developer ID + notarize + staple)" >&2
+  echo "  release  → dist/candidates/<id>/NotchSPI<version>-mac.dmg (Developer ID + notarize + staple)" >&2
   echo "  --unsigned  release only: ad-hoc signed DMG, skip notarization" >&2
 }
 
@@ -67,6 +67,9 @@ load_version() {
 }
 
 load_version
+PUBLIC_VERSION="$APP_VERSION"
+[[ "$PUBLIC_VERSION" =~ ^[0-9]+\.[0-9]+$ ]] && PUBLIC_VERSION="$PUBLIC_VERSION.0"
+DMG_NAME="NotchSPI$PUBLIC_VERSION-mac.dmg"
 
 APP_NAME="NotchSPI"
 BUNDLE_ID="com.rottesya.notchspi"
@@ -181,27 +184,27 @@ ln -s /Applications "$STAGING/Applications"
 echo "==> Creating DMG"
 # Pin the distribution filesystem instead of inheriting the host's APFS default.
 # The read-only installer volume needs only the app and Applications link.
-hdiutil create -volname "$APP_NAME" -fs HFS+ -srcfolder "$STAGING" -ov -format UDZO "$OUT/$APP_NAME.dmg" >/dev/null
+hdiutil create -volname "$APP_NAME" -fs HFS+ -srcfolder "$STAGING" -ov -format UDZO "$OUT/$DMG_NAME" >/dev/null
 echo "==> Verifying DMG integrity"
-hdiutil verify "$OUT/$APP_NAME.dmg"
+hdiutil verify "$OUT/$DMG_NAME"
 
 if [[ "$UNSIGNED" == 1 || -z "$SIGN_ID" ]]; then
-  node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$APP_NAME.dmg"
+  node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$DMG_NAME"
   echo "==> Unsigned DMG (ad-hoc). Recipients must bypass Gatekeeper."
   echo "==> Done:"
-  ls -lh "$OUT/$APP_NAME.dmg"
+  ls -lh "$OUT/$DMG_NAME"
   exit 0
 fi
 
 echo "==> Signing DMG"
-codesign --force --timestamp --sign "$SIGN_ID" "$OUT/$APP_NAME.dmg"
-codesign --verify --strict --verbose=2 "$OUT/$APP_NAME.dmg" 2>&1 | sed 's/^/    /'
+codesign --force --timestamp --sign "$SIGN_ID" "$OUT/$DMG_NAME"
+codesign --verify --strict --verbose=2 "$OUT/$DMG_NAME" 2>&1 | sed 's/^/    /'
 echo "==> Notarizing with Apple (profile: $NOTARY_PROFILE)"
-xcrun notarytool submit "$OUT/$APP_NAME.dmg" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun notarytool submit "$OUT/$DMG_NAME" --keychain-profile "$NOTARY_PROFILE" --wait
 echo "==> Stapling notarization ticket"
-xcrun stapler staple "$OUT/$APP_NAME.dmg"
-xcrun stapler validate "$OUT/$APP_NAME.dmg" 2>&1 | sed 's/^/    /'
+xcrun stapler staple "$OUT/$DMG_NAME"
+xcrun stapler validate "$OUT/$DMG_NAME" 2>&1 | sed 's/^/    /'
 
-node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$APP_NAME.dmg"
+node scripts/cross-platform/mac-provenance.mjs finish "$PROVENANCE_DIR" "$APP" "$OUT/$DMG_NAME"
 echo "==> Done:"
-ls -lh "$OUT/$APP_NAME.dmg"
+ls -lh "$OUT/$DMG_NAME"
