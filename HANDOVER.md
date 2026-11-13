@@ -172,6 +172,6 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 基点f9ff0b5，证据 `output/remaining-branches-20261113/`。从正式Intel工作树用普通 `git branch -d` 删除三个已完全包含于f1c9346、无工作树的旧别名（均为codex/前缀）：intel-3-1-candidate（06183a5）、intel-auto-update（304419b）、intel-reliability-20261112（212f094）。标签及既有保全材料不变；恢复用 `git branch <原名> <branches-before.json中的完整HEAD>`。
 
-保留两个archive实验分支：预读代码和预算实现/测试尚未完全吸收。保留fix-math-resources-hover-ci：旧方案移除字体检查，主线0e7cfa4保留检查并修复路径，补丁不等价；保留objective-legacy-baseline：历史评测/评分材料尚未证明全部归入权威归档。五个非主工作树的既有独有提交、脚本依赖及正式来源用途不变。
+后续四分支逐项核验：预算实验已由66e1cc6适配整合，预读仍有独有功能；公式旧方案被0e7cfa4替代，legacy仍有独立评分材料。完整历史及88个变更文件经bundle独立恢复验证后，普通-d删除公式和legacy本地别名；预读保留，预算因未合并保护拒绝普通删除而保留。判定、证据与恢复见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。五个非主工作树不变。
 
-本地分支13→10，工作树仍6；工作树状态和其他引用不变。仅文档及本机证据变更，不改产品代码、不推送；验收见本次证据目录。
+本地分支先13→10，本轮再10→8；工作树仍6。其余引用及工作树状态不变，不改产品代码、不推送、不删远端。
