@@ -7,8 +7,8 @@
 
 - Mac 原生：Apple Silicon / macOS 14+，AppKit/Carbon；截图与题组、官方/自定义 API/本机 CLI 三通道、流式答案、公式、Ghost、最近查题、中日英界面。见[客户端行为](docs/client-behavior.md)。
 - Windows：本仓库 Electron 实现及共享规则；Windows 10 2004+ 交互桌面。源码实现、Mac Electron smoke、Windows 实机验收是不同证据，见[平台入口](docs/windows/README.md)。
-- 源码版本读取 `VERSION.env`，Swift 下限读取 `Package.swift`。主树不是已发布 Mac 3.0 build 27 的冻结快照，发布事实见[历史记录](docs/release-3.0-execution-2026-10-20.md)。
-- Intel/旧 macOS 兼容实现已退出主树；现有下载行为、冻结源码和安装包保留。build 28 为 Intel/macOS 12.3+，build 29 为 Catalina 10.15.7+，来源及实机边界见[兼容账本](docs/compatibility.md)。不能用主树重做这些包。
+- 源码版本读取 `VERSION.env`，Swift 下限读取 `Package.swift`。本次核对主线为 3.1.5 build 42；3.1.5 双架构发布及验收边界见[兼容账本](docs/compatibility.md)。3.0 build 27 的[发布记录](docs/release-3.0-execution-2026-10-20.md)仅为历史证据。
+- Intel 兼容实现由独立源码维护，不在主树 arm64 构建中；3.1.5 Intel build 43 支持 macOS 12.3+。Catalina build 29（10.15.7+）及旧 Intel build 28 是冻结历史版本；来源及实机边界见[兼容账本](docs/compatibility.md)。不能用主树重做这些包。
 - 旧月票 QA 原型、本地题库入口已退役；正式 Plus、题包、体验及旧账户兼容保留。旧用户题库文件不清理，QA 工具见[边界](docs/prototypes.md)。
 
 ## 五分钟本地启动
@@ -114,3 +114,30 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 [Linux 运行验证](docs/linux-runtime-verification.md)、[Vercel 包验证](docs/vercel-bundle-verification.md)、[延迟参考](docs/latency.md)、[反馈操作](docs/feedback-operations.md)、[阅读评测](docs/reading-evaluation.md)按任务加载。付费运行器不由验证/CI 执行；旧预算、候选及许可不构成新调用授权。
 [文档映射](docs/guide-map.json)记录分类、来源和结构化操作依赖；tracked 材料必须属于交付集合，生成物需声明生成入口，外部材料需明确获取契约。Windows 清单读取本次候选 manifest，不沿用日期报告的包名或摘要；[历史索引](docs/history/index.json)按路径和提交区分，[归档说明](docs/history/README.md)提供回读方法。归档正文不是当前操作步骤。
 发布工作树、冻结 Intel/Catalina 源码、签名安装包、本机业务/音频和不可变评测证据保留。不得用清空 output/.build 或整树 git clean 代替源码清理；旧包和旧验收不能改挂新源码。
+
+## 本地治理记录（2026-11-13）
+
+核对基点为 `7366e21372c9f0fda68451491f2b8ac775c9bac0`；本节是本机快照，不代表重新核验生产。主线原有状态仅 `?? tmp/`，Git 根目录为外层 NotchSPI 下的 `native/`。发布事实对照兼容账本、版本文件、服务端渠道配置及本机 `output/release-315-both-20261113/report.md`；最后一项为本机发布证据，不是克隆仓库的必备文件。
+
+| 对象 | 决定、依据与恢复方式 |
+| --- | --- |
+| 本文件的版本和平台入口 | 修正仍以 3.0 为主要发布参照的说明，区分当前独立 Intel 维护与历史冻结版；旧文可从上述基点的 `HANDOVER.md` 恢复。 |
+| Swift debug ModuleCache；Xcode out 下 ModuleCache.noindex、CompilationCache.noindex、SDKStatCaches.noindex | 已逐文件记录摘要后清理；内容为 swiftmodule/pcm、编译缓存索引及 SDK stat cache。由现有 Swift/Xcode 工具链重新生成；不属于交付 manifest、签名包或验收日志。未删除 checkout、repositories、Products、dSYM 和打包 App。 |
+| 15 个本地分支、10 个注册工作树 | 全部保留。10 个非主线分支有主线之外的提交；其余候选来源/渠道工作树即使已合并也承担追溯用途。没有删除远端或本地引用。 |
+| `tmp/intel-reliability-20261112` | HEAD `212f094`，仍有 HANDOVER、OfficialAPI、OfficialCaptureRunTests、VERSION.env、desktop/generated/product.mjs 五个未提交修改，标注为 3.1.5 build 43；不得因版本号相同就认定等于已发布来源 `f1c9346`。未提交补丁另存本次证据目录，原树及材料保留。 |
+| 发布、Windows 和外层旧副本 | 保留全部 output/dist 候选、签名包、安装升级证据及外层 release-worktrees 三份未注册副本；尚未证明没有独有文件或外部任务依赖。Intel 真机启动、截图、升级仍待验收。 |
+| 活跃代码、配置和生成物 | 保留 Postgres/SQLite/memory 动态加载、官方/自定义 API/CLI、旧账户兼容、scheduler 两套 Worker、共享生成输入、SwiftMath 字体及第三方许可；没有足以删除的新证据。现有领域文档由 guide-map 管理，不再另建治理说明文件。 |
+
+本机审计证据位于 `output/governance-20261113/`：清理前状态、缓存逐文件摘要、原 Intel 补丁及交接备份。缓存回退指用原工具链重建，不承诺逐字节恢复缓存。未安装工具、修改全局环境、提交、推送或发布。
+
+清理前 `scripts/verify.sh --quick` 在 verification-report 的 sourceSnapshot 阶段报 EISDIR：Git 将未忽略的嵌套 Intel 工作树列为目录，快照器按文件读取。原日志在 `output/governance-baseline-20261113.log`。该失败是本轮清理前基线，后续修复见下段；未扩大忽略规则。独立检查结果与清理后计量记录在本次证据目录。
+
+待后续决策：旧 Intel 未提交候选如何合并或退役；历史发布副本及对应分支何时停止保留。操作前需补齐逐文件差异、任务依赖与恢复来源，再明确目标清单；本轮不提出强删、远端删除或生产变更。
+
+验证结果：repo-health（含文档链接/映射）、共享生成、server/scheduler 类型检查、隔离 smoke、Swift checkout、不可变证据与空白检查通过。Swift 661 项：653 通过、8 条件跳过、0 失败；arm64 Release 及资源 bundle 检查通过。治理测试 67 通过、1 失败（bootstrap 副本初始化同样把嵌套工作树当文件，未执行该套件内部用例）；完整 verify 未通过，未做交付 index 验证、Windows/Intel 实机或生产验收。9 个非主工作树的 HEAD、状态与补丁摘要均未变。
+
+计量：清理时移除 1,593 个缓存文件，原分配占用 869,760 KiB；回归重建后 `.build` 从 3,385,600 KiB 降至 2,596,876 KiB，净减少 788,724 KiB（约 770.2 MiB）。这是构建目录净变化，不是全项目或磁盘可用空间增量；本次证据和日志另占少量空间。分支/工作树数量未变。
+
+后续修复嵌套工作树处理：`scripts/lib/verification-report.mjs` 对 Git 返回的目录验证其独立仓库根身份，递归记录 HEAD、dirty 与源码摘要，并纳入父快照一致性判断；普通文件、删除、符号链接继续受检查，未知目录/特殊文件报错。bootstrap 测试夹具仅复制所属仓库文件，显式区分已验证的嵌套仓库，避免复制独立发布工作树或其 Git 管理指针；完整验证报告仍绑定该工作树内容，不会静默排除其变化。回归覆盖嵌套 dirty 内容再次修改、新文件、删除、HEAD 变化、原有忽略缓存边界、悬空符号链接及异常目录。未修改任何忽略规则、工作树或产品代码。验证证据位于 `output/nested-worktree-fix-20261113/`，最终结果另记于下。
+
+后续修复验收：定向测试 28/28 通过；完整 `scripts/verify.sh` 于本轮退出 0，报告 `output/verification/20261113T055241Z-54572/results.json` 的 `automation_passed` 与 `source_consistent` 均为 true。治理 92/92 通过；Desktop、server、scheduler、Worker dry-run、Swift 661 项（8 条件跳过、0 失败）、arm64 Release、资源、不可变证据、路由与空白检查通过。未配置 TEST_POSTGRES_URL，Postgres 跳过；硬件 blocked，签名 skipped，不计作完成。旧 Intel 补丁字节一致，全部工作树注册信息及 9 个非主工作树的状态/补丁摘要保持不变。前段 67/1 与 EISDIR 为修复前结果，已被此次验收替代。仅在验证结束后追加本结果说明，再运行文档健康及空白检查。

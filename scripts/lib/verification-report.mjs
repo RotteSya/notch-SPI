@@ -7,18 +7,42 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-export function sourceSnapshot(directory = root) {
+// Git emits nested repositories as directory entries. Keep them separate from the
+// owning repository's files, but never drop their state from verification identity.
+export function sourceEntries(directory = root) {
   const git = args => execFileSync('git', args, {cwd:directory,encoding:'utf8'});
   const names = [...new Set(git(['ls-files','-z','--cached','--others','--exclude-standard']).split('\0').filter(Boolean))].sort();
-  const files = names.map(name => {
+  return names.map(name => {
     const file = path.join(directory, name);
-    if (!fs.existsSync(file)) return [name, 'deleted'];
-    const stat = fs.lstatSync(file);
-    return [name, stat.isSymbolicLink() ? 'symlink' : (stat.mode & 0o111 ? 'executable' : 'file'),
-      digest(stat.isSymbolicLink() ? fs.readlinkSync(file) : fs.readFileSync(file))];
+    let stat;
+    try { stat = fs.lstatSync(file); }
+    catch (error) { if (error.code === 'ENOENT') return {name, kind:'deleted'}; throw error; }
+    if (stat.isDirectory()) {
+      const top = execFileSync('git', ['rev-parse','--show-toplevel'], {cwd:file,encoding:'utf8'}).trim();
+      if (fs.realpathSync(top) !== fs.realpathSync(file)) throw new Error(`Unexpected source directory: ${name}`);
+      return {name, kind:'repository'};
+    }
+    if (!stat.isFile() && !stat.isSymbolicLink()) throw new Error(`Unsupported source entry: ${name}`);
+    return {name, kind:stat.isSymbolicLink() ? 'symlink' : (stat.mode & 0o111 ? 'executable' : 'file')};
+  });
+}
+
+export function sourceSnapshot(directory = root) {
+  const git = args => execFileSync('git', args, {cwd:directory,encoding:'utf8'});
+  const nested_repositories = [];
+  const files = sourceEntries(directory).map(({name, kind}) => {
+    const file = path.join(directory, name);
+    if (kind === 'deleted') return [name, kind];
+    if (kind === 'repository') {
+      const snapshot = sourceSnapshot(file);
+      nested_repositories.push({path:name, ...snapshot});
+      return [name, kind, digest(JSON.stringify(snapshot))];
+    }
+    return [name, kind, digest(kind === 'symlink' ? fs.readlinkSync(file) : fs.readFileSync(file))];
   });
   return {commit:git(['rev-parse','HEAD']).trim(), source_sha256:digest(JSON.stringify(files)),
-    dirty:Boolean(git(['status','--porcelain','--untracked-files=all']).trim()), file_count:files.length};
+    dirty:Boolean(git(['status','--porcelain','--untracked-files=all']).trim()), file_count:files.length,
+    nested_repositories};
 }
 
 export function testSummary(log) {

@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import {sourceEntries} from '../lib/verification-report.mjs';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'nspi-bootstrap-'));
@@ -70,17 +71,22 @@ exit 1
 `);
 fs.chmodSync(path.join(stubDir, 'pgrep'), 0o755);
 
-const sourceFiles = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean);
+// These scenarios exercise this repository's bootstrap, not independent release
+// repositories. sourceEntries validates every directory; sourceSnapshot separately
+// binds their state in the enclosing verification report.
+const sourceFiles = sourceEntries(repo).filter(({kind}) => kind !== 'repository' && kind !== 'deleted').map(({name}) => name);
 for (const relative of sourceFiles) {
   const source = path.join(repo, relative);
-  if (!fs.existsSync(source)) continue;
   const target = path.join(base, relative);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(source, target);
-  fs.chmodSync(target, fs.statSync(source).mode);
+  if (fs.lstatSync(source).isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(source), target);
+  else {
+    fs.copyFileSync(source, target);
+    fs.chmodSync(target, fs.statSync(source).mode);
+  }
 }
 execFileSync('git', ['init', '-q', base]);
-execFileSync('git', ['add', '-f', '--', ...sourceFiles.filter(file => fs.existsSync(path.join(base, file)))], { cwd: base });
+execFileSync('git', ['add', '-f', '--', ...sourceFiles], { cwd: base });
 after(() => {
   fs.rmSync(work, { recursive: true, force: true });
 });
