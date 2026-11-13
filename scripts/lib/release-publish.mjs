@@ -70,6 +70,8 @@ export function publishRelease({root, tag, mode, config, run = defaultRun, searc
     const tagRef = JSON.parse(gh(['api', `repos/${repository}/git/ref/tags/${tag}`]));
     if (!/^[a-f0-9]{40}$/.test(tagRef.object?.sha ?? '')) throw Error('Existing release tag required; no tag will be created');
     const assets = releaseAssets(release, tag);
+    // Keep the checksum as release evidence; mirror only the two installers.
+    const installers = assets.slice(0, 2);
     if (mode === 'sync' && release.draft) throw Error('sync cannot publish or upload a draft release');
     state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile)) : {tag, releaseId:release.id, assets, files:{}, status:'preparing'};
     if (state.releaseId !== release.id || JSON.stringify(state.assets) !== JSON.stringify(assets)) throw Error('Release identity changed; do not overwrite the existing release receipt');
@@ -85,7 +87,7 @@ export function publishRelease({root, tag, mode, config, run = defaultRun, searc
     // One complete search per run. Never infer absence from the CLI's five-row preview.
     const search = searchSnapshot ? ndjson(fs.readFileSync(searchSnapshot, 'utf8')) : quark(['search','--keyword','NotchSPI','--size','100','--stdout-only']);
     const folder = selectFolder(search, config); write(path.join(directory,'search-files.json'),folder.files);
-    for (const asset of assets) {
+    for (const asset of installers) {
       const existing = folder.files.filter(f => f.filename === asset.name);
       if (existing.length && !state.files[asset.name]?.fid) throw Error(`Existing name has no trusted upload receipt: ${asset.name}; inspect before retry`);
       if (existing.length > 1) throw Error(`Duplicate remote name: ${asset.name}`);
@@ -102,7 +104,7 @@ export function publishRelease({root, tag, mode, config, run = defaultRun, searc
     const published = readRelease();
     if (published.draft || published.id !== release.id || JSON.stringify(releaseAssets(published,tag)) !== JSON.stringify(assets)) throw Error('Published release identity does not match');
     state.status='syncing'; state.published=true; save();
-    for (const asset of assets) {
+    for (const asset of installers) {
       let receipt = state.files[asset.name];
       if (!receipt?.fid) {
         receipt = state.files[asset.name] = {uploadStarted:true}; save();

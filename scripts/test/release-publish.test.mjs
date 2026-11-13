@@ -46,13 +46,13 @@ function fixture(t, draft=true) {
   return {root,go,release,names,bodies,remote,events,faults};
 }
 
-test('one local publish command publishes the prepared draft then uploads and reads back all three files',t=>{
- const f=fixture(t);const result=f.go();assert.equal(result.status,'complete');assert.equal(f.remote.length,3);
+test('one local publish command publishes the prepared draft then uploads and reads back only the two installers',t=>{
+ const f=fixture(t);const result=f.go();assert.equal(result.status,'complete');assert.equal(f.remote.length,2);
  assert.ok(f.events.indexOf('search')<f.events.indexOf('publish'));assert.ok(f.events.indexOf('publish')<f.events.indexOf('upload'));
- assert.equal(f.events.filter(e=>e==='search').length,1);assert.equal(f.events.filter(e=>e==='download').length,3);
+ assert.equal(f.events.filter(e=>e==='search').length,1);assert.equal(f.events.filter(e=>e==='download').length,2);
 });
 test('retry verifies existing receipt bytes and never uploads duplicates or republishes',t=>{
- const f=fixture(t);f.go();f.events.length=0;f.go('sync');assert.equal(f.remote.length,3);assert.ok(!f.events.includes('upload'));assert.ok(!f.events.includes('publish'));assert.equal(f.events.filter(e=>e==='download').length,3);
+ const f=fixture(t);f.go();f.events.length=0;f.go('sync');assert.equal(f.remote.length,2);assert.ok(!f.events.includes('upload'));assert.ok(!f.events.includes('publish'));assert.equal(f.events.filter(e=>e==='download').length,2);
 });
 test('sync cannot make a draft public',t=>{
  const f=fixture(t);assert.throws(()=>f.go('sync'),/draft/);assert.ok(!f.events.includes('upload'));assert.ok(!f.events.includes('publish'));
@@ -92,4 +92,16 @@ test('sync does not publish when a public release becomes draft during preflight
 test('release mutation during mirror verification prevents completion',t=>{
  const f=fixture(t,false);let reads=0;f.faults.metadata=r=>{if(++reads===4)r.assets[0].id=999;};assert.throws(()=>f.go('sync'),/changed during mirror verification/);
  assert.equal(JSON.parse(fs.readFileSync(path.join(f.root,'output/release-publish/v3.2.0/state.json'))).status,'blocked');
+});
+
+test('checksum remains required and validated locally without being mirrored',t=>{
+ const f=fixture(t);f.go();assert.deepEqual(f.remote.map(x=>x.name),f.names.slice(0,2));
+ assert.ok(fs.existsSync(path.join(f.root,'output/release-publish/v3.2.0/assets',f.names[2])));
+ const bad=fixture(t);bad.bodies[2]=Buffer.from('invalid checksum bindings');bad.release.assets[2].size=bad.bodies[2].length;bad.release.assets[2].digest='sha256:'+crypto.createHash('sha256').update(bad.bodies[2]).digest('hex');
+ assert.throws(()=>bad.go(),/Checksum file does not bind/);assert.ok(!bad.events.includes('publish'));assert.ok(!bad.events.includes('upload'));
+});
+test('old checksum receipt is retained as history but never downloaded or uploaded again',t=>{
+ const f=fixture(t,false);f.go('sync');const file=path.join(f.root,'output/release-publish/v3.2.0/state.json');const state=JSON.parse(fs.readFileSync(file));
+ state.files[f.names[2]]={fid:'removed-checksum',folderPath:'夸克网盘/NotchSPI Releases'};fs.writeFileSync(file,JSON.stringify(state));
+ f.events.length=0;const result=f.go('sync');assert.equal(result.status,'complete');assert.equal(result.files[f.names[2]].fid,'removed-checksum');assert.ok(!f.events.includes('upload'));assert.equal(f.events.filter(e=>e==='download').length,2);
 });
