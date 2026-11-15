@@ -24,6 +24,26 @@ async function fixture(t) {
 test('Vercel accepts only the reviewed website media and robots, with identical bytes', async t => {
   assert.deepEqual(await verifyStaticOutput(await fixture(t)), [
     'media/automatic-mode-poster.jpg', 'media/automatic-mode.mp4',
+    'media/companies/ana.png',
+    'media/companies/aws.png',
+    'media/companies/canon.png',
+    'media/companies/goldman-sachs.png',
+    'media/companies/honda.png',
+    'media/companies/itochu.png',
+    'media/companies/jal.png',
+    'media/companies/jr-east.png',
+    'media/companies/line-yahoo.webp',
+    'media/companies/marubeni.svg',
+    'media/companies/microsoft.png',
+    'media/companies/mitsubishi.png',
+    'media/companies/panasonic.png',
+    'media/companies/rakuten.png',
+    'media/companies/recruit.png',
+    'media/companies/softbank-group.png',
+    'media/companies/sony.svg',
+    'media/companies/starbucks.png',
+    'media/companies/suntory.png',
+    'media/companies/toyota.png',
     'media/single-mode-poster.jpg', 'media/single-mode.mp4', 'robots.txt',
   ]);
 });

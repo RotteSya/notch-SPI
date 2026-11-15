@@ -240,3 +240,35 @@ test('automatic-mode recording is seekable and served from the same origin', asy
   assert.match(html, /按下 ⌘⇧0 ，检测到画面变化自动查题，无需重复按快捷键。/);
   assert.match(html, /source src="\/media\/automatic-mode.mp4"/);
 });
+
+test('homepage company logos are local, accessible once and served by the media allowlist', async () => {
+  const {companyLogos} = await import('../src/site-companies.ts');
+  assert.equal(companyLogos.length, 20);
+  for (const lang of ['zh','ja','en']) {
+    const html = (await app.inject(`/?lang=${lang}`)).body;
+    assert.ok(html.indexOf('id="company-title"') < html.indexOf('id="how"'));
+    assert.match(html, /class="company-window" tabindex="0" role="group"/);
+    assert.doesNotMatch(html, /class="company-pause"|class="company-note"/);
+    assert.match(html, /<ul class="company-group" aria-hidden="true">/);
+    for (const {name,file} of companyLogos) {
+      assert.equal(html.split(`alt="${name}"`).length - 1, 1);
+      assert.equal(html.split(`src="/media/company-${file}"`).length - 1, 2);
+    }
+  }
+  for (const {file} of companyLogos) {
+    const res = await app.inject({method:'HEAD',url:`/media/company-${file}`});
+    assert.equal(res.statusCode,200);
+    assert.equal(res.headers['content-type'],file.endsWith('.svg') ? 'image/svg+xml' : file.endsWith('.webp') ? 'image/webp' : 'image/png');
+    assert.ok(Number(res.headers['content-length']) > 0);
+  }
+  assert.equal((await app.inject('/media/company-unknown.svg')).statusCode,404);
+  assert.ok(!(await app.inject('/spi')).body.includes('id="company-title"'));
+});
+
+test('company motion preserves measured velocity when intrinsic logo widths change', async () => {
+  const {companyLogos, companyCycleSeconds} = await import('../src/site-companies.ts');
+  for (const [height,maxWidth,gap,speed] of [[48,150,64,86.2545],[32,100,32,52.1695]] as const) {
+    const distance = companyLogos.reduce((sum, logo) => sum + Math.min(height * logo.width / logo.height,maxWidth) + gap,0);
+    assert.ok(Math.abs(distance / Number(companyCycleSeconds(height,maxWidth,gap,speed)) - speed) < .001);
+  }
+});
