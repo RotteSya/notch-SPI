@@ -1,7 +1,29 @@
 import {createReadStream, statSync} from 'node:fs';
 
-// Only these bundled product-demo assets are accessible; never accept filesystem paths.
+// Only these bundled website assets are accessible; never accept filesystem paths.
 const files = {
+  '/media/company-ana.png': {url:new URL('../public/media/companies/ana.png', import.meta.url), type:'image/png'},
+  '/media/company-canon.png': {url:new URL('../public/media/companies/canon.png', import.meta.url), type:'image/png'},
+  '/media/company-goldman-sachs.png': {url:new URL('../public/media/companies/goldman-sachs.png', import.meta.url), type:'image/png'},
+  '/media/company-honda.png': {url:new URL('../public/media/companies/honda.png', import.meta.url), type:'image/png'},
+  '/media/company-itochu.png': {url:new URL('../public/media/companies/itochu.png', import.meta.url), type:'image/png'},
+  '/media/company-jal.png': {url:new URL('../public/media/companies/jal.png', import.meta.url), type:'image/png'},
+  '/media/company-jr-east.png': {url:new URL('../public/media/companies/jr-east.png', import.meta.url), type:'image/png'},
+  '/media/company-line-yahoo.webp': {url:new URL('../public/media/companies/line-yahoo.webp', import.meta.url), type:'image/webp'},
+  '/media/company-marubeni.svg': {url:new URL('../public/media/companies/marubeni.svg', import.meta.url), type:'image/svg+xml'},
+  '/media/company-microsoft.png': {url:new URL('../public/media/companies/microsoft.png', import.meta.url), type:'image/png'},
+  '/media/company-mitsubishi.png': {url:new URL('../public/media/companies/mitsubishi.png', import.meta.url), type:'image/png'},
+  '/media/company-panasonic.png': {url:new URL('../public/media/companies/panasonic.png', import.meta.url), type:'image/png'},
+  '/media/company-rakuten.png': {url:new URL('../public/media/companies/rakuten.png', import.meta.url), type:'image/png'},
+  '/media/company-recruit.png': {url:new URL('../public/media/companies/recruit.png', import.meta.url), type:'image/png'},
+  '/media/company-softbank-group.png': {url:new URL('../public/media/companies/softbank-group.png', import.meta.url), type:'image/png'},
+  '/media/company-sony.svg': {url:new URL('../public/media/companies/sony.svg', import.meta.url), type:'image/svg+xml'},
+  '/media/company-starbucks.png': {url:new URL('../public/media/companies/starbucks.png', import.meta.url), type:'image/png'},
+  '/media/company-toyota.png': {url:new URL('../public/media/companies/toyota.png', import.meta.url), type:'image/png'},
+  '/media/company-aws.png': {url:new URL('../public/media/companies/aws.png', import.meta.url), type:'image/png'},
+  '/media/company-suntory.png': {url:new URL('../public/media/companies/suntory.png', import.meta.url), type:'image/png'},
+
+
   '/media/automatic-mode.mp4': {url:new URL('../public/media/automatic-mode.mp4', import.meta.url), type:'video/mp4'},
   '/media/automatic-mode-poster.jpg': {url:new URL('../public/media/automatic-mode-poster.jpg', import.meta.url), type:'image/jpeg'},
   '/media/single-mode.mp4': {url:new URL('../public/media/single-mode.mp4', import.meta.url), type:'video/mp4'},

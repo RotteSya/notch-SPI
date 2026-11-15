@@ -1,3 +1,4 @@
+import {companySection, companyCSS} from './site-companies.ts';
 import {chipMenuImage, chipInfoImage} from './site-chip-assets.ts';
 import {polishCSS} from './site-polish.ts';
 import {continuationCopy, protectionSection, featureSection, continuationCSS} from './site-continuation.ts';
@@ -312,7 +313,7 @@ export function renderLandingPage(input: SiteInput): string {
   return `<!doctype html>
 <html lang="${input.lang==='zh'?'zh-CN':input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" href="${ghostAvatar}">
-<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}${continuationCSS}${polishCSS}</style></head><body>
+<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}${continuationCSS}${polishCSS}${companyCSS}</style></head><body>
 <a class="skip" href="#main">${d.skip}</a>
 <div class="theater"><header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>
@@ -329,6 +330,7 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <div class="question-window"><div class="window-chrome" aria-hidden="true"><span class="window-tools"><span class="traffic-lights"><i></i><i></i><i></i></span>${symbol("sidebar.left")}${symbol("doc")}${symbol("signature")}${symbol("viewfinder")}</span><span class="window-tools">${symbol("ellipsis.circle")}${symbol("doc")}${symbol("square.and.arrow.up")}</span></div><div class="question-content"><p class="question-tag">${d.problemTag}</p><div class="numbered-question"><span aria-hidden="true">1.</span><h3>${lines(d.question)}</h3></div><div class="options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div></div>
 <div class="flying-capture" aria-hidden="true"><div class="snapshot-label">${d.problemTag}</div><p>${d.question}</p><div class="snapshot-options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div><div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
 </fieldset></div></section></div></div>
+${input.entry ? '' : companySection(input.lang)}
 <div class="continuation"><div class="wrap">${protectionSection(input.lang)}${featureSection(input.lang)}</div>
 <section id="pricing" class="pricing-band" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><h2 id="pricing-title">${c.pricing}</h2></div>
 <div class="concept-plans">${trialCard}${plusCard}${packCard}</div>

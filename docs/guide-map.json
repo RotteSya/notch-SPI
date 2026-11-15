@@ -379,7 +379,8 @@
       "purpose": "官网与本地预览",
       "sources": [
         "server/src/site.ts",
-        "server/src/site-media.ts"
+        "server/src/site-media.ts",
+        "server/src/site-companies.ts"
       ],
       "checks": [
         "server/test/site.test.ts",
