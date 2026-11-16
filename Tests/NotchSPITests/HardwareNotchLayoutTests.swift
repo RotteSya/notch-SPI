@@ -238,6 +238,68 @@ final class HardwareNotchLayoutTests: XCTestCase {
         }
     }
 
+    @MainActor func testCapturableContourSurvivesCollapseWithoutChangingLayoutOrControls() throws {
+        func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+        for layout in [screen(top: 32), screen(top: 0), screen(auxiliary: false)] {
+            for sharing: NSWindow.SharingType in [.none, .readWrite] {
+                let model = TutorModel()
+                model.answer = "FINAL: B. 60 km/h"; model.status = .idle
+                let collapsed = layout.collapsed(sideExtension: 60)
+                let expanded = layout.expanded(contentHeight: 300 + layout.bodyAdjustment(onboarding: false))
+                let panel = NotchPanel(contentRect: collapsed)
+                defer { panel.close() }
+                panel.sharingType = sharing
+                var settingsClicks = 0
+                let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
+                    onHover: { _ in }, onCycleDepth: {}, onEditPersona: {},
+                    onSettings: { settingsClicks += 1 }, onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+                panel.contentView = view; view.screenLayout = layout
+                view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+                view.qaUseManualMorphClock()
+                let surface = try XCTUnwrap(view.subviews.compactMap { $0 as? NotchSurfaceView }.first)
+                for _ in 0..<2 {
+                    XCTAssertEqual(panel.frame, collapsed)
+                    let reliesOnHardware = layout.hasTopWings && sharing == .none
+                    XCTAssertEqual(surface.hardwareContourCutoff != nil, reliesOnHardware)
+                    // Rasterize the actual surface configured by NotchView, including its
+                    // clipping branch. A frame-only assertion misses the missing right half.
+                    let width = Int(surface.bounds.width * 2), height = Int(surface.bounds.height * 2)
+                    let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height,
+                        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+                    context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: 2, y: -2)
+                    surface.draw(surface.bounds)
+                    NSGraphicsContext.restoreGraphicsState()
+                    let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+                    let rightInterior = (height / 2 * width + width - 24) * 4 + 3
+                    XCTAssertEqual(pixels[rightInterior], reliesOnHardware ? 0 : 255,
+                        "A capturable window must paint its right half without relying on the camera housing")
+                    XCTAssertEqual(pixels[((height - 1) * width + width - 1) * 4 + 3], 0,
+                        "The bottom-right corner remains rounded, not a rectangular black patch")
+                    model.expanded = true; view.refreshScreenshotTray()
+                    for _ in 0..<40 { view.qaAdvanceMorph(by: 0.02) }
+                    XCTAssertNil(surface.hardwareContourCutoff)
+                    XCTAssertEqual(panel.frame, expanded)
+                    let gear = try XCTUnwrap(descendants(view).compactMap { $0 as? NotchControlButton }
+                        .first { $0.accessibilityLabel() == L10n.settingsTitle })
+                    XCTAssertFalse(gear.isHiddenOrHasHiddenAncestor)
+                    // NSView.hitTest takes coordinates in its superview, not its
+                    // own flipped bounds (the window frame view is unflipped).
+                    let point = gear.convert(CGPoint(x: gear.bounds.midX, y: gear.bounds.midY), to: view.superview)
+                    XCTAssertTrue(view.hitTest(point) === gear)
+                    XCTAssertTrue(gear.accessibilityPerformPress())
+                    model.expanded = false; view.refreshScreenshotTray()
+                    for _ in 0..<40 { view.qaAdvanceMorph(by: 0.02) }
+                    XCTAssertEqual(model.answer, "FINAL: B. 60 km/h")
+                    XCTAssertEqual(panel.sharingType, sharing)
+                }
+                XCTAssertEqual(settingsClicks, 2)
+            }
+        }
+    }
+
     @MainActor func testCollapsedSurfaceIsBlackAndDoesNotRepaintPhysicalRightContour() throws {
         let scale: CGFloat = 2
         let width = 520, height = 80

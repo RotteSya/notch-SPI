@@ -692,7 +692,10 @@ final class NotchView: NSView {
         let materialOpacity = hardware ? min(1, g) : 1
         surface.materialOpacity = materialOpacity
         surface.shadowStrength = p * materialOpacity
-        surface.hardwareContourCutoff = hardware && g <= 0.000001
+        // Captures contain software pixels, not the physical camera housing. Keep the
+        // complete existing silhouette in shareable windows; only excluded windows
+        // can rely on the hardware to finish the right-hand contour.
+        surface.hardwareContourCutoff = hardware && window?.sharingType == NSWindow.SharingType.none && g <= 0.000001
             ? screenLayout.map { ($0.cutout?.midX ?? 0) - (window?.frame.minX ?? 0) } : nil
 
         luma.alphaValue = materialOpacity
