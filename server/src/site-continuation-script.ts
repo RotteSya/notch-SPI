@@ -5,6 +5,28 @@ export const continuationScript = `(() => {
   const slider = comparison.querySelector('.reveal-range');
   const device = comparison.querySelector('.reveal-device');
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const demoVideos = [...document.querySelectorAll('#features video')];
+  const visibleVideos = new Set();
+  function syncDemoMotion() {
+    demoVideos.forEach(video => {
+      video.muted = true;
+      if (motion.matches || document.hidden || !visibleVideos.has(video)) video.pause();
+      else video.play().catch(() => {});
+    });
+  }
+  if ('IntersectionObserver' in window) {
+    const videoObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio > 0) visibleVideos.add(entry.target);
+        else visibleVideos.delete(entry.target);
+      });
+      syncDemoMotion();
+    }, {threshold: 0});
+    demoVideos.forEach(video => videoObserver.observe(video));
+  }
+  motion.addEventListener('change', syncDemoMotion);
+  document.addEventListener('visibilitychange', syncDemoMotion);
+  syncDemoMotion();
   function render() {
     device.style.setProperty('--split', slider.value + '%');
     const lang = document.documentElement.lang.split('-')[0];
@@ -62,7 +84,7 @@ export const continuationScript = `(() => {
   const hashTarget = document.getElementById(location.hash.slice(1));
   if (hashTarget?.tagName === 'DETAILS') hashTarget.open = true;
   // AboutMe's section rhythm, adapted to native page scrolling without a runtime dependency.
-  const chapters = [...document.querySelectorAll('.protection > h2, #capture-comparison, .continuation-features article, .pricing-header, .concept-plans, .faq-section > div, .scenic-footer .closing')];
+  const chapters = document.body?.classList.contains('homepage') ? [] : [...document.querySelectorAll('.protection > h2, #capture-comparison, .continuation-features article, .pricing-header, .concept-plans, .faq-section > div, .scenic-footer .closing')];
   if ('IntersectionObserver' in window) {
     const pending = new Set();
     const reveal = (node, immediate = false) => {

@@ -6,6 +6,8 @@ export const demoScript = `(() => {
   const demo = document.getElementById('demo');
   if (!demo) return;
   const stages = [...demo.querySelectorAll('input[name="demo-stage"]')];
+  // Home uses a static result; entry pages keep their interactive stages.
+  if (!stages.length) return;
   const toggle = demo.querySelector('.demo-toggle');
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const durations = [1800, 3400, 5000];

@@ -26,6 +26,8 @@ const files = {
 
   '/media/automatic-mode.mp4': {url:new URL('../public/media/automatic-mode.mp4', import.meta.url), type:'video/mp4'},
   '/media/automatic-mode-poster.jpg': {url:new URL('../public/media/automatic-mode-poster.jpg', import.meta.url), type:'image/jpeg'},
+  '/media/multi-mode.mp4': {url:new URL('../public/media/multi-mode.mp4', import.meta.url), type:'video/mp4'},
+  '/media/multi-mode-poster.jpg': {url:new URL('../public/media/multi-mode-poster.jpg', import.meta.url), type:'image/jpeg'},
   '/media/single-mode.mp4': {url:new URL('../public/media/single-mode.mp4', import.meta.url), type:'video/mp4'},
   '/media/single-mode-poster.jpg': {url:new URL('../public/media/single-mode-poster.jpg', import.meta.url), type:'image/jpeg'},
 } as const;

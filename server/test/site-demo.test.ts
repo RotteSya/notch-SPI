@@ -4,11 +4,11 @@ import { runInNewContext } from 'node:vm';
 import { createHash } from 'node:crypto';
 import { demoScript, siteCSP } from '../src/site-demo.ts';
 
-function setup(reduced = false, geometry?: Record<string, any>, noToggle = false) {
+function setup(reduced = false, geometry?: Record<string, any>, noToggle = false, staticHome = false) {
   const events = new Map<string, (event?: any) => void>();
   let selected = 2;
   let now = 0;
-  const stages = [0, 1, 2].map(index => ({
+  const stages = (staticHome ? [] : [0, 1, 2]).map(index => ({
     closest: () => geometry?.labels?.[index],
     get checked() { return selected === index; },
     set checked(value: boolean) { if (value) selected = index; },
@@ -156,4 +156,11 @@ test('step indicator follows measured labels and recomputes after resize', () =>
   offset = 20;
   demo.fire('resize');
   assert.equal(values.get('--step-x'), '134px');
+});
+
+// No timers or keyboard-stage behavior is installed for the static homepage scene.
+test('static homepage skips interactive stage initialization', () => {
+  const home = setup(false, undefined, true, true);
+  assert.equal(home.running, false);
+  assert.deepEqual(home.element.dataset, {});
 });

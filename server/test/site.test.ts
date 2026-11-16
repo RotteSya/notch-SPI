@@ -165,12 +165,14 @@ test('pack recommendations match the app purchase entry, with precise fractional
   assert.equal((page.match(/ · One-time payment/g)??[]).length,3);
 });
 
-test('demo is accessible without scripts and reduced motion is included in all languages', () => {
+test('home result is readable without scripts or hidden stage controls in all languages', () => {
   for(const lang of ['zh','ja','en'] as const){
     const page=renderLandingPage({packs:[],trialQuestions:30,currency:'JPY',lang,aiProvider:'deepseek'});
-    assert.equal((page.match(/type="radio"/g)??[]).length,3);
-    assert.match(page,/id="demo-answer"[^>]*checked/);
-    assert.match(page,/<fieldset><legend>/);
+    assert.equal((page.match(/<input[^>]*name="demo-stage"/g)??[]).length,0);
+    assert.match(page,/id="demo" data-static="true"/);
+    assert.doesNotMatch(page,/<div class="stage-controls">/);
+    assert.match(page,/<article id="personality-mode"><h3>/);
+    assert.doesNotMatch(page,/<details id="personality-mode"/);
     assert.match(page,/prefers-reduced-motion:reduce/);
     assert.match(page,/href="#main"/);
     assert.doesNotMatch(page,/onchange=|onclick=/);
@@ -199,12 +201,12 @@ test('hero uses the native AppKit answer capture and desktop chrome without the 
   assert.match(page, /D. 120 km\/h/);
 });
 
-test('single-image demo precedes multi-image mode and waits for user playback', () => {
+test('demo videos defer playback to visibility logic and stay muted and looping', () => {
   for (const lang of ['zh','ja','en'] as const) {
     const html = renderLandingPage({lang,packs:[],currency:'JPY',trialQuestions:30,aiProvider:'mock'});
     assert.ok(html.indexOf('id="single-mode"') < html.indexOf('id="automatic-mode"'));
-    assert.match(html, /<video controls playsinline preload="none" poster="\/media\/single-mode-poster.jpg"/);
-    assert.doesNotMatch(html, /<video[^>]*autoplay/);
+    assert.equal((html.match(/<video muted loop playsinline preload="metadata"/g) ?? []).length, 3);
+    assert.doesNotMatch(html, /<video[^>]*(controls|autoplay)/);
   }
 });
 
@@ -236,7 +238,7 @@ test('automatic-mode recording is seekable and served from the same origin', asy
   const html = renderLandingPage({lang:'zh',packs:[],currency:'JPY',trialQuestions:30,aiProvider:'mock'});
   assert.match(html, /画面变化，自动查题/);
   assert.doesNotMatch(html, /data-auto-caption|auto-video-badge|data-auto-cues/);
-  assert.match(html, /默认快捷键 ⌘⇧0 · 再按一次即可停止（真实 App 操作演示）/);
+  assert.doesNotMatch(html, /默认快捷键 ⌘⇧0 · 再按一次即可停止（真实 App 操作演示）/);
   assert.match(html, /按下 ⌘⇧0 ，检测到画面变化自动查题，无需重复按快捷键。/);
   assert.match(html, /source src="\/media\/automatic-mode.mp4"/);
 });

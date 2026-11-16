@@ -295,4 +295,74 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #78
 .chip-help[open] .chip-guide{animation:chip-guide-enter .24s cubic-bezier(.16,1,.3,1) both;transform-origin:50% 0}
 @keyframes chip-guide-enter{from{opacity:0;transform:translate(-50%,8px) scale(.98)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.chip-help[open] .chip-guide{animation:none}}
+
+/* Homepage: a steady product result, compact capabilities, and immediately readable copy. */
+.homepage .hero-home .demo{padding-bottom:0}
+.homepage .hero-band:after{height:96px}
+.homepage .demo-content{position:relative;margin:0;padding:0;border:0;min-width:0}
+.homepage .demo[data-static] .notch{--panel-width:min(420px,calc(100vw - 76px));width:var(--panel-width);height:calc(var(--panel-width) * .3082191781)}
+.homepage .demo[data-static] .native-answer{display:block;animation:none}
+.homepage .demo[data-static] :is(.notch-head,.notch-body,.pending,.ready-instruction,.flying-capture){display:none}
+.homepage .demo[data-static] .options span:nth-child(2){background:#e9f0ff}
+.homepage .feature-overview{padding:64px 0 0}
+.feature-overview h2{font-size:32px;line-height:1.35;letter-spacing:-.035em}
+.feature-overview h3{font-size:23px;line-height:1.4;font-weight:650;letter-spacing:-.025em}
+.feature-overview p{font-size:15px;line-height:1.75;color:#536176}
+.feature-overview figure{margin:0;min-width:0}
+.feature-overview figcaption{font-size:12px;line-height:1.7;margin-top:12px;color:#657184}
+.feature-overview video{display:block;width:100%;height:auto;border-radius:12px;background:#101925}
+.workflow-demo{display:grid;grid-template-columns:.8fr 1.2fr;gap:64px;align-items:center;padding:40px 0 48px;border-top:1px solid #e1e5ec}
+.workflow-steps{display:grid;gap:20px;margin:28px 0 20px;padding:0;list-style:none;font-size:16px;line-height:1.65}
+.workflow-steps li{display:flex;align-items:baseline;gap:16px}
+.workflow-steps li>span{font-size:12px;letter-spacing:.04em;color:#5475a6;font-variant-numeric:tabular-nums}
+.feature-overview .feature-shortcut{font-size:12px;color:#657184}
+.feature-overview .capabilities-title{font-size:28px;margin:18px 0 28px}
+.capability-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px}
+.capability-grid article{display:grid;grid-template-rows:subgrid;grid-row:span 3;row-gap:0;min-width:0;padding:0}
+.capability-grid h3{margin:0 0 10px}
+.capability-grid p{margin:0 0 24px;min-height:0}
+.capability-grid figure{margin-top:0}
+.capability-grid .native-product-image,.capability-grid video{height:230px;object-fit:contain}
+.capability-grid .native-product-image img{width:100%;height:100%;object-fit:contain}
+.capability-grid p strong{font-weight:500;color:var(--ink)}
+.personality-steps{display:flex;flex-direction:column;justify-content:center;gap:22px;height:230px;box-sizing:border-box;margin:0;padding:24px;list-style:none;border:1px solid #dce3ec;border-radius:12px;background:#f2f6fc;font-size:15px;line-height:1.6;color:#263b59}
+.personality-steps li{display:flex;align-items:baseline;gap:14px}
+.personality-steps li>span{flex-shrink:0;color:#5475a6;font-size:12px;font-variant-numeric:tabular-nums}
+.homepage .phrase{display:inline-block}
+.homepage .scenic-footer{background-blend-mode:multiply;background-color:#526782}
+.homepage .scenic-footer .closing h2 span{color:#e0ebff}
+.homepage .scenic-footer .closing h2{text-shadow:0 2px 12px #07132180}
+.homepage .mainnav a,.homepage .languages a{display:inline-flex;align-items:center;min-height:44px}
+.homepage .mainnav{padding-block:0}
+@media(min-width:701px) and (max-width:1000px){
+.workflow-demo{gap:32px;grid-template-columns:1fr 1.2fr}.workflow-steps{font-size:15px;gap:16px}
+.capability-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:32px}.capability-grid p{min-height:0}
+}
+@media(max-width:700px){
+.homepage .header.wrap{padding-top:6px;padding-bottom:0;row-gap:0;min-height:88px}
+.homepage .languages a{padding-inline:8px}.homepage .mainnav{gap:24px}
+.homepage .hero-home{padding-top:26px}.homepage .hero-home .demo{margin-top:28px}
+.homepage .hero-band:after{height:64px}
+.homepage .demo[data-static] .desktop{height:354px}
+.homepage .demo[data-static] .question-window{top:118px;min-height:214px}
+.homepage .demo[data-static] .question-content{padding:10px 14px 16px}
+.homepage .demo[data-static] .question-content h3{font-size:13px;line-height:1.6}
+.homepage .demo[data-static] .options{font-size:13px;gap:3px;margin-top:8px}
+.homepage .reveal-device .comparison-answer{left:12%;width:76%}
+.homepage .feature-overview{padding-top:40px}
+.feature-overview h2{font-size:28px}.feature-overview h3{font-size:23px}
+.workflow-demo{grid-template-columns:1fr;gap:24px;padding:32px 0 36px}
+.workflow-steps{gap:12px;margin:20px 0 12px;font-size:15px}
+.feature-overview video{border-radius:8px}
+.feature-overview .capabilities-title{font-size:26px;margin:12px 0 26px}
+.capability-grid{grid-template-columns:1fr;gap:28px}
+.capability-grid article{display:flex;flex-direction:column;grid-row:auto}
+.capability-grid .native-product-image,.capability-grid video{height:auto}
+.capability-grid .native-product-image img{height:auto}
+.capability-grid article+article{border-top:1px solid #e1e5ec;padding-top:28px}
+.capability-grid p{min-height:0;margin-bottom:18px}
+.capability-grid figure{margin-top:0}
+.feature-overview figcaption{margin-top:8px}
+.homepage .scenic-footer{padding-top:112px}
+}
 `;

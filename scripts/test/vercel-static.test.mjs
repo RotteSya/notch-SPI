@@ -44,6 +44,7 @@ test('Vercel accepts only the reviewed website media and robots, with identical 
     'media/companies/starbucks.png',
     'media/companies/suntory.png',
     'media/companies/toyota.png',
+    'media/multi-mode-poster.jpg', 'media/multi-mode.mp4',
     'media/single-mode-poster.jpg', 'media/single-mode.mp4', 'robots.txt',
   ]);
 });
