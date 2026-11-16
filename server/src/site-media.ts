@@ -2,6 +2,8 @@ import {createReadStream, statSync} from 'node:fs';
 
 // Only these bundled website assets are accessible; never accept filesystem paths.
 const files = {
+  '/media/notchspi-ghost-logo.png': {url:new URL('../public/media/notchspi-ghost-logo.png', import.meta.url), type:'image/png'},
+  '/media/notchspi-ghost-favicon.png': {url:new URL('../public/media/notchspi-ghost-favicon.png', import.meta.url), type:'image/png'},
   '/media/company-ana.png': {url:new URL('../public/media/companies/ana.png', import.meta.url), type:'image/png'},
   '/media/company-canon.png': {url:new URL('../public/media/companies/canon.png', import.meta.url), type:'image/png'},
   '/media/company-goldman-sachs.png': {url:new URL('../public/media/companies/goldman-sachs.png', import.meta.url), type:'image/png'},

@@ -54,6 +54,8 @@ export async function verifyStaticOutput(directory) {
     'media/companies/suntory.png',
     'media/companies/toyota.png',
     'media/multi-mode-poster.jpg', 'media/multi-mode.mp4',
+    'media/notchspi-ghost-favicon.png',
+    'media/notchspi-ghost-logo.png',
     'media/single-mode-poster.jpg',
     'media/single-mode.mp4',
     'robots.txt',
