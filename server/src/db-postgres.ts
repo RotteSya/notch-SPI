@@ -236,11 +236,13 @@ export class PostgresStore implements Store {
   readonly reporting = new SQLReportingStore((transaction, options) => this.runBilling(transaction, false, options?.readOnlySnapshot),true);
   private ready: Promise<void> | null = null;
 
-  constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }) {
+  // connectionTimeoutMillis is overridable so tests that queue hundreds of transactions
+  // behind the five-connection pool measure admission, not runner speed.
+  constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }, connectionTimeoutMillis = 3000) {
     this.healthConnection = { connectionString, ssl };
     this.pool = new pg.Pool({
       connectionString,
-      connectionTimeoutMillis: 3000,
+      connectionTimeoutMillis,
       statement_timeout: 15000,
       idle_in_transaction_session_timeout: 15000,
       max: 5, // serverless-friendly; use the provider's pooled URL for real concurrency

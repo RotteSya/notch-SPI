@@ -22,7 +22,8 @@ if (process.env.TEST_POSTGRES_URL) {
   await admin.query(`CREATE SCHEMA ${schema}`);
   url.searchParams.set('options', '-c search_path=' + schema);
   after(async () => { await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end(); });
-  implementations.push(['postgres', () => new PostgresStore(url.toString(), resolvePostgresSSL({connectionString: url.toString()}))]);
+  // 401 concurrent holds queue behind the five-connection pool; allow slow runners to drain it.
+  implementations.push(['postgres', () => new PostgresStore(url.toString(), resolvePostgresSSL({connectionString: url.toString()}), 30_000)]);
 }
 const start = Date.parse('2026-10-16T15:59:59.000Z'), day = 86_400_000;
 const register = (s: Store, eligible = true) => s.registerDevice({platform: 'macos', appVersion: 'test', trialQuestions: 30, freeTrialEligible: eligible});

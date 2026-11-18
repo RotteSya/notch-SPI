@@ -53,7 +53,9 @@ jobs:
       - run: npm ci --include=optional
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
-      - run: node --test --test-reporter=tap --test-concurrency=2 'test/*.test.ts' | tee "$RUNNER_TEMP/node-tests.tap"
+      - run: |
+          set -o pipefail
+          node --test --test-reporter=tap --test-concurrency=2 'test/*.test.ts' | tee "$RUNNER_TEMP/node-tests.tap"
         env:
           OFFICIAL_PROVIDER: mock
       - name: Offline latency tool regressions (requires server dependencies)
@@ -115,10 +117,12 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci --include=optional
-      - run: node --test --test-reporter=tap --test-concurrency=2 'test/*.test.ts' | tee "$RUNNER_TEMP/postgres-tests.tap"
+      - run: |
+          set -o pipefail
+          node --test --test-reporter=tap --test-concurrency=2 'test/*.test.ts' | tee "$RUNNER_TEMP/postgres-tests.tap"
         env:
           OFFICIAL_PROVIDER: mock
-          TEST_POSTGRES_URL: postgres://notchspi:notchspi@localhost:5432/notchspi_test?sslmode=disable
+          TEST_POSTGRES_URL: postgres://notchspi:notchspi@127.0.0.1:5432/notchspi_test?sslmode=disable
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -195,6 +199,7 @@ jobs:
           "$NSPI_NODE_IMAGE" install --save-exact --include=optional --no-audit --no-fund vercel@59.11.7
       - name: Build the actual function without deployment credentials
         run: >-
+          set -o pipefail;
           docker run --rm --entrypoint node
           -e CI=1 -e VERCEL_TELEMETRY_DISABLED=1 -e NO_COLOR=1
           -v "$GITHUB_WORKSPACE:/work" -v "$RUNNER_TEMP/nspi-vercel:/toolchain:ro" -w /work

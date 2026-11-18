@@ -18,7 +18,8 @@ if(process.env.TEST_POSTGRES_URL){
  const schema='plus_test_'+randomUUID().replaceAll('-','');await admin.query(`CREATE SCHEMA ${schema}`);
  url.searchParams.set('options','-c search_path='+schema);
  after(async()=>{await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();});
- implementations.push(['postgres',()=>new PostgresStore(url.toString(),resolvePostgresSSL({connectionString:url.toString()}))]);
+ // 401 concurrent holds queue behind the five-connection pool; allow slow runners to drain it.
+ implementations.push(['postgres',()=>new PostgresStore(url.toString(),resolvePostgresSSL({connectionString:url.toString()}),30_000)]);
 }
 for(const [name,make] of implementations){
  test(`${name}: Plus paid periods, daily concurrency, failure release, renewal and cancellation`,async t=>{
