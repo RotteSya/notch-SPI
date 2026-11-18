@@ -3,11 +3,19 @@ import { estimateModelCostMicros } from '../telemetry.ts';
 
 /** Experimental upper estimate; the framing allowance is not a vendor guarantee. */
 export async function estimateAstraWire(serialized: string, pricingJSON: string, fastReview: boolean) {
+  return estimateWire(serialized, pricingJSON, 'gpt-6-astra', fastReview);
+}
+
+export async function estimateTerraWire(serialized: string, pricingJSON: string) {
+  return estimateWire(serialized, pricingJSON, 'gpt-6.1-terra', false);
+}
+
+async function estimateWire(serialized: string, pricingJSON: string, model: 'gpt-6-astra' | 'gpt-6.1-terra', fastReview: boolean) {
   const wire = JSON.parse(serialized);
-  const reject = (): never => { throw new Error('Unsupported Astra budget request'); };
+  const reject = (): never => { throw new Error('Unsupported reasoning model budget request'); };
   const keys = ['model','service_tier','reasoning_effort','max_completion_tokens','store','stream','stream_options','messages'];
-  if (Object.keys(wire).some(k => !keys.includes(k)) || wire.model !== 'gpt-6-astra'
-    || wire.service_tier !== 'default' || wire.reasoning_effort !== 'low' || wire.store !== false
+  if (Object.keys(wire).some(k => !keys.includes(k)) || wire.model !== model
+    || wire.service_tier !== 'default' || !(model === 'gpt-6-astra' ? ['low'] : ['low','medium','high']).includes(wire.reasoning_effort) || wire.store !== false
     || wire.stream !== true || JSON.stringify(wire.stream_options) !== '{"include_usage":true}'
     || !Number.isSafeInteger(wire.max_completion_tokens) || wire.max_completion_tokens < 1
     || wire.max_completion_tokens > 8192 || wire.messages?.length !== 2) reject();
@@ -36,7 +44,7 @@ export async function estimateAstraWire(serialized: string, pricingJSON: string,
   inputUpper = Math.ceil(inputUpper * 1.25) + 4096;
   const outputUpper: number = wire.max_completion_tokens;
   if (inputUpper+outputUpper > 1_050_000) reject();
-  const standard = estimateModelCostMicros(pricingJSON,'openai:gpt-6-astra',inputUpper,outputUpper);
+  const standard = estimateModelCostMicros(pricingJSON,'openai:'+model,inputUpper,outputUpper);
   const fast = fastReview ? estimateModelCostMicros(pricingJSON,'openai:gpt-6-astra:fast',inputUpper,outputUpper) : 0;
   if (standard === undefined || fast === undefined) reject();
   // The common estimator rounds for reporting; round upward for a reservation.

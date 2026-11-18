@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {renderLandingPage} from '../src/site.ts';
+import {siteMedia} from '../src/site-media.ts';
 import {parsePacks,DEFAULT_PACKS_JSON} from '../src/pricing.ts';
 test('3.0 site explains recurring Plus, deferred trial and local history retention in every language',()=>{
  for(const lang of ['zh','ja','en'] as const){
@@ -38,10 +39,20 @@ test('Plus payment return opens Plus settings without claiming payment succeeded
   }
  });
 
- test('Ghost is used throughout the site including the favicon',()=>{
+ test('Ghost is used throughout the site including the favicon',async()=>{
   const html=renderLandingPage({lang:'zh',packs:[],currency:'CNY',trialQuestions:30,aiProvider:'mock'});
   assert.equal((html.match(/class="ghost-mark"/g)??[]).length,3);
-  assert.match(html,/<link rel="icon" type="image\/png" href="data:image\/png;base64,/);
+  assert.match(html,/<link rel="icon" type="image\/png" sizes="32x32" href="\/media\/notchspi-ghost-favicon\.png(?:\?[^"<>]+)?">/);
+  assert.equal((html.match(/class="ghost-mark" src="\/media\/notchspi-ghost-logo\.png(?:\?[^"<>]+)?"/g)??[]).length,3);
+  for(const name of ['notchspi-ghost-favicon.png','notchspi-ghost-logo.png']) {
+   const media=siteMedia('/media/'+name);assert.ok(media?.body);
+   assert.equal(media.status,200);assert.equal(media.headers['Content-Type'],'image/png');
+   const chunks:Buffer[]=[];for await(const chunk of media.body)chunks.push(Buffer.from(chunk));
+   const bytes=Buffer.concat(chunks);
+   assert.deepEqual(bytes,readFileSync(new URL('../public/media/'+name,import.meta.url)));
+   assert.equal(bytes.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+   if(name.includes('favicon'))assert.deepEqual([bytes.readUInt32BE(16),bytes.readUInt32BE(20)],[32,32]);
+  }
   assert.match(html,/真实 App 答案面板 · 离线示例/);
   const source=readFileSync(new URL('../src/site.ts',import.meta.url),'utf8');
   assert.doesNotMatch(source,/roseSVGPath|idleScreenshot|\$\{rose\}/);

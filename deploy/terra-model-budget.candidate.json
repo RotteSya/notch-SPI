@@ -1,0 +1,37 @@
+{
+  "approved_at": null,
+  "review_after_production_days": 7,
+  "auto_increase": false,
+  "budget_timezone": "Asia/Shanghai",
+  "valuation": {
+    "currency": "USD",
+    "basis": "Local Terra release candidate only; not deployed or authorized for live traffic. Existing USD 100/day, USD 15 warning and USD 3/physical-attempt ceilings are unchanged. Valuation uses USD 5/M input and USD 7.50/M total output to cover published long-context 12-hour cache-write/output rates; reasoning is included in total output. Request token estimate and framing allowance remain empirical, not an invoice guarantee. Customer question charges unchanged.",
+    "sources": [
+      "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+      "https://developers.openai.com/api/docs/pricing"
+    ]
+  },
+  "environment": {
+    "OFFICIAL_PROVIDER": "openai",
+    "OFFICIAL_MODEL": "gpt-6.1-terra",
+    "OFFICIAL_MAX_TOKENS": "8192",
+    "OBJECTIVE_RESULT_V1_PROVIDER": "openai",
+    "OBJECTIVE_RESULT_V1_MODEL": "gpt-6.1-terra",
+    "OBJECTIVE_RESULT_V1_MAX_TOKENS": "8192",
+    "OBJECTIVE_RESULT_V1_ASTRA_FAST_REVIEW": "0",
+    "OPENAI_BASE_URL": "https://api.openai.com",
+    "EXPLANATION_MAX_TOKENS": "8192",
+    "MODEL_COST_CURRENCY": "USD",
+    "MODEL_BUDGET_UTC_OFFSET_MINUTES": "480",
+    "ATTEMPT_BUDGET_UPPER_MICROS": "3000000",
+    "MODEL_PRICING_VERSION": "2026-11-18-terra-standard-conservative-usd",
+    "MODEL_PRICING_JSON": "[{\"model\":\"openai:gpt-6.1-terra\",\"input_micros_per_million_tokens\":5000000,\"output_micros_per_million_tokens\":7500000}]",
+    "CLIENT_CONFIG_REVISION": "candidate-terra-standard-depth-20261118",
+    "ASTRA_REQUEST_BUDGET_MODE": "guarded-request",
+    "MODEL_DAILY_BUDGET_MICROS": "100000000",
+    "MODEL_BUDGET_WARNING_MICROS": "15000000"
+  },
+  "status": "local_candidate_pending_release_approval",
+  "prepared_at": "2026-11-18",
+  "rollback_configuration": "deploy/production-model-budget.json"
+}

@@ -70,7 +70,14 @@ export async function directAPI({
           },
         ],
       };
-  if (!anthropic && new URL(endpoint).hostname === "api.deepseek.com")
+  if (!anthropic && settings.model === 'gpt-6.1-terra') {
+    const effort = {low:'low',high:'medium',max:'high'}[settings.reasoning ?? 'low'];
+    if (!effort) throw new Error('Invalid reasoning effort');
+    Object.assign(body, {reasoning_effort:effort, max_completion_tokens:8192, service_tier:'default', store:false,
+      stream_options:{include_usage:true}});
+    body.messages[0].role = 'developer';
+    for (const part of body.messages[1].content) if (part.image_url) part.image_url.detail = 'high';
+  } else if (!anthropic && new URL(endpoint).hostname === "api.deepseek.com")
     Object.assign(body, {
       thinking: { type: "enabled" },
       reasoning_effort: settings.reasoning,

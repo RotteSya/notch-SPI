@@ -254,10 +254,13 @@
         "server/src/routes.ts",
         "server/src/plus-routes.ts",
         "server/src/capture-deadline.ts",
+        "server/src/providers/openai.ts",
+        "deploy/terra-model-budget.candidate.json",
         "Sources/NotchSPI/Cloud/PendingCaptureStore.swift"
       ],
       "checks": [
-        "server/test/route-inventory.test.ts"
+        "server/test/route-inventory.test.ts",
+        "server/test/terra-provider.test.ts"
       ]
     },
     {
@@ -644,6 +647,74 @@
         "desktop/package.json",
         "scripts/verify.sh"
       ]
+    },
+    {
+      "path": "docs/research/competitors/2026-11-14/report.md",
+      "kind": "evidence",
+      "scope": [
+        "research"
+      ],
+      "purpose": "竞品研究历史快照；不作为当前产品、准确率或授权依据",
+      "sources": [
+        "docs/research/competitors/2026-11-14/evidence-index.md",
+        "docs/research/competitors/2026-11-14/evidence/manifest.json"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ],
+      "as_of": "2026-11-14",
+      "source_commit": "fe4e68c9a9bd5af3d82e3f42df48cd6003f821d6"
+    },
+    {
+      "path": "docs/research/competitors/2026-11-14/evidence-index.md",
+      "kind": "evidence",
+      "scope": [
+        "research"
+      ],
+      "purpose": "2026-11-14 竞品观察索引与证据保全边界",
+      "sources": [
+        "docs/research/competitors/2026-11-14/evidence/manifest.json",
+        "docs/research/competitors/2026-11-14/evidence/browser-observations.json",
+        "docs/research/competitors/2026-11-14/evidence/rea-records.json.gz"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ],
+      "as_of": "2026-11-14",
+      "source_commit": "fe4e68c9a9bd5af3d82e3f42df48cd6003f821d6"
+    },
+    {
+      "path": "docs/research/competitors/2026-11-14/evidence/monica-static.md",
+      "kind": "evidence",
+      "scope": [
+        "research"
+      ],
+      "purpose": "Monica 2.9.5 公开安装包的历史静态观察",
+      "sources": [
+        "docs/research/competitors/2026-11-14/evidence/manifest.json",
+        "docs/research/competitors/2026-11-14/evidence/rea-records.json.gz"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ],
+      "as_of": "2026-11-14",
+      "source_commit": null
+    },
+    {
+      "path": "docs/research/competitors/2026-11-14/evidence/notchspi-baseline.md",
+      "kind": "evidence",
+      "scope": [
+        "research"
+      ],
+      "purpose": "NotchSPI fe4e68c 源码和公开端点的历史观察",
+      "sources": [
+        "docs/research/competitors/2026-11-14/evidence/manifest.json"
+      ],
+      "checks": [
+        "scripts/repo-health.mjs"
+      ],
+      "as_of": "2026-11-14",
+      "source_commit": "fe4e68c9a9bd5af3d82e3f42df48cd6003f821d6"
     }
   ]
 }

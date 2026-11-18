@@ -1,3 +1,4 @@
+import {AttemptTrace, type AttemptDiagnostics} from './attempt-diagnostics.ts';
 import {CAPTURE_DEADLINE, WorkerLease} from './capture-deadline.ts';
 import {CAPACITY} from './capacity-policy.ts';
 import {trackRequestWork} from './request-lifecycle.ts';
@@ -134,11 +135,11 @@ export class CaptureService {
     const abort=new AbortController(),closed=()=>{
       // Negotiated clients recover the same answer after a dropped transport. The
       // handler remains awaited and bounded by the vendor deadline, including on Vercel.
-      if((req.body as Record<string,unknown>|undefined)?.delivery_recovery_v1!==true)abort.abort();
+      if((req.body as Record<string,unknown>|undefined)?.delivery_recovery_v1!==true)abort.abort('client_disconnect');
     };
     // Observe disconnects before the first authentication, decoding or database await.
     req.raw.once('aborted',closed);reply.raw.once('close',closed);
-    if(req.raw.aborted||reply.raw.destroyed)abort.abort();
+    if(req.raw.aborted||reply.raw.destroyed)abort.abort('client_disconnect');
     try {if(!abort.signal.aborted)await run(abort);} finally {
       req.raw.removeListener('aborted',closed);reply.raw.removeListener('close',closed);abort.abort();
       this.logTiming(req,'handlerFinished');
@@ -524,6 +525,8 @@ export class CaptureService {
     const heartbeat=recoverable?setInterval(()=>{
       if(reply.raw.headersSent&&!reply.raw.destroyed&&!reply.raw.writableEnded) {try{reply.raw.write(': keepalive\n\n');}catch{}}
     },CAPTURE_DEADLINE.heartbeatMs):undefined;
+    const diagnosticsByAttempt=new Map<string,AttemptDiagnostics>();
+    let acceptingUsage=true;
     let usageWrite: Promise<void> = Promise.resolve();
     let firstTimer:ReturnType<typeof setTimeout>|undefined,totalTimer:ReturnType<typeof setTimeout>|undefined;
     let send:(event:StreamEvent)=>void=()=>{};
@@ -536,8 +539,9 @@ export class CaptureService {
       if(recoverable)reply.raw.write(': connected\n\n');
       send=event=>{if(!reply.raw.destroyed&&!reply.raw.writableEnded){try{rawSend(event);}catch{/* peer closed */}}};
       if(abort.signal.aborted)return;
+      let generationExpired=false;
       const deadline=new Promise<never>((_,reject)=>{
-        const stop=()=>{timedOut=true;abort.abort();reject(new Error('deadline'));};
+        const stop=()=>{generationExpired=true;timedOut=true;abort.abort();reject(new Error('deadline'));};
         totalTimer=setTimeout(stop,Math.min(CAPTURE_DEADLINE.generationMs,Math.max(1,Date.parse(capture.expiresAt)-Date.now()-CAPTURE_DEADLINE.settlementMarginMs)));
         abort.signal.addEventListener('abort',()=>reject(new Error('canceled')),{once:true});
       });
@@ -546,32 +550,66 @@ export class CaptureService {
           admission.providerStarted=true;
           const timing=this.timings.get(req);
           timing?.mark('providerStarted');
-          const observedInput=Object.defineProperty(timing?{...input,onTiming:(stage:import('./capture-timing.ts').ProviderTimingStage)=>timing.mark(stage)}:{...input},'onHeaders',
-            {value:(headers:Record<string,string>)=>req.log.info({providerCapacity:headers},'upstream capacity confirmed'),enumerable:false});
           const invoke=async()=>{
             const physicalAttempt = attemptId;
+            const trace=new AttemptTrace();
+            let outcome: AttemptDiagnostics['outcome']='upstream_error';
+            let startupExpired=false,callClosed=false;
+            let acceptedUsage: string|undefined;
+            const observedInput={...input,clientRequestId:physicalAttempt,
+              onTiming:(stage:import('./capture-timing.ts').ProviderTimingStage)=>{if(!callClosed){trace.mark(stage);timing?.mark(stage);}},
+              onHeaders:(headers:Record<string,string>,status?:number)=>{if(callClosed)return;trace.headers(headers,status);
+                req.log.info({attemptId:physicalAttempt,providerCapacity:headers},'upstream capacity confirmed');}};
             const meteredInput = {...observedInput, onHeaders: observedInput.onHeaders, onUsage: (observed: Usage) => {
+              if(!acceptingUsage){req.log.warn({attemptId:physicalAttempt},'usage arrived after managed collection closed; reconciliation required');return;}
+              trace.usageReceived=true;
               const micros = captureCost(config.modelPricingJSON,provider.name,model,observed);
-              if (micros === undefined || observed.inputTokens === null || observed.outputTokens === null || this.budgetAnomaly(req,observed)) return;
-              const proof = {inputTokens: observed.inputTokens, outputTokens: observed.outputTokens, costMicros: micros,
+              if (micros === undefined || !Number.isSafeInteger(observed.inputTokens) || !Number.isSafeInteger(observed.outputTokens) || observed.inputTokens! < 0 || observed.outputTokens! < 0 || observed.inputTokens!+observed.outputTokens! === 0 || this.budgetAnomaly(req,observed)) return;
+              trace.usageValidated=true;
+              const proof = {inputTokens: observed.inputTokens!, outputTokens: observed.outputTokens!, costMicros: micros,
                 source: 'upstream_usage:' + physicalAttempt};
-              usageWrite = settleReliably(()=>store.billing.recordAttemptUsage(token,physicalAttempt,proof))
+              const fingerprint=JSON.stringify(proof);
+              if(acceptedUsage!==undefined){if(acceptedUsage!==fingerprint)req.log.error({attemptId:physicalAttempt},'conflicting usage callback; retained first evidence');return;}
+              acceptedUsage=fingerprint;
+              usageWrite = usageWrite.then(()=>settleReliably(()=>store.billing.recordAttemptUsage(token,physicalAttempt,proof)))
                 .catch(()=>{req.log.error({attemptId:physicalAttempt},'validated usage persistence pending');});
             }};
             const attemptAbort=new AbortController(),signal=AbortSignal.any([abort.signal,attemptAbort.signal]);
+            let cancelAttempt:()=>void=()=>{};
+            const canceled=new Promise<never>((_,reject)=>{
+              cancelAttempt=()=>reject(new Error('attempt canceled'));
+              signal.addEventListener('abort',cancelAttempt,{once:true});
+              if(signal.aborted)cancelAttempt();
+            });
             const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
-              timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
+              startupExpired=true;timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
             },CAPTURE_DEADLINE.firstProgressMs);});
-            try{return await Promise.race([provider.stream(meteredInput,chunk=>{
-            if(!accepting||signal.aborted) return;
+            try{const result=await Promise.race([provider.stream(meteredInput,chunk=>{
+            if(callClosed||!accepting||signal.aborted) return;
+            if(chunk.length)trace.mark('firstProgress');
             if(chunk.length) {clearTimeout(firstTimer);deliveredChars+=chunk.length;}
             if(Buffer.byteLength(raw+chunk)<=64*1024) raw+=chunk; else {overflow=true;abort.abort();}
             if(!overflow&&!recoverable) {send({type:'delta',text:chunk});if(chunk.length)this.timings.get(req)?.mark('firstDeltaSent');}
           },signal,()=>{
             // A thinking model can be healthy before it emits its first visible answer.
             // Keep the absolute 90-second deadline; only retire the startup deadline.
-            if(accepting&&!signal.aborted) clearTimeout(firstTimer);
-          }),startup]);}finally{clearTimeout(firstTimer);attemptAbort.abort();}
+            if(!callClosed&&accepting&&!signal.aborted){trace.mark('firstProgress');clearTimeout(firstTimer);}
+          }),startup,canceled]);outcome='completed';
+            if(!trace.usageReceived && result){trace.usageReceived=result.inputTokens!==null || result.outputTokens!==null;
+              trace.usageValidated=Number.isSafeInteger(result.inputTokens)&&Number.isSafeInteger(result.outputTokens)&&result.inputTokens!>=0&&result.outputTokens!>=0&&result.inputTokens!+result.outputTokens!>0&&captureCost(config.modelPricingJSON,provider.name,model,result)!==undefined&&!this.budgetAnomaly(req,result);}
+            return result;
+            }catch(error){
+              outcome=startupExpired?'startup_timeout':abort.signal.aborted?(generationExpired?'generation_timeout':lostLease?'worker_lease_lost':overflow?'output_limit':abort.signal.reason==='client_disconnect'?'client_disconnect':'canceled'):
+                error instanceof TransientProviderError&&error.kind==='network'?'network_error':
+                error instanceof TransientProviderError&&error.kind==='incomplete_stream'?'incomplete_stream':trace.httpStatus!==undefined&&trace.httpStatus>=400?'supplier_rejection':'upstream_error';
+              throw error;
+            }finally{
+              callClosed=true;signal.removeEventListener('abort',cancelAttempt);clearTimeout(firstTimer);attemptAbort.abort();
+              // Optional diagnostics join the existing atomic settlement; no extra I/O on the answer path.
+              const diagnostics=trace.finish(outcome,CAPTURE_DEADLINE.firstProgressMs);
+              diagnosticsByAttempt.set(physicalAttempt,diagnostics);
+              req.log.info({attemptId:physicalAttempt,captureId:capture.captureId,diagnostics},'model attempt diagnostics');
+            }
           };
           try{return await invoke();}catch(error){
             // Retry only an explicit transient HTTP rejection, before visible output.
@@ -579,7 +617,7 @@ export class CaptureService {
             if(!(error instanceof TransientProviderError)||error.retryAfterMs>3000||(deliveredChars&&!recoverable)||abort.signal.aborted)throw error;
             await usageWrite;
             await store.billing.releaseCapacity(token,attemptId);
-            await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null},null);
+            await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null,diagnostics:diagnosticsByAttempt.get(attemptId)},null);
             await delay(error.retryAfterMs,undefined,{signal:abort.signal});
             const next=randomUUID();
             if(!await this.waitForBudget(token,next,admission.reservedMicros,provider.name,model,abort.signal,admission.tokenUpper))throw error;
@@ -617,7 +655,7 @@ export class CaptureService {
       }
       const sealedAnswer=charge&&!invalidCompletion?sealAnswer(this.keys,token,capture.captureId,capture.keyVersion,{text:raw,usage}):undefined;
       const completion = {token,captureId:capture.captureId,charge,terminalState,sealedAnswer,owner:capture.deliveryOwner,
-        ...(admission.providerStarted?{attemptSettlement:{id:attemptId,result:{status:upstreamFailed||invalidCompletion?'failed' as const:'succeeded' as const,inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},actual:cost()??null,anomaly:this.budgetAnomaly(req,usage)}}:{}),
+        ...(admission.providerStarted?{attemptSettlement:{id:attemptId,result:{diagnostics:diagnosticsByAttempt.get(attemptId),status:upstreamFailed||invalidCompletion?'failed' as const:'succeeded' as const,inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null},actual:cost()??null,anomaly:this.budgetAnomaly(req,usage)}}:{}),
         inputTokens:usage?.inputTokens,outputTokens:usage?.outputTokens,model:fullModel,
         resultState:objective.state??undefined,questionKind:objective.result?.kind,parserPath:objectiveMode?objective.parserPath:'legacy',
         answerHmac:finalAnswer?this.keys.digest('answer',normalizeObjectiveAnswer(finalAnswer),capture.keyVersion):undefined,
@@ -644,7 +682,7 @@ export class CaptureService {
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.write(SSE_DONE);
     } catch {
       if(admission.providerStarted) {
-        await store.billing.finishAttempt(token,attemptId,{status:'unknown',inputTokens:usage?.inputTokens??null,
+        await store.billing.finishAttempt(token,attemptId,{diagnostics:diagnosticsByAttempt.get(attemptId),status:'unknown',inputTokens:usage?.inputTokens??null,
           outputTokens:usage?.outputTokens??null,costMicros:cost()?.toString()??null}).catch(()=>{});
         await store.billing.settleBudget(token,attemptId,cost()??null).catch(()=>{});
       }
@@ -656,6 +694,9 @@ export class CaptureService {
       if(!recoverable)send({type:'error',error:{code:'internal',message:'正在核对本次额度，请查询请求状态'}});
     } finally {
       void initial;lease?.stop();clearInterval(heartbeat);accepting=false;abort.abort();clearTimeout(firstTimer);clearTimeout(totalTimer);
+      // Drain only evidence already received within this managed request. Never wait for a late provider.
+      acceptingUsage=false;
+      await usageWrite;
       this.logTiming(req,'responseFinishing');
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.end();
     }

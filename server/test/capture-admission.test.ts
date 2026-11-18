@@ -232,6 +232,9 @@ for(const [kind,make] of implementations) {
           const req=f.request(target.url,target.payload),response=await req.response;await req.finished;
           assert.equal(response?.status,200);
           if(operation==='solve'){
+            const a=(await billing.attempts(f.token)).find(a=>a.captureId===target.id)!;
+            assert.equal(a.diagnostics?.outcome,'completed');
+            assert.ok(a.diagnostics?.startedAt);
             assert.match(response.payload,/data: \[DONE\]/);assert.match(response.payload,/"questions_charged":1/);
             assert.equal((await billing.quota(f.token))?.balanceQuestions,29);assert.equal((await billing.quota(f.token))?.heldQuestions,0);
             const once=await billing.quota(f.token);await billing.finishWithCapture({token:f.token,captureId:target.id,charge:true,terminalState:'usable'});
@@ -264,11 +267,18 @@ for(const [kind,make] of implementations) {
     });
     test(`${kind}: ${operation} disconnect after vendor invocation retains unknown cost and rejects late deltas`,{timeout:10_000},async()=>{
       const f=await fixture(make),entered=latch(),late=latch();let emit:(text:string)=>void=()=>{};
+      let lateUsage:()=>void=()=>{};
       try {
         const target=await f.target(operation),before=f.calls();
-        f.provider.stream=async(_input,delta)=>{emit=delta;entered.resolve();await late.promise;delta(ready);return {inputTokens:99,outputTokens:10};};
+        f.provider.stream=async(_input,delta)=>{emit=delta;lateUsage=()=>_input.onUsage?.({inputTokens:99,outputTokens:10});entered.resolve();await late.promise;delta(ready);return {inputTokens:99,outputTokens:10};};
         const req=f.request(target.url,target.payload);await entered.promise;await req.cancel();await req.finished;
         const capture=await f.store.billing.capture(f.token,target.id);assert.equal(capture?.settlementStatus,'released');
+        if(operation==='solve'){
+          const before=(await f.store.billing.attempts(f.token)).find(a=>a.captureId===target.id)!;
+          assert.equal(before.diagnostics?.outcome,'client_disconnect');
+          lateUsage();await new Promise(resolve=>setImmediate(resolve));
+          assert.deepEqual((await f.store.billing.attempts(f.token)).find(a=>a.captureId===target.id),before);
+        }
         const attempt=(await f.store.billing.attempts(f.token)).find(a=>a.captureId===target.id)!;
         assert.equal(attempt.status,'failed');assert.equal(attempt.costMicros,null);assert.equal(attempt.inputTokens,null);
         assert.equal((await f.store.billing.quota(f.token))?.heldQuestions,0);await f.budgetAvailable(false);

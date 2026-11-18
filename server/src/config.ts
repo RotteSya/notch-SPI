@@ -7,6 +7,7 @@ import { FIXED_TRIAL_POLICY } from './billing.ts';
 import { parsePacks, DEFAULT_PACKS_JSON } from './pricing.ts';
 import { estimateModelCostMicros } from './telemetry.ts';
 import { ASTRA_CONTEXT_TOKENS, ASTRA_FAST_PRICE_KEY, ASTRA_MAX_COMPLETION_TOKENS, ASTRA_MODEL, ASTRA_STANDARD_PRICE_KEY } from './providers/astra.ts';
+import { TERRA_MODEL } from './providers/openai.ts';
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -42,7 +43,7 @@ const officialProviderRaw = envStr('OFFICIAL_PROVIDER', 'mock');
 const officialProvider = parseProvider(officialProviderRaw) ?? 'mock';
 const officialModel = envStr(
   'OFFICIAL_MODEL',
-  officialProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'claude-opus-4-8',
+  officialProvider === 'openai' ? TERRA_MODEL : officialProvider === 'deepseek' ? 'deepseek-v4-flash-vision-exp' : 'claude-opus-4-8',
 );
 
 // Objective treatment can use a different vendor without moving legacy/control traffic. An
@@ -60,7 +61,7 @@ const objectiveModelDefault = objectiveProvider === officialProvider
   ? officialModel
   : objectiveProvider === 'deepseek'
     ? 'deepseek-v4-flash-vision-exp'
-    : objectiveProvider === 'anthropic'
+    : objectiveProvider === 'openai' ? TERRA_MODEL : objectiveProvider === 'anthropic'
       ? 'claude-opus-4-8'
       : officialModel;
 
@@ -236,18 +237,20 @@ export function validateTrialPolicy(c: Config): void {
   }
   const astraControl = c.provider === 'openai' && c.model === ASTRA_MODEL;
   const astraObjective = c.objectiveProvider === 'openai' && c.objectiveModel === ASTRA_MODEL;
-  if (c.requestBudgetMode === 'guarded-request' && (!astraControl || !astraObjective ||
+  const terraControl = c.provider === 'openai' && c.model === TERRA_MODEL;
+  const terraObjective = c.objectiveProvider === 'openai' && c.objectiveModel === TERRA_MODEL;
+  if (c.requestBudgetMode === 'guarded-request' && (!(astraControl || terraControl) || !(astraObjective || terraObjective) ||
     c.openaiBaseURL.replace(/\/+$/u,'') !== 'https://api.openai.com' || c.modelCostCurrency !== 'USD' ||
     !Number.isSafeInteger(c.modelDailyBudgetMicros) || c.modelDailyBudgetMicros <= 0 ||
     !Number.isSafeInteger(c.attemptBudgetUpperMicros) || c.attemptBudgetUpperMicros <= 0)) {
-    throw new Error('Guarded requests require both Astra slots, global endpoint and positive USD budgets');
+    throw new Error('Guarded requests require Astra/Terra slots, global endpoint and positive USD budgets');
   }
   if (c.objectiveAstraFastReview && !astraObjective) {
     throw new Error('Astra Fast review requires the OpenAI Astra objective slot');
   }
   const validAstraCap = (cap: number) => Number.isInteger(cap) && cap >= 1 && cap <= ASTRA_MAX_COMPLETION_TOKENS;
-  if ((astraControl && !validAstraCap(c.maxTokens)) || (astraObjective && !validAstraCap(c.objectiveMaxTokens))) {
-    throw new Error(`Astra requires an output ceiling from 1 to ${ASTRA_MAX_COMPLETION_TOKENS}`);
+  if (((astraControl || terraControl) && !validAstraCap(c.maxTokens)) || ((astraObjective || terraObjective) && !validAstraCap(c.objectiveMaxTokens))) {
+    throw new Error(`Astra/Terra requires an output ceiling from 1 to ${ASTRA_MAX_COMPLETION_TOKENS}`);
   }
   if (!Number.isSafeInteger(c.explanationMaxTokens) || c.explanationMaxTokens < 1 || c.explanationMaxTokens > 32768) {
     throw new Error('EXPLANATION_MAX_TOKENS must be an integer from 1 to 32768');
@@ -274,16 +277,16 @@ export function validateTrialPolicy(c: Config): void {
       if((estimateModelCostMicros(c.modelPricingJSON,provider+':'+model,1,1)
           ??estimateModelCostMicros(c.modelPricingJSON,model!,1,1))===undefined) throw new Error('Production model slots require known prices');
     }
-    if ((astraControl || astraObjective) && c.requestBudgetMode !== 'guarded-request') {
-      if (c.modelCostCurrency !== 'USD') throw new Error('Astra production pricing must use USD');
+    if ((astraControl || astraObjective || terraControl || terraObjective) && c.requestBudgetMode !== 'guarded-request') {
+      if (c.modelCostCurrency !== 'USD') throw new Error('Astra/Terra production pricing must use USD');
       const bound = (key: string, output: number) =>
         estimateModelCostMicros(c.modelPricingJSON, key, ASTRA_CONTEXT_TOKENS, output);
-      const control = astraControl ? bound(ASTRA_STANDARD_PRICE_KEY, c.maxTokens) : 0;
-      const objective = astraObjective ? bound(ASTRA_STANDARD_PRICE_KEY, c.objectiveMaxTokens) : 0;
+      const control = astraControl ? bound(ASTRA_STANDARD_PRICE_KEY, c.maxTokens) : terraControl ? bound('openai:'+TERRA_MODEL,c.maxTokens) : 0;
+      const objective = astraObjective ? bound(ASTRA_STANDARD_PRICE_KEY, c.objectiveMaxTokens) : terraObjective ? bound('openai:'+TERRA_MODEL,c.objectiveMaxTokens) : 0;
       const review = c.objectiveAstraFastReview ? bound(ASTRA_FAST_PRICE_KEY, c.objectiveMaxTokens) : 0;
       if (control === undefined || objective === undefined || review === undefined ||
           Math.max(control, objective + review) > c.attemptBudgetUpperMicros) {
-        throw new Error('Astra production requires a priced reservation covering all allowed calls');
+        throw new Error('Astra/Terra production requires a priced reservation covering all allowed calls');
       }
     }
     if(c.isServerless&&c.cronSecret.length<32) throw new Error('Serverless reservation recovery requires CRON_SECRET of at least 32 characters');

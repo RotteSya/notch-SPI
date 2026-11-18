@@ -1,3 +1,4 @@
+import {CAPTURE_DEADLINE} from '../src/capture-deadline.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -59,14 +60,90 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   }finally{await f.close();}
  });
  test(`${kind}: transient upstream retries once, preserves unknown first cost, duplicate never calls or charges again`,async()=>{
-  let calls=0;const f=await fixture(async(_r,delta)=>{if(++calls===1)throw new TransientProviderError(503,1);delta(ready);return {inputTokens:50,outputTokens:50};});
+  let calls=0;const ids:string[]=[];const f=await fixture(async(r,delta)=>{
+   ids.push(r.clientRequestId!);r.onTiming?.('upstreamRequest');
+   r.onHeaders?.({'x-request-id':'req_fixture_'+calls},calls===0?503:200);
+   if(++calls===1)throw new TransientProviderError(503,1);
+   r.onTiming?.('upstreamFirstAnswer');r.onUsage?.({inputTokens:50,outputTokens:50});
+   delta(ready);return {inputTokens:50,outputTokens:50};});
   try{
    const id=randomUUID(),r=await f.call(0,id);assert.match(r.body,/"questions_charged":1/);assert.equal(calls,2);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.provisional.length,1);assert.equal(b.provisional[0]!.booked,1_000_000);
-   assert.equal((await f.store.billing.attempts(f.users[0]!.token)).length,2);
+   const attempts=await f.store.billing.attempts(f.users[0]!.token);
+   assert.equal(attempts.length,2);assert.equal(new Set(ids).size,2);
+   assert.equal('recordAttemptDiagnostics' in f.store.billing,false,'diagnostics add no standalone database transaction');
+   for(const a of attempts){assert.ok(a.diagnostics?.startedAt);assert.ok(Date.parse(a.diagnostics!.endedAt)>=Date.parse(a.diagnostics!.startedAt));}
+   const first=attempts.find(a=>a.attemptId===ids[0])!,second=attempts.find(a=>a.attemptId===ids[1])!;
+   assert.equal(first.diagnostics?.outcome,'supplier_rejection');assert.equal(first.diagnostics?.httpStatus,503);
+   assert.equal(first.diagnostics?.usageReceived,false);assert.equal(first.diagnostics?.stages.upstreamFirstAnswer,undefined);
+   assert.equal(second.diagnostics?.outcome,'completed');assert.equal(second.diagnostics?.usageReceived,true);
+   assert.equal(second.diagnostics?.upstreamRequestId,'req_fixture_1');assert.ok(second.usageEvidence);assert.equal(second.diagnostics?.usageValidated,true);assert.equal(first.diagnostics?.usageValidated,false);
+   assert.ok(second.diagnostics?.stages.upstreamFirstAnswer!==undefined);
    const duplicate=await f.call(0,id);assert.equal(duplicate.statusCode,200);assert.match(duplicate.body,/FINAL: B/);assert.match(duplicate.body,/\[DONE\]/);assert.equal(calls,2);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1_001_000);
   }finally{await f.close();}
+ });
+ test(`${kind}: late usage during retry belongs to the original attempt and is reconciled once`,async()=>{
+  let firstUsage:NonNullable<Parameters<Provider['stream']>[0]['onUsage']>=()=>{};
+  let calls=0;const ids:string[]=[];const f=await fixture(async(r,delta)=>{
+   ids.push(r.clientRequestId!);
+   if(++calls===1){firstUsage=r.onUsage!;throw new TransientProviderError(503,1);}
+   firstUsage({inputTokens:20,outputTokens:10});
+   firstUsage({inputTokens:20,outputTokens:10}); // identical duplicate is harmless
+   firstUsage({inputTokens:999,outputTokens:999}); // conflicting evidence cannot overwrite
+   r.onUsage?.({inputTokens:50,outputTokens:50});delta(ready);
+   return {inputTokens:50,outputTokens:50};
+  });
+  try{
+   assert.match((await f.call()).body,/"questions_charged":1/);
+   const attempts=await f.store.billing.attempts(f.users[0]!.token);
+   const first=attempts.find(a=>a.attemptId===ids[0])!,second=attempts.find(a=>a.attemptId===ids[1])!;
+   assert.equal(first.usageEvidence?.source,'upstream_usage:'+ids[0]);assert.equal(first.usageEvidence?.costMicros,300);
+   assert.equal(second.usageEvidence?.costMicros,1000);
+   for(const a of [first,second]){assert.equal(a.diagnostics?.usageReceived,true);assert.equal(a.diagnostics?.usageValidated,true);assert.equal(a.diagnostics?.usageEvidencePersisted,true);}
+   await f.store.billing.reap();await f.store.billing.reap();
+   const budget=await f.store.billing.inspectBudget();assert.equal(budget.provisional.length,0);assert.equal(budget.windows[0]!.spent,1300);
+   assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+   firstUsage({inputTokens:200,outputTokens:100});
+   await delay(0);assert.deepEqual(await f.store.billing.attempts(f.users[0]!.token),attempts);
+  }finally{await f.close();}
+ });
+ test(`${kind}: failed usage persistence stays distinct from received and validated`,async()=>{
+  let calls=0,firstId='',writes=0;
+  const f=await fixture(async(r,delta)=>{
+   if(++calls===1){firstId=r.clientRequestId!;r.onUsage?.({inputTokens:20,outputTokens:10});throw new TransientProviderError(503,1);}
+   r.onUsage?.({inputTokens:50,outputTokens:50});delta(ready);return {inputTokens:50,outputTokens:50};
+  });
+  const original=f.store.billing.recordAttemptUsage.bind(f.store.billing);
+  f.store.billing.recordAttemptUsage=async(...args)=>{if(args[1]===firstId){writes++;throw new Error('synthetic database unavailable');}return original(...args);};
+  try{
+   assert.match((await f.call()).body,/"questions_charged":1/);assert.equal(writes,3);
+   const first=(await f.store.billing.attempts(f.users[0]!.token)).find(a=>a.attemptId===firstId)!;
+   assert.equal(first.diagnostics?.usageReceived,true);assert.equal(first.diagnostics?.usageValidated,true);
+   assert.equal(first.diagnostics?.usageEvidencePersisted,false);assert.equal(first.usageEvidence,undefined);
+   await f.store.billing.reap();assert.equal((await f.store.billing.inspectBudget()).provisional.length,1);
+   assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+  }finally{await f.close();}
+ });
+ test(`${kind}: network failure remains distinct from HTTP rejection and keeps unknown cost`,async()=>{
+  let calls=0;const f=await fixture(async(r,delta)=>{
+   r.onTiming?.('upstreamRequest');if(++calls===1)throw new TransientProviderError(0,1,'network');
+   delta(ready);return {inputTokens:50,outputTokens:50};
+  });
+  try{await f.call();const attempts=await f.store.billing.attempts(f.users[0]!.token);
+   const first=attempts.find(a=>a.status==='failed')!;assert.equal(first.diagnostics?.outcome,'network_error');
+   assert.equal(first.diagnostics?.httpStatus,undefined);assert.equal(first.costMicros,null);
+  }finally{await f.close();}
+ });
+ if(kind==='sqlite')test('SQLite: overall deadline closes diagnostics even when provider ignores abort',async()=>{
+  const limits=CAPTURE_DEADLINE as {generationMs:number};const before=limits.generationMs;limits.generationMs=100;
+  const f=await fixture(async(_r,_delta,_signal,progress)=>{progress?.();return new Promise(()=>{});});
+  try{const result=await f.call();assert.match(result.body,/"questions_charged":0/);
+   const attempts=await f.store.billing.attempts(f.users[0]!.token);
+   assert.equal(attempts.length,1);assert.equal(attempts[0]!.diagnostics?.outcome,'generation_timeout');
+   assert.ok(attempts[0]!.diagnostics?.stages.firstProgress!==undefined);
+   assert.equal(attempts[0]!.diagnostics?.usageValidated,false);
+  }finally{limits.generationMs=before;await f.close();}
  });
  test(`${kind}: retry admission acknowledgement loss releases only the uninvoked second hold`,async()=>{
   let calls=0;const f=await fixture(async()=>{calls++;throw new TransientProviderError(503,1);});
@@ -103,6 +180,12 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    delta(ready);return {inputTokens:50,outputTokens:50};
   });
   try{const started=performance.now(),recovered=await f.call();assert.ok(performance.now()-started<23000);assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.match(recovered.body,/\[DONE\]/);assert.equal(calls,2);
+   const attempts=await f.store.billing.attempts(f.users[0]!.token);
+   const failed=attempts.find(a=>a.status==='failed')!;
+   assert.equal(failed.diagnostics?.outcome,'startup_timeout');
+   assert.equal(failed.diagnostics?.httpStatus,undefined);
+   assert.equal(failed.diagnostics?.usageReceived,false);
+   assert.ok(failed.diagnostics!.durationMs>=20000);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.windows[0]!.held,0);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
   }finally{await f.close();}

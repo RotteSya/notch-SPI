@@ -16,8 +16,8 @@ import {pngBase64 as png} from './helpers/images.ts';
 const pricing=JSON.stringify([{model:'openai:gpt-6-astra',input_micros_per_million_tokens:25000000,output_micros_per_million_tokens:75000000},
   {model:'openai:gpt-6-astra:fast',input_micros_per_million_tokens:50000000,output_micros_per_million_tokens:150000000}]);
 const answer='FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
-// Transport callbacks are runtime hooks, not part of the serialized model request.
-const requestSnapshot = ({onHeaders, onUsage, onTiming, ...data}: CaptureRequest) => structuredClone(data);
+// Runtime hooks and the HTTP tracing header are not part of the priced model body.
+const requestSnapshot = ({onHeaders, onUsage, onTiming, clientRequestId, ...data}: CaptureRequest) => structuredClone(data);
 const body=()=>({capture_id:randomUUID(),result_protocol:'objective_v1',response_contract:'screen_query_v1',operation:'solve',
   images_base64:[png],image_media_type:'image/png',profile_id:'reading_practice',profile_version:SCREEN_QUERY_VERSION,
   prompt_version:SCREEN_QUERY_VERSION,ui_language:'en',scope:{target_count:1,question_image_index:0,rect:{x:0,y:0,width:1,height:1}}});
@@ -32,15 +32,18 @@ test('estimation and actual transport share the same serialized messages and out
   const builder=new OpenAIProvider('synthetic','https://api.openai.com','gpt-6-astra',8192,{astraTier:'default'});
   const input={system:'完整日文題文',task:'全選択肢',images:[{base64:png,mediaType:'image/png'}],purpose:'explain' as const,maxTokens:8192};
   const expected=JSON.stringify(builder.requestBody(input));const quote=await p.estimateReservation(input,pricing);
+  const tracedInput={...input,clientRequestId:randomUUID()};
+  assert.deepEqual(await p.estimateReservation(tracedInput,pricing),quote);
   assert.equal(quote.outputUpper,8192);
   t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{
     assert.equal(init?.body,expected);
+    assert.equal(new Headers(init?.headers).get('X-Client-Request-Id'),tracedInput.clientRequestId);
     const identity={model:'gpt-6-astra',service_tier:'default'};
     return new Response('data: '+JSON.stringify({...identity,choices:[{delta:{content:answer},finish_reason:'stop'}]})+'\n\n'
       +'data: '+JSON.stringify({...identity,choices:[],usage:{prompt_tokens:100,completion_tokens:20}})+'\n\ndata: [DONE]\n\n',
       {headers:{'content-type':'text/event-stream'}});
   });
-  await p.stream(input,()=>{},new AbortController().signal);
+  await p.stream(tracedInput,()=>{},new AbortController().signal);
   const routed=new AstraProvider('synthetic','https://api.openai.com',8192,true);
   const fast=await routed.estimateReservation({...input,purpose:'answer'},pricing);
   assert.equal(fast.micros,3*(quote.micros-1)+2);
@@ -70,6 +73,7 @@ for(const kind of ['memory','sqlite'] as const){
       if (!req.purpose) {
         assert.equal(typeof req.onHeaders, 'function');
         assert.equal(typeof req.onUsage, 'function');
+        assert.match(req.clientRequestId??'',/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i);
       }
       sent.push(requestSnapshot(req));if(wait)await wait();
       if(unknownUsage)throw new Error('missing final usage');

@@ -508,16 +508,17 @@ export class SQLBilling implements BillingStore {
       const attempt = JSON.parse(String(row.metadata)) as Attempt;
       if (attempt.usageEvidence && JSON.stringify(attempt.usageEvidence) !== JSON.stringify(evidence)) throw new Error('Conflicting metering evidence');
       attempt.usageEvidence = evidence;
+      if(attempt.diagnostics)attempt.diagnostics={...attempt.diagnostics,usageReceived:true,usageValidated:true,usageEvidencePersisted:true};
       yield* query('UPDATE model_attempts SET metadata=? WHERE attempt_id=?', JSON.stringify(attempt), attemptId);
     })());
   }
-  finishAttempt(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>): Promise<void> {
+  finishAttempt(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>): Promise<void> {
     return this.run((function* (): Transaction<void> {
       const d = yield* device(token); if (!d) return;
       yield* finishAttemptForDevice(d, attemptId, input);
     })());
   }
-  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null, anomaly = false): Promise<void> {
+  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>, actualMicros: number | null, anomaly = false): Promise<void> {
     return this.run((function* (): Transaction<void> {
       const d = yield* device(token); if (!d) return;
       yield* finishAttemptForDevice(d, attemptId, input);
@@ -816,12 +817,13 @@ function* insertAttempt(capture: CaptureRecord, input: NewAttempt): Transaction<
   return true;
 }
 
-function* finishAttemptForDevice(d: Row, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>): Transaction<void> {
+function* finishAttemptForDevice(d: Row, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>): Transaction<void> {
   const row = (yield* query('SELECT metadata FROM model_attempts WHERE attempt_id=? AND device_id=?', attemptId, Number(d.id)))[0];
   if (!row) return;
   const previous = JSON.parse(String(row.metadata)) as Attempt;
   if (previous.status !== 'running') return;
-  const attempt: Attempt = { ...previous, ...input, finishedAt: new Date().toISOString() };
+  const attempt: Attempt = { ...previous, ...input,
+    ...(input.diagnostics?{diagnostics:{...input.diagnostics,usageReceived:input.diagnostics.usageReceived||!!previous.usageEvidence,usageValidated:input.diagnostics.usageValidated||!!previous.usageEvidence,usageEvidencePersisted:!!previous.usageEvidence}}:{}), finishedAt: new Date().toISOString() };
   yield* query('UPDATE model_attempts SET metadata=?,status=? WHERE attempt_id=?', JSON.stringify(attempt), attempt.status, attemptId);
   yield* query(`INSERT INTO attempt_costs (attempt_id,revision,currency,cost_micros,pricing_version,source,calculated_at)
     VALUES (?,2,?,?,?,?,?)`, attemptId, attempt.currency, attempt.costMicros, attempt.pricingVersion,

@@ -3,6 +3,23 @@ import assert from "node:assert/strict";
 import { directAPI, localCLI } from "../core/providers.mjs";
 const event = (x) =>
   "data: " + (typeof x === "string" ? x : JSON.stringify(x)) + "\n\n";
+test('Terra maps existing preference slots for single/multiple images and freezes the wire request', async () => {
+  for (const [selection,effort] of [['low','low'],['high','medium'],['max','high']]) for (const count of [1,4]) {
+    const settings={protocol:'openai',endpoint:'https://api.openai.com/v1/chat/completions',model:'gpt-6.1-terra',language:'zh',reasoning:selection};
+    let shown='';
+    await directAPI({settings,images:Array.from({length:count},(_,i)=>({base64:String(i)})),key:'offline-fixture',mode:'tutor',
+      signal:new AbortController().signal,onDelta:text=>{shown+=text;},fetchImpl:async(_url,o)=>{
+        const body=JSON.parse(o.body);settings.reasoning='low';
+        assert.equal(body.model,'gpt-6.1-terra');assert.equal(body.reasoning_effort,effort);
+        assert.equal(body.max_completion_tokens,8192);assert.equal(body.service_tier,'default');assert.equal(body.store,false);
+        assert.equal(body.messages[0].role,'developer');assert.equal(body.messages[1].content.length,count+1);
+        for(const [i,part] of body.messages[1].content.slice(1).entries())assert.deepEqual(part.image_url,{url:`data:image/jpeg;base64,${i}`,detail:'high'});
+        assert.equal(body.thinking,undefined);assert.equal(body.temperature,undefined);
+        return new Response(event({choices:[{delta:{content:'FINAL: B'},finish_reason:'stop'}]})+event('[DONE]'),{headers:{'content-type':'text/event-stream'}});
+      }});
+    assert.equal(shown,'FINAL: B');
+  }
+});
 for (const protocol of ["openai", "anthropic"])
   test(`${protocol}: real request construction and complete stream, no network credential needed`, async () => {
     let body,

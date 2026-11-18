@@ -1,0 +1,60 @@
+{
+  "observed_at": "2026-11-14 Asia/Shanghai",
+  "source_commit": "fe4e68c9a9bd5af3d82e3f42df48cd6003f821d6",
+  "package": {
+    "url": "https://download.monica.im/Monica-2.9.5-arm64.dmg",
+    "version": "2.9.5",
+    "platform": "macOS arm64",
+    "sha256": "b0a1c2b861a65871cfe29231726c0392fc22b9ffe11d842c24089666e6e8c50e",
+    "asar_sha256": "cccb2d4542d77e36f8699febb99567450e18d25d2a89b603f938310f1f655c4f",
+    "execution": "not installed or launched"
+  },
+  "validation": {
+    "local_links": "passed",
+    "evidence_id_references": "passed",
+    "selected_original_records_equal_to_export": "passed; 36 records",
+    "browser_cleanup": "16 of 16 report terminated-owned-process",
+    "package_hash": "local SHA-256 equals REA DMG/ASAR inventory summary root hashes",
+    "temporary_mount": "ejected disk7; hdiutil inventory confirms absent",
+    "repo_health_delivery": {
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "FAIL  guide-map: unclassified Markdown docs/research/competitors/2026-11-14/evidence-index.md\nFAIL  guide-map: unclassified Markdown docs/research/competitors/2026-11-14/evidence/monica-static.md\nFAIL  guide-map: unclassified Markdown docs/research/competitors/2026-11-14/evidence/notchspi-baseline.md\nFAIL  guide-map: unclassified Markdown docs/research/competitors/2026-11-14/report.md\nrepo-health: 4 issue(s)\n"
+    },
+    "real_git_index": "untouched; validation used task-local temporary index",
+    "product_tests": "not run: documentation-only research; no product code changed",
+    "research_boundary": "no installs, client execution, signup, payment, private uploads, or production mutations"
+  },
+  "files": [
+    {
+      "path": "evidence/browser-observations.json",
+      "bytes": 410230,
+      "sha256": "c62e14ef1b7a3a66cfe4afec1296521b0b5e606d05926276b367d831b12b9bf9"
+    },
+    {
+      "path": "evidence/monica-static.md",
+      "bytes": 5447,
+      "sha256": "e648f14c003fc83db8163baf0709309eb5b7003650d48f7c4349e6f8cd493a2c"
+    },
+    {
+      "path": "evidence/notchspi-baseline.md",
+      "bytes": 19584,
+      "sha256": "de4d965330c8f7c40a46d4bf27256af50cd7dda7bcd9e90a7719c4acc6da2611"
+    },
+    {
+      "path": "evidence/rea-records.json.gz",
+      "bytes": 2362776,
+      "sha256": "ee44588a4fe349e0f034dcd2393c37cf919c6c82309f98184acfda30b09036c7"
+    },
+    {
+      "path": "evidence-index.md",
+      "bytes": 19588,
+      "sha256": "db9cdaceb2c00470a1c7995d8d1921d39279f90040b0bae1a645c4f98dcb7a08"
+    },
+    {
+      "path": "report.md",
+      "bytes": 40573,
+      "sha256": "7c135366fc0d3dca8a77a350a9659fe42d0d334c1cf674cf45c43f5115eca112"
+    }
+  ]
+}

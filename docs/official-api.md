@@ -112,7 +112,9 @@ DeepSeek 视觉候选通过独立 treatment slot 配置：
 
 `POST /v1/captures`、解释与恢复请求支持可选 `reasoning_effort`，仅允许 `low` / `high` / `max`；非法值在调用模型和占用额度前返回 `400 invalid_reasoning_effort`。新客户端默认 `low`，每次查题冻结用户选择，同题解释和恢复沿用该值。旧客户端省略字段时保留原服务端配置。字段纳入请求幂等摘要，未携带时保持旧摘要兼容；不改变原图绑定。
 
-只有 DeepSeek 适配器应用该字段，开启 thinking 并覆盖当前请求的服务端默认程度；不改变其他厂商、不修改全局配置。输出 Token 上限、预算准入及请求超时边界继续生效。客户端自定义 DeepSeek Key 通道使用同一原生参数；其他自定义厂商和本机 CLI 不应用此设置。
+此字段是持久化的客户端档位标识：低/中/高仍保存为 `low` / `high` / `max`，不迁移已有设置。Terra 适配器将三档映射到上游 `reasoning_effort=low/medium/high`，省略时明确为 low；Astra 回滚路径仍固定 low。DeepSeek 继续使用原同名参数并开启 thinking。自定义 API 明确选择 `gpt-6.1-terra` 时也做上述映射，其他自定义模型与本机 CLI 的模型选择保持原行为。输出上限、预算准入、超时与最多一次技术重试不变，重试沿用同一模型和档位。更多思考不保证更准确。
+
+待发布 Terra 环境见 `deploy/terra-model-budget.candidate.json`；现有 `deploy/production-model-budget.json` 保留作为 Astra 配置及手动回滚依据。候选不是线上状态或发布授权。官方单题、多图、人格、解释与恢复共用同一映射；每次请求使用客户端冻结的档位，幂等恢复不接受更换档位。供应商账户权限与真实客户端显示仍须单独上线前验证。
 
 发布顺序：先部署支持该字段的服务端，再发布客户端；旧服务端可能忽略新字段。设置页、刘海胶囊和快捷菜单统一显示思考程度，原讲解深度不再作为用户设置；答案默认简要展示，按需解释保留。旧 `depth` 偏好保留但不参与新请求。
 
@@ -1055,7 +1057,7 @@ Do not delete receipt rows during rollback. Any rollback must retain compensatio
 
 Admission uses the independently measured 24-call capacity policy below. Contended slots and recoverable in-flight budget holds absorb at most 1.5 seconds of overlap; at most 32 waiters per server instance. Spent budget does not enter a pretend recovery loop. Disconnects cancel waiting before a model call. This is a bounded wait, not a globally fair session queue or a full-test capacity reservation.
 
-An explicit upstream HTTP 429/502/503/504 before visible answer text may retry once, only when Retry-After permits a delay of at most three seconds and another complete reservation fits. Each physical attempt has its own durable budget hold and cost record. Unknown costs retain the complete reservation. A connection failure or startup timeout before visible output may use the same one-retry allowance. Partial streamed answers, invalid metering and pricing overruns are not blindly retried. The user capture/question is settled once. The no-progress startup deadline is 8 s; the 90 s healthy-generation ceiling remains, and valid thinking progress retires only the startup deadline. Orphan budget holds become reclaimable after 150 s, without erasing costs.
+An explicit upstream HTTP 429/502/503/504 before visible answer text may retry once, only when Retry-After permits a delay of at most three seconds and another complete reservation fits. Each physical attempt has its own durable budget hold and cost record. Unknown costs retain the complete reservation. A connection failure or startup timeout before visible output may use the same one-retry allowance. Partial streamed answers, invalid metering and pricing overruns are not blindly retried. The user capture/question is settled once. The no-progress startup deadline is 20 s; the 90 s healthy-generation ceiling remains, and valid thinking progress retires only the startup deadline. Orphan budget holds become reclaimable after 150 s, without erasing costs.
 
 Missing usage alone no longer pauses the entire model channel. Invalid counters and significant/repeated estimate overruns still require investigation. Recent hourly conservative bookings (including provisional fees) expose `hourly_burn_micros` and `runway_seconds`; less than one hour runway raises the existing cloud warning level. This projection is not guaranteed future demand.
 

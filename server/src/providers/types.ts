@@ -13,14 +13,16 @@ export interface CaptureImage {
 export interface CaptureRequest {
   /** Internal observation only; never serialized or populated from client JSON. */
   onTiming?: (stage: ProviderTimingStage) => void;
-  onHeaders?: (headers:Record<string,string>)=>void;
+  onHeaders?: (headers:Record<string,string>, status?: number)=>void;
+  /** Physical attempt UUID, assigned internally; not a device identifier. */
+  clientRequestId?: string;
   /** Validated vendor metering, independent of the answer transport completing. */
   onUsage?: (usage: Usage) => void;
   system: string;
   task: string;
   images: CaptureImage[];
   maxTokens?: number;
-  /** Allowlisted per-request DeepSeek effort; omission retains the server default. */
+  /** Persisted client slots: low/high/max -> Terra low/medium/high; DeepSeek keeps native IDs. */
   reasoningEffort?: 'low' | 'high' | 'max';
   /** Assigned by the server route; never read from client-supplied provider options. */
   purpose?: 'answer' | 'explain' | 'recover';
@@ -133,5 +135,6 @@ export function splitSSEChunk(buffer: string): { lines: string[]; rest: string }
 /** Explicit HTTP transient response before answer streaming; cost remains unknown. */
 export class TransientProviderError extends Error {
   readonly status:number;readonly retryAfterMs:number;
-  constructor(status:number,retryAfterMs=500){super('Transient upstream HTTP response');this.name='TransientProviderError';this.status=status;this.retryAfterMs=retryAfterMs;}
+  readonly kind:'network'|'incomplete_stream'|'http'|'unknown';
+  constructor(status:number,retryAfterMs=500,kind:TransientProviderError['kind']=status>0?'http':'unknown'){super('Transient upstream failure');this.name='TransientProviderError';this.status=status;this.retryAfterMs=retryAfterMs;this.kind=kind;}
 }

@@ -288,6 +288,7 @@ final class CaptureFlowStabilityTests: XCTestCase {
             XCTAssertEqual(controller.qaRunReasoningEffort, "low")
             Settings.shared.reasoningEffort = "high"
             XCTAssertEqual(controller.model.status, .running)
+            XCTAssertEqual(controller.qaRunReasoningEffort, "low", "Changing the preference must not affect the in-flight run")
             let firstID = controller.qaCaptureRunID
             let firstImage = try Data(contentsOf: XCTUnwrap(controller.model.screenshots.first).file.url)
             controller.qaPressScreenshot(multiple: false)

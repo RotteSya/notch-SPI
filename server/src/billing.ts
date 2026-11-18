@@ -1,3 +1,4 @@
+import type {AttemptDiagnostics} from './attempt-diagnostics.ts';
 import {CAPTURE_DEADLINE} from './capture-deadline.ts';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { BudgetInspection } from './budget-policy.ts';
@@ -65,7 +66,7 @@ export type BeginResult = { ok: true; capture: CaptureRecord; quota: QuotaSnapsh
 export interface FinishCapture {
   token: string; captureId?: string; charge: boolean; terminalState: Exclude<TerminalState, 'pending'>;
   owner?: string;
-  attemptSettlement?: {id:string; result:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>; actual:number|null; anomaly:boolean};
+  attemptSettlement?: {id:string; result:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>; actual:number|null; anomaly:boolean};
   sealedAnswer?: string;
   answerHmac?: string; resultState?: string; questionKind?: string; parserPath?: string;
   terminalReason?: string; inputTokens?: number | null; outputTokens?: number | null; model?: string;
@@ -74,6 +75,7 @@ export interface FinishCapture {
   compensateGoodwill?: boolean;
 }
 export interface Attempt {
+  diagnostics?: AttemptDiagnostics;
   /** Server-validated metering, retained even if the final stream/COMMIT acknowledgement is lost. */
   usageEvidence?: AttemptUsageEvidence;
   attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover';
@@ -126,8 +128,8 @@ export interface BillingStore {
   capture(token: string, captureId: string): Promise<CaptureRecord | null>;
   reap(now?: string): Promise<number>;
   startAttempt(token: string, input: Omit<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'startedAt' | 'finishedAt'>): Promise<boolean>;
-  finishAttempt(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>): Promise<void>;
-  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>, actualMicros: number | null, anomaly?: boolean): Promise<void>;
+  finishAttempt(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>): Promise<void>;
+  finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>, actualMicros: number | null, anomaly?: boolean): Promise<void>;
   reserveBudget(token: string, attemptId: string, scope: string, currency: string,
     reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number, guarded?: boolean, channel?: string): Promise<boolean>;
   releaseBudget(token: string, attemptId: string): Promise<void>;

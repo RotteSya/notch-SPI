@@ -364,16 +364,18 @@ export class MemoryBilling implements BillingStore {
     if (!attempt) throw new Error('Metering attempt missing');
     if (attempt.usageEvidence && JSON.stringify(attempt.usageEvidence) !== JSON.stringify(evidence)) throw new Error('Conflicting metering evidence');
     attempt.usageEvidence = {...evidence};
+    if(attempt.diagnostics)attempt.diagnostics={...attempt.diagnostics,usageReceived:true,usageValidated:true,usageEvidencePersisted:true};
   }
-  async finishAttempt(token:string,id:string,input:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>):Promise<void> {
+  async finishAttempt(token:string,id:string,input:Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>):Promise<void> {
     const d=this.lookup(token); if(!d) return;
     this.finishAttemptFor(d, id, input);
   }
-  private finishAttemptFor(d: MemoryQuotaDevice, id: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>): void {
+  private finishAttemptFor(d: MemoryQuotaDevice, id: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>): void {
     const state=this.state(d),old=state.attempts.get(id);
-    if(old?.status==='running') state.attempts.set(id,{...old,...input,finishedAt:new Date().toISOString()});
+    if(old?.status==='running') state.attempts.set(id,{...old,...input,
+      ...(input.diagnostics?{diagnostics:{...input.diagnostics,usageReceived:input.diagnostics.usageReceived||!!old.usageEvidence,usageValidated:input.diagnostics.usageValidated||!!old.usageEvidence,usageEvidencePersisted:!!old.usageEvidence}}:{}),finishedAt:new Date().toISOString()});
   }
-  async finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'>, actualMicros: number | null, anomaly = false): Promise<void> {
+  async finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>, actualMicros: number | null, anomaly = false): Promise<void> {
     const d=this.lookup(token); if(!d) return;
     // Both writes finish in the same synchronous turn, matching the SQL transaction.
     this.finishAttemptFor(d, attemptId, input);

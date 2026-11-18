@@ -1,3 +1,4 @@
+import {AttemptTrace} from '../src/attempt-diagnostics.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -70,7 +71,7 @@ test('capture diagnostics are opt-in, preserve one charge, and log no input or a
     const store=new MemoryStore();
     let calls=0;
     const provider:Provider={name:'mock',async stream(input,delta){
-      calls++;assert.equal(typeof input.onTiming,enabled?'function':'undefined');
+      calls++;assert.equal(typeof input.onTiming,'function');
       input.onTiming?.('upstreamRequest');input.onTiming?.('upstreamHeaders');
       input.onTiming?.('upstreamFirstAnswer');
       delta('FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}');
@@ -108,4 +109,37 @@ test('capture diagnostics are opt-in, preserve one charge, and log no input or a
       }
     } finally {await app.close();await store.close();}
   }
+});
+
+ test('OpenAI sends only internal correlation UUID and captures HTTP identity even on failure',async t=>{
+  const id=randomUUID();let headers:Record<string,string>={},status:number|undefined;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:RequestInit)=>{
+    assert.equal(new Headers(init.headers).get('X-Client-Request-Id'),id);
+    assert.equal(String(init.body).includes(id),false);
+    return new Response('private error',{status:503,headers:{'x-request-id':'req_fixture','retry-after':'1'}});
+  });
+  const p=new OpenAIProvider('test','http://unused.invalid','fixture',100);
+  await assert.rejects(p.stream({system:'private',task:'private',images:[],clientRequestId:id,
+    onHeaders:(h,s)=>{headers=h;status=s;}},()=>{},new AbortController().signal));
+  assert.equal(status,503);assert.equal(headers['x-request-id'],'req_fixture');
+ });
+
+test('attempt diagnostics whitelist excludes arbitrary headers and invalid request IDs',()=>{
+ const trace=new AttemptTrace();trace.headers({'authorization':'secret','x-request-id':'bad\nsecret'},999);
+ trace.mark('upstreamRequest');trace.mark('upstreamHeaders');
+ const d=trace.finish('startup_timeout',20000);
+ assert.equal(d.httpStatus,undefined);assert.equal(d.upstreamRequestId,undefined);
+ assert.equal(JSON.stringify(d).includes('secret'),false);assert.equal(d.usageReceived,false);
+ assert.ok(d.stages.upstreamHeaders!>=d.stages.upstreamRequest!);
+});
+
+test('OpenAI distinguishes a network failure from a clean but incomplete stream',async t=>{
+ const p=new OpenAIProvider('test','http://unused.invalid','gpt-6-astra',100,{astraTier:'default'});
+ t.mock.method(globalThis,'fetch',async()=>{throw new TypeError('private connection error');});
+ await assert.rejects(p.stream({system:'test',task:'test',images:[]},()=>{},new AbortController().signal),
+  (e:unknown)=>!!e&&typeof e==='object'&&'kind' in e&&e.kind==='network');
+ t.mock.method(globalThis,'fetch',async()=>new Response('data: {"model":"gpt-6-astra","service_tier":"default","choices":[{"delta":{"content":"B"}}]}\n\n',
+  {headers:{'content-type':'text/event-stream'}}));
+ await assert.rejects(p.stream({system:'test',task:'test',images:[]},()=>{},new AbortController().signal),
+  (e:unknown)=>!!e&&typeof e==='object'&&'kind' in e&&e.kind==='incomplete_stream');
 });

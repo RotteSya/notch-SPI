@@ -1,5 +1,5 @@
 /** Content-free, opt-in monotonic timing. Off by default; never changes the SSE contract. */
-export type ProviderTimingStage = 'upstreamRequest' | 'upstreamHeaders' | 'upstreamFirstEvent' | 'upstreamFirstReasoning' | 'upstreamFirstAnswer';
+export type ProviderTimingStage = 'upstreamRequest' | 'upstreamHeaders' | 'upstreamFirstEvent' | 'upstreamFirstReasoning' | 'upstreamFirstAnswer' | 'upstreamUsage';
 
 /** Boot-time diagnostic whitelist; never spread config or log arbitrary configured strings. */
 export function captureRuntimePolicy(config: {
