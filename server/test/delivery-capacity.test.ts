@@ -151,7 +151,10 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    let replay;for(let i=0;i<20;i++){
     replay=await f.apps.at(-1)!.inject({url:`/v1/captures/${id}/delivery`,headers:auth});if(replay.statusCode!==202)break;await delay(50);
    }
-   assert.equal(replay!.statusCode,200);assert.match(replay!.body,/FINAL: B/);assert.match(replay!.body,/\[DONE\]/);assert.equal(calls,1);assert.equal(invocationFinished,true);
+   assert.equal(replay!.statusCode,200);assert.match(replay!.body,/FINAL: B/);assert.match(replay!.body,/\[DONE\]/);assert.equal(calls,1);
+   // The answer is readable once settled; the invocation still releases capacity and budget afterwards.
+   for(let i=0;i<200&&!invocationFinished;i++)await delay(10);
+   assert.equal(invocationFinished,true,'Invocation must finish after the disconnected transport');
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
    assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
   }finally{await closeAdapter();await f.close();}
