@@ -240,6 +240,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
 
     @MainActor func testCapturableContourSurvivesCollapseWithoutChangingLayoutOrControls() throws {
         func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+        var capturableUnavailable = false
         for layout in [screen(top: 32), screen(top: 0), screen(auxiliary: false)] {
             for sharing: NSWindow.SharingType in [.none, .readWrite] {
                 let model = TutorModel()
@@ -249,6 +250,9 @@ final class HardwareNotchLayoutTests: XCTestCase {
                 let panel = NotchPanel(contentRect: collapsed)
                 defer { panel.close() }
                 panel.sharingType = sharing
+                // Some macOS releases no longer grant .readWrite and read it back as .none.
+                // A capturable window then cannot exist, so that branch has nothing to exercise.
+                if panel.sharingType != sharing { capturableUnavailable = true; continue }
                 var settingsClicks = 0
                 let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
                     onHover: { _ in }, onCycleDepth: {}, onEditPersona: {},
@@ -297,6 +301,9 @@ final class HardwareNotchLayoutTests: XCTestCase {
                 }
                 XCTAssertEqual(settingsClicks, 2)
             }
+        }
+        if capturableUnavailable {
+            throw XCTSkip("This macOS reads .readWrite back as .none; only the excluded-window contour was verified")
         }
     }
 
