@@ -1,0 +1,1830 @@
+{
+  "schema_version": 1,
+  "dataset_id": "model-comparison-20261117-screening-preparation",
+  "planned_slots": 40,
+  "status": "local_inventory_only_not_dispatch_authorization",
+  "paid_dispatch_allowed": false,
+  "available_slots": 28,
+  "missing_slots": 12,
+  "authorization_interpretation": "The expired 2026-09-13 corpus-review is a manifest-bound joint authorization/labels/family/external-processing review. Its date is not evidence that source copyright licenses or local possession expired. This new campaign has no external-dispatch approval.",
+  "source_asset_scope": "References to ignored local archives are optional external inputs, never silently replaced or reconstructed; missing files remain blockers. No raw screenshot or source passage is copied here.",
+  "slots": [
+    {
+      "id": "text-01",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-locker-01",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "web",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/01a21116c853a80b8e35f4b97c05ebbaf886ac9a65af0b74df9fad37a75108c4.jpg",
+          "sha256": "01a21116c853a80b8e35f4b97c05ebbaf886ac9a65af0b74df9fad37a75108c4",
+          "media_type": "image/jpeg"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,C"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/material-audit/replacements/source-cases.json",
+        "sha256": "f8e96aa7eeea7f9f4d7fea1ff83a79b53a4a5918ceaf3ef47d1084e744a70552",
+        "case_id": "authored-reading-locker-01",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-02",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-exhibition-01",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/6fae77af73d4eb3d930fb1bc3ccaa0a7698cee5c9cf3f14e963500e7cb257c35.png",
+          "sha256": "6fae77af73d4eb3d930fb1bc3ccaa0a7698cee5c9cf3f14e963500e7cb257c35",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/material-audit/replacements/source-cases.json",
+        "sha256": "f8e96aa7eeea7f9f4d7fea1ff83a79b53a4a5918ceaf3ef47d1084e744a70552",
+        "case_id": "authored-reading-exhibition-01",
+        "paragraph_count": 3,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-03",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-delivery-01",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/ed3308b3aba5241fcbe777238d6537ea81300556873d506138e52a9933f63eeb.png",
+          "sha256": "ed3308b3aba5241fcbe777238d6537ea81300556873d506138e52a9933f63eeb",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,B,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/material-audit/replacements/source-cases.json",
+        "sha256": "f8e96aa7eeea7f9f4d7fea1ff83a79b53a4a5918ceaf3ef47d1084e744a70552",
+        "case_id": "authored-reading-delivery-01",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-04",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-garden-01",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/d8f6166c4848651bc2adb1c30baff8e356b3cb0293ba8d8487c56eb9d27546be.png",
+          "sha256": "d8f6166c4848651bc2adb1c30baff8e356b3cb0293ba8d8487c56eb9d27546be",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/material-audit/replacements/source-cases.json",
+        "sha256": "f8e96aa7eeea7f9f4d7fea1ff83a79b53a4a5918ceaf3ef47d1084e744a70552",
+        "case_id": "authored-reading-garden-01",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-05",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-museum-access-06",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/b642342a9a006bfda221d92391b7e95dd59338f9c0188f24c0e89450312115ee.png",
+          "sha256": "b642342a9a006bfda221d92391b7e95dd59338f9c0188f24c0e89450312115ee",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-museum-access-06",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-06",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-project-freeze-07",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "multi_page",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/1842cda2a67fb298d4bcfc20c89e68883c2734f56b14a59cfd28102c03a37f62.png",
+          "sha256": "1842cda2a67fb298d4bcfc20c89e68883c2734f56b14a59cfd28102c03a37f62",
+          "media_type": "image/png"
+        },
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/eed9ee7b72dee474af666d1832fe226fa6b36d198b1c2c196b6303f06e63e71b.png",
+          "sha256": "eed9ee7b72dee474af666d1832fe226fa6b36d198b1c2c196b6303f06e63e71b",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 1,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,C,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-project-freeze-07",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-07",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-news-correction-08",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/c1d469fcdbe6a15308f42075bc798a409c74c43dfd437b652358f67f6fc26f37.png",
+          "sha256": "c1d469fcdbe6a15308f42075bc798a409c74c43dfd437b652358f67f6fc26f37",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "B,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-news-correction-08",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-08",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-tool-return-09",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/54b1a9e8bf87d59763e77655b4f2d85e17ee6ff67c68af15efb77b63f401ecfc.png",
+          "sha256": "54b1a9e8bf87d59763e77655b4f2d85e17ee6ff67c68af15efb77b63f401ecfc",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A,C,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-tool-return-09",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-09",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-bookclub-thread-10",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/02d8a25965a85300bf430d1fbb83744cc418ac37199e687cca2b710346f850e0.png",
+          "sha256": "02d8a25965a85300bf430d1fbb83744cc418ac37199e687cca2b710346f850e0",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "B,C"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-bookclub-thread-10",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "text-10",
+      "category": "text",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "authored-reading-cafe-trial-11",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "pdf",
+      "image_quality": "unknown",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/99662547ad89adfbdbe63908faefc345bc441ec215aa4df3207571b55713e4ab.png",
+          "sha256": "99662547ad89adfbdbe63908faefc345bc441ec215aa4df3207571b55713e4ab",
+          "media_type": "image/png"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "C,D"
+        ],
+        "answer_scoring": {
+          "mode": "label_set",
+          "labels": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        }
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "English authored fictional passage; not Japanese SPI or independent holdout.",
+      "authorship_evidence": {
+        "path": ".release-evidence/2026-09-10/authored-reading/batch-01/source.json",
+        "sha256": "86504d5f0e49cddebd572b380f63a6e2a08fda00def377b981c0ae2a44b8636e",
+        "case_id": "authored-reading-cafe-trial-11",
+        "paragraph_count": 2,
+        "curation_path": ".release-evidence/2026-09-10/authored-reading/curation-v3.json",
+        "curation_sha256": "1f71fb559a7ba1f312e8351aee3e10d108dc1f03cb2e1915b0e0dbaacdfea924"
+      }
+    },
+    {
+      "id": "calculation-01",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-single_choice-01",
+      "language": "ja",
+      "kind": "single_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-single_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-01.png",
+          "sha256": "71e9ef38281af85036d89866f0feb7636b592f798e32d86465eb5747624fd869",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A",
+          "8",
+          "A. 8",
+          "A (8)",
+          "A（8）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-02",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-single_choice-02",
+      "language": "ja",
+      "kind": "single_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-single_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-02.png",
+          "sha256": "451c8440ced4a903916d782f2eef76b58633d63828a82bf0503443f41a9e400a",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "D",
+          "10",
+          "D. 10",
+          "D (10)",
+          "D（10）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-03",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-single_choice-03",
+      "language": "ja",
+      "kind": "single_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-single_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-03.png",
+          "sha256": "a37c798683529a3d0c950c86cf3b7645833d5ca5b13f9d56f83bc9a7a77b2b3b",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "C",
+          "12",
+          "C. 12",
+          "C (12)",
+          "C（12）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-04",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-multiple_choice-01",
+      "language": "ja",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-multiple_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-01.png",
+          "sha256": "64680faf669368694dffa764587a6790a9b7558c72441b091014271942684680",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A, C",
+          "A,C",
+          "A、C",
+          "A and C",
+          "A 和 C",
+          "AとC",
+          "2, 5",
+          "2,5",
+          "2、5",
+          "2 and 5",
+          "2 和 5",
+          "2と5",
+          "A, C (2, 5)",
+          "A, C（2, 5）",
+          "A、C(2、5)",
+          "A、C（2、5）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-05",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-multiple_choice-02",
+      "language": "ja",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-multiple_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-02.png",
+          "sha256": "1cfc42ce5088bd4685aa99338b19fadd4512b0b63511ed108254055250c5ec44",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "B, D",
+          "B,D",
+          "B、D",
+          "B and D",
+          "B 和 D",
+          "BとD",
+          "7, 3",
+          "7,3",
+          "7、3",
+          "7 and 3",
+          "7 和 3",
+          "7と3",
+          "3, 7",
+          "3,7",
+          "3、7",
+          "3 and 7",
+          "3 和 7",
+          "3と7",
+          "B, D (7, 3)",
+          "B, D（7, 3）",
+          "B、D(7、3)",
+          "B、D（7、3）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-06",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-multiple_choice-03",
+      "language": "ja",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-multiple_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-03.png",
+          "sha256": "0cef41cb4b35ce20844f2cf87efe22fa59ce4445da074b470e5ce47c6e66f9ed",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A, C",
+          "A,C",
+          "A、C",
+          "A and C",
+          "A 和 C",
+          "AとC",
+          "13, 11",
+          "13,11",
+          "13、11",
+          "13 and 11",
+          "13 和 11",
+          "13と11",
+          "11, 13",
+          "11,13",
+          "11、13",
+          "11 and 13",
+          "11 和 13",
+          "11と13",
+          "A, C (13, 11)",
+          "A, C（13, 11）",
+          "A、C(13、11)",
+          "A、C（13、11）"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-07",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-ordering-01",
+      "language": "ja",
+      "kind": "ordering",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-ordering",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-01.png",
+          "sha256": "db9839e4bb621b038ced1f4c515cd5055e4caf2ee3afd84e3e9e184cb7b8848f",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "B-D-A-C",
+          "B, D, A, C",
+          "B,D,A,C",
+          "B、D、A、C",
+          "B → D → A → C",
+          "B→D→A→C",
+          "2-3-5-7",
+          "2, 3, 5, 7",
+          "2,3,5,7",
+          "2、3、5、7",
+          "2 < 3 < 5 < 7",
+          "2<3<5<7",
+          "2 → 3 → 5 → 7",
+          "2→3→5→7"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-08",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-ordering-02",
+      "language": "ja",
+      "kind": "ordering",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-ordering",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-02.png",
+          "sha256": "882ec5aacd1d3fc7b0e18df01973e5c6e17f5074a044b890a09d20187606f7a7",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "A-C-D-B",
+          "A, C, D, B",
+          "A,C,D,B",
+          "A、C、D、B",
+          "A → C → D → B",
+          "A→C→D→B",
+          "3-4-6-8",
+          "3, 4, 6, 8",
+          "3,4,6,8",
+          "3、4、6、8",
+          "3 < 4 < 6 < 8",
+          "3<4<6<8",
+          "3 → 4 → 6 → 8",
+          "3→4→6→8"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-09",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-short_fill-01",
+      "language": "ja",
+      "kind": "short_fill",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-short_fill",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-short_fill-01.png",
+          "sha256": "d9fb484bce7e8b45d7e276ee3e78d20c10e1e918f438e608b3c77fd7a43ac35e",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "10"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "calculation-10",
+      "category": "calculation",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-short_fill-02",
+      "language": "ja",
+      "kind": "short_fill",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-short_fill",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_clean_render_by_generator_not_real_screenshot",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-short_fill-02.png",
+          "sha256": "accfcb12690bf9d53e9d3207599b267d47d7d1caef7b4c4226364d0a4956a848",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "answerable",
+        "state": "ready",
+        "reason": null,
+        "accepted_answers": [
+          "13"
+        ],
+        "answer_scoring": {
+          "mode": "literal"
+        }
+      },
+      "coverage_limit": "Synthetic arithmetic/primality/numeric ordering only; not authentic SPI calculation.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      }
+    },
+    {
+      "id": "chart-01",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-02",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-03",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-04",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-05",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-06",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-07",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-08",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-09",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "chart-10",
+      "category": "chart",
+      "status": "missing",
+      "missing_reason": "No independently audited Japanese chart/table screenshot with reliable gold and new campaign external-processing approval selected. Do not replace with text referring to absent figures.",
+      "source_manifest": null,
+      "source_manifest_sha256": null,
+      "source_case_id": null,
+      "language": null,
+      "kind": null,
+      "origin": null,
+      "previously_seen": null,
+      "family_id": null,
+      "layout": null,
+      "image_quality": null,
+      "gold_reliability": null,
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "expected": null
+    },
+    {
+      "id": "boundary-01",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-single_choice-18",
+      "language": "ja",
+      "kind": "single_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-single_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_unreadable",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-18.png",
+          "sha256": "cccf7fda816bd33805d9930b392a635e93654080d9cb50a1ded09c12117b7c0d",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "unreadable"
+    },
+    {
+      "id": "boundary-02",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-single_choice-19",
+      "language": "ja",
+      "kind": "single_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-single_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_cropped",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-19.png",
+          "sha256": "d8cd85ae210c99fe98be52ee3b266084bd5333b631acc84f1b7c8c4bc7700e22",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "cropped"
+    },
+    {
+      "id": "boundary-03",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-multiple_choice-18",
+      "language": "ja",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-multiple_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_unreadable",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-18.png",
+          "sha256": "6bf75356013b01a491b57ddbd21d72c48b2811251c1d3dda346fe93b0cb7ab3a",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "unreadable"
+    },
+    {
+      "id": "boundary-04",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-multiple_choice-19",
+      "language": "ja",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-multiple_choice",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_cropped",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-19.png",
+          "sha256": "42a9ab7af7865cbdfe6b63e42064b416695262dc5f222823528c9eb80eae5924",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "cropped"
+    },
+    {
+      "id": "boundary-05",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-ordering-18",
+      "language": "ja",
+      "kind": "ordering",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-ordering",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_unreadable",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-18.png",
+          "sha256": "c81a19e27a468a4ef44e116309471b56a41722b2ba4d4821c039b477fd774f91",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "unreadable"
+    },
+    {
+      "id": "boundary-06",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_manifest_sha256": "d67b88ac4bf00d6183acc09d1d0eedc21a9cb20fafe241fa45e64f45723ee882",
+      "source_case_id": "ja-ordering-19",
+      "language": "ja",
+      "kind": "ordering",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "objective-template-ordering",
+      "layout": "synthetic_card",
+      "image_quality": "synthetic_cropped",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-19.png",
+          "sha256": "a38afc0918dc39f9a9d88dd3547e95bfcc39e40f66a1a6143b9a404c788154b8",
+          "media_type": "image/png"
+        }
+      ],
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": null,
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "expected_reason_basis": "Original objective manifest only asserts retake. Generator transform labels describe image quality, not an independently supplied exact protocol reason.",
+      "authorization_evidence": {
+        "source_path": "scripts/generate-objective-fixtures.py",
+        "source_sha256": "697da5c45030cd84b4464e8259e6dc4ddeb0475745a3d96b6c19d4122ddcd2f8",
+        "status": "local_regression_use_authorized_this_turn_external_dispatch_not_authorized"
+      },
+      "coverage_limit": "Artificial destructive transform; not natural compression, phone photography, or small-but-readable text.",
+      "source_transform_reason": "cropped"
+    },
+    {
+      "id": "boundary-07",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "browser-risk-missing-context",
+      "language": "en",
+      "kind": "multiple_choice",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-reading-series-20260910",
+      "layout": "practice_ui",
+      "image_quality": "historical_missing_context",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/210ac58ec13f3be065cea4ee1c6f32485253bd9c6e83246d3fb5e7199fde16c1.jpg",
+          "sha256": "210ac58ec13f3be065cea4ee1c6f32485253bd9c6e83246d3fb5e7199fde16c1",
+          "media_type": "image/jpeg"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": "missing_context",
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "Previously seen transformed browser fixture; source/component rights and exact new provider dispatch scope pending."
+    },
+    {
+      "id": "boundary-08",
+      "category": "boundary",
+      "status": "available",
+      "missing_reason": null,
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "browser-risk-unreadable",
+      "language": "en",
+      "kind": "single_choice",
+      "origin": "public_regression",
+      "previously_seen": true,
+      "family_id": "arc-gsm-linked-20260911",
+      "layout": "practice_ui",
+      "image_quality": "historical_unreadable",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/e780e136314e81e917aee648aca2458b18652155da40c2adb3726253c61a646f.jpg",
+          "sha256": "e780e136314e81e917aee648aca2458b18652155da40c2adb3726253c61a646f",
+          "media_type": "image/jpeg"
+        }
+      ],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": {
+        "expectation": "retake",
+        "state": "retake",
+        "reason": "unreadable",
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "Previously seen transformed browser fixture; source/component rights and exact new provider dispatch scope pending."
+    },
+    {
+      "id": "boundary-09",
+      "category": "boundary",
+      "status": "missing",
+      "missing_reason": "Historical screen_query_v1 no-result gold is not valid for the frozen tutor brief objective_v1 contract; independent contract-specific expected response is missing.",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "browser-risk-multiple-targets",
+      "language": "en",
+      "kind": "other",
+      "origin": "public_regression",
+      "previously_seen": true,
+      "family_id": "arc-gsm-linked-20260911",
+      "layout": "practice_ui",
+      "image_quality": "unknown",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": null,
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "Previously seen transformed browser fixture; source/component rights and exact new provider dispatch scope pending.",
+      "source_expected": {
+        "expectation": "multiple_targets",
+        "state": null,
+        "reason": "multiple_targets",
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "source_images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/2eb9ebd20e8a7bb83867938b82ed67dd01685a26e5350966b732f831f2e5ecca.jpg",
+          "sha256": "2eb9ebd20e8a7bb83867938b82ed67dd01685a26e5350966b732f831f2e5ecca",
+          "media_type": "image/jpeg"
+        }
+      ]
+    },
+    {
+      "id": "boundary-10",
+      "category": "boundary",
+      "status": "missing",
+      "missing_reason": "Historical screen_query_v1 no-result gold is not valid for the frozen tutor brief objective_v1 contract; independent contract-specific expected response is missing.",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_manifest_sha256": "469667e1863cf9d3fbddd3c45e1392aa46d17c5de4779c9990290f5e500ee59e",
+      "source_case_id": "browser-risk-outside-scope",
+      "language": "en",
+      "kind": "other",
+      "origin": "synthetic_regression",
+      "previously_seen": true,
+      "family_id": "authored-risk-series-20260911",
+      "layout": "practice_ui",
+      "image_quality": "unknown",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "external_processing": "pending_new_campaign_review",
+      "images": [],
+      "scope": {
+        "target_count": 1,
+        "question_image_index": 0,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
+        }
+      },
+      "expected": null,
+      "authorization_evidence": {
+        "review_path": ".release-evidence/2026-09-13/full-regression/corpus/corpus-review.json",
+        "review_sha256": "d6ade1e5f34ab5e0345342fe0fd1536d407ac2b30c68519b9ce40ee133b8e5f6",
+        "status": "expired_manifest_bound_joint_review_not_source_license_expiry"
+      },
+      "coverage_limit": "Previously seen transformed browser fixture; source/component rights and exact new provider dispatch scope pending.",
+      "source_expected": {
+        "expectation": "out_of_scope",
+        "state": null,
+        "reason": "unsupported_scope",
+        "accepted_answers": [],
+        "answer_scoring": null
+      },
+      "source_images": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/65994ec3ea263ee7da51ab6def3be47e8d8e170e0d7cbe53c7400cf8a56f2bbd.jpg",
+          "sha256": "65994ec3ea263ee7da51ab6def3be47e8d8e170e0d7cbe53c7400cf8a56f2bbd",
+          "media_type": "image/jpeg"
+        }
+      ]
+    }
+  ],
+  "response_contract": "tutor_brief_objective_v1"
+}

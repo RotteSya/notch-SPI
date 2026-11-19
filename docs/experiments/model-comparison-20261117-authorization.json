@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "status": "approved",
+  "experiment_id": "model-comparison-20261117",
+  "config_sha256": "d77a76164332f7cdd809582b74cac5b26b6216cb482f458f9984a47c268de87c",
+  "cases_sha256": "bc54dc478dbea08f9c1c05f5bfd1de2eea85096237094e39638d0760c9ce378d",
+  "materials_sha256": "f2652f9c3831a403038263d815dd941d3bc952f2397c596c94527aeeabfb7f90",
+  "models": [
+    {
+      "id": "gpt-6-astra",
+      "endpoint": "https://api.openai.com/v1/chat/completions"
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "endpoint": "https://api.openai.com/v1/chat/completions"
+    },
+    {
+      "id": "deepseek-flash",
+      "endpoint": "https://api.deepseek.com/chat/completions"
+    }
+  ],
+  "material_scope": [
+    {
+      "case_id": "text-01",
+      "images": [
+        "01a21116c853a80b8e35f4b97c05ebbaf886ac9a65af0b74df9fad37a75108c4"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-02",
+      "images": [
+        "6fae77af73d4eb3d930fb1bc3ccaa0a7698cee5c9cf3f14e963500e7cb257c35"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-03",
+      "images": [
+        "ed3308b3aba5241fcbe777238d6537ea81300556873d506138e52a9933f63eeb"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-04",
+      "images": [
+        "d8f6166c4848651bc2adb1c30baff8e356b3cb0293ba8d8487c56eb9d27546be"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-05",
+      "images": [
+        "b642342a9a006bfda221d92391b7e95dd59338f9c0188f24c0e89450312115ee"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-06",
+      "images": [
+        "1842cda2a67fb298d4bcfc20c89e68883c2734f56b14a59cfd28102c03a37f62",
+        "eed9ee7b72dee474af666d1832fe226fa6b36d198b1c2c196b6303f06e63e71b"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-07",
+      "images": [
+        "c1d469fcdbe6a15308f42075bc798a409c74c43dfd437b652358f67f6fc26f37"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-08",
+      "images": [
+        "54b1a9e8bf87d59763e77655b4f2d85e17ee6ff67c68af15efb77b63f401ecfc"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-09",
+      "images": [
+        "02d8a25965a85300bf430d1fbb83744cc418ac37199e687cca2b710346f850e0"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "text-10",
+      "images": [
+        "99662547ad89adfbdbe63908faefc345bc441ec215aa4df3207571b55713e4ab"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-01",
+      "images": [
+        "71e9ef38281af85036d89866f0feb7636b592f798e32d86465eb5747624fd869"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-02",
+      "images": [
+        "451c8440ced4a903916d782f2eef76b58633d63828a82bf0503443f41a9e400a"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-03",
+      "images": [
+        "a37c798683529a3d0c950c86cf3b7645833d5ca5b13f9d56f83bc9a7a77b2b3b"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-04",
+      "images": [
+        "64680faf669368694dffa764587a6790a9b7558c72441b091014271942684680"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-05",
+      "images": [
+        "1cfc42ce5088bd4685aa99338b19fadd4512b0b63511ed108254055250c5ec44"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-06",
+      "images": [
+        "0cef41cb4b35ce20844f2cf87efe22fa59ce4445da074b470e5ce47c6e66f9ed"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-07",
+      "images": [
+        "db9839e4bb621b038ced1f4c515cd5055e4caf2ee3afd84e3e9e184cb7b8848f"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-08",
+      "images": [
+        "882ec5aacd1d3fc7b0e18df01973e5c6e17f5074a044b890a09d20187606f7a7"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-09",
+      "images": [
+        "d9fb484bce7e8b45d7e276ee3e78d20c10e1e918f438e608b3c77fd7a43ac35e"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "calculation-10",
+      "images": [
+        "accfcb12690bf9d53e9d3207599b267d47d7d1caef7b4c4226364d0a4956a848"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-01",
+      "images": [
+        "cccf7fda816bd33805d9930b392a635e93654080d9cb50a1ded09c12117b7c0d"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-02",
+      "images": [
+        "d8cd85ae210c99fe98be52ee3b266084bd5333b631acc84f1b7c8c4bc7700e22"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-03",
+      "images": [
+        "6bf75356013b01a491b57ddbd21d72c48b2811251c1d3dda346fe93b0cb7ab3a"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-04",
+      "images": [
+        "42a9ab7af7865cbdfe6b63e42064b416695262dc5f222823528c9eb80eae5924"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-05",
+      "images": [
+        "c81a19e27a468a4ef44e116309471b56a41722b2ba4d4821c039b477fd774f91"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-06",
+      "images": [
+        "a38afc0918dc39f9a9d88dd3547e95bfcc39e40f66a1a6143b9a404c788154b8"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-07",
+      "images": [
+        "210ac58ec13f3be065cea4ee1c6f32485253bd9c6e83246d3fb5e7199fde16c1"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    },
+    {
+      "case_id": "boundary-08",
+      "images": [
+        "e780e136314e81e917aee648aca2458b18652155da40c2adb3726253c61a646f"
+      ],
+      "models": [
+        "gpt-6-astra",
+        "gpt-6.1-terra",
+        "deepseek-flash"
+      ]
+    }
+  ],
+  "budget": {
+    "currency": "USD",
+    "hard_cap_micros": 15000000,
+    "rolling_settlement": true
+  },
+  "maximum_attempts": 168,
+  "purpose": "seen_regression_screening_only_no_production_acceptance",
+  "expires_at": "2026-11-18T10:53:22+00:00",
+  "user_approval": {
+    "budget": true,
+    "exact_materials_and_recipients": true,
+    "empirical_bound_limitation_acknowledged": true,
+    "message_reference": "Current Codex chat, user instruction received 2026-11-17: 同意启动执行单中的28项已见题回归预筛；批准15美元滚动额度。",
+    "approved_at": "2026-11-17T10:53:22+00:00"
+  },
+  "preflight": {
+    "prices_versions_parameters_reviewed": true,
+    "exact_inputs_and_billing_scope_reviewed": true,
+    "account_standard_no_region_no_tools": true,
+    "privacy_review_accepted": true,
+    "evidence_reference": "output/model-comparison-preflight-20261117/preflight.json",
+    "billing_catalog_sha256": "5f64bee622e5574275b86cd0622ecea6c5d782da5c62238190c3f1eff33160fa",
+    "input_bound_kind": "empirical_not_vendor_guarantee"
+  },
+  "expected_returned_models": {
+    "gpt-6-astra": [
+      "gpt-6-astra"
+    ],
+    "gpt-6.1-terra": [
+      "gpt-6.1-terra"
+    ],
+    "deepseek-flash": [
+      "deepseek-flash"
+    ]
+  }
+}

@@ -1,0 +1,1555 @@
+{
+  "schema_version": 1,
+  "experiment_id": "model-comparison-20261117",
+  "status": "proposed_exact_scope_not_authorization",
+  "items": [
+    {
+      "case_id": "text-01",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-locker-01",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-01",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/01a21116c853a80b8e35f4b97c05ebbaf886ac9a65af0b74df9fad37a75108c4.jpg",
+          "sha256": "01a21116c853a80b8e35f4b97c05ebbaf886ac9a65af0b74df9fad37a75108c4",
+          "width": 1280,
+          "height": 720,
+          "bytes": 93373,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1104,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-02",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-exhibition-01",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-02",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/6fae77af73d4eb3d930fb1bc3ccaa0a7698cee5c9cf3f14e963500e7cb257c35.png",
+          "sha256": "6fae77af73d4eb3d930fb1bc3ccaa0a7698cee5c9cf3f14e963500e7cb257c35",
+          "width": 990,
+          "height": 1400,
+          "bytes": 120593,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1637,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-03",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-delivery-01",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-03",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/ed3308b3aba5241fcbe777238d6537ea81300556873d506138e52a9933f63eeb.png",
+          "sha256": "ed3308b3aba5241fcbe777238d6537ea81300556873d506138e52a9933f63eeb",
+          "width": 990,
+          "height": 1400,
+          "bytes": 123301,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1637,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-04",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-garden-01",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-04",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/d8f6166c4848651bc2adb1c30baff8e356b3cb0293ba8d8487c56eb9d27546be.png",
+          "sha256": "d8f6166c4848651bc2adb1c30baff8e356b3cb0293ba8d8487c56eb9d27546be",
+          "width": 990,
+          "height": 1400,
+          "bytes": 122041,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1637,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-05",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-museum-access-06",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-05",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/b642342a9a006bfda221d92391b7e95dd59338f9c0188f24c0e89450312115ee.png",
+          "sha256": "b642342a9a006bfda221d92391b7e95dd59338f9c0188f24c0e89450312115ee",
+          "width": 993,
+          "height": 1404,
+          "bytes": 140360,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-06",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-project-freeze-07",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-06",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/1842cda2a67fb298d4bcfc20c89e68883c2734f56b14a59cfd28102c03a37f62.png",
+          "sha256": "1842cda2a67fb298d4bcfc20c89e68883c2734f56b14a59cfd28102c03a37f62",
+          "width": 993,
+          "height": 1404,
+          "bytes": 61720,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        },
+        {
+          "case_id": "text-06",
+          "order": 1,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/eed9ee7b72dee474af666d1832fe226fa6b36d198b1c2c196b6303f06e63e71b.png",
+          "sha256": "eed9ee7b72dee474af666d1832fe226fa6b36d198b1c2c196b6303f06e63e71b",
+          "width": 993,
+          "height": 1404,
+          "bytes": 108793,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-07",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-news-correction-08",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-07",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/c1d469fcdbe6a15308f42075bc798a409c74c43dfd437b652358f67f6fc26f37.png",
+          "sha256": "c1d469fcdbe6a15308f42075bc798a409c74c43dfd437b652358f67f6fc26f37",
+          "width": 993,
+          "height": 1404,
+          "bytes": 151937,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-08",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-tool-return-09",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-08",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/54b1a9e8bf87d59763e77655b4f2d85e17ee6ff67c68af15efb77b63f401ecfc.png",
+          "sha256": "54b1a9e8bf87d59763e77655b4f2d85e17ee6ff67c68af15efb77b63f401ecfc",
+          "width": 993,
+          "height": 1404,
+          "bytes": 143719,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-09",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-bookclub-thread-10",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-09",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/02d8a25965a85300bf430d1fbb83744cc418ac37199e687cca2b710346f850e0.png",
+          "sha256": "02d8a25965a85300bf430d1fbb83744cc418ac37199e687cca2b710346f850e0",
+          "width": 993,
+          "height": 1404,
+          "bytes": 132999,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "text-10",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "authored-reading-cafe-trial-11",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "existing_authored_key_and_nonblind_ai_review_no_human_signoff",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "text-10",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/99662547ad89adfbdbe63908faefc345bc441ec215aa4df3207571b55713e4ab.png",
+          "sha256": "99662547ad89adfbdbe63908faefc345bc441ec215aa4df3207571b55713e4ab",
+          "width": 993,
+          "height": 1404,
+          "bytes": 142735,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1690,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No direct personal identifiers observed; original authored fictional reading contains fictional first names.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-01",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-single_choice-01",
+      "language": "ja",
+      "question_kind": "single_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-01",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-01.png",
+          "sha256": "71e9ef38281af85036d89866f0feb7636b592f798e32d86465eb5747624fd869",
+          "width": 1200,
+          "height": 760,
+          "bytes": 27333,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-02",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-single_choice-02",
+      "language": "ja",
+      "question_kind": "single_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-02",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-02.png",
+          "sha256": "451c8440ced4a903916d782f2eef76b58633d63828a82bf0503443f41a9e400a",
+          "width": 1200,
+          "height": 760,
+          "bytes": 26134,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-03",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-single_choice-03",
+      "language": "ja",
+      "question_kind": "single_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-03",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-03.png",
+          "sha256": "a37c798683529a3d0c950c86cf3b7645833d5ca5b13f9d56f83bc9a7a77b2b3b",
+          "width": 1200,
+          "height": 760,
+          "bytes": 27096,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-04",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-multiple_choice-01",
+      "language": "ja",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-04",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-01.png",
+          "sha256": "64680faf669368694dffa764587a6790a9b7558c72441b091014271942684680",
+          "width": 1200,
+          "height": 760,
+          "bytes": 29952,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-05",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-multiple_choice-02",
+      "language": "ja",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-05",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-02.png",
+          "sha256": "1cfc42ce5088bd4685aa99338b19fadd4512b0b63511ed108254055250c5ec44",
+          "width": 1200,
+          "height": 760,
+          "bytes": 29594,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-06",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-multiple_choice-03",
+      "language": "ja",
+      "question_kind": "multiple_choice",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-06",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-03.png",
+          "sha256": "0cef41cb4b35ce20844f2cf87efe22fa59ce4445da074b470e5ce47c6e66f9ed",
+          "width": 1200,
+          "height": 760,
+          "bytes": 29281,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-07",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-ordering-01",
+      "language": "ja",
+      "question_kind": "ordering",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-07",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-01.png",
+          "sha256": "db9839e4bb621b038ced1f4c515cd5055e4caf2ee3afd84e3e9e184cb7b8848f",
+          "width": 1200,
+          "height": 760,
+          "bytes": 20491,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-08",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-ordering-02",
+      "language": "ja",
+      "question_kind": "ordering",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-08",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-02.png",
+          "sha256": "882ec5aacd1d3fc7b0e18df01973e5c6e17f5074a044b890a09d20187606f7a7",
+          "width": 1200,
+          "height": 760,
+          "bytes": 21071,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-09",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-short_fill-01",
+      "language": "ja",
+      "question_kind": "short_fill",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-09",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-short_fill-01.png",
+          "sha256": "d9fb484bce7e8b45d7e276ee3e78d20c10e1e918f438e608b3c77fd7a43ac35e",
+          "width": 1200,
+          "height": 760,
+          "bytes": 18120,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "calculation-10",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-short_fill-02",
+      "language": "ja",
+      "question_kind": "short_fill",
+      "expected_state": "ready",
+      "gold_reliability": "deterministic_generator_key_existing_accepted_variants",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "calculation-10",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-short_fill-02.png",
+          "sha256": "accfcb12690bf9d53e9d3207599b267d47d7d1caef7b4c4226364d0a4956a848",
+          "width": 1200,
+          "height": 760,
+          "bytes": 18552,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No personal identifiers observed in mathematical cards.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-01",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-single_choice-18",
+      "language": "ja",
+      "question_kind": "single_choice",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-01",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-18.png",
+          "sha256": "cccf7fda816bd33805d9930b392a635e93654080d9cb50a1ded09c12117b7c0d",
+          "width": 1200,
+          "height": 760,
+          "bytes": 56381,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-02",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-single_choice-19",
+      "language": "ja",
+      "question_kind": "single_choice",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-02",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-single_choice-19.png",
+          "sha256": "d8cd85ae210c99fe98be52ee3b266084bd5333b631acc84f1b7c8c4bc7700e22",
+          "width": 1200,
+          "height": 760,
+          "bytes": 58326,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-03",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-multiple_choice-18",
+      "language": "ja",
+      "question_kind": "multiple_choice",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-03",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-18.png",
+          "sha256": "6bf75356013b01a491b57ddbd21d72c48b2811251c1d3dda346fe93b0cb7ab3a",
+          "width": 1200,
+          "height": 760,
+          "bytes": 62432,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-04",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-multiple_choice-19",
+      "language": "ja",
+      "question_kind": "multiple_choice",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-04",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-multiple_choice-19.png",
+          "sha256": "42a9ab7af7865cbdfe6b63e42064b416695262dc5f222823528c9eb80eae5924",
+          "width": 1200,
+          "height": 760,
+          "bytes": 68117,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-05",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-ordering-18",
+      "language": "ja",
+      "question_kind": "ordering",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-05",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-18.png",
+          "sha256": "c81a19e27a468a4ef44e116309471b56a41722b2ba4d4821c039b477fd774f91",
+          "width": 1200,
+          "height": 760,
+          "bytes": 42954,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-06",
+      "source_manifest": "Tests/Fixtures/objective-v1/manifest.json",
+      "source_case_id": "ja-ordering-19",
+      "language": "ja",
+      "question_kind": "ordering",
+      "expected_state": "retake",
+      "gold_reliability": "generator_defines_retake_and_pixel_transform_not_human_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-06",
+          "order": 0,
+          "path": "Tests/Fixtures/objective-v1/images/ja-ordering-19.png",
+          "sha256": "a38afc0918dc39f9a9d88dd3547e95bfcc39e40f66a1a6143b9a404c788154b8",
+          "width": 1200,
+          "height": 760,
+          "bytes": 46270,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1095,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-07",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "browser-risk-missing-context",
+      "language": "en",
+      "question_kind": "multiple_choice",
+      "expected_state": "retake",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "previously_seen": true,
+      "origin": "synthetic_regression",
+      "images": [
+        {
+          "case_id": "boundary-07",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/210ac58ec13f3be065cea4ee1c6f32485253bd9c6e83246d3fb5e7199fde16c1.jpg",
+          "sha256": "210ac58ec13f3be065cea4ee1c6f32485253bd9c6e83246d3fb5e7199fde16c1",
+          "width": 1280,
+          "height": 720,
+          "bytes": 57525,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1104,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "No account chrome, faces, direct identifiers or contact fields observed; blur/crop prevents complete text inspection. Original provenance retained; not a guarantee of absence.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Existing authored/generated regression; new external processing approval required.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false
+    },
+    {
+      "case_id": "boundary-08",
+      "source_manifest": ".release-evidence/2026-09-13/full-regression/corpus/manifest.json",
+      "source_case_id": "browser-risk-unreadable",
+      "language": "en",
+      "question_kind": "single_choice",
+      "expected_state": "retake",
+      "gold_reliability": "historical_boundary_label_not_new_visual_review",
+      "previously_seen": true,
+      "origin": "public_regression",
+      "images": [
+        {
+          "case_id": "boundary-08",
+          "order": 0,
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/images/e780e136314e81e917aee648aca2458b18652155da40c2adb3726253c61a646f.jpg",
+          "sha256": "e780e136314e81e917aee648aca2458b18652155da40c2adb3726253c61a646f",
+          "width": 1280,
+          "height": 720,
+          "bytes": 21106,
+          "has_exif": false,
+          "has_iptc": false,
+          "has_xmp": false,
+          "astra_high_image_estimate": 1104,
+          "astra_high_rounding_allowance_tokens": 1,
+          "deepseek_documented_image_upper": 1024,
+          "terra_image_tokens": null
+        }
+      ],
+      "privacy_review": {
+        "method": "local_visual_review_of_all_29_images_and_sharp_metadata",
+        "review_date": "2026-11-17",
+        "finding": "Blurred image has no account chrome, face or contact fields. Exact parent source record was checked locally: generic astronomy question, no personal identifiers. Image alone cannot support exhaustive text inspection.",
+        "exif_xmp_iptc_present": false,
+        "personal_information_found": false,
+        "limitation": "not a legal permission or exhaustive OCR/forensic privacy guarantee"
+      },
+      "rights_note": "Blurred derivative of ARC-Easy test Mercury_7084438 (astronomy question), not a private screenshot; archived ARC CC-BY-SA-4.0 declaration. Preserve source/attribution; this specific derivative needs inclusion in new external-processing approval.",
+      "recipients": [
+        {
+          "supplier": "OpenAI",
+          "models": [
+            "gpt-6-astra",
+            "gpt-6.1-terra"
+          ]
+        },
+        {
+          "supplier": "DeepSeek",
+          "models": [
+            "deepseek-flash"
+          ]
+        }
+      ],
+      "external_processing_authorized": false,
+      "parent_source": {
+        "path": ".release-evidence/2026-09-09/public-corpus/arc-source-records.json",
+        "sha256": "0f42646915b5093ed70543cae3faf1b97b02007206621f22c4eab7cf23ba7f79",
+        "record_id": "Mercury_7084438",
+        "capture_index": ".release-evidence/2026-09-11/browser-corpus/capture-index.json",
+        "capture_index_sha256": "b7eca8cda7653d17494b959ab8c413d08811444c33cea59d70deb5c58b74eec9"
+      }
+    }
+  ],
+  "image_count": 29,
+  "sent_fields": [
+    "frozen_business_system_prompt",
+    "frozen_task",
+    "ordered_image_bytes"
+  ],
+  "not_sent": [
+    "gold_answers",
+    "local_paths",
+    "review_records",
+    "other_historical_corpus",
+    "daily_user_screenshots"
+  ]
+}

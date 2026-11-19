@@ -649,6 +649,66 @@
       ]
     },
     {
+      "path": "docs/model-comparison.md",
+      "kind": "reference",
+      "scope": [
+        "evaluation"
+      ],
+      "purpose": "28项已见题回归预筛入口、滚动预算、受控外发与待批准执行单",
+      "sources": [
+        "scripts/run-model-comparison.mjs",
+        "scripts/lib/model-comparison.mts",
+        "scripts/lib/model-comparison-budget.mts",
+        "docs/experiments/model-comparison-20261117.json",
+        "scripts/lib/model-comparison-transport.mts",
+        "scripts/lib/model-comparison-live.mjs",
+        "scripts/import-model-comparison-latency.mjs",
+        "docs/experiments/model-comparison-20261117-authorization.json"
+      ],
+      "checks": [
+        "scripts/fixtures/model-comparison.test.mjs",
+        "server/test/evaluation-budget.test.ts",
+        "scripts/fixtures/model-comparison-live.test.mjs"
+      ],
+      "required_artifacts": [
+        {
+          "path": "output/model-comparison-<run>/plan.json",
+          "kind": "generated",
+          "producer": "scripts/run-model-comparison.mjs",
+          "contract": "显式 --mock --out output/<new-directory>，同目录results.json及mock-budget.sqlite3均为离线合成证据，不代表真实模型或批准账本。"
+        },
+        {
+          "path": "output/release-3.1-execution/production-model-logs.md",
+          "kind": "external",
+          "acquisition_contract": "只读历史生产回执；由本机归档或材料所有者提供准确摘要副本，日期限定2026-11-08，不替代当前运行验证。"
+        }
+      ]
+    },
+    {
+      "path": "docs/model-comparison-data.md",
+      "kind": "reference",
+      "scope": [
+        "evaluation"
+      ],
+      "purpose": "40槽位数据来源、金标可靠性、截图缺口与旧联合复核日期语义",
+      "sources": [
+        "docs/experiments/model-comparison-20261117-cases.json",
+        "scripts/lib/reading-evaluation.mts",
+        "Tests/Fixtures/objective-v1/manifest.json",
+        "docs/experiments/model-comparison-20261117-materials.json"
+      ],
+      "checks": [
+        "scripts/fixtures/model-comparison.test.mjs"
+      ],
+      "required_artifacts": [
+        {
+          "path": ".release-evidence/2026-09-13/full-regression/corpus/",
+          "kind": "external",
+          "acquisition_contract": "由材料所有者提供原manifest、来源/家族/旧联合复核及所选图片的授权副本；按清单摘要匹配，不下载、重建或视为本次外发批准。其他来源审查文件见数据说明。"
+        }
+      ]
+    },
+    {
       "path": "docs/research/competitors/2026-11-14/report.md",
       "kind": "evidence",
       "scope": [
