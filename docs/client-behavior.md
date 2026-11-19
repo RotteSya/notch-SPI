@@ -32,6 +32,7 @@ Release 排除本应用窗口的软件截图；DEBUG 仅显式 QA 开关可放�
 ## 三通道与账户
 
 新安装默认官方服务；自定义 API 和本机 CLI 仍是产品能力。隔离开发 bundle 固定 loopback mock 与临时凭证；真实本地启动保持用户已保存的通道和账户。
+待恢复请求只保留最新一题：新题提交即取代更早的条目，已送达但不是答案的结果（重拍、无结果）立即清除。启动时恢复最新一题；会话中账户刷新只恢复本次传输中断的那一题，不会替换面板上更新的答案。
 官方账户快照、401、取消、恢复与并发覆盖见 OfficialAccountStateTests、OfficialCaptureRunTests 和 OfficialStreamTransportTests。CLI 继续受账户 cli_enabled 约束。
 
 ## 设置中的账户与订阅

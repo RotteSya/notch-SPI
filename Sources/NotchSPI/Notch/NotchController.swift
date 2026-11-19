@@ -298,7 +298,7 @@ final class NotchController: NSObject {
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: OfficialAPI.accountDidChange, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in self?.synchronizeMaterialScope(); self?.recoverPendingAnswer() } })
+        ) { [weak self] _ in Task { @MainActor in self?.synchronizeMaterialScope(); self?.recoverPendingAnswer(afterAccountChange: true) } })
 
         // Language / theme switches re-render the always-visible notch immediately.
         observers.append(NotificationCenter.default.addObserver(
@@ -3145,9 +3145,18 @@ final class NotchController: NSObject {
                 if !ok, receipt?.settlementStatus != "released", composition?.noResultReason == nil, composition?.state != .retake {
                     self.reconcileQuestion(snapshot, generation: generation)
                 }
-                latency.complete(success: ok && self.model.status != .error && composition?.state != .retake
+                let answered = ok && self.model.status != .error && composition?.state != .retake
                     && (!snapshot.usesStructuredTutorResult || composition?.finalAnswer != nil)
-                    && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    && !self.model.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                latency.complete(success: answered)
+                if case .official = snapshot.channel {
+                    if !ok {
+                        self.pendingRecovery.transportInterrupted(snapshot.captureID)
+                    } else if !answered, let account = snapshot.binding.officialAccount {
+                        // A delivered result that is not an answer is final; there is nothing left to restore.
+                        PendingCaptureStore.shared.remove(snapshot.captureID, account: account)
+                    }
+                }
                 if let materialSnapshot {
                     self.recordRecentQuestion(materialSnapshot, succeeded: ok, mode: snapshot.mode,
                                               composition: composition)
@@ -3386,13 +3395,14 @@ final class NotchController: NSObject {
         runWatchdog?.invalidate(); runWatchdog = nil
     }
 
-    private var attemptedPending = Set<UUID>()
-    func recoverPendingAnswer() {
+    private var pendingRecovery = PendingRecoveryGate()
+    func recoverPendingAnswer(afterAccountChange: Bool = false) {
         guard activatesServices, !terminating, !running, model.onboardingStep == nil,
               Settings.shared.serviceMode == "official",
-              let account = OfficialAPI.accountState.account,
-              let entry = PendingCaptureStore.shared.pending(account: account).first(where: { !attemptedPending.contains($0.id) }) else { return }
-        attemptedPending.insert(entry.id)
+              let account = OfficialAPI.accountState.account else { return }
+        let entries = PendingCaptureStore.shared.pending(account: account)
+        guard let id = pendingRecovery.claim(entries.map(\.id), afterAccountChange: afterAccountChange),
+              let entry = entries.first(where: { $0.id == id }) else { return }
         beginRun(); officialTransportSubmitted()
         let generation = runGeneration
         currentCaptureID = entry.id; currentAnswerCaptureID = entry.id
@@ -3418,11 +3428,14 @@ final class NotchController: NSObject {
                 self.model.status = complete ? .idle : .error
                 self.model.statusText = complete ? L10n.statusDone : error
                 latency.complete(success: complete)
+                // A delivered result that is not an answer is final; there is nothing left to restore.
+                if ok, !complete { PendingCaptureStore.shared.remove(entry.id, account: account) }
                 self.resizeToFit(); self.endRun(); self.pinned = false
             })
     }
 
     private func beginRun() {
+        pendingRecovery.runBegan()
         capturePreparation.cancel()
         reconciliationTask?.cancel(); reconciliationTask = nil
         running = true
