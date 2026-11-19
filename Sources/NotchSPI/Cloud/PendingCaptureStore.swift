@@ -68,4 +68,33 @@ final class PendingCaptureStore: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         try? FileManager.default.removeItem(at: url(id, account))
     }
+    /// A newer request supersedes this account's earlier interrupted ones: only the latest can be restored.
+    func removeOthers(keeping id: UUID, account: OfficialAPI.CaptureAccount) {
+        lock.lock(); defer { lock.unlock() }
+        let prefix = owner(account) + "-", kept = url(id, account).lastPathComponent
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for path in files where path.pathExtension == "pending" && path.lastPathComponent.hasPrefix(prefix)
+            && path.lastPathComponent != kept {
+            try? FileManager.default.removeItem(at: path)
+        }
+    }
+}
+
+/// Decides which interrupted request may be restored into the answer panel. A launch restores
+/// the newest one. Once this session has asked a question, an account refresh may only restore
+/// the request whose own transport broke, so it can never replace a newer answer on screen.
+struct PendingRecoveryGate {
+    private(set) var hasRun = false
+    private(set) var interrupted: UUID?
+    private var attempted = Set<UUID>()
+
+    mutating func runBegan() { hasRun = true; interrupted = nil }
+    mutating func transportInterrupted(_ id: UUID) { interrupted = id }
+    /// `pending` is newest first. Each request is offered at most once per process.
+    mutating func claim(_ pending: [UUID], afterAccountChange: Bool) -> UUID? {
+        guard let id = pending.first(where: { !attempted.contains($0) }) else { return nil }
+        if afterAccountChange, hasRun, id != interrupted { return nil }
+        attempted.insert(id)
+        return id
+    }
 }

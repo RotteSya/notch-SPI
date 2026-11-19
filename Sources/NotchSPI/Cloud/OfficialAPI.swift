@@ -680,7 +680,8 @@ enum OfficialAPI {
             let requestStartedAt = ProcessInfo.processInfo.systemUptime
             if operation == "solve", let journal = environment.journal {
                 do { try journal.save(.init(id: id, createdAt: Date(), body: body, mode: recoveryMode,
-                    structured: resultProtocol == "objective_v1" || tutorResultV1, screenQuery: screenQuery != nil), account: account) }
+                    structured: resultProtocol == "objective_v1" || tutorResultV1, screenQuery: screenQuery != nil), account: account)
+                    journal.removeOthers(keeping: id, account: account) }
                 catch {
                     // Restart recovery is best effort when local storage is unavailable.
                     // Preserve the live request and its normal delivery/settlement path.

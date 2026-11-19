@@ -12,6 +12,12 @@ enum APIKeyRunner {
 
     static let anthropicEndpoint = "https://api.anthropic.com/v1/messages"
     static let openAIEndpoint = "https://api.openai.com/v1/chat/completions"
+    static let terraModel = "gpt-6.1-terra"
+
+    /// Preserve existing preference slot IDs: the second slot was stored as high, the third as max.
+    static func terraReasoningEffort(_ selection: String?) -> String {
+        ["low": "low", "high": "medium", "max": "high"][selection ?? "low"] ?? "low"
+    }
 
     /// Fire-and-forget TLS warm-up of the provider endpoint while the screenshot is captured.
     /// An unauthenticated HEAD costs nothing server-side but leaves the HTTPS connection in
@@ -65,26 +71,35 @@ enum APIKeyRunner {
                 ]],
             ]
         } else {
+            let terra = model == terraModel
             req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             var content: [[String: Any]] = [["type": "text", "text": userText]]
             content.append(contentsOf: imagesBase64.map {
-                ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\($0)"]]
+                ["type": "image_url", "image_url": terra
+                    ? ["url": "data:image/jpeg;base64,\($0)", "detail": "high"]
+                    : ["url": "data:image/jpeg;base64,\($0)"]]
             })
             var openAIBody: [String: Any] = [
                 "model": model,
                 "stream": true,
                 "messages": [
-                    ["role": "system", "content": prompt.system],
+                    ["role": terra ? "developer" : "system", "content": prompt.system],
                     ["role": "user", "content": content],
                 ],
             ]
-            if let reasoningEffort {
+            if terra {
+                openAIBody["reasoning_effort"] = terraReasoningEffort(reasoningEffort)
+                openAIBody["max_completion_tokens"] = 8192
+                openAIBody["service_tier"] = "default"
+                openAIBody["store"] = false
+                openAIBody["stream_options"] = ["include_usage": true]
+            } else if let reasoningEffort {
                 openAIBody["thinking"] = ["type": "enabled"]
                 openAIBody["reasoning_effort"] = reasoningEffort
             } else if disableThinking {
                 openAIBody["thinking"] = ["type": "disabled"]
             }
-            if let temperature, reasoningEffort == nil {
+            if let temperature, reasoningEffort == nil, !terra {
                 openAIBody["temperature"] = temperature
             }
             body = openAIBody

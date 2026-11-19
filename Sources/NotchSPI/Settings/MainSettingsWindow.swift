@@ -548,7 +548,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
             root.addSubview(SettingsSectionRule(number: number, title: title, frame: NSRect(x: 36, y: y, width: 568, height: 28)))
         }
         section("01", L10n.t("作答方式", "回答の設定", "Answering"), 0)
-        let details = [L10n.t("更快得到答案", "すばやく回答", "Quicker answers"), L10n.t("多一点推敲", "もう一歩深く", "More deliberation"), L10n.t("充分展开推理", "じっくり考える", "Fuller reasoning")]
+        let details = [L10n.t("较快响应", "すばやく回答", "Quicker responses"), L10n.t("更多思考", "もう少し考える", "More thought"), L10n.t("充分思考，可能更久", "じっくり考える・時間長め", "More thought; may take longer")]
         for (index, effort) in Settings.reasoningEffortCycle.enumerated() {
             let button = SettingsEffortButton()
             button.title = L10n.reasoningEffortName(effort); button.detail = details[index]

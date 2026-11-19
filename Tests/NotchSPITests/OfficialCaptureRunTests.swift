@@ -259,6 +259,50 @@ final class OfficialCaptureRunTests: XCTestCase {
         XCTAssertTrue(store.pending(account:account,now:Date().addingTimeInterval(901)).isEmpty)
     }
 
+    func testNewerRequestSupersedesEarlierInterruptedOnesOfTheSameAccountOnly() async throws {
+        let f = try CaptureRunFixture(), payload = try f.answer()
+        let store = PendingCaptureStore(directory: f.root.appendingPathComponent("pending"))
+        f.journal = store
+        let server = try await connect(f) { _, reply in reply.respond(body: payload) }
+        defer { server.stop(); f.cleanup() }
+        let account = try XCTUnwrap(f.account.value)
+        let other = OfficialAPI.CaptureAccount(token: "another-credential", baseURL: account.baseURL)
+        func interrupted() -> PendingCaptureStore.Entry {
+            .init(id: UUID(), createdAt: Date().addingTimeInterval(-60), body: Data("{}".utf8), mode: "tutor",
+                  structured: true, screenQuery: true)
+        }
+        let stale = interrupted(), foreign = interrupted()
+        try store.save(stale, account: account); try store.save(foreign, account: other)
+        await finish(try f.run(), fixture: f)
+        XCTAssertEqual(f.completions.first?.0, true)
+        // Delivery alone keeps the new request until it is drawn; the earlier one cannot come back.
+        XCTAssertEqual(store.pending(account: account).map(\.id), [f.id])
+        XCTAssertEqual(store.pending(account: other).map(\.id), [foreign.id])
+    }
+
+    func testAccountRefreshRestoresOnlyTheRequestWhoseTransportBroke() {
+        let older = UUID(), newer = UUID(), next = UUID()
+        // Launch: the account can arrive after start-up, and the newest request is restored once.
+        var launch = PendingRecoveryGate()
+        XCTAssertEqual(launch.claim([newer, older], afterAccountChange: true), newer)
+        launch.runBegan()
+        XCTAssertNil(launch.claim([newer, older], afterAccountChange: true))
+
+        var session = PendingRecoveryGate()
+        session.runBegan()
+        // An answer is on screen: a refresh must not replace it with an earlier request.
+        XCTAssertNil(session.claim([older], afterAccountChange: true))
+        session.transportInterrupted(newer)
+        XCTAssertNil(session.claim([older], afterAccountChange: true))
+        XCTAssertEqual(session.claim([newer, older], afterAccountChange: true), newer)
+        XCTAssertNil(session.claim([newer], afterAccountChange: true), "each request is offered once")
+        // Asking the next question abandons the interrupted one.
+        session.transportInterrupted(next); session.runBegan()
+        XCTAssertNil(session.claim([next], afterAccountChange: true))
+        // A cancelled quit restores the request it interrupted regardless of earlier runs.
+        XCTAssertEqual(session.claim([next], afterAccountChange: false), next)
+    }
+
     func testSharedCaptureIsolationFixtures() async throws {
         struct Scenario: Decodable {
             let id: String

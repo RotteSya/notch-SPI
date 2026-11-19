@@ -120,9 +120,9 @@ enum L10n {
 
     static func reasoningEffortName(_ effort: String) -> String {
         switch effort {
-        case "low": return t("轻量", "ライト", "Light")
-        case "high": return t("深入", "詳細", "Deep")
-        case "max": return t("充分", "最大", "Thorough")
+        case "low": return t("低", "低", "Low")
+        case "high": return t("中", "中", "Medium")
+        case "max": return t("高", "高", "High")
         default: return effort
         }
     }
