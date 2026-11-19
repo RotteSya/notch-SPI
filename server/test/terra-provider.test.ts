@@ -95,10 +95,11 @@ test('cancellation suppresses a completed buffered answer; later preference chan
   assert.equal(calls,1);
 });
 
-test('pending Terra configuration boots offline with original ceilings; Astra rollback remains intact',()=>{
+test('production Terra configuration boots offline with original ceilings; Astra rollback remains intact',()=>{
   const policy=JSON.parse(readFileSync(new URL('../../deploy/terra-model-budget.candidate.json',import.meta.url),'utf8'));
   const rollback=JSON.parse(readFileSync(new URL('../../deploy/production-model-budget.json',import.meta.url),'utf8'));
-  assert.equal(policy.approved_at,null);assert.equal(policy.status,'local_candidate_pending_release_approval');
+  assert.equal(policy.approved_at,'2026-11-20');assert.equal(policy.status,'production_since_2026-11-20');
+  assert.equal(policy.rollback_configuration,'deploy/production-model-budget.json');assert.equal(rollback.environment.OFFICIAL_MODEL,'gpt-6-astra');
   for(const key of ['OFFICIAL_MAX_TOKENS','OBJECTIVE_RESULT_V1_MAX_TOKENS','EXPLANATION_MAX_TOKENS','MODEL_DAILY_BUDGET_MICROS','ATTEMPT_BUDGET_UPPER_MICROS','MODEL_BUDGET_WARNING_MICROS'])assert.equal(policy.environment[key],rollback.environment[key]);
   assert.equal(policy.environment.OBJECTIVE_RESULT_V1_ASTRA_FAST_REVIEW,'0');
   const run=spawnSync(process.execPath,['--input-type=module','-e',"import {config,validateTrialPolicy} from './src/config.ts';validateTrialPolicy(config);if(config.model!=='gpt-6.1-terra'||config.objectiveModel!==config.model)process.exit(2)"],{

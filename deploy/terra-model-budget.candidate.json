@@ -1,11 +1,11 @@
 {
-  "approved_at": null,
+  "approved_at": "2026-11-20",
   "review_after_production_days": 7,
   "auto_increase": false,
   "budget_timezone": "Asia/Shanghai",
   "valuation": {
     "currency": "USD",
-    "basis": "Local Terra release candidate only; not deployed or authorized for live traffic. Existing USD 100/day, USD 15 warning and USD 3/physical-attempt ceilings are unchanged. Valuation uses USD 5/M input and USD 7.50/M total output to cover published long-context 12-hour cache-write/output rates; reasoning is included in total output. Request token estimate and framing allowance remain empirical, not an invoice guarantee. Customer question charges unchanged.",
+    "basis": "User-authorized production Terra configuration since 2026-11-20 (deployment dpl_Gaz3hio78pMfcfSGbK6nKZqKqwet, source c269bc9). Existing USD 100/day, USD 15 warning and USD 3/physical-attempt ceilings are unchanged. Valuation uses USD 5/M input and USD 7.50/M total output to cover published long-context 12-hour cache-write/output rates; reasoning is included in total output. Request token estimate and framing allowance remain empirical, not an invoice guarantee. Customer question charges unchanged.",
     "sources": [
       "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
       "https://developers.openai.com/api/docs/pricing"
@@ -31,7 +31,7 @@
     "MODEL_DAILY_BUDGET_MICROS": "100000000",
     "MODEL_BUDGET_WARNING_MICROS": "15000000"
   },
-  "status": "local_candidate_pending_release_approval",
+  "status": "production_since_2026-11-20",
   "prepared_at": "2026-11-18",
   "rollback_configuration": "deploy/production-model-budget.json"
 }

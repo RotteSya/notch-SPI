@@ -45,3 +45,5 @@ Intel SHA-256 为 b365a4e5f5afe40b40870220b709ac81175e58e0b2fdafa33126ffbbb919bc
 2026-11-13 3.1.5 发布：Apple Silicon build 42，Intel build 43。Intel 从已发布 3.1.4 的独立来源 212f094 回移引导动效、本地练习、授权状态检测与自动重启续接，以及本机恢复记录写入失败保护；仍支持 x86_64/macOS 12.3+。Apple Silicon 的真实单图、多图、首次授权恢复与 3.1.4 升级已通过。Intel 在 arm64 主机验证兼容源码，另做 x86_64 构建、签名及公证；Intel 真机启动、截图与升级未验证。两包共用 v3.1.5 发布，保留独立下载入口及资产来源。
 
 2026-11-20 3.2.0 发布：Apple Silicon build 44（源码 cf83e4b），Intel build 45（独立来源 bc91120，基于 b4b7706）。Intel 回移新图标、低/中/高档位文案与自定义 API Terra 参数映射，以及只续接传输中断请求的恢复逻辑；刘海轮廓修复不适用于 Intel，未回移；仍支持 x86_64/macOS 12.3+。档位仍保存 low/high/max 原标识，旧选择不迁移；官方服务未切换 Terra，服务端仅将 Intel 渠道固定到 v3.2.0。两包均为 Developer ID 签名、公证并装订，共用 v3.2.0 发布；Apple Silicon 与 Intel 的真机安装、截图及应用内升级均未验证。
+
+2026-11-20 官方服务切换 Terra：经用户确认，部署 main c269bc9 的全部服务端（含 Terra 三档映射与 67f669b 准入策略），再成组将两个模型槽、价格目录、价格版本与客户端配置修订切换为 Terra，生产部署 dpl_Gaz3hio78pMfcfSGbK6nKZqKqwet。客户端档位标识不变，旧客户端无需更新；一次真实答题确认上游为 gpt-6.1-terra。回滚：先切回 dpl_2xXCo9Sz3155wU3f95ZYCc636StS（同代码、Astra 配置）或 dpl_5PWCfozV9MgLcE8nWzZjJ9Up7AMu（切换前代码），再将上述变量恢复为 Astra 值。

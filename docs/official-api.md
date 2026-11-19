@@ -114,7 +114,7 @@ DeepSeek 视觉候选通过独立 treatment slot 配置：
 
 此字段是持久化的客户端档位标识：低/中/高仍保存为 `low` / `high` / `max`，不迁移已有设置。Terra 适配器将三档映射到上游 `reasoning_effort=low/medium/high`，省略时明确为 low；Astra 回滚路径仍固定 low。DeepSeek 继续使用原同名参数并开启 thinking。自定义 API 明确选择 `gpt-6.1-terra` 时也做上述映射，其他自定义模型与本机 CLI 的模型选择保持原行为。输出上限、预算准入、超时与最多一次技术重试不变，重试沿用同一模型和档位。更多思考不保证更准确。
 
-待发布 Terra 环境见 `deploy/terra-model-budget.candidate.json`；现有 `deploy/production-model-budget.json` 保留作为 Astra 配置及手动回滚依据。候选不是线上状态或发布授权。官方单题、多图、人格、解释与恢复共用同一映射；每次请求使用客户端冻结的档位，幂等恢复不接受更换档位。供应商账户权限与真实客户端显示仍须单独上线前验证。
+2026-11-20 起生产使用 Terra，环境见 `deploy/terra-model-budget.candidate.json`（文件名沿用）；`deploy/production-model-budget.json` 保留为 Astra 配置及手动回滚依据，回滚须成组恢复两个模型槽、价格目录、价格版本与客户端配置修订。官方单题、多图、人格、解释与恢复共用同一映射；每次请求使用客户端冻结的档位，幂等恢复不接受更换档位。上线时以一次真实答题确认上游模型为 gpt-6.1-terra 且用量通过校验；三档准确率、时延分布及长期负载未验收。
 
 发布顺序：先部署支持该字段的服务端，再发布客户端；旧服务端可能忽略新字段。设置页、刘海胶囊和快捷菜单统一显示思考程度，原讲解深度不再作为用户设置；答案默认简要展示，按需解释保留。旧 `depth` 偏好保留但不参与新请求。
 
