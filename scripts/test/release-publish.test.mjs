@@ -18,6 +18,8 @@ function fixture(t, draft=true) {
   const run=(cmd,args)=>{
     if(cmd==='gh') {
       if(args[0]==='api'){events.push('metadata');if(args[1].includes('/git/ref/'))return JSON.stringify({object:{sha:faults.tagMissing?'':'a'.repeat(40)}});
+        // GitHub's release-by-tag endpoint does not return drafts.
+        if(args[1].includes('/releases/tags/')&&release.draft)throw Error('gh: Not Found (HTTP 404)');
         faults.metadata?.(release);return JSON.stringify(release);}
       if(args[1]==='edit'){events.push('publish');release.draft=false;return '';}
       if(args[1]==='download'){const name=args[args.indexOf('--pattern')+1],dir=args[args.indexOf('--dir')+1];fs.writeFileSync(path.join(dir,name),bodies[names.indexOf(name)]);return '';}

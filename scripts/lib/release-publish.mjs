@@ -54,7 +54,13 @@ export function publishRelease({root, tag, mode, config, run = defaultRun, searc
   const save = () => write(stateFile, state);
   let call = 0;
   const gh = args => run('gh', args, {cwd:root});
-  const readRelease = () => JSON.parse(gh(['api', `repos/${repository}/releases/tags/${tag}`]));
+  // The release-by-tag endpoint hides drafts (404), so list every release and require one exact tag match.
+  const readRelease = () => {
+    const matches = gh(['api', `repos/${repository}/releases?per_page=100`, '--paginate', '--jq', `.[] | select(.tag_name == "${tag}")`])
+      .split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
+    if (matches.length !== 1) throw Error(`Expected exactly one GitHub release for ${tag}`);
+    return matches[0];
+  };
   const quark = args => {
     const log = path.join(directory, `${Date.now()}-${++call}-${args[0]}.jsonl`);
     try { const out = run('bash', [config.quarkCli, ...args], {cwd:directory}); fs.writeFileSync(log, out); return ndjson(out); }
