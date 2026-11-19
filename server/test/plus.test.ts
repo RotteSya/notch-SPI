@@ -36,8 +36,10 @@ for(const [name,make] of implementations){
    assert.equal((await s.billing.quota(token))!.balanceQuestions,400);
    const inputs=Array.from({length:401},()=>({token,captureId:randomUUID(),requestHmac:randomUUID()}));
    const held=await Promise.all(inputs.map(i=>s.billing.begin(i)));assert.equal(held.filter(r=>r.ok).length,400);
-   for(const i of inputs.slice(0,399))await s.billing.finish({...i,charge:true,terminalState:'usable'});
-   await s.billing.finish({...inputs[399]!,charge:false,terminalState:'failed'});
+   // Concurrent holds commit in any order, so the refused one is not always the last.
+   const won=inputs.filter((_,i)=>held[i]!.ok);
+   for(const i of won.slice(0,399))await s.billing.finish({...i,charge:true,terminalState:'usable'});
+   await s.billing.finish({...won[399]!,charge:false,terminalState:'failed'});
    assert.equal((await s.billing.quota(token))!.balanceQuestions,1);
    // Re-delivery cannot regrant today's used slots.
    const retry=await s.plus.beginSync(r.intentId);await s.plus.apply(r.intentId,retry!.generation,update);
