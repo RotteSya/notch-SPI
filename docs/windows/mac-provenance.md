@@ -74,3 +74,5 @@ package.sh/CI 构建及直接在 GitHub 网页发布不会触发此本机命令�
 2026-11-13 实际补同步 v3.1.5 完成：mac DMG 9,618,136 字节、Intel DMG 9,898,212 字节及校验清单均上传到 NotchSPI Releases 并下载回验，摘要等于已发布规范资产；原 3.1.0 文件保留。回执见本机 output/release-publish/v3.1.5/state.json，测试及执行记录见 output/quark-publish-20261113/。本次未重新发布 GitHub 版本、推送代码或变更 Intel 工作树。
 
 后续按用户要求，夸克中的 NotchSPI3.1.5-SHA256SUMS.txt 已移入回收站（界面提示40天内可恢复），两个3.1.5安装包、旧包和原下载说明保留。同步入口仅上传/回验两个安装包，仍强制下载并校验 GitHub 清单；旧清单上传回执保留为历史，不据此重传或下载已移除文件。
+
+2026-11-20 v3.2.0 首次经 publish 入口完成：草稿发布为 latest，两个安装包上传夸克并按文件 ID 回读，摘要与 GitHub 资产一致；回执见本机 output/release-publish/v3.2.0/state.json。按标签读取 Release 的接口不返回草稿，入口改为分页列出并要求唯一匹配。
