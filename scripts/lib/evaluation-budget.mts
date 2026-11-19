@@ -54,6 +54,21 @@ export function validateEvaluationPolicy(policy: EvaluationPolicy): void {
 
 export type EvaluationPurpose = 'answer' | 'baseline' | 'explain' | 'recover';
 
+/** Currency-neutral integer arithmetic shared by offline evaluation ledgers. */
+export function tokenCostUpperMicros(inputUpper: number, outputUpper: number,
+  inputRateMicrosPerMillion: number, outputRateMicrosPerMillion: number,
+  currencyMicrosPerUnit = 1_000_000): number {
+  for (const value of [inputUpper, outputUpper, inputRateMicrosPerMillion, outputRateMicrosPerMillion]) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid token cost bound');
+  }
+  integer(currencyMicrosPerUnit, 'currency_micros_per_unit');
+  const numerator = (BigInt(inputUpper) * BigInt(inputRateMicrosPerMillion)
+    + BigInt(outputUpper) * BigInt(outputRateMicrosPerMillion)) * BigInt(currencyMicrosPerUnit);
+  const result = Number((numerator + 999_999_999_999n) / 1_000_000_000_000n);
+  if (!Number.isSafeInteger(result) || result < 0) throw new Error('Token cost bound exceeds safe integer range');
+  return result;
+}
+
 export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL: string, now = Date.now(), purpose: EvaluationPurpose = 'answer'): number {
   if (bound.schema_version !== 1 || !['CNY', 'USD'].includes(bound.billing_currency)) throw new Error('Unsupported evaluation bound');
   nonempty(bound.model, 'model');
@@ -72,9 +87,9 @@ export function callUpperCNY(bound: EvaluationCallBound, model: string, baseURL:
   if (!Number.isFinite(verified) || !Number.isFinite(expires) || verified > now || expires <= now ||
       expires <= verified || expires - verified > 86_400_000) throw new Error('Evaluation pricing/bounds need verification within the last 24 hours');
   // All quantities are integral; round upward only after converting to CNY micros.
-  const numerator = (BigInt(bound.input_token_upper) * BigInt(bound.input_micros_per_million) +
-    BigInt(purpose === 'explain' ? bound.explanation_output_token_upper ?? bound.output_token_upper : bound.output_token_upper) * BigInt(bound.output_micros_per_million)) * BigInt(bound.cny_micros_per_currency_unit);
-  const result = Number((numerator + 999_999_999_999n) / 1_000_000_000_000n);
+  const result = tokenCostUpperMicros(bound.input_token_upper,
+    purpose === 'explain' ? bound.explanation_output_token_upper ?? bound.output_token_upper : bound.output_token_upper,
+    bound.input_micros_per_million, bound.output_micros_per_million, bound.cny_micros_per_currency_unit);
   integer(result, 'call_upper_cny_micros');
   return result;
 }
