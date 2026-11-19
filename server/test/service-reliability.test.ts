@@ -29,7 +29,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
   const store=stores[0]!,apps=stores.map(()=>Fastify());
   const provider:Provider={name:'openai',stream,estimateReservation:async()=>({micros:1_000_000,inputUpper:100,outputUpper:100})};
   for(const [index,app] of apps.entries())registerRoutes(app,{config:{...config,provider:'mock',objectiveProvider:'mock',model:'fixture',objectiveModel:'fixture',adminToken:'',
-   requestBudgetMode:'guarded-request',captureConcurrencyPerToken:4,modelCostCurrency:'USD',modelDailyBudgetMicros:budget,attemptBudgetUpperMicros:1_000_000,
+   unpaidSharePercent:100,requestBudgetMode:'guarded-request',captureConcurrencyPerToken:4,modelCostCurrency:'USD',modelDailyBudgetMicros:budget,attemptBudgetUpperMicros:1_000_000,
    modelPricingJSON:JSON.stringify([{model:'openai:fixture',input_micros_per_million_tokens:10_000_000,output_micros_per_million_tokens:10_000_000}])},
    store:stores[index]!,storeKind:kind as 'memory'|'sqlite'|'postgres',provider,objectiveProvider:provider,providerDegraded:null,objectiveProviderDegraded:null,payment:new StubPaymentProvider()});
   const users=await Promise.all(Array.from({length:8},()=>store.registerDevice({platform:'test',appVersion:'3.1',trialQuestions:100})));

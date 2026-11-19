@@ -84,7 +84,7 @@ for(const kind of ['memory','sqlite'] as const){
       maxTokens:8192,objectiveMaxTokens:8192,explanationMaxTokens:8192,requestBudgetMode:mode,
       requestHmacKeysJSON:JSON.stringify({test:randomBytes(32).toString('base64')}),requestHmacKeyVersion:'test',
       requireDurableStorage:false,isServerless:false,screenQueryEnabled:true,explanationEnabled:true,enabledSupportProfiles:'reading_practice',
-      attemptBudgetUpperMicros:1_000_000,modelDailyBudgetMicros:daily,modelCostCurrency:'USD',modelPricingJSON:pricing};
+      unpaidSharePercent:100,attemptBudgetUpperMicros:1_000_000,modelDailyBudgetMicros:daily,modelCostCurrency:'USD',modelPricingJSON:pricing};
     registerRoutes(app,{config:settings,store,storeKind:kind,provider,objectiveProvider:provider,
       providerDegraded:null,objectiveProviderDegraded:null,payment:new StubPaymentProvider()});
     const user=()=>store.registerDevice({platform:'test',appVersion:'3.0',trialQuestions:30});

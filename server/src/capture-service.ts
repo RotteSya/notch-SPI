@@ -25,7 +25,12 @@ function requestReasoningEffort(value: unknown): CaptureRequest['reasoningEffort
   if (value === 'low' || value === 'high' || value === 'max') return value;
   throw new ApiError(400, 'reasoning_effort 必须是 low、high 或 max', 'invalid_reasoning_effort');
 }
-interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
+/** Compensation answers a failure of ours. A caller who hung up on its own recovery keeps the original charge. */
+function clientLeft(abort:AbortController):boolean { return abort.signal.reason==='client_disconnect'; }
+function quotaRejected(code:'insufficient_quota'|'paid_credits_disabled'):ApiError {
+  return new ApiError(402,code==='paid_credits_disabled'?'每日额度已用完，题包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code);
+}
+interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; share:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
 
 function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
   if (!usage || usage.inputTokens === null || usage.outputTokens === null) return undefined;
@@ -190,21 +195,21 @@ export class CaptureService {
       throw new ApiError(503,'无法确认请求费用上界','service_maintenance');
     }
   }
-  private async waitForBudget(token:string,id:string,amount:number,provider:string,model:string,signal:AbortSignal,tokenUpper=32_000){
+  private async waitForBudget(token:string,id:string,amount:number,provider:string,model:string,signal:AbortSignal,tokenUpper=32_000,share=1){
     const {config:c,store}=this.ctx;
     if(this.waiting>=32)throw new BudgetAdmissionError('busy');
     this.waiting++;
     try{
       const deadline=performance.now()+CAPACITY.burstWaitMs;
-      while(!await settleReliably(()=>store.billing.acquireCapacity(token,id,tokenUpper))){
+      while(!await settleReliably(()=>store.billing.acquireCapacity(token,id,tokenUpper,undefined,share))){
         signal.throwIfAborted();if(performance.now()>=deadline)throw new BudgetAdmissionError('busy');
         await delay(50+Math.random()*50,undefined,{signal});
       }
       const result=await reserveWithWait(()=>store.billing.reserveBudget(token,id,'official',c.modelCostCurrency,
-      amount,c.modelDailyBudgetMicros,86_400_000,Date.now(),c.modelBudgetUtcOffsetMinutes,c.requestBudgetMode==='guarded-request',JSON.stringify([provider,model])),
+      amount,c.modelDailyBudgetMicros,86_400_000,Date.now(),c.modelBudgetUtcOffsetMinutes,c.requestBudgetMode==='guarded-request',JSON.stringify([provider,model]),share),
       store.billing,c.modelCostCurrency,amount,c.requestBudgetMode==='guarded-request',signal);
-      if(!result)await store.billing.releaseCapacity(token,id);return result;
-    }catch(e){await store.billing.releaseCapacity(token,id).catch(()=>{});throw e;}
+      if(!result)await store.billing.releaseCapacity(token,id,false);return result;
+    }catch(e){await store.billing.releaseCapacity(token,id,false).catch(()=>{});throw e;}
     finally{this.waiting--;}
   }
   private async admitted(req:FastifyRequest,reply:FastifyReply,abort:AbortController,input:Omit<BeginCapture,'requestId'>,
@@ -212,14 +217,25 @@ export class CaptureService {
     run:(capture:CaptureRecord,quota:QuotaSnapshot,admission:Admission)=>Promise<void>):Promise<void> {
     const {config,store}=this.ctx,{token,captureId}=input;
     if(abort.signal.aborted)return;
+    // Quota and the per-device rate are decided first, so a rejected request never takes
+    // supplier capacity or budget that other devices are waiting for.
+    const verdict=await store.billing.admitCapture({token,captureId,operation:input.operation,allowPurchasedCredits:input.allowPurchasedCredits},config.capturePerMinute);
+    if(verdict?.rejection==='rate_limited') {
+      reply.header('Retry-After',String(60-Math.floor(Date.now()/1000)%60));
+      throw new ApiError(429,'请求过于频繁，本次未扣题，请稍后重试','rate_limited');
+    }
+    if(verdict?.rejection)throw quotaRejected(verdict.rejection);
+    if(abort.signal.aborted)return;
     const active=this.active.get(token)??0;
     if(config.captureConcurrencyPerToken>0&&active>=config.captureConcurrencyPerToken)throw new ApiError(429,'请等待当前请求完成','rate_limited');
     this.active.set(token,active+1);
-    const requestId=randomUUID(),admission:Admission={attemptId:randomUUID(),providerStarted:false,reservedMicros,tokenUpper:Math.max(this.quotes.get(req)?.inputUpper??24_000,this.quotes.get(req)?.outputUpper??8192),template:attempt};
+    // Only devices without paid questions leave part of the shared pools free; an unknown class keeps full access.
+    const share=verdict?.paid===false?Math.min(100,Math.max(0,config.unpaidSharePercent))/100:1;
+    const requestId=randomUUID(),admission:Admission={attemptId:randomUUID(),providerStarted:false,reservedMicros,share,tokenUpper:Math.max(this.quotes.get(req)?.inputUpper??24_000,this.quotes.get(req)?.outputUpper??8192),template:attempt};
     let owned:CaptureRecord|null=null,beginUncertain=false;
     try {
       try {
-        if(!await this.waitForBudget(token,admission.attemptId,reservedMicros,attempt.provider,attempt.model,abort.signal,admission.tokenUpper)) {
+        if(!await this.waitForBudget(token,admission.attemptId,reservedMicros,attempt.provider,attempt.model,abort.signal,admission.tokenUpper,share)) {
           const offset=config.modelBudgetUtcOffsetMinutes*60_000;
           const resetsAt=new Date((Math.floor((Date.now()+offset)/86_400_000)+1)*86_400_000-offset);
           reply.header('Retry-After',String(Math.max(1,Math.ceil((resetsAt.getTime()-Date.now())/1000))));
@@ -254,14 +270,15 @@ export class CaptureService {
       if(!hold.ok) {
         const code=hold.reason;
         if(code==='service_maintenance') reply.header('Retry-After','60');
-        throw new ApiError(code==='service_maintenance'?503:code==='unknown_token'?401:(code==='insufficient_quota'||code==='paid_credits_disabled')?402:code==='device_busy'?429:409,
-          code==='paid_credits_disabled'?'每日额度已用完，题包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
+        if(code==='insufficient_quota'||code==='paid_credits_disabled')throw quotaRejected(code);
+        throw new ApiError(code==='service_maintenance'?503:code==='unknown_token'?401:code==='device_busy'?429:409,
+          '请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
       }
       owned=hold.capture;
       if(!abort.signal.aborted)await run(hold.capture,hold.quota,admission);
     } finally {
       try {
-        await settleReliably(()=>store.billing.releaseCapacity(token,admission.attemptId)).catch(()=>req.log.error({captureId},'capacity release pending'));
+        await settleReliably(()=>store.billing.releaseCapacity(token,admission.attemptId,admission.providerStarted)).catch(()=>req.log.error({captureId},'capacity release pending'));
         // A commit can succeed even if its acknowledgement is lost. Only clean up the
         // capture created by this admission; a duplicate may belong to another worker.
         if(beginUncertain) {
@@ -285,7 +302,7 @@ export class CaptureService {
         }
         if(owned&&!admission.recoverableAbandon)await store.billing.finish({token,captureId,charge:false,owner:input.deliveryRecovery?requestId:undefined,
           terminalState:req.raw.aborted||reply.raw.destroyed?'canceled':'failed',
-          compensateGoodwill:owned.operation==='recover'})
+          compensateGoodwill:owned.operation==='recover'&&!clientLeft(abort)})
           .catch(()=>req.log.error({captureId},'reservation cleanup pending'));
       } finally {
         const remaining=Math.max(0,(this.active.get(token)??1)-1);
@@ -478,6 +495,7 @@ export class CaptureService {
           if(success) responseText=raw;
         }
       } catch {success=false;} finally {
+        const abandoned=clientLeft(abort);
         completed=true;clearTimeout(timer);abort.abort();
         const cost=captureCost(config.modelPricingJSON,selected.name,model,usage);
         try {
@@ -491,7 +509,7 @@ export class CaptureService {
             answerHmac:success&&recoveryResult?.objective.finalAnswer
               ?this.keys.digest('answer',normalizeObjectiveAnswer(recoveryResult.objective.finalAnswer),parent.keyVersion):undefined,
             resultState:recoveryResult?.objective.state??undefined,questionKind:recoveryResult?.objective.result?.kind,
-            parserPath:recoveryResult?.objective.parserPath,compensateGoodwill: operation==='recover'&&!success});
+            parserPath:recoveryResult?.objective.parserPath,compensateGoodwill: operation==='recover'&&!success&&!abandoned});
           const quota=settlement?.account,committed=settlement?.capture;
           if(!quota||!committed||committed.settlementStatus==='held'||(success&&!committed.usableResult)) throw new Error('Settlement pending');
           if(success)send({type:'delta',text:responseText});
@@ -620,7 +638,7 @@ export class CaptureService {
             await store.billing.finishAttemptAndBudget(token,attemptId,{status:'failed',inputTokens:null,outputTokens:null,costMicros:null,diagnostics:diagnosticsByAttempt.get(attemptId)},null);
             await delay(error.retryAfterMs,undefined,{signal:abort.signal});
             const next=randomUUID();
-            if(!await this.waitForBudget(token,next,admission.reservedMicros,provider.name,model,abort.signal,admission.tokenUpper))throw error;
+            if(!await this.waitForBudget(token,next,admission.reservedMicros,provider.name,model,abort.signal,admission.tokenUpper,admission.share))throw error;
             if(abort.signal.aborted){await store.billing.releaseBudget(token,next);throw error;}
             admission.attemptId=next;admission.providerStarted=false;attemptId=next;
             if(!await store.billing.startAttempt(token,{...admission.template,attemptId:next,captureId:capture.captureId}))throw new Error('Retry attempt unavailable');

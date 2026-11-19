@@ -1,9 +1,9 @@
 import {CAPTURE_DEADLINE} from './capture-deadline.ts';
-import {CAPACITY} from './capacity-policy.ts';
+import {CAPACITY,capacityCeilings} from './capacity-policy.ts';
 import {readCompensation} from './plus-compensation-sql.ts';
 import {withCompensation} from './plus-compensation.ts';
 import {ADMIN_SCHEMA} from './admin-store.ts';
-import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
+import { BUDGET_POLICY, budgetCeiling, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS_SCHEMA} from './plus-schema.ts';
 import {plusRow} from './plus-sql.ts';
 import {PLUS,compensationPaidPeriod,plusEntitlement} from './plus.ts';
@@ -13,7 +13,7 @@ import { applyRefundLot } from './payment-ledger-sql.ts';
 import {checkpointQuota} from './quota-migration.ts';
 import {QUOTA_MIGRATION_SCHEMA} from './quota-migration-schema.ts';
 import {FREE_TRIAL_POLICY, trialWindow, trialSnapshot, type FreeTrialSnapshot} from './free-trial.ts';
-import { validateUsageEvidence, type AttemptUsageEvidence, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+import { validateUsageEvidence, type AttemptUsageEvidence, type CaptureAdmission, type CaptureAdmissionInput, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type CreditInput, type FinishCapture, type QuotaSnapshot,
   type RegistrationInput } from './billing.ts';
 
@@ -248,7 +248,7 @@ function* expireAnswer(capture: CaptureRecord | null): Transaction<CaptureRecord
 }
 
 export class SQLBilling implements BillingStore {
-  acquireCapacity(token:string,id:string,tokens:number,now=Date.now()):Promise<boolean> {
+  acquireCapacity(token:string,id:string,tokens:number,now=Date.now(),share=1):Promise<boolean> {
     if(!Number.isSafeInteger(tokens)||tokens<=0)return Promise.resolve(false);
     return this.run((function*():Transaction<boolean>{
       const d=yield* device(token);if(!d)return false;
@@ -258,14 +258,33 @@ export class SQLBilling implements BillingStore {
       const stats=(yield* query(`SELECT SUM(CASE WHEN active=1 AND expires>? THEN 1 ELSE 0 END) AS active,
         SUM(CASE WHEN started>? THEN 1 ELSE 0 END) AS requests,
         SUM(CASE WHEN started>? THEN tokens ELSE 0 END) AS tokens FROM provider_capacity_leases`,now,now-60000,now-60000))[0]!;
-      if(Number(stats.active)>=CAPACITY.concurrency||Number(stats.requests)>=CAPACITY.requestsPerMinute||Number(stats.tokens)+tokens>CAPACITY.tokensPerMinute)return false;
+      const ceiling=capacityCeilings(share);
+      if(Number(stats.active)>=ceiling.concurrency||Number(stats.requests)>=ceiling.requestsPerMinute||Number(stats.tokens)+tokens>ceiling.tokensPerMinute)return false;
       yield* query('INSERT INTO provider_capacity_leases(id,device_id,tokens,started,expires,active) VALUES(?,?,?,?,?,1)',id,Number(d.id),tokens,now,now+CAPACITY.leaseMs);
       yield* query('DELETE FROM provider_capacity_leases WHERE expires<=? AND started<=?',now,now-60000);
       return true;
     })());
   }
-  releaseCapacity(token:string,id:string):Promise<void> {
-    return this.run((function*():Transaction<void>{const d=yield* device(token);if(d)yield* query('UPDATE provider_capacity_leases SET active=0 WHERE id=? AND device_id=?',id,Number(d.id));})());
+  releaseCapacity(token:string,id:string,used=true):Promise<void> {
+    // A lease whose supplier call never started must not count toward the supplier rate window.
+    return this.run((function*():Transaction<void>{const d=yield* device(token);if(d)yield* query(used
+      ?'UPDATE provider_capacity_leases SET active=0 WHERE id=? AND device_id=?'
+      :'DELETE FROM provider_capacity_leases WHERE id=? AND device_id=?',id,Number(d.id));})());
+  }
+  admitCapture(input: CaptureAdmissionInput, perMinute: number, now = Date.now()): Promise<CaptureAdmission | null> {
+    return this.run((function* (): Transaction<CaptureAdmission | null> {
+      const d = yield* device(input.token); if (!d) return null;
+      yield* opening(d); yield* syncFreeTrial(d); yield* syncPlus(d);
+      const paid = (yield* query(`SELECT lot_id FROM quota_lots WHERE device_id=? AND remaining>0 AND refund_frozen=0
+        AND kind IN ('paid','legacy_unknown') LIMIT 1`, Number(d.id))).length > 0;
+      if (input.operation && input.operation !== 'solve') return { rejection: null, paid };
+      // A repeated capture id resumes or replays existing work; begin decides it.
+      if (yield* readCapture(d, input.captureId)) return { rejection: null, paid };
+      const chosen = yield* solveLot(d, input.allowPurchasedCredits);
+      if ('reason' in chosen) return { rejection: chosen.reason, paid };
+      if (perMinute > 0 && !(yield* hitRateLimit('capture-device:' + Number(d.id), perMinute, 60_000, now))) return { rejection: 'rate_limited', paid };
+      return { rejection: null, paid };
+    })());
   }
   private run: RunTransaction;
   constructor(run: RunTransaction) { this.run = run; }
@@ -526,7 +545,7 @@ export class SQLBilling implements BillingStore {
     })());
   }
   reserveBudget(token: string, attemptId: string, scope: string, currency: string, reservedUpperMicros: number,
-    limitMicros: number, windowMs = 86_400_000, now = Date.now(), utcOffsetMinutes = 0, guarded = false, channel = 'default'): Promise<boolean> {
+    limitMicros: number, windowMs = 86_400_000, now = Date.now(), utcOffsetMinutes = 0, guarded = false, channel = 'default', share = 1): Promise<boolean> {
     if (limitMicros <= 0 || reservedUpperMicros <= 0) return Promise.resolve(true);
     return this.run((function* (): Transaction<boolean> {
       const d = yield* device(token); if (!d) return false;
@@ -549,7 +568,7 @@ export class SQLBilling implements BillingStore {
       yield* query(`INSERT INTO budget_windows(scope,window_start,currency,limit_micros,expires_at)
         VALUES (?,?,?,?,?) ON CONFLICT(scope,window_start,currency) DO NOTHING`, scope, windowStart, currency, limitMicros, expiresAt);
       const row = (yield* query('SELECT spent_micros,held_micros,limit_micros FROM budget_windows WHERE scope=? AND window_start=? AND currency=? FOR UPDATE', scope, windowStart, currency))[0];
-      if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros + (guarded?Math.ceil(Number(row.limit_micros)*0.2):0) > Number(row.limit_micros)) return false;
+      if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros > budgetCeiling(Number(row.limit_micros), guarded, share)) return false;
       yield* query(`INSERT INTO attempt_budget_holds(attempt_id,device_id,scope,window_start,currency,reserved_upper_micros,state,created_at)
         VALUES (?,?,?,?,?,?,'held',?)`, attemptId, Number(d.id), scope, windowStart, currency, reservedUpperMicros, new Date(now).toISOString());
       yield* query("INSERT INTO budget_accounting(attempt_id,channel,reserved,booked,state,updated_at) VALUES (?,?,?,0,'pending',?)",attemptId,channelKey,reservedUpperMicros,now);
@@ -667,13 +686,7 @@ export class SQLBilling implements BillingStore {
   }
   rateLimit(scope: string, limit: number, windowMs: number, now = Date.now()): Promise<boolean> {
     if (limit <= 0) return Promise.resolve(true);
-    return this.run((function* (): Transaction<boolean> {
-      const start = Math.floor(now/windowMs)*windowMs;
-      const rows = yield* query(`INSERT INTO rate_limit_buckets (scope_hash,window_start,count,expires_at)
-        VALUES (?,?,1,?) ON CONFLICT(scope_hash,window_start) DO UPDATE SET count=rate_limit_buckets.count+1 RETURNING count`,
-        scope, new Date(start).toISOString(), new Date(start+windowMs).toISOString());
-      return Number(rows[0]!.count) <= limit;
-    })());
+    return this.run(hitRateLimit(scope, limit, windowMs, now));
   }
 }
 
@@ -702,10 +715,15 @@ function* finishForDevice(d: Row, input: FinishCapture): Transaction<CaptureReco
     if (capture.operation === 'recover' && input.compensateGoodwill && capture.parentCaptureId) {
       const reference = 'recovery:' + capture.parentCaptureId;
       const existing = yield* query('SELECT lot_id FROM quota_lots WHERE device_id=? AND source_ref=?', Number(d.id), 'credit:' + reference);
-      if (!existing.length) {
+      // The compensation replaces the charged question, so it lapses when that question's allowance would have.
+      const parent = yield* readCapture(d, capture.parentCaptureId);
+      const charged = parent ? (yield* query('SELECT lot_id FROM quota_reservations WHERE request_id=?', parent.requestId))[0] : undefined;
+      const origin = charged ? (yield* query('SELECT trial_expires_at FROM quota_lots WHERE lot_id=?', String(charged.lot_id)))[0] : undefined;
+      const expires = origin?.trial_expires_at == null ? null : String(origin.trial_expires_at);
+      if (!existing.length && (expires === null || expires > capture.finishedAt)) {
         const lot = randomUUID();
-        yield* query(`INSERT INTO quota_lots (lot_id,device_id,kind,granted,remaining,source_ref,created_at)
-          VALUES (?,?,?,?,?,?,?)`, lot, Number(d.id), 'goodwill', 1, 1, 'credit:' + reference, capture.finishedAt);
+        yield* query(`INSERT INTO quota_lots (lot_id,device_id,kind,granted,remaining,source_ref,created_at,trial_expires_at)
+          VALUES (?,?,?,?,?,?,?,?)`, lot, Number(d.id), 'goodwill', 1, 1, 'credit:' + reference, capture.finishedAt, expires);
         yield* query('UPDATE devices SET balance_questions=balance_questions+1,balance_version=balance_version+1,updated_at=? WHERE id=?', capture.finishedAt, Number(d.id));
         yield* ledger(Number(d.id), lot, 'credit', 1, 0, 'credit:' + reference);
       }
@@ -743,6 +761,22 @@ function* finishForDevice(d: Row, input: FinishCapture): Transaction<CaptureReco
   return capture;
 }
 
+/** The lot a new solve would hold, or why it cannot. Admission and begin share this decision. */
+function* solveLot(d: Row, allowPurchasedCredits: boolean | undefined):
+  Transaction<{reason: 'insufficient_quota' | 'paid_credits_disabled'} | {lot: Row}> {
+  if (Number(d.balance_questions) < 1) return { reason: 'insufficient_quota' };
+  const lot = (yield* query(`SELECT lot_id FROM quota_lots WHERE device_id=? AND remaining>held AND refund_frozen=0
+    AND (?=1 OR kind<>'paid' OR source_ref LIKE 'plus_daily:%')
+    ORDER BY CASE WHEN kind='trial' THEN 0 WHEN source_ref LIKE 'plus_daily:%' THEN 1 WHEN kind='legacy_unknown' THEN 2 WHEN kind='goodwill' THEN 3 ELSE 4 END,created_at,lot_id LIMIT 1`, Number(d.id), allowPurchasedCredits === false ? 0 : 1))[0];
+  return lot ? { lot } : { reason: 'paid_credits_disabled' };
+}
+function* hitRateLimit(scope: string, limit: number, windowMs: number, now: number): Transaction<boolean> {
+  const start = Math.floor(now/windowMs)*windowMs;
+  const rows = yield* query(`INSERT INTO rate_limit_buckets (scope_hash,window_start,count,expires_at)
+    VALUES (?,?,1,?) ON CONFLICT(scope_hash,window_start) DO UPDATE SET count=rate_limit_buckets.count+1 RETURNING count`,
+    scope, new Date(start).toISOString(), new Date(start+windowMs).toISOString());
+  return Number(rows[0]!.count) <= limit;
+}
 function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
   const admission = (yield* query('SELECT state FROM quota_migration_control WHERE id=1'))[0];
   if (!admission || admission.state !== 'active') return {ok: false, reason: 'service_maintenance'};
@@ -782,11 +816,9 @@ function* beginCapture(input: BeginCapture): Transaction<BeginResult> {
     yield* query('UPDATE capture_requests SET metadata=? WHERE request_id=?', JSON.stringify(parent), parent.requestId);
     return { ok: true, capture, quota: yield* quotaFor(d) };
   }
-  if (Number(d.balance_questions) < 1) return { ok: false, reason: 'insufficient_quota' };
-  const lot = (yield* query(`SELECT lot_id FROM quota_lots WHERE device_id=? AND remaining>held AND refund_frozen=0
-    AND (?=1 OR kind<>'paid' OR source_ref LIKE 'plus_daily:%')
-    ORDER BY CASE WHEN kind='trial' THEN 0 WHEN source_ref LIKE 'plus_daily:%' THEN 1 WHEN kind='legacy_unknown' THEN 2 WHEN kind='goodwill' THEN 3 ELSE 4 END,created_at,lot_id LIMIT 1`, Number(d.id), input.allowPurchasedCredits === false ? 0 : 1))[0];
-  if (!lot) return {ok:false,reason:'paid_credits_disabled'};
+  const chosen = yield* solveLot(d, input.allowPurchasedCredits);
+  if ('reason' in chosen) return { ok: false, reason: chosen.reason };
+  const lot = chosen.lot;
   const capture = newCapture(input), reservation = randomUUID();
   yield* query(`INSERT INTO capture_requests
     (request_id,device_id,client_capture_id,request_hmac,metadata,state,legacy,lease_expires_at,created_at)

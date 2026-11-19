@@ -207,6 +207,12 @@ export const config = {
   deviceRegPerHour: envInt('DEVICE_REG_PER_HOUR', 30),
   // Max simultaneous in-flight captures for a single device token.
   captureConcurrencyPerToken: envInt('CAPTURE_CONCURRENCY_PER_TOKEN', 3),
+  // Max new solves per device per minute, counted in the store so it holds across instances.
+  capturePerMinute: envInt('CAPTURE_PER_MINUTE', 30),
+  // Devices without Plus, purchased or pre-migration questions may fill at most this percentage
+  // of the daily model budget and of the supplier rate window. The rest stays available to
+  // paying devices. 100 disables the reserve.
+  unpaidSharePercent: envInt('UNPAID_SHARE_PERCENT', 80),
 
   // Objective Result V1 is remotely assigned per anonymous bearer token. Invalid percentages
   // fail closed to control; changing the revision never reshuffles devices.

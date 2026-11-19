@@ -103,6 +103,12 @@ export function assertAttemptBinding(input: BeginCapture, attempt: NewAttempt): 
   const purpose = input.operation === 'explain' ? 'explain' : input.operation === 'recover' ? 'recover' : 'answer';
   if (attempt.captureId !== input.captureId || attempt.purpose !== purpose) throw new Error('Attempt/capture binding mismatch');
 }
+export type CaptureAdmissionInput = Pick<BeginCapture, 'token' | 'captureId' | 'operation' | 'allowPurchasedCredits'>;
+export interface CaptureAdmission {
+  rejection: 'insufficient_quota' | 'paid_credits_disabled' | 'rate_limited' | null;
+  /** The device holds Plus, purchased or pre-migration questions. Others leave a share of the pools free. */
+  paid: boolean;
+}
 /** Non-spending admission rejections, distinct from an exhausted daily budget. */
 export class BudgetAdmissionError extends Error {
   readonly reason: 'guard_tripped' | 'busy' | 'cooldown';
@@ -116,8 +122,12 @@ export interface BillingStore {
   recordAttemptUsage(token: string, attemptId: string, evidence: AttemptUsageEvidence): Promise<void>;
   cancelCapture(token:string,id:string):Promise<void>;
   heartbeat(token:string,id:string,owner:string,now?:number):Promise<boolean>;
-  acquireCapacity(token:string,id:string,tokens:number,now?:number):Promise<boolean>;
-  releaseCapacity(token:string,id:string):Promise<void>;
+  /** `share` below 1 admits the lease only while that part of each supplier ceiling is not yet used. */
+  acquireCapacity(token:string,id:string,tokens:number,now?:number,share?:number):Promise<boolean>;
+  /** `used=false` drops a lease whose supplier call never started from the rate window. */
+  releaseCapacity(token:string,id:string,used?:boolean):Promise<void>;
+  /** Decides a new solve's quota and per-device rate before capacity or budget is taken. Null: unknown token. */
+  admitCapture(input: CaptureAdmissionInput, perMinute: number, now?: number): Promise<CaptureAdmission | null>;
   claimFreeTrial(token: string): Promise<AccountSnapshot | null>;
   quota(token: string): Promise<QuotaSnapshot | null>;
   accountSnapshot(token: string): Promise<AccountSnapshot | null>;
@@ -131,7 +141,9 @@ export interface BillingStore {
   finishAttempt(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>): Promise<void>;
   finishAttemptAndBudget(token: string, attemptId: string, input: Pick<Attempt,'status'|'inputTokens'|'outputTokens'|'costMicros'|'diagnostics'>, actualMicros: number | null, anomaly?: boolean): Promise<void>;
   reserveBudget(token: string, attemptId: string, scope: string, currency: string,
-    reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number, guarded?: boolean, channel?: string): Promise<boolean>;
+    reservedUpperMicros: number, limitMicros: number, windowMs?: number, now?: number, utcOffsetMinutes?: number, guarded?: boolean, channel?: string,
+    /** Below 1, the hold is admitted only while that part of the usable window is not yet committed. */
+    share?: number): Promise<boolean>;
   releaseBudget(token: string, attemptId: string): Promise<void>;
   settleBudget(token: string, attemptId: string, actualMicros: number | null, anomaly?: boolean): Promise<void>;
   inspectBudget(): Promise<BudgetInspection>;

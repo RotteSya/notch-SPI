@@ -1,6 +1,11 @@
 /** Shared durable policy; all amounts are integer millionths of the configured currency. */
 export const BUDGET_POLICY = { failures: 3, cooldownMs: 60_000, probeMs: 120_000,
   orphanMs: 150_000, overrunRatio: 0.2 } as const;
+/** What a hold may commit: the window minus guarded headroom, and for `share` below 1 only that part of it. */
+export function budgetCeiling(limit: number, guarded: boolean, share = 1): number {
+  const usable = limit - (guarded ? Math.ceil(limit * 0.2) : 0);
+  return share >= 1 ? usable : Math.floor(usable * Math.max(0, share));
+}
 export interface BudgetControl {
   channel: string; failures: number; overruns: number; blockedUntil: number;
   probe: string | null; reason: string | null; updatedAt: number;

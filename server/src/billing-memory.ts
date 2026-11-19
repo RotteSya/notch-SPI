@@ -1,9 +1,9 @@
 import {CAPTURE_DEADLINE} from './capture-deadline.ts';
 import {CAPACITY,capacityAvailable,type CapacityLease} from './capacity-policy.ts';
 import {withCompensation,type PlusCompensation} from './plus-compensation.ts';
-import { BUDGET_POLICY, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
+import { BUDGET_POLICY, budgetCeiling, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS,compensationPaidPeriod,plusEntitlement,type PlusRecord} from './plus.ts';
-import { validateUsageEvidence, type AttemptUsageEvidence, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
+import { validateUsageEvidence, type AttemptUsageEvidence, type CaptureAdmission, type CaptureAdmissionInput, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
@@ -31,14 +31,41 @@ export class MemoryBilling implements BillingStore {
     this.canceled.set(d.id+':'+id,Date.now()+900000);this.finishDevice(d,{token,captureId:id,charge:false,terminalState:'canceled'});
   }
   private capacity = new Map<string,CapacityLease>();
-  async acquireCapacity(token:string,id:string,tokens:number,now=Date.now()):Promise<boolean> {
+  async acquireCapacity(token:string,id:string,tokens:number,now=Date.now(),share=1):Promise<boolean> {
     if(!this.lookup(token)||!Number.isSafeInteger(tokens)||tokens<=0)return false;
     for(const [k,l] of this.capacity)if(l.expires<=now&&l.started<=now-60000)this.capacity.delete(k);
     const existing=this.capacity.get(id);if(existing)return existing.owner===token&&existing.active&&existing.expires>now;
-    if(!capacityAvailable([...this.capacity.values()],tokens,now))return false;
+    if(!capacityAvailable([...this.capacity.values()],tokens,now,share))return false;
     this.capacity.set(id,{id,owner:token,tokens,started:now,expires:now+CAPACITY.leaseMs,active:true});return true;
   }
-  async releaseCapacity(token:string,id:string):Promise<void> {const l=this.capacity.get(id);if(l?.owner===token)l.active=false;}
+  async releaseCapacity(token:string,id:string,used=true):Promise<void> {
+    const l=this.capacity.get(id);if(l?.owner!==token)return;
+    // A lease whose supplier call never started must not count toward the supplier rate window.
+    if(used)l.active=false;else this.capacity.delete(id);
+  }
+  async admitCapture(input: CaptureAdmissionInput, perMinute: number, now = Date.now()): Promise<CaptureAdmission | null> {
+    const d = this.lookup(input.token); if (!d) return null;
+    this.syncFreeTrial(d);
+    const state = this.state(d);
+    const paid = state.lots.some(l => !l.frozen && l.remaining > 0 && (l.kind === 'paid' || l.kind === 'legacy_unknown'));
+    if (input.operation && input.operation !== 'solve') return { rejection: null, paid };
+    // A repeated capture id resumes or replays existing work; begin decides it.
+    if (state.captures.has(input.captureId)) return { rejection: null, paid };
+    const chosen = this.solveLot(d, state, input.allowPurchasedCredits);
+    if ('reason' in chosen) return { rejection: chosen.reason, paid };
+    if (!await this.rateLimit('capture-device:' + d.id, perMinute, 60_000, now)) return { rejection: 'rate_limited', paid };
+    return { rejection: null, paid };
+  }
+  /** The lot a new solve would hold, or why it cannot. Admission and begin share this decision. */
+  private solveLot(d: MemoryQuotaDevice, state: State, allowPurchasedCredits: boolean | undefined):
+    {reason: 'insufficient_quota' | 'paid_credits_disabled'} | {lot: Lot} {
+    if (d.balanceQuestions < 1) return { reason: 'insufficient_quota' };
+    const priority: LotKind[] = ['trial','legacy_unknown','goodwill','paid'];
+    const available = state.lots.filter(l => !l.frozen && l.remaining>l.held && (allowPurchasedCredits !== false || l.kind !== 'paid' || l.sourceRef?.startsWith('plus_daily:')));
+    const rank = (l:Lot) => l.kind==='trial'?0:l.sourceRef?.startsWith('plus_daily:')?1:priority.indexOf(l.kind)+2;
+    const lot = available.sort((a,b)=>rank(a)-rank(b))[0];
+    return lot ? { lot } : { reason: 'paid_credits_disabled' };
+  }
 
   private states = new Map<number, State>();
   private devices = new Map<number, MemoryQuotaDevice>();
@@ -238,12 +265,9 @@ export class MemoryBilling implements BillingStore {
       state.captures.set(record.captureId,{record,lot:newLot('trial',0),legacy:false});
       return {ok:true,capture:{...record},quota:this.snapshot(d)};
     }
-    if (d.balanceQuestions < 1) return { ok: false, reason: 'insufficient_quota' };
-    const priority: LotKind[] = ['trial','legacy_unknown','goodwill','paid'];
-    const available = state.lots.filter(l => !l.frozen && l.remaining>l.held && (input.allowPurchasedCredits !== false || l.kind !== 'paid' || l.sourceRef?.startsWith('plus_daily:')));
-    const rank = (l:Lot) => l.kind==='trial'?0:l.sourceRef?.startsWith('plus_daily:')?1:priority.indexOf(l.kind)+2;
-    const lot = available.sort((a,b)=>rank(a)-rank(b))[0];
-    if (!lot) return {ok:false,reason:'paid_credits_disabled'};
+    const chosen = this.solveLot(d, state, input.allowPurchasedCredits);
+    if ('reason' in chosen) return { ok: false, reason: chosen.reason };
+    const lot = chosen.lot;
     beforeCommit?.();
     const record = newCapture(input);
     state.captures.set(record.captureId,{record,lot,legacy:input.legacy??false});
@@ -265,7 +289,12 @@ export class MemoryBilling implements BillingStore {
       capture.record.resultState = input.resultState ?? null; capture.record.questionKind = input.questionKind ?? null;
       capture.record.parserPath = input.parserPath ?? null;
       if (capture.record.operation === 'recover' && input.compensateGoodwill && capture.record.parentCaptureId) {
-        this.credit(d, 1, 'goodwill');
+        // The compensation replaces the charged question, so it lapses when that question's allowance would have.
+        const expiresAt = state.captures.get(capture.record.parentCaptureId)?.lot.expiresAt;
+        if (!expiresAt || expiresAt > capture.record.finishedAt) {
+          this.credit(d, 1, 'goodwill');
+          if (expiresAt) state.lots.at(-1)!.expiresAt = expiresAt;
+        }
       }
       return;
     }
@@ -381,7 +410,7 @@ export class MemoryBilling implements BillingStore {
     this.finishAttemptFor(d, attemptId, input);
     this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
-  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false,channel='default'):Promise<boolean> {
+  async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false,channel='default',share=1):Promise<boolean> {
     const d = this.lookup(token); if (!d) return false;
     this.devices.set(d.id,d);
     if (limitMicros<=0 || reservedUpperMicros<=0) return true;
@@ -394,7 +423,7 @@ export class MemoryBilling implements BillingStore {
     if (guarded && control.blockedUntil===-1) throw new BudgetAdmissionError('guard_tripped');
     if (guarded && control.blockedUntil>now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
     const budget=this.budgets.get(key)??{scope,currency,start,limit:limitMicros,spent:0,held:0,end:start+windowMs};
-    if (budget.spent+budget.held+reservedUpperMicros+(guarded?Math.ceil(budget.limit*0.2):0)>budget.limit) return false;
+    if (budget.spent+budget.held+reservedUpperMicros>budgetCeiling(budget.limit,guarded,share)) return false;
     if (guarded) {
       if (control.blockedUntil>0) { control.probe=attemptId;control.blockedUntil=now+BUDGET_POLICY.probeMs; }
       this.controls.set(channelKey,control);this.guardedHolds.set(attemptId,channelKey);

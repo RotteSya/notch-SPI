@@ -329,8 +329,9 @@ data: [DONE]
 - `usage` 在流结束前发出**一次**。
 - solve/explain/recover 的结算通过 `finishWithCapture` 返回同一已提交事务中的账户与查题快照，直接构造终态回执，省去另一笔记录回读事务。提交确认丢失时不发送成功回执，仍按原 status/reaper 流程核对；费用和幂等规则不变。
 - 没有有效结果的生成失败：结算确认为释放后发送 `error`、`usage(0)`、`DONE`；无法确认持久化终态时中断连接，由 status/reaper 核对。
-- 请求前额度已用完：HTTP `402` `insufficient_quota`。
+- 请求前额度已用完：HTTP `402` `insufficient_quota`。新题的额度在占用供应商容量和预算之前判定，被拒请求不计入速率窗口。
 - 并发超过 `CAPTURE_CONCURRENCY_PER_TOKEN`：HTTP `429` `rate_limited`。
+- 单设备每分钟新题超过 `CAPTURE_PER_MINUTE`：HTTP `429` `rate_limited`，带 `Retry-After`，不扣题。
 - 指定了真实厂商但 Key 为空：HTTP `503` `upstream_error`，不扣题。
 
 启用 `screen_query_v1` 时，客户端必须同时发送 `capture_id`、`result_protocol=objective_v1`、
@@ -411,6 +412,8 @@ HMAC 比较。未知、其他父链、尚在运行、失败或绑定不一致的
 
 用于连接中断后恢复同一父请求的答案，仍受材料保留期、原模型策略和成本预算限制。恢复失败会在
 同一结算事务中追加一笔唯一的 goodwill 题数补偿，不能重复领取，也不等同于现金退款。
+补偿只对应服务端或供应商的失败：调用方自行断开恢复请求时不补偿，父请求保持已扣题，本次恢复名额也已使用。
+补偿沿用父请求所扣额度的过期时间；该额度已过期（例如每日额度已重置）时不再补偿。
 恢复成功返回完整、已验证的 Objective V1/兼容 FINAL 响应，保留子请求自己的答案 HMAC、
 解析路径及结果状态。父请求账单保持不变，解释次数仍绑定原父请求。恢复进程终止时，过期
 恢复器也执行同一笔唯一补偿；迟到回调不能撤销补偿或复活请求。辅助调用仅在终态持久化后
@@ -521,6 +524,8 @@ solve/explain/recover 从鉴权前监听连接关闭，解码、预算预留、�
 - `429 rate_limited` + `Retry-After: 5` 表示并发满；冷却返回 `503 service_maintenance` 和等待秒数；
   人工费用保护也返回 `service_maintenance`。预算不足返回 `503 budget_exceeded`、下个预算周期的 UTC 时间及
   `Retry-After`；跨日自然使用新窗口，未核实的旧费用保留在原窗口。
+- 没有 Plus、题包或迁移前余额的设备，最多占用日预算可用部分和供应商速率窗口的
+  `UNPAID_SHARE_PERCENT`（默认 80），其余留给付费设备；触及时同样返回 `budget_exceeded` 或并发满的 `rate_limited`，不扣题。
 
 管理入口均要求现有 `x-admin-token`，关闭管理员功能时不开放；响应禁止缓存：
 

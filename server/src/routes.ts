@@ -387,6 +387,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       } catch { throw new ApiError(400, '注册重试凭证无效'); }
     }
     if (!await store.billing.rateLimit(captureService.keys.digest('registration-ip', clientIp(req)), config.deviceRegPerHour, 3_600_000)) {
+      // One address at its hourly cap is the visible sign of free-quota farming.
+      req.log.warn({registrationLimit: 'ip'}, 'registration rate limit reached');
       throw new ApiError(429, '注册过于频繁，请稍后再试', 'rate_limited');
     }
     const platform = str(body.platform, 'unknown').slice(0, 32);
