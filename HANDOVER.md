@@ -8,7 +8,7 @@
 - Mac 原生：Apple Silicon / macOS 14+，AppKit/Carbon；截图与题组、官方/自定义 API/本机 CLI 三通道、流式答案、公式、Ghost、最近查题、中日英界面。见[客户端行为](docs/client-behavior.md)。
 - Windows：本仓库 Electron 实现及共享规则；Windows 10 2004+ 交互桌面。源码实现、Mac Electron smoke、Windows 实机验收是不同证据，见[平台入口](docs/windows/README.md)。
 - 源码版本读取 `VERSION.env`，Swift 下限读取 `Package.swift`。本次核对主线为 3.2.0 build 44；3.2.0 双架构发布及验收边界见[兼容账本](docs/compatibility.md)。3.0 build 27 的[发布记录](docs/release-3.0-execution-2026-10-20.md)仅为历史证据。
-- Intel 兼容实现由独立源码维护，不在主树 arm64 构建中；3.2.0 Intel build 45（独立分支 `codex/release-3-2-intel`）支持 macOS 12.3+。Catalina build 29（10.15.7+）及旧 Intel build 28 是冻结历史版本；来源及实机边界见[兼容账本](docs/compatibility.md)。不能用主树重做这些包。
+- Intel 由独立源码维护，不在主树 arm64 构建中；3.2.0 Intel build 45（分支 `codex/release-3-2-intel`）支持 macOS 12.3+。Intel 须与 Apple Silicon 同版本发布并含其全部改动，仅保留 macOS 12.3/x86_64 兼容必需的差异；其余差异逐条告知用户，不得自判不适用。Catalina build 29（10.15.7+）及旧 Intel build 28 为冻结历史版本，不能用主树重做；来源及实机边界见[兼容账本](docs/compatibility.md)。
 - 旧月票 QA 原型、本地题库入口已退役；正式 Plus、题包、体验及旧账户兼容保留。旧用户题库文件不清理，QA 工具见[边界](docs/prototypes.md)。
 
 ## 五分钟本地启动
@@ -163,7 +163,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 恢复任一退役树时，从baseline取完整HEAD和原路径：若分支已删除，先用 `git branch <原分支> <完整HEAD>` 恢复；然后 `git worktree add <原路径> <原分支>`，将对应 `payload/.` 以 `cp -a` 复制回原路径。目标须空缺，分支须仍指向记录HEAD。恢复删除的两分支分别使用6e9bf1e38c9c1d8a38561ef1f993fc933e92c2e8、7366e21372c9f0fda68451491f2b8ac775c9bac0；仍可从main/正式标签到达。其他引用、远端分支均不删除，不推送。未触碰本轮八树之外的本地分支。
 
-本轮计量：工作树9→6（主树及5个保留树），本地分支15→13；迁移保全27,974个普通文件。三个旧树合计2,394,180 KiB，保全目录在最终日志前2,296,348 KiB，差值97,832 KiB（约95.5 MiB）；不是全盘空闲空间变化。
+本轮计量见[归档](docs/history/README.md#2026-11-13-剩余八树计量)。
 
 本轮验收：quick全通过（治理95/95），起止摘要一致；报告 `output/verification/20261113T063327Z-22709/results.json`。delivery、文档引用、空白及保全复核通过；5个保留树状态不变。未改产品代码，未重跑硬件验收。
 
