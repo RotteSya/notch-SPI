@@ -119,3 +119,60 @@ git fetch output/remote-branch-review-20261113/candidates.bundle refs/remotes/or
 ## 2026-11-13 剩余八树计量
 
 自[工程交接](../../HANDOVER.md#剩余八树核验与收口)移入，原文不变：本轮计量：工作树9→6（主树及5个保留树），本地分支15→13；迁移保全27,974个普通文件。三个旧树合计2,394,180 KiB，保全目录在最终日志前2,296,348 KiB，差值97,832 KiB（约95.5 MiB）；不是全盘空闲空间变化。
+
+## 2026-11-13 旧 Intel 可靠性草稿退役
+
+自[工程交接](../../HANDOVER.md#旧-intel-可靠性草稿退役)移入，原文不变；其中路径相对Git根目录。
+
+`778e141` 记录移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346` 的祖先。五个草稿中 OfficialAPI及测试整个文件同时等于主线/正式Intel，VERSION.env和desktop生成版本等于正式Intel；HANDOVER仅首段不同，正式说明更完整。原文件及补丁保全后，定点restore并验证补丁可重新应用，再用非强制worktree remove退役；分支后续已删除，来源仍在正式Intel历史中。
+
+保全目录 `output/intel-worktree-retirement-20261113/` 内：`inventory-before.json` 是文件SHA-256/权限/链接清单，`draft.patch`及`draft-files/`保全草稿，`payload/`原样保存旧树 `.build/`、`dist/`、`output/`，共7,098个普通文件。五个候选目录的十份DMG（每目录两份相同）及App摘要匹配manifest；五个候选的 hdiutil verify、codesign --verify --deep --strict 通过。原验收缺口不变，未声称Intel真机或升级通过。旧树与保全目录的分配空间差为32,272 KiB（约31.5 MiB，验收日志写入前），不算全盘可用空间增量。
+
+历史 recovery-safety/recovery-latency/reliability-remediation 等记录中的旧路径不改写：将旧根替换为保全目录 `payload/`，见 `path-map.json`。恢复前确认目标路径及同名分支空缺、上述212f094仍可读取；在Git根目录执行以下恢复步骤（不是当前操作）：
+
+```sh
+retirement="$PWD/output/intel-worktree-retirement-20261113"
+git worktree add -b codex/intel-reliability-20261112 tmp/intel-reliability-20261112 212f094a308dcb93706aa45f38364ff7bbb60c14
+git -C tmp/intel-reliability-20261112 apply "$retirement/draft.patch"
+cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
+```
+
+该草稿不等于正式build43来源。退役时工作树10→9、分支15不变，其他工作树及引用不变；quick治理95/95及delivery通过，报告 `output/verification/20261113T062103Z-5002/results.json`。首次文档超限失败日志保留；通过合并重复记录解决，未提高预算。
+
+## 2026-11-20 现状核对与清理
+
+基点 `ee30e27`，与origin/main一致，清理前工作区干净。本节是本机快照，不代表生产或硬件验收；证据在本机 `output/governance-20261120/`（refs/工作树前后快照、分支删除日志、外层残留清单），未纳入Git。
+
+已处理：
+
+- 本地分支8→6。11-13收口后的5个分支因3.2.0发布新增Intel、渠道及CI修复分支而成为8个；本轮以普通 `git branch -d` 删除 `fix/ci-masked-test-failures`（58f612bd68d56465ea2833574417746a6387a0b5，main祖先，无远端、无工作树）与 `codex/release-3-2-channels`（b1cf98e62c4c1560b1ff5a9404e9470c560c7b5d，经c2b6925合入main，origin同名分支HEAD相同）。当前及远端main的脚本、CI、文档未引用这两个分支名。恢复：`git branch <原名> <完整HEAD>`。标签、远端引用、其他分支不变。
+- Git根之外的 `../.build/`：仅SwiftPM的CACHEDIR.TAG与.buildSystem_debug两个标记文件（共219字节，时间戳2026-10-09，推断为在非包目录运行swift所留），无构建产物；记录摘要后移除。
+- 文档对齐：README原将仍在维护的Intel写作历史归档，改为与工程交接一致；工程交接中3.1.5 Intel退役行补记本地b4b7706与远端f1c9346的差别，并将旧Intel草稿退役原文移入本文件以容纳现状记录。
+
+核对后保留：
+
+- 三个工作树均干净，无未提交修改。`output/release-320-20261119/intel` 为bc91120，等于v3.2.0-intel-build45与origin分支；其report.md记录两包已于2026-11-19T15:49Z正式发布，同目录STATUS-paused-20261120.md是公证受阻时的进度快照，保留原文。未发现未发布的Intel候选源码；未使用的ad-hoc及首次公证失败候选仍在两处dist/candidates，未删除。
+- `codex/release-3-1-5-intel` 本地b4b7706比远端f1c9346多1个提交，该提交可从origin/codex/release-3-2-intel到达；11-20退役记录已决定保留分支，本轮不改。两个archive实验分支、Windows诊断分支及其工作树的保留理由不变。
+- `.build/arm64-apple-macosx`（约405M）与 `.build/apple`（约388M）是旧构建系统目录，现行swiftbuild输出在 `.build/out`；其中含2026-09至10月的Products及NotchSPI.dSYM，无法排除与已发布版本符号对应，且2026-11-13清理明确保留Products/dSYM，故保留。`.build/NotchSPI-QA.app`、`NotchSPI-Device.app`、`personality-qa.*` 无现行脚本引用，但带签名身份，用途未能确证，保留。
+- `desktop/dist/candidates`（18个Windows候选，约8.6G）、`output/`（约21G，320项）、`.release-evidence`、dist三目录、外层 `release-worktrees/`、`.tmp/`、`output/`：属候选包、验收或业务材料，Windows与Intel实机验收仍未闭环，全部保留。
+
+用户确认后的追加处理（同日）：
+
+- 远端 `codex/release-3-2-channels`（b1cf98e62c4c1560b1ff5a9404e9470c560c7b5d）以普通 `git push origin --delete` 删除；删除前复核其为origin/main祖先、无开放PR。远端分支5→4，标签不变。恢复需另一次远端写入：`git push origin b1cf98e62c4c1560b1ff5a9404e9470c560c7b5d:refs/heads/codex/release-3-2-channels`。
+- 本地 `codex/release-3-1-5-intel`（b4b77065ba6939e957033c3b4c4baa48177a7e26）从3.2 Intel工作树以普通 `git branch -d` 删除，该提交是bc91120的祖先。本地分支6→5。远端同名分支（f1c9346，与v3.1.5-intel-build43标签指向相同）未动。
+- 经用户再次确认，远端 `codex/release-3-1-5-intel`（f1c9346c03763dfa8122f9e81e1a9732311f809c）以普通 `git push origin --delete` 删除；删除前复核其与标签v3.1.5-intel-build43指向相同、是origin/codex/release-3-2-intel祖先、无开放PR及分支保护，CI与脚本无引用。远端分支4→3（main、3.2 Intel、Windows诊断），标签不变。恢复：`git push origin v3.1.5-intel-build43^{commit}:refs/heads/codex/release-3-1-5-intel`。
+- 瘦身共69个目录，逐目录依据、文件数、占用与恢复方式在 `output/governance-20261120/slimming.json`，逐文件清单在同目录slimming-files.tsv：
+  - 16个Windows `win-unpacked`（15个候选及desktop/dist顶层）：每个文件与相邻zip成员的名称、大小、CRC32一致，候选zip摘要与delivery-manifest一致；zip、manifest及3个仅含mac-arm64的候选不动。恢复用unzip解到原目录。
+  - `output/automatic-runtime-judge-20261105/runtime/` 的model、cache、venv：该实验final-execution-report已否决候选并关闭许可；模型文件大小及LFS摘要与model-file-manifest固定修订一致，venv绑定改名前的项目绝对路径，版本留在requirements.actual.lock。输入、输出、日志与报告不动。
+  - 退役树payload中3个server与2个scheduler的node_modules：已安装包的版本与integrity全部等于对应提交（a005b09、dd3a45a、7366e21）的package-lock。两个desktop/node_modules有prettier条目与锁文件不符，保留。
+  - Swift缓存48个目录：ModuleCache、CompilationCache、SDKStatCaches、SDKExplicitPrecompiledModules及主树 `.build/index-build`，范围为主树旧构建目录、退役树payload和冻结/实验源码副本的 `.build`；类别沿用11-13清理并补入SDK预编译模块与编辑器索引。Products、dSYM、checkouts、打包App、主树 `.build/out` 与两个在用工作树不动。
+- 11-13与11-20各退役记录中的payload inventory描述迁移当时的完整文件；本次移除项以slimming清单为差集，未改写原inventory。重新下载模型、安装依赖属另行授权事项。
+- 计量：项目native目录du由37,371,552 KiB降至22,738,812 KiB（约13.95 GiB）；同一时段卷可用空间增加约12.25 GiB，后者含其他进程的变化。
+
+验证：清理前quick与delivery通过。文档改动后quick通过（`output/verification/20261120T013050Z-24415`）。瘦身后完整verify（`output/verification/20261120T015252Z-71672`）：治理111、desktop 379、server 887、scheduler 21、Worker构建、依赖锁、Swift checkout、arm64 Release、资源、固定证据、路由及空白检查通过；swift-tests在600秒上限超时，记为失败。测试产物0.66秒完成构建，卡在L10nTests之后的套件：进程采样显示主线程等待expectation、64个线程阻塞于NSAnimation，当时屏幕已锁定且显示器自10:27关闭；同参数单独重跑停在同一位置。本轮未改源码与主树 `.build/out`，该次不计为通过。用户告知屏幕解锁后复跑完整verify（`output/verification/20261120T054412Z-99373`）退出0：Swift 665项、9条件跳过、0失败，用时约221秒，其余必需步骤通过。Postgres跳过，硬件blocked，签名skipped。
+
+仍待用户决定：
+
+1. 工程交接现行规则要求Intel含Apple Silicon全部改动、其余差异逐条告知用户；3.2.0 Intel未回移刘海轮廓修复，[兼容账本](../compatibility.md)记为“不适用”。该差异已写入发布记录，但规则在发布后（ee30e27）才确立；用户答复暂不处理，留待下次Intel发布前决定。
+2. 余下大项为候选zip与安装包、旧构建目录中的Products/dSYM、QA App、windows-local-test各轮材料（R2至R6压缩包摘要互不相同）及冻结源码，属独有材料，未列入瘦身。
+3. Apple Silicon与Intel 3.2.0真机安装、截图、应用内升级，Windows实机，Postgres集成仍未验证。

@@ -125,20 +125,7 @@ Mac 打包 `scripts/package.sh`，仅 arm64/macOS 14+；release 位于独立候�
 
 ### 旧 Intel 可靠性草稿退役
 
-`778e141` 记录移除 `tmp/intel-reliability-20261112`。旧 HEAD `212f094a308dcb93706aa45f38364ff7bbb60c14` 是正式 Intel `f1c9346` 的祖先。五个草稿中 OfficialAPI及测试整个文件同时等于主线/正式Intel，VERSION.env和desktop生成版本等于正式Intel；HANDOVER仅首段不同，正式说明更完整。原文件及补丁保全后，定点restore并验证补丁可重新应用，再用非强制worktree remove退役；分支后续已删除，来源仍在正式Intel历史中。
-
-保全目录 `output/intel-worktree-retirement-20261113/` 内：`inventory-before.json` 是文件SHA-256/权限/链接清单，`draft.patch`及`draft-files/`保全草稿，`payload/`原样保存旧树 `.build/`、`dist/`、`output/`，共7,098个普通文件。五个候选目录的十份DMG（每目录两份相同）及App摘要匹配manifest；五个候选的 hdiutil verify、codesign --verify --deep --strict 通过。原验收缺口不变，未声称Intel真机或升级通过。旧树与保全目录的分配空间差为32,272 KiB（约31.5 MiB，验收日志写入前），不算全盘可用空间增量。
-
-历史 recovery-safety/recovery-latency/reliability-remediation 等记录中的旧路径不改写：将旧根替换为保全目录 `payload/`，见 `path-map.json`。恢复前确认目标路径及同名分支空缺、上述212f094仍可读取；在Git根目录执行以下恢复步骤（不是当前操作）：
-
-```sh
-retirement="$PWD/output/intel-worktree-retirement-20261113"
-git worktree add -b codex/intel-reliability-20261112 tmp/intel-reliability-20261112 212f094a308dcb93706aa45f38364ff7bbb60c14
-git -C tmp/intel-reliability-20261112 apply "$retirement/draft.patch"
-cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
-```
-
-该草稿不等于正式build43来源。退役时工作树10→9、分支15不变，其他工作树及引用不变；quick治理95/95及delivery通过，报告 `output/verification/20261113T062103Z-5002/results.json`。首次文档超限失败日志保留；通过合并重复记录解决，未提高预算。
+`778e141` 移除 `tmp/intel-reliability-20261112`；依据、保全目录及恢复步骤原文见[归档](docs/history/README.md#2026-11-13-旧-intel-可靠性草稿退役)。
 
 ### 剩余八树核验与收口
 
@@ -154,7 +141,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 | release-3.1-execution/source | release-3-1 / dd3a45a | 已退役：已合并；历史脚本原文保留，复现前按固定HEAD恢复source及依赖。 |
 | release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 已退役：最终权限恢复、升级及发布闭环；标签、全部候选和验收材料保留。 |
 | release-315-both-20261113/channels | release-3-1-5-channels / 7366e21 | 已退役：渠道源码已在main，发布报告记录部署和下载核验完成。分支以 `git branch -d` 删除。 |
-| release-315-both-20261113/intel | release-3-1-5-intel / f1c9346 | 11-20退役：常驻Intel改为3.2；标签、分支保留。 |
+| release-315-both-20261113/intel | release-3-1-5-intel / 本地b4b7706、远端f1c9346 | 11-20退役：常驻Intel改为3.2；标签保留，本地及远端分支同日删除。 |
 | windows-2022-flight-branch | windows-2022-flight-diagnostics / e2a54b4 | 暂留：3个独有诊断提交；108次运行未复现原故障，根因未闭环。 |
 
 本轮保全根为 `output/worktree-review-20261113/`；`baseline.json`、`refs-before.txt`记录原路径、完整HEAD、分支、状态与占用，`path-map.json`映射旧根到 `mac31-arm64/payload`、`mac31-intel/payload`、`channels315/payload`。三份 `*-inventory.json`记录完整旧树；`retirement-journal.json`记录迁移和非强制移除。所有非Git文件（含历史构建产品、依赖、.vercel部署材料及原文件权限/链接目标）迁移前后逐项相同，未删除独有材料；不将迁移算作缓存瘦身。原父目录的发布报告、公证记录、源码归档、回滚包及private材料均未动。历史文档/manifest继续表达当时路径，查阅时按path-map替换根；未把旧证据改挂新源码。
@@ -175,3 +162,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 四分支核验：公式和legacy别名已删除，预算与预读实验保留；替代关系、独有价值、bundle恢复验证见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。
 
 分支先13→10→8，后续8→5；工作树6→3。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。未推送main；后经用户确认远端10→3，保留main、Intel及Windows诊断，恢复见归档说明。11-20再非强制退役三树，常驻main、3.2 Intel及Windows诊断；记录见 `output/worktree-review-20261120/`。
+
+### 2026-11-20 现状核对
+
+基点ee30e27，本机快照。工作树3：main、`output/release-320-20261119/intel`（bc91120，即v3.2.0-intel-build45）、Windows诊断，均干净。本地分支8→5：以 `git branch -d` 删除 `fix/ci-masked-test-failures`（58f612b）、`codex/release-3-2-channels`（b1cf98e）、`codex/release-3-1-5-intel`（b4b7706）；恢复用 `git branch <名> <HEAD>`。经用户确认删除远端 `codex/release-3-2-channels`、`codex/release-3-1-5-intel`，远端5→3，标签不变。经用户确认瘦身：移除与相邻zip逐文件一致的Windows解压目录、已否决实验的模型/venv、与锁文件一致的退役树依赖及Swift缓存，清单与恢复方式在 `output/governance-20261120/slimming.json`；退役树payload的旧inventory因此多于现存文件。3.2.0两包已发布；同目录 `STATUS-paused-20261120.md` 是公证暂停时的快照，已被 `report.md` 取代。保留项、待确认项与验证见[归档](docs/history/README.md#2026-11-20-现状核对与清理)。
