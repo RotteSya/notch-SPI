@@ -154,7 +154,7 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 | release-3.1-execution/source | release-3-1 / dd3a45a | 已退役：已合并；历史脚本原文保留，复现前按固定HEAD恢复source及依赖。 |
 | release-315-arm64-prep-20261113/source | release-3-1-5-arm64-prep / a005b09 | 已退役：最终权限恢复、升级及发布闭环；标签、全部候选和验收材料保留。 |
 | release-315-both-20261113/channels | release-3-1-5-channels / 7366e21 | 已退役：渠道源码已在main，发布报告记录部署和下载核验完成。分支以 `git branch -d` 删除。 |
-| release-315-both-20261113/intel | release-3-1-5-intel / f1c9346 | 保留：v3.1.5-intel-build43精确来源，独立兼容平台及待实机验收入口。 |
+| release-315-both-20261113/intel | release-3-1-5-intel / f1c9346 | 11-20退役：常驻Intel改为3.2；标签、分支保留。 |
 | windows-2022-flight-branch | windows-2022-flight-diagnostics / e2a54b4 | 暂留：3个独有诊断提交；108次运行未复现原故障，根因未闭环。 |
 
 本轮保全根为 `output/worktree-review-20261113/`；`baseline.json`、`refs-before.txt`记录原路径、完整HEAD、分支、状态与占用，`path-map.json`映射旧根到 `mac31-arm64/payload`、`mac31-intel/payload`、`channels315/payload`。三份 `*-inventory.json`记录完整旧树；`retirement-journal.json`记录迁移和非强制移除。所有非Git文件（含历史构建产品、依赖、.vercel部署材料及原文件权限/链接目标）迁移前后逐项相同，未删除独有材料；不将迁移算作缓存瘦身。原父目录的发布报告、公证记录、源码归档、回滚包及private材料均未动。历史文档/manifest继续表达当时路径，查阅时按path-map替换根；未把旧证据改挂新源码。
@@ -174,4 +174,4 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 
 四分支核验：公式和legacy别名已删除，预算与预读实验保留；替代关系、独有价值、bundle恢复验证见[分支保全记录](docs/history/README.md#2026-11-13-四分支保全与核验)。
 
-分支先13→10→8，后续8→5；工作树6→3：main、Intel、Windows诊断。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。未推送main；后经用户确认远端10→3，保留main、Intel及Windows诊断，恢复见归档说明。
+分支先13→10→8，后续8→5；工作树6→3。恢复与验收见[常驻收口](docs/history/README.md#2026-11-13-常驻工作树收口)。未推送main；后经用户确认远端10→3，保留main、Intel及Windows诊断，恢复见归档说明。11-20再非强制退役三树，常驻main、3.2 Intel及Windows诊断；记录见 `output/worktree-review-20261120/`。
