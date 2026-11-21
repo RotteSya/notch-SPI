@@ -155,23 +155,104 @@ final class MotionContinuityTests: XCTestCase {
     }
 
     @MainActor func testConclusionArrivingAboveTheWorkingDoesNotReplayItsEntrance() throws {
-        withFullMotion {
+        try withFullMotion {
             let view = StreamingAnswerView(frame: CGRect(x: 0, y: 0, width: 560, height: 200))
             let streaming = AnswerPresentation(mode: "tutor", depth: "guided", finished: false, revealed: false)
             let working = "平均速度 = 路程 ÷ 时间，因此 120 km ÷ 2 h = 60 km/h。"
             view.setAnswer(NotchType.answerString(working, presentation: streaming), isPlaceholder: false)
             let born = view.qaGlyphBirths
             XCTAssertEqual(born.count, (working as NSString).length)
-            let withCard = NotchType.answerString(working + "\nFINAL: B. 60 km/h", presentation: streaming)
-            view.setAnswer(withCard, isPlaceholder: false)
-            let offset = (withCard.string as NSString).range(of: working).location
-            XCTAssertNotEqual(offset, NSNotFound)
-            XCTAssertGreaterThan(offset, 0, "The card precedes the working")
-            for index in 0..<born.count {
-                XCTAssertEqual(view.qaGlyphBirths[offset + index], born[index], accuracy: 0.0001,
-                               "Glyph \(index) was already on screen; moving it must not fade it in again")
+            XCTAssertNil(view.takeInsertionDistance(), "Plain growth displaces nothing")
+            let top = try XCTUnwrap(view.qaDisplayedTop(of: 0))
+
+            // The marker lands, then the conclusion streams in character by character — every
+            // one of those tokens arrives AHEAD of the working that is already being read.
+            var pushed: CGFloat = 0
+            for conclusion in ["", "B", "B. 60", "B. 60 km/h"] {
+                let text = NotchType.answerString(working + "\nFINAL: " + conclusion, presentation: streaming)
+                let before = CACurrentMediaTime()
+                view.setAnswer(text, isPlaceholder: false)
+                let offset = (text.string as NSString).range(of: working).location
+                XCTAssertNotEqual(offset, NSNotFound)
+                XCTAssertGreaterThan(offset, 0, "The card precedes the working")
+                for index in 0..<born.count {
+                    XCTAssertEqual(view.qaGlyphBirths[offset + index], born[index], accuracy: 0.0001,
+                                   "\"\(conclusion)\": glyph \(index) was already on screen and must not fade in again")
+                }
+                for index in 0..<offset - 1 {
+                    XCTAssertLessThan(view.qaGlyphBirths[index], before, "The conclusion itself is readable at once")
+                }
+                // Each time the card takes more room, the view reports how far the working moved,
+                // and drawing it lifted by that much leaves it exactly where it was.
+                pushed += view.takeInsertionDistance() ?? 0
+                XCTAssertNil(view.takeInsertionDistance(), "The distance is reported once")
+                view.contentLift = pushed
+                XCTAssertEqual(try XCTUnwrap(view.qaDisplayedTop(of: offset)), top, accuracy: 0.5,
+                               "\"\(conclusion)\": the working must not jump when the card changes above it")
             }
+            XCTAssertGreaterThan(pushed, 40, "A label and a conclusion line were inserted above the working")
+            view.contentLift = 0
+            XCTAssertEqual(try XCTUnwrap(view.qaDisplayedTop(of: (view.accessibilityValue() as? String ?? "").count - 1)), top + pushed, accuracy: 0.5)
         }
+    }
+
+    @MainActor func testWorkingSlidesDownWithThePanelWhenTheConclusionIsInserted() throws {
+        let working = "平均速度 = 路程 ÷ 时间，因此 120 km ÷ 2 h = 60 km/h。"
+        @MainActor func stream(reduced: Bool) throws -> (lifts: [CGFloat], tops: [CGFloat], before: CGFloat, rest: CGFloat) {
+            let previous = ProcessInfo.processInfo.environment["NSPI_QA_REDUCE_MOTION"]
+            setenv("NSPI_QA_REDUCE_MOTION", reduced ? "1" : "0", 1)
+            defer {
+                if let previous { setenv("NSPI_QA_REDUCE_MOTION", previous, 1) } else { unsetenv("NSPI_QA_REDUCE_MOTION") }
+            }
+            let model = TutorModel()
+            let collapsed = CGRect(x: 400, y: 568, width: 245, height: 32)
+            var expanded = CGRect(x: 200, y: 440, width: 644, height: 160)
+            let panel = NotchPanel(contentRect: collapsed)
+            defer { panel.close() }
+            let view = NotchView(model: model, frameProvider: { $0 ? expanded : collapsed },
+                onHover: { _ in }, onCycleDepth: {}, onEditPersona: {}, onSettings: {},
+                onToggleReasoning: {}, onCopyAnswer: {}, onStopAuto: {})
+            panel.contentView = view
+            view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
+            view.qaUseManualMorphClock()
+            model.answerDepth = "brief"
+            model.status = .streaming
+            model.answer = working
+            model.expanded = true; view.refreshScreenshotTray()
+            for _ in 0..<40 { view.qaAdvanceMorph(by: 0.02) }
+            func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+            let text = try XCTUnwrap(descendants(view).compactMap { $0 as? StreamingAnswerView }.first)
+            let before = try XCTUnwrap(text.qaDisplayedTop(of: 0))
+
+            model.answer = working + "\nFINAL: B. 60 km/h"
+            view.refreshScreenshotTray()
+            expanded = CGRect(x: 200, y: 360, width: 644, height: 240)   // the controller sizes the panel for the card
+            view.retargetExpandedFrame(expanded)
+            let index = ((text.accessibilityValue() as? String ?? "") as NSString).range(of: working).location
+            XCTAssertNotEqual(index, NSNotFound)
+            var lifts = [text.contentLift], tops = [try XCTUnwrap(text.qaDisplayedTop(of: index))]
+            for _ in 0..<120 {
+                view.qaStepReading(by: 1.0 / 120)
+                lifts.append(text.contentLift)
+                tops.append(try XCTUnwrap(text.qaDisplayedTop(of: index)))
+            }
+            text.contentLift = 0
+            return (lifts, tops, before, try XCTUnwrap(text.qaDisplayedTop(of: index)))
+        }
+
+        let moving = try stream(reduced: false)
+        XCTAssertGreaterThan(moving.rest - moving.before, 40)
+        XCTAssertEqual(moving.tops[0], moving.before, accuracy: 0.5, "The working starts from where it was being read")
+        for (earlier, later) in zip(moving.tops, moving.tops.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(later, earlier - 0.01, "It only moves down")
+            XCTAssertLessThan(later - earlier, 12, "and never by a jump")
+        }
+        XCTAssertEqual(moving.tops.last!, moving.rest, accuracy: 0.01)
+        XCTAssertEqual(moving.lifts.last!, 0)
+
+        let still = try stream(reduced: true)
+        XCTAssertTrue(still.lifts.allSatisfy { $0 == 0 }, "Without motion the working is simply at its new place")
+        XCTAssertEqual(still.tops[0], still.rest, accuracy: 0.01)
     }
 
     @MainActor func testReferenceHandoffLaysThePictureOutInsideItsCardThroughout() throws {

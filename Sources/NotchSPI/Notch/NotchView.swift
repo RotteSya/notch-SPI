@@ -64,6 +64,7 @@ final class NotchView: NSView {
         geoMorph.set(target)
         heightSpring.snap(morphFrameOrigin.height)
         blockSpring.snap(0)
+        settleInsertion()
         applyBlockShift()
         window?.setFrame(morphFrameOrigin, display: true)
         lastPlateSize = .zero
@@ -166,6 +167,10 @@ final class NotchView: NSView {
     /// layout, the block rides this offset back to zero on the same spring as the panel's
     /// height, so it travels with the lower edge instead of waiting beyond it.
     private var blockSpring = CriticalSpring()
+    /// The conclusion card is inserted ABOVE working that is already being read. That text
+    /// keeps the same spring as the block below it and the panel's lower edge, so the three
+    /// move down as one while the card appears in the room they leave.
+    private var insertSpring = CriticalSpring()
     private var laidOutBlockTop: CGFloat?
     private var restBlock: (tray: CGRect, strip: CGRect, shelf: CGRect, trayBelowAnswer: Bool)?
 
@@ -378,6 +383,7 @@ final class NotchView: NSView {
         if reduceMotion {
             referenceHandoffDeadline = 0
             blockSpring.snap(0)
+            settleInsertion()
             screenshotTray.stopReferenceMotion()
             answerShelf.layer?.removeAllAnimations()
             statusText.layer?.removeAnimation(forKey: "status-handoff")
@@ -490,7 +496,17 @@ final class NotchView: NSView {
             scrollSpring.snap(0); scrollTo(0); userDetached = false
             wasStatusMessage = model.isStatusMessage
         }
+        let readingFromTop = answerScroll.contentView.bounds.origin.y < 1 && !userDetached
         answerStream.setAnswer(attr, isPlaceholder: model.answer.isEmpty || model.isStatusMessage)
+        if let distance = answerStream.takeInsertionDistance(),
+           readingFromTop, wasExpanded, !geoMorph.isAnimating, !reduceMotion, window != nil {
+            insertSpring.stiffness = heightSpring.stiffness
+            insertSpring.nudge(-distance)   // a second push joins the first without restarting it
+            answerStream.contentLift = max(0, -insertSpring.value)
+            ticker.start()
+        } else if model.answer.isEmpty || newCapture {
+            settleInsertion()
+        }
         // Once FINAL arrives, keep the answer at the top instead of following its reasoning
         // to the bottom. Respect a reader who deliberately scrolled away from the live tail.
         let hasAnswerCard = attr.length > 0 && attr.attribute(.nspiAnswerCard, at: 0, effectiveRange: nil) != nil
@@ -577,6 +593,7 @@ final class NotchView: NSView {
         scrollSpring.snap(answerScroll.contentView.bounds.origin.y)
         heightSpring.snap(current.height)
         blockSpring.snap(0)
+        settleInsertion()
         applyBlockShift()
 
         let target: CGFloat = on ? 1 : 0
@@ -641,8 +658,18 @@ final class NotchView: NSView {
         if !heightSpring.settled { ticker.start() }
     }
 
+    private func settleInsertion() {
+        insertSpring.snap(0)
+        answerStream.contentLift = 0
+    }
+
     private func springTick(_ dt: CFTimeInterval) {
         var active = false
+        if !insertSpring.settled {
+            insertSpring.step(dt)
+            answerStream.contentLift = max(0, -insertSpring.value)
+            active = true
+        }
         if !blockSpring.settled {
             blockSpring.step(dt)
             applyBlockShift()   // before the frame below, so one display pass shows both

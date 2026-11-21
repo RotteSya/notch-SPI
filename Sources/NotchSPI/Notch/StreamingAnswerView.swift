@@ -82,6 +82,11 @@ final class StreamingAnswerView: NSView {
     /// is on the PARSED string, so an in-progress Markdown token only re-births the streaming tail.
     func setAnswer(_ attr: NSAttributedString, isPlaceholder: Bool) {
         guard !attributed.isEqual(to: attr) || isPlaceholder != self.isPlaceholder else { return }
+        pendingInsertion = nil
+        // Where the text below the conclusion card is drawn now — or, before there is a card,
+        // the working's first line — in case this change pushes it down.
+        let hadCard = cardRange != nil
+        let followingTop: CGFloat? = self.isPlaceholder ? nil : firstLineTop(after: cardRange)
         let new = attr.string
         let accessibilityChanged = AnswerMath.sourceText(attr) != AnswerMath.sourceText(attributed) || isPlaceholder != self.isPlaceholder
         defer {
@@ -105,27 +110,31 @@ final class StreamingAnswerView: NSView {
         guard new != plain else { needsDisplay = true; return }
         let now = CACurrentMediaTime()
         let newChars = Array(new), oldChars = Array(plain)
+        // Text arrives at one place: at the end while the working streams, or — once the
+        // conclusion card exists — inside the card, ahead of working that is already on screen.
+        // What precedes that place and what follows it are unchanged glyphs and keep their
+        // births; only what is new is born.
         var common = 0
         let limit = min(newChars.count, oldChars.count)
         while common < limit && newChars[common] == oldChars[common] { common += 1 }
+        var kept = 0
+        while kept < limit - common
+                && newChars[newChars.count - 1 - kept] == oldChars[oldChars.count - 1 - kept] { kept += 1 }
+        if births.count != oldChars.count { kept = 0 }
+        let arriving = newChars.count - common - kept
         var next = Array(births.prefix(min(common, births.count)))
-        if reduceMotion {
-            next.append(contentsOf: Array(repeating: now - 10, count: newChars.count - next.count))
-        } else {
-            for i in next.count..<newChars.count {
-                next.append(now + min(Self.staggerCap, Double(i - common) * Self.stagger))
-            }
-            // The conclusion card arrives ABOVE the working that is already on screen. Those
-            // glyphs only moved; they keep their births instead of fading in a second time.
-            if common < oldChars.count, births.count == oldChars.count {
-                let settled = String(String(oldChars).reversed().drop(while: \.isWhitespace).reversed())
-                if settled.count >= 8, let range = new.range(of: settled) {
-                    let offset = new.distance(from: new.startIndex, to: range.lowerBound)
-                    for index in 0..<settled.count where offset + index < next.count {
-                        next[offset + index] = min(next[offset + index], births[index])
-                    }
-                }
-            }
+        next.append(contentsOf: Array(repeating: now - 10, count: common - next.count))
+        for i in 0..<arriving {
+            next.append(reduceMotion ? now - 10 : now + min(Self.staggerCap, Double(i) * Self.stagger))
+        }
+        next.append(contentsOf: births.suffix(kept))
+        let workingCarried = kept > 0
+        // The card arrived above text already on screen, or grew a line: how far that text was
+        // pushed down. The owner can let the distance play out as motion instead of a cut
+        // (see `contentLift`).
+        if !reduceMotion, cardRange != nil, hadCard || workingCarried,
+           let followingTop, let moved = firstLineTop(after: cardRange), moved - followingTop > 1 {
+            pendingInsertion = moved - followingTop
         }
         // Conclusions are useful immediately, including multi-line answers. Only the
         // supporting explanation receives the glyph entrance; never queue answer digits.
@@ -144,6 +153,30 @@ final class StreamingAnswerView: NSView {
         utf16Births = Self.utf16BirthTable(plain: plain, births: births)
         needsDisplay = true
         updateLink()
+    }
+
+    /// Top of the first line after the card (view coordinates, at rest); of the very first line
+    /// when there is no card. Nil when nothing follows the card.
+    private func firstLineTop(after card: NSRange?) -> CGFloat? {
+        let index = card.map { NSMaxRange($0) + 1 } ?? 0
+        guard index < attributed.length else { return nil }
+        return lineRects(for: NSRange(location: index, length: 1)).first?.minY
+    }
+
+    /// The distance by which the latest `setAnswer` pushed down text that was already on
+    /// screen: a conclusion card inserted above the working, or that card gaining a line.
+    /// Read once; nil for every other change.
+    func takeInsertionDistance() -> CGFloat? {
+        defer { pendingInsertion = nil }
+        return pendingInsertion
+    }
+    private var pendingInsertion: CGFloat?
+
+    /// Points by which everything after the conclusion card is currently drawn ABOVE its place.
+    /// While it is non-zero the card shows only in the room that has opened above that text,
+    /// so the working slides down out of the card's way instead of jumping beneath it.
+    var contentLift: CGFloat = 0 {
+        didSet { if abs(contentLift - oldValue) > 0.01 { needsDisplay = true } }
     }
 
     /// Pull the composer's semantic ranges out of the attributed string — the string itself is
@@ -260,10 +293,26 @@ final class StreamingAnswerView: NSView {
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
+        // A card that has just been inserted: what follows it is still on its way down, and the
+        // card is revealed in the room above that text.
+        let liftBoundary = cardRange.map { NSMaxRange($0) } ?? 0
+        var lift: CGFloat = 0
+        var cardRoom = CGRect.null
+        if contentLift > 0.01, !isPlaceholder, cardRange != nil,
+           let first = lines.indices.first(where: { CTLineGetStringRange(lines[$0]).location >= liftBoundary }) {
+            var ascent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(lines[first], &ascent, nil, nil)
+            lift = contentLift
+            let floor = origins[first].y - shift + ascent + lift + 2
+            cardRoom = CGRect(x: 0, y: floor, width: bounds.width, height: Self.layoutHeight)
+        }
+
         // The answer card's glass chip — behind the glyphs, born with its first glyph.
         if let chip = cardRange, chip.length > 0 {
+            if lift > 0 { ctx.saveGState(); ctx.clip(to: cardRoom) }
             drawCardChip(chip, lines: lines, origins: origins, shift: shift,
                          ctx: ctx, now: now, utf16Births: utf16Births, reduceMotion: reduceMotion)
+            if lift > 0 { ctx.restoreGState() }
         }
 
         for (li, line) in lines.enumerated() {
@@ -283,6 +332,10 @@ final class StreamingAnswerView: NSView {
                     ?? (NSFont.systemFont(ofSize: NotchType.answerFontSize) as CTFont)
                 let runColor = (attrs[NSAttributedString.Key.foregroundColor.rawValue as NSString] as? NSColor)
                     ?? NotchPalette.primary
+                let inCard = lift > 0 && indices[0] < liftBoundary
+                let raised = lift > 0 && !inCard ? lift : 0
+                if inCard { ctx.saveGState(); ctx.clip(to: cardRoom) }
+                defer { if inCard { ctx.restoreGState() } }
 
                 if let attachment = attrs[NSAttributedString.Key.attachment.rawValue] as? NSTextAttachment,
                    let image = attachment.image {
@@ -293,7 +346,7 @@ final class StreamingAnswerView: NSView {
                     }
                     guard a > 0.001 else { continue }
                     let rect = CGRect(x: originX + positions[0].x + 2,
-                        y: originY + attachment.bounds.minY + 2 - (1 - a) * Self.rise,
+                        y: originY + attachment.bounds.minY + 2 - (1 - a) * Self.rise + raised,
                         width: max(1, attachment.bounds.width - 4), height: max(1, attachment.bounds.height - 4))
                     NSGraphicsContext.saveGraphicsState()
                     NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
@@ -335,7 +388,7 @@ final class StreamingAnswerView: NSView {
                     guard a > 0.001 else { continue }
                     ctx.setFillColor(runColor.withAlphaComponent(runColor.alphaComponent * a).cgColor)
                     var pos = CGPoint(x: originX + positions[g].x,
-                                      y: originY + positions[g].y - (1 - a) * Self.rise)
+                                      y: originY + positions[g].y - (1 - a) * Self.rise + raised)
                     var glyph = glyphs[g]
                     CTFontDrawGlyphs(runFont, &glyph, &pos, 1, ctx)
                 }
@@ -424,6 +477,12 @@ final class StreamingAnswerView: NSView {
 
     #if DEBUG
     var qaGlyphBirths: [CFTimeInterval] { utf16Births }
+    /// Where the line holding this UTF-16 index is drawn right now (view coordinates).
+    func qaDisplayedTop(of index: Int) -> CGFloat? {
+        guard let top = lineRects(for: NSRange(location: index, length: 1)).first?.minY else { return nil }
+        let raised = cardRange != nil && index >= NSMaxRange(cardRange!) && !isPlaceholder
+        return top - (raised ? contentLift : 0)
+    }
     /// Visual-QA: where the toggle currently sits (view coords), for the synthetic click hook.
     func qaReasoningToggleRect() -> CGRect? { toggleRange.flatMap { lineRects(for: $0).first } }
     #endif
