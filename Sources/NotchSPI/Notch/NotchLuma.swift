@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import Metal
+import os
 
 // The notch's interior LIGHT FIELD — a real GPU light simulation living inside the obsidian,
 // not a painted gradient. Concept: the slab is machined black glass; the screen's light pools
@@ -35,8 +36,12 @@ final class NotchLumaView: NSView {
     private var depthShown: Float = 0        // morph progress (set directly by applyLayout)
     private var flow: Float = 0              // token-arrival pulse, decays
     private var lastStatus: TutorModel.Status = .ready
+    private var lastStep: CFTimeInterval = 0
+    private let renderQueue = DispatchQueue(label: "notchspi.luma.render", qos: .userInteractive)
+    private let rendering = OSAllocatedUnfairLock(initialState: false)
+    private var slabMovedAt: CFTimeInterval = 0
 
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     private struct Uniforms {
         var time: Float
@@ -86,6 +91,7 @@ final class NotchLumaView: NSView {
     // MARK: Geometry (from NotchView.applyLayout — same values the surface draws with)
 
     func setSlab(cardRect: CGRect, topRadius: CGFloat, bottomRadius: CGFloat, depth: CGFloat) {
+        if cardRect != self.cardRect { slabMovedAt = CACurrentMediaTime() }
         self.cardRect = cardRect
         depthShown = Float(depth)
         let path = NotchShape.cgPath(in: cardRect, topRadius: topRadius, bottomRadius: bottomRadius)
@@ -179,41 +185,69 @@ final class NotchLumaView: NSView {
 
     fileprivate func step() {
         let now = CACurrentMediaTime()
-        energyShown += (energyTarget - energyShown) * 0.07
-        scanShown += (scanTarget - scanShown) * 0.09
-        tintShown += (tintTarget - tintShown) * 0.07
-        flow *= 0.90
+        // Glides are tuned per 60 Hz frame; scale them by real time so a slower clock moves
+        // the light at the same speed instead of half of it.
+        let frames = Float(min(0.1, max(0, lastStep == 0 ? 1.0 / 60 : now - lastStep)) * 60)
+        lastStep = now
+        energyShown += (energyTarget - energyShown) * (1 - pow(1 - 0.07, frames))
+        scanShown += (scanTarget - scanShown) * (1 - pow(1 - 0.09, frames))
+        tintShown += (tintTarget - tintShown) * (1 - pow(1 - 0.07, frames))
+        flow *= pow(0.90, frames)
         renderFrame(now: now)
-        // Collapsed: only a faint breathing pool moves → 30fps is plenty. Expanded: full clock.
-        link?.preferredFrameRateRange = depthShown < 0.05
-            ? CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
-            : CAFrameRateRange(minimum: 48, maximum: 60, preferred: 60)
-        if !needsMotion { link?.isPaused = true }
+        // The full clock is for light that travels: the thinking sweep, a pulse, a state glide,
+        // or a slab whose outline is moving. The breathing pool — idle, collapsed, or steady
+        // behind streamed text — drifts slowly, and 30 fps leaves the main thread to the text.
+        let brisk = depthShown >= 0.05 && (lastStatus == .running || flow > 0.01 || now - slabMovedAt < 0.15
+            || abs(scanShown - scanTarget) > 0.01 || abs(energyShown - energyTarget) > 0.004)
+        link?.preferredFrameRateRange = brisk
+            ? CAFrameRateRange(minimum: 48, maximum: 60, preferred: 60)
+            : CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        if !needsMotion { link?.isPaused = true; lastStep = 0 }
     }
 
     private func renderFrame(now: CFTimeInterval) {
-        guard let pipeline, let queue, cardRect.width > 1,
-              let drawable = metalLayer.nextDrawable(),
-              let cmd = queue.makeCommandBuffer() else { return }
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
-        let scale = Float(metalLayer.contentsScale)
-        var u = Uniforms(
-            time: Float(now - t0),
-            res: SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height)),
-            cardMin: SIMD2(Float(cardRect.minX) * scale, Float(cardRect.minY) * scale),
-            cardMax: SIMD2(Float(cardRect.maxX) * scale, Float(cardRect.maxY) * scale),
-            tint: tintShown, energy: energyShown, scan: scanShown, depth: depthShown, flow: flow)
-        enc.setRenderPipelineState(pipeline)
-        enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
-        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-        enc.endEncoding()
-        cmd.present(drawable)
-        cmd.commit()
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.lumaRender, qaStart) }
+        #endif
+        guard let pipeline, let queue, cardRect.width > 1 else { return }
+        // Acquiring a drawable can wait a frame or more while the compositor is busy — exactly
+        // when the panel is opening or resizing. That wait happens on the render queue; the
+        // main thread only hands over this frame's values. A frame still in flight is not
+        // queued behind: the light simply keeps its last picture for one more refresh.
+        guard rendering.withLock({ busy -> Bool in
+            if busy { return false }
+            busy = true
+            return true
+        }) else { return }
+        let layer = metalLayer
+        let scale = Float(layer.contentsScale)
+        let card = cardRect
+        let time = Float(now - t0), tint = tintShown, energy = energyShown
+        let scan = scanShown, depth = depthShown, flow = self.flow
+        let rendering = self.rendering
+        renderQueue.async {
+            defer { rendering.withLock { $0 = false } }
+            guard let drawable = layer.nextDrawable(), let cmd = queue.makeCommandBuffer() else { return }
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = drawable.texture
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .store
+            pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+            var u = Uniforms(
+                time: time,
+                res: SIMD2(Float(drawable.texture.width), Float(drawable.texture.height)),
+                cardMin: SIMD2(Float(card.minX) * scale, Float(card.minY) * scale),
+                cardMax: SIMD2(Float(card.maxX) * scale, Float(card.maxY) * scale),
+                tint: tint, energy: energy, scan: scan, depth: depth, flow: flow)
+            enc.setRenderPipelineState(pipeline)
+            enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.endEncoding()
+            cmd.present(drawable)
+            cmd.commit()
+        }
     }
 
     deinit { link?.invalidate() }

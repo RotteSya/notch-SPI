@@ -265,7 +265,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
                     XCTAssertEqual(panel.frame, collapsed)
                     let reliesOnHardware = layout.hasTopWings && sharing == .none
                     XCTAssertEqual(surface.hardwareContourCutoff != nil, reliesOnHardware)
-                    // Rasterize the actual surface configured by NotchView, including its
+                    // Rasterize the actual layers configured by NotchView, including the
                     // clipping branch. A frame-only assertion misses the missing right half.
                     let width = Int(surface.bounds.width * 2), height = Int(surface.bounds.height * 2)
                     let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height,
@@ -274,7 +274,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
                     NSGraphicsContext.saveGraphicsState()
                     NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
                     context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: 2, y: -2)
-                    surface.draw(surface.bounds)
+                    try XCTUnwrap(surface.layer).render(in: context)
                     NSGraphicsContext.restoreGraphicsState()
                     let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
                     let rightInterior = (height / 2 * width + width - 24) * 4 + 3
@@ -327,7 +327,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
         // Reproduce the flipped view's actual drawing transform in the raw bitmap.
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: scale, y: -scale)
-        surface.draw(surface.bounds)
+        try XCTUnwrap(surface.layer).render(in: context)
         let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
         var painted = 0
         var colored = 0

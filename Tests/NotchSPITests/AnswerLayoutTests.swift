@@ -167,6 +167,7 @@ final class AnswerLayoutTests: XCTestCase {
             model.screenshotRoundActive = true
             view.refreshScreenshotTray()
             let gallery = try XCTUnwrap(descendant(ScreenshotTray.self, in: view))
+            gallery.qaUseManualHandoffClock()
             gallery.layoutSubtreeIfNeeded()
             let scroll = try XCTUnwrap(descendant(NSScrollView.self, in: view))
             XCTAssertLessThanOrEqual(gallery.frame.maxY, scroll.frame.minY)
@@ -177,6 +178,7 @@ final class AnswerLayoutTests: XCTestCase {
             model.screenshotRoundActive = false
             view.refreshScreenshotTray()
             gallery.layoutSubtreeIfNeeded()
+            gallery.qaAdvanceHandoff(by: 1)   // the cards travel to the strip on the display clock
             let after = try model.screenshots.map { try XCTUnwrap(gallery.screenFrame(for: $0.id)) }
             XCTAssertLessThanOrEqual(scroll.frame.maxY, gallery.frame.minY)
             let compactOnScreen = panel.convertToScreen(gallery.convert(gallery.bounds, to: nil))

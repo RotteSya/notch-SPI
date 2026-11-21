@@ -115,6 +115,17 @@ final class StreamingAnswerView: NSView {
             for i in next.count..<newChars.count {
                 next.append(now + min(Self.staggerCap, Double(i - common) * Self.stagger))
             }
+            // The conclusion card arrives ABOVE the working that is already on screen. Those
+            // glyphs only moved; they keep their births instead of fading in a second time.
+            if common < oldChars.count, births.count == oldChars.count {
+                let settled = String(String(oldChars).reversed().drop(while: \.isWhitespace).reversed())
+                if settled.count >= 8, let range = new.range(of: settled) {
+                    let offset = new.distance(from: new.startIndex, to: range.lowerBound)
+                    for index in 0..<settled.count where offset + index < next.count {
+                        next[offset + index] = min(next[offset + index], births[index])
+                    }
+                }
+            }
         }
         // Conclusions are useful immediately, including multi-line answers. Only the
         // supporting explanation receives the glyph entrance; never queue answer digits.
@@ -221,6 +232,10 @@ final class StreamingAnswerView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext, let frame = currentFrame() else { return }
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.answerDraw, qaStart) }
+        #endif
         let measuresVisibleAnswer = !isPlaceholder && window?.isVisible == true
             && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty
         if measuresVisibleAnswer {
@@ -271,12 +286,18 @@ final class StreamingAnswerView: NSView {
 
                 if let attachment = attrs[NSAttributedString.Key.attachment.rawValue] as? NSTextAttachment,
                    let image = attachment.image {
+                    // A typeset formula is born like the glyphs around it.
+                    var a: CGFloat = 1
+                    if !isPlaceholder, !reduceMotion, indices[0] < utf16Births.count {
+                        a = easeOut(min(1, max(0, (now - utf16Births[indices[0]]) / Self.birthDuration)))
+                    }
+                    guard a > 0.001 else { continue }
                     let rect = CGRect(x: originX + positions[0].x + 2,
-                        y: originY + attachment.bounds.minY + 2,
+                        y: originY + attachment.bounds.minY + 2 - (1 - a) * Self.rise,
                         width: max(1, attachment.bounds.width - 4), height: max(1, attachment.bounds.height - 4))
                     NSGraphicsContext.saveGraphicsState()
                     NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-                    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1,
+                    image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: a,
                                respectFlipped: false, hints: nil)
                     NSGraphicsContext.restoreGraphicsState()
                     continue

@@ -9,6 +9,7 @@ enum DesignVisualQA {
     private static var shelfReplay: ShelfMotionReplay?
     private static var guideControls: GuideQAControls?
     static func start(_ scenario: String) -> NotchController {
+        if scenario == "motion-lab" { return MotionLabQA.start() }
         let defaults = UserDefaults(suiteName: "com.rottesya.notchspi.design-fixtures")!
         let history = RecentQuestionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("notchspi-history-preview-\(UUID())"))
         let controller = NotchController(activateServices: false, onboardingDefaults: defaults, recentQuestions: history)

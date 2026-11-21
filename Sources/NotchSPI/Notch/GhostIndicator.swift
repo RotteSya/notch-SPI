@@ -21,6 +21,7 @@ final class GhostIndicatorView: NSView {
     } }
     private let simulation = SharedGhostSimulation(seed: 0.37)
     private let renderState = BotAvatarRenderState()
+    private var renderer: ImageRenderer<AnyView>?
     private var lastTick: CFTimeInterval = 0
     private var thinkingTime = 0.0
     private var thinkingBlend = 0.0
@@ -62,7 +63,7 @@ final class GhostIndicatorView: NSView {
     var qaCompletionTime: Double? { completionTime }
     var qaThinkingPose: BotAvatarPose { displayPose }
     #endif
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var reduceMotion: Bool { onboardingReduceMotion() }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -136,6 +137,10 @@ final class GhostIndicatorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.ghostDraw, qaStart) }
+        #endif
         let side = Double(min(bounds.width, bounds.height))
         guard side > 1 else { return }
         var bodyColor = color
@@ -189,7 +194,11 @@ final class GhostIndicatorView: NSView {
                 green: config.ink.g / 255, blue: config.ink.b / 255).opacity(completed * 0.9)),
                 style: StrokeStyle(lineWidth: side * 0.04, lineCap: .round, lineJoin: .round))
         }.frame(width: side, height: side)
-        let renderer = ImageRenderer(content: canvas)
+        // One renderer for the indicator's lifetime: each frame swaps the drawing, not the
+        // whole hosting machinery behind it.
+        let renderer: ImageRenderer<AnyView>
+        if let existing = self.renderer { renderer = existing; renderer.content = AnyView(canvas) }
+        else { renderer = ImageRenderer(content: AnyView(canvas)); self.renderer = renderer }
         renderer.scale = config.scale
         context.saveGState()
         context.translateBy(x: (Double(bounds.width) - side) / 2, y: (Double(bounds.height) - side) / 2)

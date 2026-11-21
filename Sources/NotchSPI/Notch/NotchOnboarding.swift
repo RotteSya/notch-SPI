@@ -325,8 +325,22 @@ final class NotchOnboardingView: NSView {
     private static func measuredBody(_ text: String, width: CGFloat, alignment: NSTextAlignment) -> CGFloat {
         measured(text, size: bodySize, width: width, alignment: alignment, lineSpacing: bodyLineSpacing)
     }
+    /// The page height reserves room for every copy variant of a step, which means measuring
+    /// two dozen text blocks. The controller asks for it whenever it needs the panel frame —
+    /// on every pointer move over the guide — so the answer is kept per step, width and language.
+    private struct HeightKey: Hashable { let step: NotchOnboardingStep; let width: CGFloat; let language: AppLanguage }
+    private static var measuredHeights: [HeightKey: CGFloat] = [:]
+
     static func contentHeight(for step: NotchOnboardingStep, width: CGFloat) -> CGFloat {
         if step.showsLiveContent { return NotchLayout.headerHeight + footerHeight(for: step) }
+        let key = HeightKey(step: step, width: width, language: L10n.setting)
+        if let known = measuredHeights[key] { return known }
+        let height = measureContentHeight(for: step, width: width)
+        measuredHeights[key] = height
+        return height
+    }
+
+    private static func measureContentHeight(for step: NotchOnboardingStep, width: CGFloat) -> CGFloat {
         let textWidth = copyWidth(width, step: step)
         // Every variation has the same action baseline, including failed browser launches.
         let variants = [copy(step), copy(step, granted: true), copy(step, denied: true, failed: true),

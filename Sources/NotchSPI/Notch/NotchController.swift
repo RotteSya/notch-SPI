@@ -69,6 +69,9 @@ final class NotchController: NSObject {
         notchView.expandFromClick(at: point)
     }
     func qaHoverFrame(expanded: Bool) -> NSRect { frame(expanded: expanded) }
+    var qaNotchView: NotchView { notchView }
+    func qaPrepareScreenshotFlight() { screenshotFlight.prepare() }
+    var qaPanel: NSPanel { panel }
     var qaPendingCollapse: DispatchWorkItem? { collapseWork }
     func qaUseManualHoverAnimation() { notchView.qaUseManualMorphClock() }
     func qaAdvanceHoverAnimation(by interval: CFTimeInterval) { notchView.qaAdvanceMorph(by: interval) }
@@ -317,6 +320,10 @@ final class NotchController: NSObject {
         // Pre-enumerate shareable content so the first hotkey press skips the ~100–300ms
         // window-server enumeration; kept fresh after each shot and across display changes.
         if activateServices { Task { @MainActor [weak self] in ScreenCapture.prefetchShareableContent(); self?.recoverPendingAnswer() } }
+        // The flight overlay is likewise built before the first capture needs it, off the launch path.
+        if activateServices {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.screenshotFlight.prepare() }
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -446,14 +453,20 @@ final class NotchController: NSObject {
         visible = true; panel.orderFrontRegardless()
         panel.onboardingActive = true
         setOnboardingStep(step)
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        // The model commits before the hidden plate is shown by NotchView's coalesced refresh.
-        // Focus after that refresh so re-entry can accept Return/Escape without a mouse click.
-        DispatchQueue.main.async { [weak self] in
+        // Taking the keyboard activates the app and builds its input context: tens of
+        // milliseconds on the main thread. When the guide has to open first, that happens once
+        // the card has landed, so the opening itself is not interrupted.
+        notchView.whenOpened { [weak self] in
             guard let self, !self.onboardingPermissionHidden, self.model.onboardingStep != nil else { return }
-            let guide = self.notchView.onboarding
-            self.panel.makeFirstResponder(guide.primary.isHidden ? guide : guide.primary)
+            self.panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            // The model commits before the hidden plate is shown by NotchView's coalesced refresh.
+            // Focus after that refresh so re-entry can accept Return/Escape without a mouse click.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.onboardingPermissionHidden, self.model.onboardingStep != nil else { return }
+                let guide = self.notchView.onboarding
+                self.panel.makeFirstResponder(guide.primary.isHidden ? guide : guide.primary)
+            }
         }
         onboardingPermissionTimer?.invalidate()
         onboardingPermissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -2077,7 +2090,7 @@ final class NotchController: NSObject {
         Task { @MainActor [weak self] in
             // The first flight frames still cover the source window. Decode a larger preview
             // off the main thread; intake/submission continues independently of this visual.
-            let maxPixels = source == nil || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 480 : 2000
+            let maxPixels = source == nil || onboardingReduceMotion() ? 480 : 2000
             let pixels = await Task.detached(priority: .userInitiated) {
                 ScreenshotThumbnail.loadPixels(asset.file.url, maxPixelSize: maxPixels)
             }.value

@@ -46,6 +46,7 @@ final class ScreenshotFlight {
     private var flights: [UUID: Flight] = [:]
 
     #if DEBUG
+    var qaOverlay: NSPanel? { overlay }
     var qaManualClock = false
     var qaReduceMotion: Bool?
     func qaAdvance(by interval: CFTimeInterval) {
@@ -62,16 +63,51 @@ final class ScreenshotFlight {
     }
     #endif
 
+    /// One click-through overlay carries every flight. Building a desktop-sized window takes
+    /// tens of milliseconds on the main thread, and a flight starts just as the notch opens to
+    /// receive the picture — so the overlay is built once, ahead of the first capture, and
+    /// stays ordered out between flights.
+    private var overlay: NotchPanel?
+
+    func prepare() { _ = overlayPanel(fallback: nil) }
+
+    private func overlayPanel(fallback: NSRect?) -> NotchPanel {
+        let desktop = NSScreen.screens.reduce(NSRect.null) { $0.union($1.frame) }
+        let frame = desktop.isNull ? (fallback ?? .zero) : desktop
+        if let overlay {
+            if overlay.frame != frame, flights.isEmpty { overlay.setFrame(frame, display: false) }
+            return overlay
+        }
+        let panel = NotchPanel(contentRect: frame)
+        panel.ignoresMouseEvents = true
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        let root = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
+        root.autoresizingMask = [.width, .height]
+        root.wantsLayer = true
+        panel.contentView = root
+        overlay = panel
+        return panel
+    }
+
     func fly(id: UUID, image: NSImage, from source: NSRect?,
              destination: @escaping () -> NSRect?, landed: @escaping () -> Void) {
-        let flight = Flight(image: image, source: source, destination: destination)
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.flight, qaStart) }
+        #endif
+        let flight = Flight(image: image, source: source, destination: destination,
+                            panel: overlayPanel(fallback: source))
         #if DEBUG
         if qaManualClock { flight.tween.qaManualTime = 0 }
         flight.qaReduceMotion = qaReduceMotion
         #endif
+        flights[id]?.stop()
         flights[id] = flight
-        flight.start { [weak self] in
-            self?.flights.removeValue(forKey: id)
+        flight.start { [weak self, weak flight] in
+            if let self, self.flights[id] === flight {
+                self.flights.removeValue(forKey: id)
+                if self.flights.isEmpty { self.overlay?.orderOut(nil) }
+            }
             landed()
         }
     }
@@ -79,6 +115,7 @@ final class ScreenshotFlight {
     func cancelAll() {
         for flight in flights.values { flight.stop() }
         flights.removeAll()
+        overlay?.orderOut(nil)
     }
 
     @MainActor
@@ -95,17 +132,12 @@ final class ScreenshotFlight {
         var qaReduceMotion: Bool?
         #endif
 
-        init(image: NSImage, source: NSRect?, destination: @escaping () -> NSRect?) {
+        init(image: NSImage, source: NSRect?, destination: @escaping () -> NSRect?, panel: NotchPanel) {
             self.source = source
             self.imageSize = image.size
             self.destination = destination
-            let desktop = NSScreen.screens.reduce(NSRect.null) { $0.union($1.frame) }
-            panel = NotchPanel(contentRect: desktop.isNull ? (source ?? .zero) : desktop)
-            panel.ignoresMouseEvents = true
-            panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-            let root = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
-            root.wantsLayer = true
-            panel.contentView = root
+            self.panel = panel
+            let root = panel.contentView ?? NSView()
             picture.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
             picture.contentsGravity = .resizeAspect
             picture.masksToBounds = true
@@ -120,7 +152,7 @@ final class ScreenshotFlight {
         }
 
         func start(completion: @escaping () -> Void) {
-            var reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            var reduced = onboardingReduceMotion()
             #if DEBUG
             reduced = qaReduceMotion ?? reduced
             #endif
@@ -175,7 +207,7 @@ final class ScreenshotFlight {
             completed = true
             tween.onChange = nil
             tween.set(1)
-            panel.orderOut(nil)
+            card.removeFromSuperlayer()
         }
     }
 }

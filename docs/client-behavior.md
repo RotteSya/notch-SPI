@@ -13,15 +13,18 @@
 
 NotchController 和 NotchOnboardingProgress 管理欢迎、单图/多图练习、体验领取及完成/收起检查点。语言为简中、日语、英语；用户输入不翻译。试题是明确 fixture，不能当成真实识题效果。
 体验显式领取，领取成功才开始计时；跳过不消耗资格，之后可从账户页领取。额度、时区和过期规则由服务端及 SharedFreeTrial 定义，不在客户端自行授予。
+引导需要先展开面板时，取得键盘焦点与激活应用在面板展开落定后进行；面板已展开时立即进行。减少动态效果下面板直接到位，焦点随即取得。
 菜单可重放引导；onboardingDone/onboarding.v3.dismissed 保持兼容。系统减少动态效果继续有效，DEBUG 可用显式 QA fixture。
 验证：NotchOnboardingTests、OnboardingJourneyTests、OnboardingBoundsTests、OnboardingAccessibilityTests、OnboardingMotionTests。
 
 ## 答案、公式与 Ghost
 
 流式答案经共享协议校验及可见文本过滤，机器标记不进入正文、剪贴板和辅助功能。人物像、review、retake、忙碌及空答案的复制资格由 shared/ui/reading.mjs 定义。
+流式期间屏幕上的文字只增不改：尚未闭合的加粗、行内代码、斜体与删除线按已闭合的样式显示，末尾孤立的标记符和未写完的公式暂不显示，公式写完后整体出现；完成后的答案不经过这一步，原样排版。结论卡插入到推理上方时，已显示的推理文字不重播出现动画。
 公式使用 SwiftMath，字体 bundle 必须随包交付。共享 Ghost 仿真经 JavaScriptCore 驱动，原生绘制由 BotAvatarsKit 提供。长文换行、选择、滚动、悬停展开、主动收起及硬件刘海避让保留原生适配。
 Release 排除本应用窗口的软件截图；DEBUG 仅显式 QA 开关可放开。
-验证：AnswerMathTests、SharedAnswerCopyTests、ManualCollapseHoverTests、HardwareNotchLayoutTests、GhostIndicatorTests。
+展开与收起由同一显示时钟驱动窗口、轮廓和内容，每帧布局一次；展开从静止起步，途中反向从当前画面继续。带刘海的屏幕上，标题栏两翼在形变途中放不下的内容渐隐而不截断，始终不进入摄像头区域。答案变长或变短时，其下方的题图条与操作行随面板下缘一起移动；在下方新增一行不会牵动上方内容。截图飞行共用一个预先建好的覆盖面板，光场在独立队列渲染。减少动态效果时窗口直接到位，Ghost、光场与文字出现动画一并静止。
+验证：AnswerMathTests、SharedAnswerCopyTests、ManualCollapseHoverTests、HardwareNotchLayoutTests、GhostIndicatorTests、MotionContinuityTests、StreamingStabilityTests。
 
 ## 最近查题与题库
 

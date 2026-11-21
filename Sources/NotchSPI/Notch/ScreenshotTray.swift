@@ -32,6 +32,11 @@ final class ScreenshotTray: NSView {
     private var reorderFrames: [UUID: (CGRect, CGRect)] = [:]
     private var removeFrames: [UUID: (CGRect, CGRect)] = [:]
     private lazy var reorder = DisplayTween(host: self, value: 1)
+    // Collection cards shrinking into the reference strip: real frames on the display clock, so
+    // each picture is laid out at every size on the way and stays whole inside its card.
+    private var handoffOrigins: [UUID: CGRect] = [:]
+    private var handoffTargets: [UUID: CGRect] = [:]
+    private lazy var handoff = DisplayTween(host: self, value: 1)
 
     override var isFlipped: Bool { true }
 
@@ -39,6 +44,8 @@ final class ScreenshotTray: NSView {
         super.init(frame: frame)
         reorder.ease = { $0 * $0 * (3 - 2 * $0) }
         reorder.onChange = { [weak self] progress in self?.applyReorder(progress) }
+        handoff.ease = { $0 * $0 * (3 - 2 * $0) }
+        handoff.onChange = { [weak self] progress in self?.applyHandoff(progress) }
         status.font = .systemFont(ofSize: 12, weight: .medium)
         status.textColor = NotchPalette.secondary
         status.lineBreakMode = .byTruncatingTail
@@ -182,10 +189,8 @@ final class ScreenshotTray: NSView {
         animateReferenceLayout = false
         finishReorder()
         layer?.removeAnimation(forKey: "reference-handoff")
-        for card in cards.values {
-            card.layer?.removeAnimation(forKey: "reference-layout")
-            card.layer?.removeAnimation(forKey: "landing")
-        }
+        finishHandoff()
+        for card in cards.values { card.layer?.removeAnimation(forKey: "landing") }
     }
 
     func showPreview(_ id: UUID) {
@@ -216,47 +221,48 @@ final class ScreenshotTray: NSView {
 
     override func layout() {
         super.layout()
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.trayLayout, qaStart) }
+        #endif
         // Slots stay fixed through capture, countdown and submission. The flight and
         // preview use the same aspect-fit geometry, including portrait source pages.
         if compact {
             let inset = NotchType.cardPadH
             let gap: CGFloat = 8
             let width = min(CaptureStyle.referenceThumbnail.width, max(24, (bounds.width - 2 * inset - 90 - 3 * gap) / 4))
+            if animateReferenceLayout { handoffOrigins.removeAll() }
+            handoffTargets.removeAll()
             for (index, id) in ids.enumerated() {
                 guard let card = cards[id] else { continue }
-                let oldBounds = card.layer?.presentation()?.bounds ?? card.bounds
-                let oldPosition = card.layer?.presentation()?.position ?? card.layer?.position
-                card.frame = NSRect(x: inset + CGFloat(index) * (width + gap), y: 9, width: width, height: CaptureStyle.referenceThumbnail.height)
+                let target = NSRect(x: inset + CGFloat(index) * (width + gap), y: 9, width: width, height: CaptureStyle.referenceThumbnail.height)
+                if animateReferenceLayout, card.frame.width > 0, card.frame != target { handoffOrigins[id] = card.frame }
+                handoffTargets[id] = target
+                card.frame = target
                 thumbnails[id]?.frame = card.bounds.insetBy(dx: 3, dy: 3)
                 ordinals[id]?.isHidden = ids.count == 1
                 ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 8, weight: .semibold)
                 if let ordinal = ordinals[id] {
-                    // In compact mode the badge fits the card and follows its existing
-                    // reference motion automatically, without a second animation clock.
+                    // In compact mode the badge fits the card and travels with it,
+                    // without a second animation clock.
                     if ordinal.superview !== card { card.addSubview(ordinal) }
                     let textSize = ordinal.intrinsicContentSize
                     ordinal.frame = NSRect(x: 3, y: 3,
                                            width: max(14, ceil(textSize.width)), height: max(12, ceil(textSize.height)))
                 }
-                if animateReferenceLayout, let layer = card.layer, let oldPosition {
-                    let move = CABasicAnimation(keyPath: "position")
-                    move.fromValue = NSValue(point: oldPosition); move.toValue = NSValue(point: layer.position)
-                    let resize = CABasicAnimation(keyPath: "bounds")
-                    resize.fromValue = NSValue(rect: oldBounds); resize.toValue = NSValue(rect: layer.bounds)
-                    let group = CAAnimationGroup(); group.animations = [move, resize]
-                    group.duration = NotchPalette.referenceDuration
-                    group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    layer.add(group, forKey: "reference-layout")
-                }
             }
             let labelX = inset + CGFloat(ids.count) * (width + gap) + 4
             status.alignment = .right
             status.frame = NSRect(x: labelX, y: 15, width: max(0, bounds.width - labelX - inset), height: 18)
+            if animateReferenceLayout, !handoffOrigins.isEmpty {
+                handoff.set(0)
+                handoff.animate(to: 1, duration: NotchPalette.referenceDuration)
+            } else if handoff.isAnimating { applyHandoff(handoff.value) }
             animateReferenceLayout = false
             return
         }
+        finishHandoff()
         for id in ids {
-            cards[id]?.layer?.removeAnimation(forKey: "reference-layout")
             ordinals[id]?.isHidden = false
             ordinals[id]?.font = .monospacedDigitSystemFont(ofSize: 10, weight: .bold)
         }
@@ -318,6 +324,21 @@ final class ScreenshotTray: NSView {
         }
     }
 
+    private func applyHandoff(_ progress: CGFloat) {
+        for (id, origin) in handoffOrigins {
+            guard let card = cards[id], let target = handoffTargets[id] else { continue }
+            card.frame = notchLerpRect(origin, target, progress)
+            thumbnails[id]?.frame = card.bounds.insetBy(dx: 3, dy: 3)
+        }
+        if progress >= 1 { handoffOrigins.removeAll() }
+    }
+
+    private func finishHandoff() {
+        guard !handoffOrigins.isEmpty || handoff.isAnimating else { return }
+        handoff.set(1)
+        handoffOrigins.removeAll()
+    }
+
     private func finishReorder() {
         reorder.set(1)
         reorderPending = false
@@ -326,6 +347,8 @@ final class ScreenshotTray: NSView {
 
     #if DEBUG
     func qaUseManualReorderClock() { reorder.qaManualTime = 0 }
+    func qaUseManualHandoffClock() { handoff.qaManualTime = 0 }
+    func qaAdvanceHandoff(by dt: CFTimeInterval) { handoff.qaAdvance(by: dt) }
     func qaAdvanceReorder(by dt: CFTimeInterval) { reorder.qaAdvance(by: dt) }
     var qaPreview: QuestionImagePreview? { preview }
     #endif

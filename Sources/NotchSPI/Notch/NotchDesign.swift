@@ -58,13 +58,18 @@ enum NotchPalette {
 
 /// Shared easing curves for the expand/collapse morph.
 enum NotchMotion {
-    /// Under-damped spring settle for EXPANDING. This curve now drives the PANEL FRAME itself
-    /// (not just radii), so the overshoot is tuned soft — ~4.7% at t≈0.44, residual 0.12% at t=1
-    /// (the tween snaps to the exact value when it ends, so the snap is imperceptible). On a
-    /// ~380pt width delta that is a ~17pt breath past the target and a settle back — a soft body
-    /// landing, never a wobble. Radii re-amplify it (see `applyLayout`) to keep corners lively.
+    /// Under-damped spring settle for EXPANDING, released from rest. This curve drives the PANEL
+    /// FRAME itself (not just radii). Starting with zero velocity gives the body a perceptible
+    /// lift-off — about a fifth of the way after one tenth of the time — instead of covering
+    /// half the distance in the first frames; the overshoot stays soft: ~2.7% at t≈0.60, residual
+    /// 0.14% at t=1 (the tween lands on the exact value when it ends). On a ~380pt width delta
+    /// that is a ~10pt breath past the target and a settle back — a soft body landing, never a
+    /// wobble. Radii re-amplify it (see `applyLayout`) to keep corners lively.
     /// Expansion may overshoot; closing approaches the hardware boundary without reversing.
-    static func springSettle(_ t: CGFloat) -> CGFloat { 1 - exp(-SharedProduct.springDecay * t) * cos(SharedProduct.springFrequency * t) }
+    static func springSettle(_ t: CGFloat) -> CGFloat {
+        let decay = CGFloat(SharedProduct.springDecay), frequency = CGFloat(SharedProduct.springFrequency)
+        return 1 - exp(-decay * t) * (cos(frequency * t) + decay / frequency * sin(frequency * t))
+    }
 
     /// Out-cubic remains the opacity curve and the guide's opening curve.
     static func outCubic(_ t: CGFloat) -> CGFloat { 1 - pow(1 - t, 3) }
@@ -286,8 +291,28 @@ enum NotchType {
             failed: model.isStatusMessage)
     }
 
+    /// The view composes the answer to draw it and the controller composes it to size the panel,
+    /// one after the other for every streamed token. Remember the latest composition so that
+    /// pair parses and lays the text out once. Everything a composition reads is in the key.
+    private struct CompositionKey: Equatable {
+        let answer: String, presentation: AnswerPresentation, inShelf: Bool
+        let fontSize: CGFloat, language: AppLanguage, accent: NSColor
+    }
+    private static var lastComposition: (key: CompositionKey, text: NSAttributedString)?
+    private static var lastHeight: (key: CompositionKey, width: CGFloat, height: CGFloat)?
+
     static func answerString(_ answer: String, presentation p: AnswerPresentation, inShelf: Bool = false) -> NSAttributedString {
-        let text = composeAnswerString(answer, presentation: p)
+        // The empty state shows the user's current shortcuts; it is cheap and never memoized.
+        guard !answer.isEmpty else { return shelved(composeAnswerString(answer, presentation: p), answer: answer, inShelf: inShelf) }
+        let key = CompositionKey(answer: answer, presentation: p, inShelf: inShelf, fontSize: answerFontSize,
+                                 language: L10n.setting, accent: NotchPalette.accentHi)
+        if let last = lastComposition, last.key == key { return last.text }
+        let text = shelved(composeAnswerString(answer, presentation: p), answer: answer, inShelf: inShelf)
+        lastComposition = (key, text)
+        return text
+    }
+
+    private static func shelved(_ text: NSAttributedString, answer: String, inShelf: Bool) -> NSAttributedString {
         guard inShelf else { return text }
         let result = NSMutableAttributedString(attributedString: text)
         text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
@@ -325,15 +350,16 @@ enum NotchType {
                 .paragraphStyle: para,
             ])
         }
+        let streaming = !p.finished
         if p.mode == "personality" {
             // Keep `TutorModel.answer` as the untouched protocol stream. Rendering and measuring
             // both pass through this exact composition call, so JSON/prose cannot leak and the
             // panel height always matches the visible choices (including a provisional last line).
             let composition = PersonalityAnswer.compose(raw: answer, streaming: !p.finished)
-            return body(composition.visibleChoices, dim: false)
+            return body(composition.visibleChoices, dim: false, streaming: streaming)
         }
         // Hint mode never carries a FINAL contract and renders exactly as before.
-        guard p.depth != "hint" else { return body(answer, dim: false) }
+        guard p.depth != "hint" else { return body(answer, dim: false, streaming: streaming) }
 
         let parse = AnswerComposer.parse(answer, streaming: !p.finished)
         guard let final = parse.final, !(p.finished && final.isEmpty) else {
@@ -341,11 +367,11 @@ enum NotchType {
             // A FINISHED reply without a marker (error text, contract violation) falls back to
             // the normal treatment, so nothing readable is ever hidden or folded away.
             let dim = p.depth == "brief" && !p.finished
-            return body(parse.working, dim: dim)
+            return body(parse.working, dim: dim, streaming: streaming)
         }
 
         let out = NSMutableAttributedString()
-        out.append(card(final, afterContent: false))
+        out.append(card(final, afterContent: false, streaming: streaming))
         let hasWorking = !parse.working.isEmpty
         if hasWorking {
             out.append(NSAttributedString(string: "\n"))
@@ -355,13 +381,15 @@ enum NotchType {
                     out.append(NSAttributedString(string: "\n"))
                     out.append(body(parse.working, dim: true))
                 }
-            } else { out.append(body(parse.working, dim: p.depth == "brief", spacingBefore: cardPadV + 12)) }
+            } else {
+                out.append(body(parse.working, dim: p.depth == "brief", spacingBefore: cardPadV + 12, streaming: streaming))
+            }
         }
         if !parse.overflow.isEmpty {
             // Contract-violating trailing scratch: quiet notes below the card, clear of the
             // chip's bottom inset (spacingBefore covers cardPadV plus breathing room).
             out.append(NSAttributedString(string: "\n"))
-            out.append(body(parse.overflow, dim: true, spacingBefore: cardPadV + 6))
+            out.append(body(parse.overflow, dim: true, spacingBefore: cardPadV + 6, streaming: streaming))
         }
         return out
     }
@@ -371,15 +399,22 @@ enum NotchType {
         // Measure with the SAME CTFramesetter the streaming view renders with, so the panel
         // height always matches what is drawn — no last-line clip, no trailing gap.
         let attr = answerString(answer, presentation: presentation, inShelf: inShelf)
-        return StreamingAnswerView.measure(attr, width: width)
-            + (inShelf && (presentation.failed || answer.isEmpty) ? NotchLayout.statusInsetV * 2 : 0)
+        let inset = inShelf && (presentation.failed || answer.isEmpty) ? NotchLayout.statusInsetV * 2 : 0
+        guard !answer.isEmpty, let key = lastComposition?.key, lastComposition?.text === attr else {
+            return StreamingAnswerView.measure(attr, width: width) + inset
+        }
+        if let last = lastHeight, last.key == key, last.width == width { return last.height + inset }
+        let height = StreamingAnswerView.measure(attr, width: width)
+        lastHeight = (key, width, height)
+        return height + inset
     }
 
     // MARK: Composition pieces
 
     /// Body text: the pre-fix rendering, parameterized. `dim` is the scratch-work treatment —
     /// a touch smaller, secondary ink, tighter leading. Quiet, never competing with the card.
-    private static func body(_ text: String, dim: Bool, spacingBefore: CGFloat = 0) -> NSAttributedString {
+    private static func body(_ text: String, dim: Bool, spacingBefore: CGFloat = 0,
+                             streaming: Bool = false) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = dim ? 2.5 : 3
         let size = dim ? max(10.5, answerFontSize - 2) : answerFontSize
@@ -388,7 +423,7 @@ enum NotchType {
             baseFont: .systemFont(ofSize: size),
             codeFont: .monospacedSystemFont(ofSize: size - 0.5, weight: .regular),
             color: dim ? NotchPalette.secondary : NotchPalette.primary,
-            para: para)
+            para: para, streaming: streaming)
         guard spacingBefore > 0, out.length > 0 else { return out }
         // Air before the FIRST paragraph only (e.g. overflow clearing the chip's bottom inset).
         let m = NSMutableAttributedString(attributedString: out)
@@ -402,7 +437,7 @@ enum NotchType {
     /// The authoritative answer card: a small accent caption + the answer itself, one size up
     /// and semibold. The whole range carries `.nspiAnswerCard` so the streaming view can draw
     /// the glass chip behind it; indents keep the text off the chip's rounded edges.
-    private static func card(_ final: String, afterContent: Bool) -> NSAttributedString {
+    private static func card(_ final: String, afterContent: Bool, streaming: Bool = false) -> NSAttributedString {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 3
         para.firstLineHeadIndent = cardPadH
@@ -428,7 +463,7 @@ enum NotchType {
             codeFont: .monospacedSystemFont(ofSize: answerFontSize + 8, weight: .medium),
             color: NotchPalette.primary,
             para: para,
-            extra: [.nspiAnswerCard: "answer"]))
+            extra: [.nspiAnswerCard: "answer"], streaming: streaming))
         return out
     }
 
@@ -450,9 +485,10 @@ enum NotchType {
     /// parse, factored so scratch, body and card can each bring their own fonts and extras).
     private static func inlineMarkdown(
         _ text: String, baseFont: NSFont, codeFont: NSFont, color: NSColor,
-        para: NSParagraphStyle, extra: [NSAttributedString.Key: Any] = [:]
+        para: NSParagraphStyle, extra: [NSAttributedString.Key: Any] = [:], streaming: Bool = false
     ) -> NSAttributedString {
-        AnswerText.attributed(text, baseFont: baseFont, codeFont: codeFont, color: color, para: para, extra: extra)
+        AnswerText.attributed(text, baseFont: baseFont, codeFont: codeFont, color: color, para: para,
+                              extra: extra, streaming: streaming)
     }
 
 }
@@ -541,16 +577,15 @@ final class DisplayTween {
     fileprivate func step() {
         let elapsed = currentTime - startTime
         let t = min(1, max(0, elapsed / duration))
-        value = from + (to - from) * ease(CGFloat(t))
-        onChange?(value)
+        // Land on the exact destination in the final frame: one change, one layout.
+        value = t >= 1 ? to : from + (to - from) * ease(CGFloat(t))
         if t >= 1 {
-            value = to
-            onChange?(value)
             link?.isPaused = true
             #if DEBUG
             qaManualAnimating = false
             #endif
         }
+        onChange?(value)
     }
 
     deinit { link?.invalidate() }
@@ -587,6 +622,10 @@ struct CriticalSpring {
 
     /// Jump to a value with no motion (state resets, Reduce Motion).
     mutating func snap(_ v: CGFloat) { value = v; target = v; velocity = 0 }
+
+    /// Displace the value and keep its velocity: the spring carries the offset back to the
+    /// target, so something that was just re-laid elsewhere glides there from where it was.
+    mutating func nudge(_ delta: CGFloat) { value += delta }
 }
 
 // MARK: - Display ticker
@@ -636,138 +675,197 @@ private final class TickerProxy {
 
 // MARK: - Obsidian surface
 
-/// The material treatment applied to the notch slab, drawn entirely within the shape so it never
-/// spills outside the card: a near-black body that stays pure black at the seam and lifts almost
-/// imperceptibly toward the lower face; a soft inner shadow seating it under the menu bar; a cool
-/// specular hairline along the lower edge; and a triangular-noise dither that keeps the gradients
+/// The material treatment applied to the notch slab, composed entirely within the shape so it
+/// never spills outside the card: a near-black body that stays pure black at the seam and lifts
+/// almost imperceptibly toward the lower face; a soft inner shadow seating it under the menu bar;
+/// a cool specular hairline along the lower edge; and a fine dither that keeps the gradients
 /// glassy rather than stepped. Flipped so geometry is top-left (y down).
+///
+/// The slab is vector layers, not a bitmap: the morph changes its outline on every display
+/// frame, and a path update costs the compositor far less than reallocating and repainting a
+/// window-sized backing store each time.
 final class NotchSurfaceView: NSView {
-    /// The rect (within `bounds`) the slab is drawn in. `bounds` is the full panel — including the
+    /// The rect (within `bounds`) the slab occupies. `bounds` is the full panel — including the
     /// transparent shadow margin — so the drop shadow has room to fall without clipping.
-    var cardRect: CGRect = .zero { didSet { needsDisplay = true } }
-    var topRadius: CGFloat = 8 { didSet { needsDisplay = true } }
-    var bottomRadius: CGFloat = 11 { didSet { needsDisplay = true } }
+    var cardRect: CGRect = .zero { didSet { if cardRect != oldValue { setNeedsCompose() } } }
+    var topRadius: CGFloat = 8 { didSet { if topRadius != oldValue { setNeedsCompose() } } }
+    var bottomRadius: CGFloat = 11 { didSet { if bottomRadius != oldValue { setNeedsCompose() } } }
     /// 0 = collapsed (seam-fused, minimal volume) … 1 = expanded (full lower-face volume).
-    var depth: CGFloat = 0 { didSet { needsDisplay = true } }
+    var depth: CGFloat = 0 { didSet { if depth != oldValue { setNeedsCompose() } } }
     /// Drop-shadow strength 0…1, driven by the morph so the card's grounding fades in/out with
     /// its lift — a binary toggle here reads as a shadow popping on under the menu bar.
-    var shadowStrength: CGFloat = 0 { didSet { needsDisplay = true } }
+    var shadowStrength: CGFloat = 0 { didSet { if shadowStrength != oldValue { setNeedsCompose() } } }
 
     /// The physical right-hand contour should remain the real hardware, not a
     /// second software approximation of its corners. Used only at the settled pose.
-    var hardwareContourCutoff: CGFloat? { didSet { needsDisplay = true } }
-    var materialOpacity: CGFloat = 1 { didSet { needsDisplay = true } }
+    var hardwareContourCutoff: CGFloat? { didSet { if hardwareContourCutoff != oldValue { setNeedsCompose() } } }
+    var materialOpacity: CGFloat = 1 { didSet { if materialOpacity != oldValue { setNeedsCompose() } } }
+
+    // Grounding: a soft ambient shadow plus a tight contact one, both cast by the body.
+    private let ambientShadow = CALayer()
+    private let contactShadow = CALayer()
+    private let body = CAShapeLayer()
+    // Interior overlays, clipped to the slab.
+    private let material = CALayer()
+    private let materialClip = CAShapeLayer()
+    private let bodyLight = CAGradientLayer()
+    private let seamShadow = CAGradientLayer()
+    private let dither = CALayer()
+    private let edgeLight = CAGradientLayer()
+    private let edgeStroke = CAShapeLayer()
+    private var batching = false
+    private var pending = false
+    private var composedBounds = CGRect.null
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        guard let layer else { return }
+        for shadow in [ambientShadow, contactShadow] {
+            shadow.shadowColor = NSColor.black.cgColor
+            layer.addSublayer(shadow)
+        }
+        // Both sit slightly high behind the body (the view is flipped, so negative is up):
+        // what shows is an even, quiet fringe around the walls and lower edge.
+        ambientShadow.shadowOffset = CGSize(width: 0, height: -9)
+        ambientShadow.shadowRadius = 8
+        contactShadow.shadowOffset = CGSize(width: 0, height: -2)
+        contactShadow.shadowRadius = 2.5
+        body.fillColor = NotchPalette.background.cgColor
+        layer.addSublayer(body)
+
+        materialClip.fillColor = NSColor.black.cgColor
+        material.mask = materialClip
+        for gradient in [bodyLight, seamShadow, edgeLight] {
+            gradient.startPoint = CGPoint(x: 0.5, y: 0)
+            gradient.endPoint = CGPoint(x: 0.5, y: 1)
+        }
+        // seamShadow: darken just under the top seam so the slab reads as tucked beneath the bar.
+        Self.assign(seamShadow, [(NSColor.black.withAlphaComponent(0.55), 0), (.clear, 0.18), (.clear, 1)])
+        if let tile = NotchDither.tileImage {
+            dither.backgroundColor = NSColor(patternImage: NSImage(cgImage: tile, size: NSSize(width: 96, height: 96))).cgColor
+        }
+        // edgeLight: a cool specular hairline riding the lower edge — screen light on a machined
+        // lip. The stroke is clipped to the slab with the other overlays, so only its inner half
+        // shows and it reads as an inset border, fading out toward the fused seam.
+        edgeStroke.fillColor = nil
+        edgeStroke.strokeColor = NSColor.black.cgColor
+        edgeStroke.lineWidth = 1.5
+        edgeStroke.lineCap = .round
+        edgeStroke.lineJoin = .round
+        edgeLight.mask = edgeStroke
+        [bodyLight, seamShadow, dither, edgeLight].forEach(material.addSublayer)
+        layer.addSublayer(material)
+        compose()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil } // never intercept clicks
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { compose() }   // accent theme changes arrive as a redisplay
+    override func layout() {
+        super.layout()
+        if bounds != composedBounds { setNeedsCompose() }
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext, cardRect.width > 1 else { return }
+    /// Apply several properties as one composition (one path, one transaction).
+    func batch(_ changes: () -> Void) {
+        batching = true
+        changes()
+        batching = false
+        if pending { compose() }
+    }
+
+    private func setNeedsCompose() {
+        if batching { pending = true } else { compose() }
+    }
+
+    private func compose() {
+        pending = false
+        composedBounds = bounds
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.surfaceDraw, qaStart) }
+        #endif
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         let rect = cardRect
-        let path = NotchShape.cgPath(in: rect, topRadius: topRadius, bottomRadius: bottomRadius)
-
-        if let cutoff = hardwareContourCutoff {
-            ctx.saveGState()
-            // Stop inside the camera housing. Its original right corner and lower
-            // edge are left completely transparent, so no guessed curve covers them.
-            ctx.clip(to: CGRect(x: rect.minX, y: rect.minY,
-                                width: max(0, min(rect.maxX, cutoff) - rect.minX), height: rect.height))
-            ctx.addPath(path)
-            ctx.setFillColor(NSColor.black.cgColor)
-            ctx.fillPath()
-            ctx.restoreGState()
+        guard rect.width > 1 else {
+            [ambientShadow, contactShadow, body, material].forEach { $0.isHidden = true }
             return
         }
+        let path = NotchShape.cgPath(in: rect, topRadius: topRadius, bottomRadius: bottomRadius)
+        [ambientShadow, contactShadow, body, material, materialClip, dither].forEach { $0.frame = bounds }
+        body.isHidden = false
 
-        // Grounded drop shadow (expanded only). Paint the opaque body twice with a CG shadow so it
-        // falls below the card — a tight contact shadow plus a soft ambient one. Offsets are
-        // positive-down because the flipped context has +y pointing toward the bottom of screen.
-        if shadowStrength > 0.01 {
-            let s = min(1, shadowStrength)
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: 9), blur: 16,
-                          color: NSColor.black.withAlphaComponent(0.55 * s).cgColor)
-            ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
-            ctx.restoreGState()
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 5,
-                          color: NSColor.black.withAlphaComponent(0.38 * s).cgColor)
-            ctx.addPath(path); ctx.setFillColor(NSColor.black.cgColor); ctx.fillPath()
-            ctx.restoreGState()
+        if let cutoff = hardwareContourCutoff {
+            // Stop inside the camera housing. Its original right corner and lower
+            // edge are left completely transparent, so no guessed curve covers them.
+            let visible = CGRect(x: rect.minX, y: rect.minY,
+                                 width: max(0, min(rect.maxX, cutoff) - rect.minX), height: rect.height)
+            body.path = path.intersection(CGPath(rect: visible, transform: nil))
+            [ambientShadow, contactShadow, material].forEach { $0.isHidden = true }
+            return
+        }
+        body.path = path
+
+        let strength = min(1, shadowStrength)
+        for (shadow, opacity) in [(ambientShadow, 0.55), (contactShadow, 0.38)] {
+            shadow.isHidden = shadowStrength <= 0.01
+            shadow.shadowPath = path
+            shadow.shadowOpacity = Float(opacity * strength)
         }
 
-        // Base fill.
-        ctx.saveGState()
-        ctx.addPath(path); ctx.setFillColor(NotchPalette.background.cgColor); ctx.fillPath()
-        ctx.restoreGState()
-
-        guard materialOpacity > 0 else { return }
-        ctx.saveGState()
-        defer { ctx.restoreGState() }
-        ctx.setAlpha(materialOpacity)
-
-        // Interior overlays, clipped to the slab.
-        ctx.saveGState()
-        ctx.addPath(path); ctx.clip()
-
+        material.isHidden = materialOpacity <= 0
+        guard !material.isHidden else { return }
+        material.opacity = Float(materialOpacity)
+        materialClip.path = path
         // bodyLight: a cool sheen reflecting screen light up onto the lower face — pure black at
-        // the top seam, lifting to a graphite whisper below. Additive so it only lifts.
-        ctx.saveGState()
-        ctx.setBlendMode(.plusLighter)
-        ctx.drawLinearGradient(
-            notchGradient([
-                (.clear, 0.0),
-                (.clear, 0.24),
-                (NotchPalette.sheen.withAlphaComponent(0.022 + 0.040 * depth), 1.0),
-            ]),
-            start: CGPoint(x: rect.midX, y: rect.minY),
-            end: CGPoint(x: rect.midX, y: rect.maxY),
-            options: []
-        )
-        ctx.restoreGState()
+        // the top seam, lifting to a graphite whisper below.
+        bodyLight.frame = rect
+        Self.assign(bodyLight, [(.clear, 0), (.clear, 0.24),
+                                (NotchPalette.sheen.withAlphaComponent(0.022 + 0.040 * depth), 1)])
+        seamShadow.frame = rect
+        dither.opacity = Float(0.025 * materialOpacity)
+        edgeLight.frame = rect
+        Self.assign(edgeLight, [
+            (NSColor(white: 1, alpha: 0), 0), (NSColor(white: 1, alpha: 0), 0.40),
+            (NotchPalette.accentHi.withAlphaComponent(0.12 + 0.11 * depth), 0.78),
+            (NSColor(white: 1, alpha: 0.22 + 0.16 * depth), 1),
+        ])
+        edgeStroke.frame = edgeLight.bounds
+        var toEdge = CGAffineTransform(translationX: -rect.minX, y: -rect.minY)
+        edgeStroke.path = path.copy(using: &toEdge)
+    }
 
-        // seamShadow: darken just under the top seam so the slab reads as tucked beneath the bar.
-        ctx.drawLinearGradient(
-            notchGradient([
-                (NSColor.black.withAlphaComponent(0.55), 0.0),
-                (.clear, 0.18),
-                (.clear, 1.0),
-            ]),
-            start: CGPoint(x: rect.midX, y: rect.minY),
-            end: CGPoint(x: rect.midX, y: rect.maxY),
-            options: []
-        )
-
-        // dither: a fine static noise tile at very low opacity, additive, to break up banding.
-        if let tile = NotchDither.tileImage {
-            ctx.saveGState()
-            ctx.setBlendMode(.plusLighter)
-            ctx.setAlpha(0.025 * materialOpacity)
-            ctx.draw(tile, in: CGRect(x: 0, y: 0, width: 96, height: 96), byTiling: true)
-            ctx.restoreGState()
+    /// Stops blend the way Core Graphics blends them — on unpremultiplied components — by
+    /// resampling each span, so a fade from clear keeps the ramp the drawn slab always had.
+    private static func assign(_ layer: CAGradientLayer, _ stops: [(NSColor, CGFloat)]) {
+        let steps = 6
+        var colors: [CGColor] = [], locations: [NSNumber] = []
+        let resolved = stops.map { ($0.0.usingColorSpace(.sRGB) ?? $0.0, $0.1) }
+        for (index, stop) in resolved.enumerated() {
+            guard index + 1 < resolved.count else {
+                colors.append(stop.0.cgColor); locations.append(NSNumber(value: Double(stop.1)))
+                break
+            }
+            let next = resolved[index + 1]
+            let flat = stop.0 == next.0
+            for step in 0..<(flat ? 1 : steps) {
+                let t = CGFloat(step) / CGFloat(steps)
+                colors.append(NSColor(srgbRed: notchLerp(stop.0.redComponent, next.0.redComponent, t),
+                                      green: notchLerp(stop.0.greenComponent, next.0.greenComponent, t),
+                                      blue: notchLerp(stop.0.blueComponent, next.0.blueComponent, t),
+                                      alpha: notchLerp(stop.0.alphaComponent, next.0.alphaComponent, t)).cgColor)
+                locations.append(NSNumber(value: Double(notchLerp(stop.1, next.1, t))))
+            }
         }
-        ctx.restoreGState() // end path clip
-
-        // edgeLight: a cool specular hairline riding the lower edge — screen light on a machined
-        // lip. Clip to the inner half of a thin stroke of the path so it reads as an inset border,
-        // fading out toward the fused seam.
-        ctx.saveGState()
-        ctx.addPath(path); ctx.clip()
-        let stroked = path.copy(strokingWithWidth: 1.5, lineCap: CGLineCap.round, lineJoin: CGLineJoin.round, miterLimit: 10)
-        ctx.addPath(stroked); ctx.clip()
-        ctx.setBlendMode(.plusLighter)
-        ctx.drawLinearGradient(
-            notchGradient([
-                (NSColor(white: 1, alpha: 0.0), 0.0),
-                (NSColor(white: 1, alpha: 0.0), 0.40),
-                (NotchPalette.accentHi.withAlphaComponent(0.12 + 0.11 * depth), 0.78),
-                (NSColor(white: 1, alpha: 0.22 + 0.16 * depth), 1.0),
-            ]),
-            start: CGPoint(x: rect.midX, y: rect.minY),
-            end: CGPoint(x: rect.midX, y: rect.maxY),
-            options: []
-        )
-        ctx.restoreGState()
+        layer.colors = colors
+        layer.locations = locations
     }
 }
 

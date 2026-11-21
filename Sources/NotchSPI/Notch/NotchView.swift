@@ -63,6 +63,8 @@ final class NotchView: NSView {
         morph.set(target)
         geoMorph.set(target)
         heightSpring.snap(morphFrameOrigin.height)
+        blockSpring.snap(0)
+        applyBlockShift()
         window?.setFrame(morphFrameOrigin, display: true)
         lastPlateSize = .zero
         applyLayout()
@@ -159,6 +161,13 @@ final class NotchView: NSView {
     private lazy var ticker = NotchTicker(host: self)
     private var heightSpring = CriticalSpring()
     private var scrollSpring = CriticalSpring()
+    /// Whatever sits below the answer — the reference strip, the action row, the shelf's lower
+    /// edge — is laid out where the text now ends. While the panel is still growing toward that
+    /// layout, the block rides this offset back to zero on the same spring as the panel's
+    /// height, so it travels with the lower edge instead of waiting beyond it.
+    private var blockSpring = CriticalSpring()
+    private var laidOutBlockTop: CGFloat?
+    private var restBlock: (tray: CGRect, strip: CGRect, shelf: CGRect, trayBelowAnswer: Bool)?
 
     private var lastOnboardingStep: NotchOnboardingStep?
     private var closingOnboarding = false
@@ -169,6 +178,7 @@ final class NotchView: NSView {
     private var trackingAreaRef: NSTrackingArea?
     private var cancellables = Set<AnyCancellable>()
     private var refreshPending = false
+    private var layoutPass: UInt = 0
 
     private var reduceMotion: Bool { onboardingReduceMotion() }
     private var hoverPointerLocation: NSPoint {
@@ -198,6 +208,22 @@ final class NotchView: NSView {
     func qaAdvanceMorph(by interval: CFTimeInterval) {
         morph.qaAdvance(by: interval)
         geoMorph.qaAdvance(by: interval)
+    }
+
+    var qaLayoutPasses: UInt { layoutPass }
+
+    struct QAMotionSample {
+        var geometry: CGFloat, opacity: CGFloat, contentAlpha: CGFloat
+        var ghost: CGRect
+        var scrollY: CGFloat, documentHeight: CGFloat, viewportHeight: CGFloat, targetHeight: CGFloat
+        var morphing: Bool, springing: Bool, detached: Bool
+    }
+    var qaMotionSample: QAMotionSample {
+        QAMotionSample(geometry: geoMorph.value, opacity: morph.value,
+            contentAlpha: expandedContent.isHidden ? 0 : expandedContent.alphaValue, ghost: ghost.frame,
+            scrollY: answerScroll.contentView.bounds.origin.y, documentHeight: answerStream.frame.height,
+            viewportHeight: answerScroll.contentView.bounds.height, targetHeight: expandedAnchor.height,
+            morphing: geoMorph.isAnimating, springing: ticker.isRunning, detached: userDetached)
     }
     #endif
 
@@ -264,15 +290,25 @@ final class NotchView: NSView {
             else { self.onCycleDepth() }
         }
 
-        morph.onChange = { [weak self] _ in self?.applyLayout() }
+        // Both channels share one duration. While the geometry tween runs, its tick lays the
+        // frame out once with the current opacity; the opacity tween only needs its own pass
+        // when it is the last one standing.
+        morph.onChange = { [weak self] _ in
+            guard let self, !self.geoMorph.isAnimating else { return }
+            self.applyLayout()
+        }
         geoMorph.onChange = { [weak self] g in
-            self?.applyMorphFrame(g)
-            self?.applyLayout()
-            if g == 1, let self, self.wasExpanded {
+            guard let self else { return }
+            // Resizing the window already lays the view out; do not repeat it in the same frame.
+            let pass = self.layoutPass
+            self.applyMorphFrame(g)
+            if self.layoutPass == pass { self.applyLayout() }
+            if g == 1, self.wasExpanded {
                 self.updateFollow()
                 self.reconcileHoverAfterMorph(at: self.hoverPointerLocation)
+                if let action = self.openedAction { self.openedAction = nil; action() }
             }
-            if g == 0, let self, self.closingOnboarding {
+            if g == 0, self.closingOnboarding {
                 // Retire the held composition only once it is fully behind the closed mask.
                 self.closingOnboarding = false
                 self.lastOnboardingStep = nil
@@ -335,8 +371,13 @@ final class NotchView: NSView {
     // MARK: Refresh (content from model)
 
     private func refresh() {
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.refresh, qaStart) }
+        #endif
         if reduceMotion {
             referenceHandoffDeadline = 0
+            blockSpring.snap(0)
             screenshotTray.stopReferenceMotion()
             answerShelf.layer?.removeAllAnimations()
             statusText.layer?.removeAnimation(forKey: "status-handoff")
@@ -510,8 +551,18 @@ final class NotchView: NSView {
 
     // MARK: Morph (one clock: frame + styling)
 
+    /// Run `action` once the card has finished opening — at once if it is already open and
+    /// still. Work that would stall the main thread (taking the keyboard, activating the app)
+    /// waits here so it cannot land in the middle of the opening. Dropped if the card closes first.
+    func whenOpened(_ action: @escaping () -> Void) {
+        if model.expanded, wasExpanded, !geoMorph.isAnimating, geoMorph.value >= 1 { action() }
+        else { openedAction = action }
+    }
+    private var openedAction: (() -> Void)?
+
     private func beginMorph(_ on: Bool) {
         wasExpanded = on
+        if !on { openedAction = nil }
         let current = window?.frame ?? .zero
         if on {
             if geoMorph.value <= 0.001, current.width > 0 { collapsedAnchor = current }
@@ -525,6 +576,8 @@ final class NotchView: NSView {
         ticker.pause()
         scrollSpring.snap(answerScroll.contentView.bounds.origin.y)
         heightSpring.snap(current.height)
+        blockSpring.snap(0)
+        applyBlockShift()
 
         let target: CGFloat = on ? 1 : 0
         morphFrameOrigin = current
@@ -553,6 +606,10 @@ final class NotchView: NSView {
             ? NotchMotion.closingFrame(from: morphFrameOrigin, to: target, progress: progress,
                                        startingExpansion: morphProgressOrigin)
             : notchLerpRect(morphFrameOrigin, target, max(0, progress))
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.windowFrame, qaStart) }
+        #endif
         window.setFrame(frame, display: true)
     }
 
@@ -567,7 +624,12 @@ final class NotchView: NSView {
             morphFrameOrigin = window.frame
             morphProgressOrigin = geoMorph.value
         }
+        let resized = expandedAnchor != f
         expandedAnchor = f
+        // The answer was just re-composed for this size. Give its viewport the same size in the
+        // same turn; waiting for the next spring tick shows the new document through the old
+        // window for a frame — a blank where the first line used to be.
+        if wasExpanded, resized { applyLayout() }
         guard wasExpanded, !geoMorph.isAnimating else { return }
         if reduceMotion {
             window.setFrame(f, display: true)
@@ -581,10 +643,19 @@ final class NotchView: NSView {
 
     private func springTick(_ dt: CFTimeInterval) {
         var active = false
+        if !blockSpring.settled {
+            blockSpring.step(dt)
+            applyBlockShift()   // before the frame below, so one display pass shows both
+            active = true
+        }
         if !heightSpring.settled {
             heightSpring.step(dt)
             if let window {
                 let h = max(1, heightSpring.value)
+                #if DEBUG
+                let qaStart = MotionQACounters.begin()
+                defer { MotionQACounters.end(.windowFrame, qaStart) }
+                #endif
                 window.setFrame(NSRect(x: expandedAnchor.minX, y: expandedAnchor.maxY - h,
                                        width: expandedAnchor.width, height: h), display: true)
             }
@@ -622,10 +693,13 @@ final class NotchView: NSView {
         // (the follow spring trails the tail by a few points; fading there would shimmer).
         let bottom = followBottom && !userDetached
             ? 0 : max(0, min(1, (maxScrollOffset() - off) / 12))
-        let fade = NSNumber(value: Double(min(0.5, 16 / h)))
+        // While the block below is still on its way down, the text ends where that block
+        // currently is, not where it will be.
+        let visible = max(1, h + min(0, blockSpring.value))
+        let fade = NSNumber(value: Double(min(0.5, 16 / visible)))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        scrollFade.frame = answerScroll.bounds
+        scrollFade.frame = CGRect(x: 0, y: 0, width: answerScroll.bounds.width, height: visible)
         scrollFade.startPoint = CGPoint(x: 0.5, y: 0)
         scrollFade.endPoint = CGPoint(x: 0.5, y: 1)
         scrollFade.colors = [
@@ -670,6 +744,11 @@ final class NotchView: NSView {
     private func applyLayout() {
         let b = bounds
         guard b.width > 1 else { return }
+        layoutPass &+= 1
+        #if DEBUG
+        let qaStart = MotionQACounters.begin()
+        defer { MotionQACounters.end(.layout, qaStart) }
+        #endif
         // p: opacity / staging — clamped (a reveal must never invert).
         // g: geometry — may overshoot past 1 (soft frame spring, ~4.7% peak).
         //    Radii re-amplify the overshoot (gr): 4.7% of an 8pt shoulder is invisible; ×6 makes
@@ -683,20 +762,22 @@ final class NotchView: NSView {
         let mB = NotchMetrics.shadowMarginBottom * g
         let card = CGRect(x: mH, y: 0, width: b.width - mH * 2, height: b.height - mB)
 
-        surface.frame = b
-        surface.cardRect = card
-        surface.topRadius = notchLerp(6, 8, gr)
-        surface.bottomRadius = notchLerp(14, 22, gr)
-        surface.depth = p
         let hardware = screenLayout?.hasTopWings == true
         let materialOpacity = hardware ? min(1, g) : 1
-        surface.materialOpacity = materialOpacity
-        surface.shadowStrength = p * materialOpacity
-        // Captures contain software pixels, not the physical camera housing. Keep the
-        // complete existing silhouette in shareable windows; only excluded windows
-        // can rely on the hardware to finish the right-hand contour.
-        surface.hardwareContourCutoff = hardware && window?.sharingType == NSWindow.SharingType.none && g <= 0.000001
-            ? screenLayout.map { ($0.cutout?.midX ?? 0) - (window?.frame.minX ?? 0) } : nil
+        surface.batch {
+            surface.frame = b
+            surface.cardRect = card
+            surface.topRadius = notchLerp(6, 8, gr)
+            surface.bottomRadius = notchLerp(14, 22, gr)
+            surface.depth = p
+            surface.materialOpacity = materialOpacity
+            surface.shadowStrength = p * materialOpacity
+            // Captures contain software pixels, not the physical camera housing. Keep the
+            // complete existing silhouette in shareable windows; only excluded windows
+            // can rely on the hardware to finish the right-hand contour.
+            surface.hardwareContourCutoff = hardware && window?.sharingType == NSWindow.SharingType.none && g <= 0.000001
+                ? screenLayout.map { ($0.cutout?.midX ?? 0) - (window?.frame.minX ?? 0) } : nil
+        }
 
         luma.alphaValue = materialOpacity
         luma.frame = b
@@ -756,7 +837,13 @@ final class NotchView: NSView {
                    y: (window?.frame.maxY ?? 0) - cutout.maxY - card.minY,
                    width: cutout.width, height: cutout.height)
         }
-        layoutHeader(width: screenLayout?.usesHeaderWings == true ? liveWidth : plateSize.width, cutout: cutout)
+        // Where the camera housing will sit on the plate once the card has fully opened.
+        let settledCutout = screenLayout?.cutout.map { cutout in
+            CGRect(x: cutout.minX - expandedAnchor.minX - NotchMetrics.shadowMarginH, y: 0,
+                   width: cutout.width, height: cutout.height)
+        }
+        layoutHeader(width: screenLayout?.usesHeaderWings == true ? liveWidth : plateSize.width, cutout: cutout,
+                     settledWidth: plateSize.width, settledCutout: settledCutout)
         onboarding.configureTopLayout(cutout: screenLayout?.usesHeaderWings == true ? cutout : nil,
             availableWidth: liveWidth, headerInset: screenLayout?.headerInset ?? 0,
             bodyAdjustment: screenLayout?.bodyAdjustment(onboarding: true) ?? 0)
@@ -794,7 +881,7 @@ final class NotchView: NSView {
         }
     }
 
-    private func layoutHeader(width: CGFloat, cutout: CGRect?) {
+    private func layoutHeader(width: CGFloat, cutout: CGRect?, settledWidth: CGFloat, settledCutout: CGRect?) {
         let inset = NotchLayout.contentInsetH
         let cy = NotchLayout.headerRowCenterY + (screenLayout?.headerInset ?? 0)
 
@@ -824,13 +911,18 @@ final class NotchView: NSView {
         capsule.frame = CGRect(x: capX, y: cy - cap.height / 2, width: capWidth, height: cap.height)
 
         let statusW = max(0, capX - 8 - x)
-        let statusH = statusText.intrinsicContentSize.height
+        let statusSize = statusText.intrinsicContentSize
+        let statusH = statusSize.height
         statusText.frame = CGRect(x: x, y: cy - statusH / 2, width: statusW, height: statusH)
 
         let daily = onboarding.isHidden
         [modeLabel, statusText, capsule, gearButton].forEach { $0.isHidden = !daily }
-        statusText.toolTip = model.captureStatusDetail
-        guard screenLayout?.usesHeaderWings == true, let cutout else { return }
+        let headerViews: [NSView] = [modeLabel, statusText, capsule, gearButton, collapseButton]
+        if statusText.toolTip != model.captureStatusDetail { statusText.toolTip = model.captureStatusDetail }
+        guard screenLayout?.usesHeaderWings == true, let cutout else {
+            headerViews.forEach { if $0.alphaValue != 1 { $0.alphaValue = 1 } }
+            return
+        }
 
         // Two compact lines on the left retain the complete usual status/quota text.
         // The right pill truncates within its wing and keeps its full tooltip/AX label.
@@ -846,6 +938,25 @@ final class NotchView: NSView {
         statusText.isHidden = !daily || leftWidth < 24
         gearButton.isHidden = !daily || !gearFits
         capsule.isHidden = !daily || pillWidth < 24
+
+        // Mid-morph the wings are narrower than they will be at rest. A group that cannot yet
+        // show what its settled wing holds dissolves over the last few points instead of being
+        // squeezed into an ellipsis and popping out — it never crosses the camera housing.
+        var fits: [CGFloat] = [1, 1, 1, 1, 1]   // same order as headerViews
+        if width < settledWidth - 0.5, let settled = settledCutout {
+            func fit(_ slack: CGFloat) -> CGFloat { max(0, min(1, 1 + slack / 12)) }
+            let settledLeft = max(0, min(settledWidth - inset, settled.minX - 8) - (inset + 24))
+            fits[0] = fit(leftWidth - min(modeW, settledLeft))
+            fits[1] = fit(leftWidth - min(ceil(statusSize.width), settledLeft))
+            let settledGearX = settledWidth - inset - 28
+            let settledRightStart = max(inset, settled.maxX + 8)
+            let settledControlsX = settledGearX - 32 >= settled.maxX + 8 && onboarding.isHidden ? settledGearX - 32 : settledGearX
+            let settledPill = min(cap.width, 200, max(0, settledControlsX - 8 - settledRightStart))
+            fits[2] = fit(pillWidth - settledPill)
+            fits[3] = fit(gearX - rightStart - 12)
+            fits[4] = fit(gearX - 32 - (cutout.maxX + 8) - 12)
+        }
+        for (view, alpha) in zip(headerViews, fits) where view.alphaValue != alpha { view.alphaValue = alpha }
     }
 
     /// Lay the plate at its FINAL size — called when the target size or the content changes,
@@ -891,6 +1002,22 @@ final class NotchView: NSView {
         answerShelf.isHidden = !(shelf || intakeSurface)
         answerShelf.frame = NotchLayout.shelfFrame(width: size.width, top: headerHeight, height: h + trayHeight)
         let now = CACurrentMediaTime()
+        // The text grew or shrank and everything below it has a new place. In a settled daily
+        // panel that block glides there with the panel's lower edge; every other change —
+        // the morph, the guide, a shelf handoff, Reduce Motion — places it directly.
+        let blockTop = top + h
+        if let previous = laidOutBlockTop, previous != blockTop {
+            let glides = model.onboardingStep == nil && wasExpanded && !geoMorph.isAnimating && geoMorph.value >= 1
+                && !reduceMotion && window != nil && shelf == laidOutShelf && referenceHandoffDeadline <= now
+                && abs(previous - blockTop) <= 480
+            if glides {
+                blockSpring.stiffness = heightSpring.stiffness
+                blockSpring.nudge(previous - blockTop)
+                ticker.start()
+            } else { blockSpring.snap(0) }
+        }
+        laidOutBlockTop = blockTop
+        restBlock = (screenshotTray.frame, materialStrip.frame, answerShelf.frame, shelf)
         if shelf != laidOutShelf {
             screenshotTray.layer?.removeAnimation(forKey: "reference-handoff")
             answerShelf.layer?.removeAnimation(forKey: "shelf-reveal")
@@ -922,6 +1049,17 @@ final class NotchView: NSView {
         // long answer scrolls; the CTFramesetter measure matches what it draws.
         let docH = max(answerScroll.frame.height, answerStream.measuredHeight(width: w))
         answerStream.frame = CGRect(x: 0, y: 0, width: w, height: docH)
+        applyBlockShift()
+    }
+
+    private func applyBlockShift() {
+        guard let rest = restBlock else { return }
+        let shift = blockSpring.value
+        materialStrip.frame = rest.strip.offsetBy(dx: 0, dy: shift)
+        screenshotTray.frame = rest.trayBelowAnswer ? rest.tray.offsetBy(dx: 0, dy: shift) : rest.tray
+        var shelf = rest.shelf
+        shelf.size.height = max(0, shelf.height + shift)
+        answerShelf.frame = shelf
         updateScrollFade()
     }
 
@@ -990,9 +1128,17 @@ final class NotchView: NSView {
         trackingAreaRef = area
     }
 
-    override func mouseEntered(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
-    override func mouseExited(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation, allowsExpansion: false) }
-    override func mouseMoved(with event: NSEvent) { trackPointer(at: NSEvent.mouseLocation) }
+    override func mouseEntered(with event: NSEvent) { trackSystemPointer() }
+    override func mouseExited(with event: NSEvent) { trackSystemPointer(allowsExpansion: false) }
+    override func mouseMoved(with event: NSEvent) { trackSystemPointer() }
+
+    private func trackSystemPointer(allowsExpansion: Bool = true) {
+        #if DEBUG
+        // A scripted pointer owns hover; the real cursor must not join a recorded run.
+        if qaHoverPointerLocation != nil { return }
+        #endif
+        trackPointer(at: NSEvent.mouseLocation, allowsExpansion: allowsExpansion)
+    }
 
     func trackPointer(at screenPoint: NSPoint, allowsExpansion: Bool = true) {
         // Window frames move during the morph. They are presentation geometry,
@@ -1101,7 +1247,7 @@ private final class NotchCapsuleButton: NSControl {
             // Cycling the depth rolls the label like a station indicator — old value yields
             // upward, the new one rises into place. First fill and Reduce Motion just repaint.
             if !oldValue.isEmpty, window != nil,
-               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+               !onboardingReduceMotion() {
                 prevAttr = previous
                 if rollTween == nil {
                     rollTween = DisplayTween(host: self, value: 1)
