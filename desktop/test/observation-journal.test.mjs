@@ -27,3 +27,43 @@ test('sequence overflow and oversized offline spans never claim complete observa
  const backlog=journal.freshJournal(true,now);backlog.sequence=10001;
  assert.equal(journal.prepareCoverage(backlog,now).coverage_status,'partial');assert.equal(backlog.gap,'sequence_gap');
 });
+
+test('15-minute silent coverage batching preserves event, gap, retry, and opt-out semantics',()=>{
+ const start=1_800_000_000_000, interval=15*60_000, data=journal.freshJournal(true,start);
+ assert.equal(journal.prepareCoverage(data,start+30_000,interval),null);
+ assert.equal(journal.prepareCoverage(data,start+interval-1,interval),null);
+ const empty=journal.prepareCoverage(data,start+interval,interval);
+ assert.equal(empty.sequence_from,0);assert.equal(empty.sequence_to,0);assert.equal(empty.valid_from,new Date(start).toISOString());
+ assert.equal(journal.prepareCoverage(data,start+interval+10_000,interval),empty,'retry keeps the same UUID');
+ journal.acknowledgeCoverage(data,empty);
+ assert.equal(journal.prepareCoverage(data,start+interval+30_000,interval),null);
+ const eventTime=start+interval+40_000;
+ journal.appendEvent(data,{event_id:randomUUID(),event_name:'answer_action',occurred_at:new Date(eventTime).toISOString()},eventTime);
+ assert.equal(journal.prepareCoverage(data,eventTime,interval),null,'event receipt must come first');
+ journal.acknowledgeEvents(data,data.queue,0);
+ const actual=journal.prepareCoverage(data,eventTime,interval);
+ assert.equal(actual.sequence_from,0);assert.equal(actual.sequence_to,1);
+ journal.acknowledgeCoverage(data,actual);
+ assert.equal(journal.prepareCoverage(data,eventTime+10_000,interval),null);
+ journal.gap(data,'storage_failure');
+ const gapProof=journal.prepareCoverage(data,eventTime+11_000,interval);
+ assert.equal(gapProof.coverage_status,'partial');assert.equal(gapProof.gap_reason,'storage_failure');
+ journal.acknowledgeCoverage(data,gapProof);
+ assert.equal(journal.prepareCoverage(data,eventTime+12_000,interval),null);
+ journal.resetSharing(data,false,eventTime+13_000);
+ assert.equal(journal.prepareCoverage(data,eventTime+interval+13_000,interval),null);
+});
+
+test('silent coverage keeps continuous 15-minute windows with no new events',()=>{
+ const start=1_800_000_000_000,interval=15*60_000,data=journal.freshJournal(true,start),proofs=[];
+ for(let elapsed=30_000;elapsed<=60*60_000;elapsed+=30_000){
+  const proof=journal.prepareCoverage(data,start+elapsed,interval);
+  if(proof){proofs.push(proof);journal.acknowledgeCoverage(data,proof);}
+ }
+ assert.equal(proofs.length,4);
+ for(let i=0;i<proofs.length;i++){
+  assert.equal(proofs[i].sequence_from,0);assert.equal(proofs[i].sequence_to,0);
+  assert.equal(Date.parse(proofs[i].valid_to)-Date.parse(proofs[i].valid_from),interval);
+  if(i>0)assert.equal(proofs[i].valid_from,proofs[i-1].valid_to);
+ }
+});
