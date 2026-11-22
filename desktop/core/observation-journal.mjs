@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 const maximum=1_000_000_000,week=7*86400000;
+export const minimumEmptyCoverageIntervalMs=15*60_000;
 const iso=now=>new Date(now).toISOString();
 export function freshJournal(enabled,now) {
  return {formatVersion:2,scope:null,preference:{consent_epoch:0,sharing_enabled:enabled,valid_from:iso(now)},preferencePending:true,explicit:false,adoptRemote:true,sequence:0,coveredThrough:0,coverageFrom:iso(now),drops:0,intervalDrops:0,gap:'none',gapRevision:0,pendingCoverage:null,pendingGapRevision:null,queue:[],openCaptures:[],cleanShutdown:false};
@@ -53,10 +54,12 @@ export function acknowledgeEvents(data,batch,rejected){
  const ids=new Set(batch.map(x=>x.event_id));data.queue=data.queue.filter(x=>!ids.has(x.event_id));
  if(rejected){data.drops=Math.min(maximum,data.drops+rejected);data.intervalDrops=Math.min(maximum,data.intervalDrops+rejected);gap(data,'event_rejected');}
 }
-export function prepareCoverage(data,now){
+export function prepareCoverage(data,now,minimumEmptyIntervalMs=0){
  if(!data.preference.sharing_enabled)return null;
  if(data.pendingCoverage)return data.pendingCoverage;
  if(data.queue.length||now<Date.parse(data.coverageFrom))return null;
+ // Batch only silent, complete windows. Real events, gaps, and pending proofs are immediate.
+ if(data.sequence===data.coveredThrough&&data.intervalDrops===0&&data.gap==='none'&&now-Date.parse(data.coverageFrom)<minimumEmptyIntervalMs)return null;
  if(data.sequence-data.coveredThrough>10000&&data.gap==='none')gap(data,'sequence_gap');
  const coverage={observation_id:randomUUID(),consent_epoch:data.preference.consent_epoch,valid_from:data.coverageFrom,valid_to:iso(now),sequence_from:data.coveredThrough,sequence_to:data.sequence,queue_drop_count:data.intervalDrops,coverage_status:data.gap==='none'?'complete':'partial',gap_reason:data.gap};
  data.pendingCoverage=coverage;data.pendingGapRevision=data.gapRevision;return coverage;
