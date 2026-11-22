@@ -146,3 +146,24 @@ test('diagnostic transport requires the native receipt HTTP status',async()=>{
  const client=new OfficialClient({base:'https://example.invalid',store:{},fetchImpl:async()=>new Response(JSON.stringify({accepted:1}),{status:200,headers:{"Content-Type":"application/json"}})});
  await assert.rejects(()=>client.request('/v1/events/batch',{}, {expectedStatus:202}),/Unexpected response status/);
 });
+
+test('silent production-style flush does not write coverage until 15 minutes; real events stay prompt',async()=>{
+ let time=Date.now();const f=fixture({clock:()=>time});
+ await f.journal.flush();
+ assert.equal(f.calls.filter(x=>x.body?.coverage).length,0);
+ const baseline=f.calls.length;
+ time+=30_000;await f.journal.flush();
+ time+=14*60_000;await f.journal.flush();
+ assert.equal(f.calls.length,baseline,'No new HTTP requests during a quiet window');
+ time+=30_000;await f.journal.flush();
+ const silent=f.calls.filter(x=>x.body?.coverage);
+ assert.equal(silent.length,1);
+ assert.equal(silent[0].body.coverage.sequence_to,0);
+ time+=30_000;
+ f.journal.record('answer_action',{action:'copy'});
+ await f.journal.flush();
+ assert.equal(f.calls.filter(x=>x.route==='/v1/events/batch').length,1);
+ const proofs=f.calls.filter(x=>x.body?.coverage);
+ assert.equal(proofs.length,2,'Real events retain immediate coverage');
+ assert.equal(proofs[1].body.coverage.sequence_to,1);
+});
