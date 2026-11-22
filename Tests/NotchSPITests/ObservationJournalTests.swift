@@ -43,6 +43,40 @@ final class ObservationJournalTests: XCTestCase {
         XCTAssertEqual(journal.prepareCoverage(now: now.addingTimeInterval(1))?.coverageStatus, "complete")
     }
 
+
+    func testSilentCoverageWaitsButEventsAndGapsStillReportImmediately() throws {
+        let interval: TimeInterval = 15 * 60
+        var journal = ObservationJournal(sharingEnabled: true, now: now)
+        XCTAssertNil(journal.prepareCoverage(now: now.addingTimeInterval(30), minimumEmptyInterval: interval))
+        XCTAssertNil(journal.prepareCoverage(now: now.addingTimeInterval(interval - 1), minimumEmptyInterval: interval))
+        let empty = try XCTUnwrap(journal.prepareCoverage(now: now.addingTimeInterval(interval), minimumEmptyInterval: interval))
+        XCTAssertEqual(empty.sequenceFrom, 0)
+        XCTAssertEqual(empty.sequenceTo, 0)
+        XCTAssertEqual(empty.validFrom, now)
+        XCTAssertEqual(journal.prepareCoverage(now: now.addingTimeInterval(interval + 10), minimumEmptyInterval: interval), empty)
+        journal.acknowledgeCoverage(empty)
+
+        XCTAssertNil(journal.prepareCoverage(now: now.addingTimeInterval(interval + 30), minimumEmptyInterval: interval))
+        let eventTime = now.addingTimeInterval(interval + 40)
+        journal.append(event(at: eventTime), now: eventTime)
+        XCTAssertNil(journal.prepareCoverage(now: eventTime, minimumEmptyInterval: interval), "Unacknowledged events must be uploaded first")
+        journal.acknowledgeEvents(journal.queue, rejected: 0)
+        let actual = try XCTUnwrap(journal.prepareCoverage(now: eventTime, minimumEmptyInterval: interval))
+        XCTAssertEqual(actual.sequenceFrom, 0)
+        XCTAssertEqual(actual.sequenceTo, 1)
+        journal.acknowledgeCoverage(actual)
+
+        XCTAssertNil(journal.prepareCoverage(now: eventTime.addingTimeInterval(10), minimumEmptyInterval: interval))
+        journal.gap("storage_failure")
+        let gapProof = try XCTUnwrap(journal.prepareCoverage(now: eventTime.addingTimeInterval(11), minimumEmptyInterval: interval))
+        XCTAssertEqual(gapProof.coverageStatus, "partial")
+        XCTAssertEqual(gapProof.gapReason, "storage_failure")
+        journal.acknowledgeCoverage(gapProof)
+        XCTAssertNil(journal.prepareCoverage(now: eventTime.addingTimeInterval(12), minimumEmptyInterval: interval))
+        journal.setSharing(false, now: eventTime.addingTimeInterval(13))
+        XCTAssertNil(journal.prepareCoverage(now: eventTime.addingTimeInterval(15 * 60 + 13), minimumEmptyInterval: interval))
+    }
+
     func testOptOutErasesQueuedEventsAndCaptureIdentifiers() throws {
         var journal = ObservationJournal(sharingEnabled: true, now: now)
         let value = event()
