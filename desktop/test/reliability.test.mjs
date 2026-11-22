@@ -75,7 +75,12 @@ test('lost coverage response retries identical persisted proof after restart',as
  assert.deepEqual(sent,original);assert.equal(restarted.data.pendingCoverage,null);
  assert.equal(restarted.data.gap,'client_restart','old receipt must not erase restart gap');
  await restarted.flush();assert.equal(f.calls.filter(x=>x.body?.coverage).at(-1).body.coverage.coverage_status,'partial');
- await restarted.flush();assert.equal(f.calls.filter(x=>x.body?.coverage).at(-1).body.coverage.coverage_status,'complete');
+ const coveredBeforeIdle=f.calls.filter(x=>x.body?.coverage).length;
+ await restarted.flush();
+ assert.equal(f.calls.filter(x=>x.body?.coverage).length,coveredBeforeIdle,'Idle coverage is now batched instead of sent immediately');
+ restarted.clock=()=>Date.now()+15*60_000+1000;
+ await restarted.flush();
+ assert.equal(f.calls.filter(x=>x.body?.coverage).at(-1).body.coverage.coverage_status,'complete');
 });
 test('zero receipt follows Mac server-disabled loss accounting; partial receipt does not',async()=>{
  const f=fixture();f.journal.record('answer_action',{action:'copy'});const request=f.client.request;
