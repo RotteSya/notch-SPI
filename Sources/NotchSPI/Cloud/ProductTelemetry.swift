@@ -266,7 +266,7 @@ final class ProductTelemetry {
                     } else { throw UploadFailure.response }
                     persist()
                 }
-                if journal.queue.isEmpty, let coverage = journal.prepareCoverage(now: Date()) {
+                if journal.queue.isEmpty, let coverage = journal.prepareCoverage(now: Date(), minimumEmptyInterval: ObservationJournal.minimumEmptyCoverageInterval) {
                     persist() // response loss reuses the exact id and interval after restart
                     let body = try Self.encoder.encode(CoverageBody(coverage: coverage))
                     let (data, response) = try await session.data(for: request(url: observationURL, token: token, body: body))
