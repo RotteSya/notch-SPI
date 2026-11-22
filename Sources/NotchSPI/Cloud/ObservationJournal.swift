@@ -30,6 +30,7 @@ struct ObservationCoverage: Codable, Equatable {
 /// when sharing is off; no product event or capture identifier remains in that state.
 struct ObservationJournal: Codable {
     static let maximumCounter = 1_000_000_000
+    static let minimumEmptyCoverageInterval: TimeInterval = 15 * 60
     var formatVersion = 1
     var preference: ObservationPreference
     var preferencePending = true
@@ -170,10 +171,13 @@ struct ObservationJournal: Codable {
         }
     }
 
-    mutating func prepareCoverage(now: Date) -> ObservationCoverage? {
+    mutating func prepareCoverage(now: Date, minimumEmptyInterval: TimeInterval = 0) -> ObservationCoverage? {
         guard preference.sharingEnabled else { return nil }
         if let pendingCoverage { return pendingCoverage }
         guard queue.isEmpty, now >= coverageFrom else { return nil }
+        // Batch only silent, complete windows. Real events, gaps, and pending proofs are immediate.
+        if nextSequence == coveredThroughSequence && intervalDrops == 0 && gapReason == "none" &&
+            now.timeIntervalSince(coverageFrom) < minimumEmptyInterval { return nil }
         // Large offline backlogs still advance the coverage cursor, with an explicit gap.
         // Only bounded, fully receipted intervals may claim complete observation.
         if nextSequence - coveredThroughSequence > 10_000, gapReason == "none" { gap("sequence_gap") }
