@@ -421,6 +421,116 @@
       "checks": [
         "desktop/test/notch-parity.test.mjs",
         "Tests/NotchSPITests/CrossPlatformNotchParityTests.swift"
+      ],
+      "required_artifacts": [
+        {
+          "path": "docs/windows/evidence/desktop-flight-overlay.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-guide-first-answer.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-guide-multiple-success.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-guide-trial-active.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-guide-welcome.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-macos-answer.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-macos-personas.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-macos-settings.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-shared-ghost-completion.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-shared-ghost-working.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/desktop-shared-tray-four.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/mac-build27-answer.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/mac-build27-settings.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/mac-shared-full-answer.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/mac-shared-reading-scroll.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-14.5-phase0.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-14.5-phase1.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-14.5-phase2.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-16.0-phase0.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-16.0-phase1.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-16.0-phase2.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-20.0-phase0.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-20.0-phase1.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-20.0-phase2.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-96.0-phase0.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-96.0-phase1.png",
+          "kind": "tracked"
+        },
+        {
+          "path": "docs/windows/evidence/native-ghost/ghost-96.0-phase2.png",
+          "kind": "tracked"
+        }
       ]
     },
     {

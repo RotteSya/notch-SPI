@@ -80,7 +80,7 @@ Windows 打包入口将每次产物保存在 `desktop/dist/candidates/<candidate
 
 单图成功接收即提交，多图/删除撤销/预览暂停按 shared/product.json 和共用用例执行。官方链路冻结账户与请求身份；401 保留凭据，断流不自动重放可能已计费的 POST，ready/review 成功计费，retake/空结果/失败释放预扣。
 Mac 原生的五页设置、历史、人物像和三通道以[客户端契约](../client-behavior.md)及当前源码为准。几何、动效和字号从 shared/product.json、shared/ui 及原生设计类型读取，日期基线中的数值不覆盖源码。
-`evidence/mac-build27-*` 等为原生隔离 QA 截图，`evidence/desktop-macos-*` 为 Mac 宿主 Electron；均不是 Windows 实机证据。原始截图保留，历史 baseline/motion 报告归档。
+`evidence/` 下的截图均不是 Windows 实机证据，按来源分三组：`mac-build27-*`（答案、通用设置）与 `mac-shared-*`（共享完整答案、滚动后的解释）为 AppKit 原生隔离 QA；`desktop-macos-*`（答案、通用设置、人物像）、`desktop-guide-*`（引导欢迎、首题结果、多图成功、服务端体验状态）、`desktop-shared-*`（4 图收集布局、Ghost 工作与完成状态）与 `desktop-flight-overlay.png`（透明飞入层，只含该层）为 Windows 目标 UI 在 Mac 宿主 Electron 上运行，界面内容是离线或练习题 fixture，不调用生产或付费模型；`native-ghost/` 为原生绘制器按 4 个字号×3 个阶段生成的真实像素回归样本。原始截图保留并逐条登记在[文档映射](../guide-map.json)，取得条件见归档的历史 baseline/motion 报告，回读入口为[历史索引](../history/index.json)。
 本地报告包的 pack:win -- --local-test 开关由 package.mjs 实现，正常退出生成测试电脑本地 ZIP，不自动上传；正式包不启用该模式。报告字段与窗口等待诊断见 desktop/core/local-test-report.mjs、window-diagnostics.mjs 及对应测试。
 
 ## Electron Mac 本地审核候选

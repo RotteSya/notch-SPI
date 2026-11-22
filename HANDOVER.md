@@ -58,7 +58,7 @@ shared 源码 → 生成器 → Swift / Electron 编译输入
 | 调度及就绪探针 | `scheduler/src/index.ts`、`candidate.ts`、各 Wrangler 配置 | scheduler tests/dry-run、[调度说明](docs/cloudflare-scheduler.md) |
 | 提示/协议/UI 规则 | `shared/`；客观题解析源 `server/src/objective-result.ts` | 共用 fixtures、生成一致性、[共享架构](docs/windows/architecture.md) |
 | 版本/依赖 | `VERSION.env`、三个 npm manifest/lock、`Package.resolved` | repo-health、lock-check、swift-check |
-| 预算与评测 | `deploy/production-model-budget.json`、`docs/evaluation-budget.json`、`Tests/Fixtures/` | 预算/attestation 测试、[质量证据](docs/quality-evidence.md) |
+| 预算与评测 | `deploy/terra-model-budget.candidate.json`、`deploy/production-model-budget.json`、`docs/evaluation-budget.json`、`Tests/Fixtures/` | 预算/attestation 测试、[质量证据](docs/quality-evidence.md) |
 | 官网/媒体 | `server/src/site.ts`、`site-media.ts`、`server/public/media/` | [官网参考](docs/website.md)、site tests |
 
 `storage.ts` 的 Postgres、serverless memory、本地 SQLite 均为活跃实现，按环境动态导入。SwiftMath 字体 bundle、BotAvatarsKit 与许可证随 Mac 交付，不能按未显式调用删掉资源。
