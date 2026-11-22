@@ -221,6 +221,10 @@ export const config = {
   clientConfigRevision: envStr('CLIENT_CONFIG_REVISION', '2026-objective-v1-r1'),
   telemetryEnabled: envStr('TELEMETRY_ENABLED', '1') === '1',
   eventBatchPerMinute: boundedInt(envInt('EVENT_BATCH_PER_MINUTE', 30), 30, 0, 10_000),
+  // Idle coverage summaries shorter and younger than this are deferred without touching the
+  // database; 0 disables the deferral. Capped at one day: a summary older than seven days is
+  // rejected outright, so the window must stay well inside that limit.
+  observationIdleCoverageSeconds: boundedInt(envInt('OBSERVATION_IDLE_COVERAGE_SECONDS', 21_600), 21_600, 0, 86_400),
   modelPricingJSON: envStr('MODEL_PRICING_JSON', '[]'),
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
   requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),

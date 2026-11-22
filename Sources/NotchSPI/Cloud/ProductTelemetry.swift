@@ -266,7 +266,8 @@ final class ProductTelemetry {
                     } else { throw UploadFailure.response }
                     persist()
                 }
-                if journal.queue.isEmpty, let coverage = journal.prepareCoverage(now: Date()) {
+                if journal.queue.isEmpty, journal.coverageDue(now: Date(), idleWindow: Self.idleCoverageWindow),
+                   let coverage = journal.prepareCoverage(now: Date()) {
                     persist() // response loss reuses the exact id and interval after restart
                     let body = try Self.encoder.encode(CoverageBody(coverage: coverage))
                     let (data, response) = try await session.data(for: request(url: observationURL, token: token, body: body))
@@ -281,7 +282,7 @@ final class ProductTelemetry {
                     persist()
                 }
                 retryIndex = 0
-                schedule(after: journal.queue.isEmpty ? 30 : 0.1)
+                schedule(after: Self.delayAfterUpload(queueEmpty: journal.queue.isEmpty))
             } catch {
                 guard currentUpload(id, binding: binding) else { return }
                 persist()
@@ -326,6 +327,16 @@ final class ProductTelemetry {
             try Self.encoder.encode(journal).write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch { journal.gap("storage_failure") }
+    }
+
+    /// Matches the service default OBSERVATION_IDLE_COVERAGE_SECONDS. Every coverage upload wakes
+    /// the service database, so an idle app confirms its interval once per window instead of
+    /// every 30 seconds; events and completed captures still upload at once.
+    nonisolated static let idleCoverageWindow: TimeInterval = 6 * 3_600
+
+    /// Delay before the next unprompted flush.
+    nonisolated static func delayAfterUpload(queueEmpty: Bool) -> TimeInterval {
+        queueEmpty ? idleCoverageWindow : 0.1
     }
 
     nonisolated static func pruned(_ events: [ProductTelemetryEvent], now: Date = Date()) -> [ProductTelemetryEvent] {

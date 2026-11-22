@@ -37,7 +37,7 @@ import {renderQualityPage,QUALITY_PAGE_CSP} from './admin-quality.ts';
 import { createFixedWindowLimiter, clientIp } from './rateLimit.ts';
 import { validateProductEvent } from './telemetry.ts';
 import { validateEvent, paymentReportWire, type PaymentEvent, type RefundSnapshot } from './payment-ledger.ts';
-import { parseObservationPreference, parseObservationCoverage, type ObservationState, type ObservationCoverage } from './observation.ts';
+import { parseObservationPreference, parseObservationCoverage, coverageDeferralSeconds, type ObservationState, type ObservationCoverage } from './observation.ts';
 
 export interface AppContext {
   plusStripe?: import('./plus-stripe.ts').PlusStripe;
@@ -495,6 +495,18 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     return reply.header('Cache-Control','no-store').send({...observationStateWire(state),telemetry_enabled:config.telemetryEnabled});
   });
   app.post('/v1/device-observation',async(req,reply)=>{
+    // Decided before authentication on purpose: an idle heartbeat must not wake the database.
+    // Requests without a bearer token, and anything that is not exactly a coverage summary,
+    // fall through to the normal path and its 401/400 answers.
+    const raw=(req.body??{}) as Record<string,unknown>;
+    const idle=typeof req.headers.authorization==='string'&&req.headers.authorization.startsWith('Bearer ')&&
+      raw.schema_version===1&&Object.keys(raw).every(k=>k==='schema_version'||k==='coverage')
+      ?parseObservationCoverage(raw.coverage):null;
+    const wait=idle?coverageDeferralSeconds(idle,config.observationIdleCoverageSeconds):0;
+    if(wait>0) {
+      reply.header('Cache-Control','no-store').header('Retry-After',String(wait));
+      throw new ApiError(429,'观察覆盖上报过于频繁','rate_limited');
+    }
     const {token}=await requireAccount(req,store);
     if(!await store.billing.rateLimit(captureService.keys.digest('observation-device',token),30,60_000))throw new ApiError(429,'观察状态同步过于频繁','rate_limited');
     const body=(req.body??{}) as Record<string,unknown>;

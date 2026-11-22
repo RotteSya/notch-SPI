@@ -170,6 +170,14 @@ struct ObservationJournal: Codable {
         }
     }
 
+    /// The service defers an event-free, gap-free summary shorter than `idleWindow`, and a deferred
+    /// summary stays pending ahead of later events. Leave such an interval open instead: it is
+    /// reported with the next events or gap, or once it spans the window.
+    func coverageDue(now: Date, idleWindow: TimeInterval) -> Bool {
+        pendingCoverage != nil || nextSequence > coveredThroughSequence || gapReason != "none"
+            || now.timeIntervalSince(coverageFrom) >= idleWindow
+    }
+
     mutating func prepareCoverage(now: Date) -> ObservationCoverage? {
         guard preference.sharingEnabled else { return nil }
         if let pendingCoverage { return pendingCoverage }

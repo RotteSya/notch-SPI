@@ -53,6 +53,13 @@ export function acknowledgeEvents(data,batch,rejected){
  const ids=new Set(batch.map(x=>x.event_id));data.queue=data.queue.filter(x=>!ids.has(x.event_id));
  if(rejected){data.drops=Math.min(maximum,data.drops+rejected);data.intervalDrops=Math.min(maximum,data.intervalDrops+rejected);gap(data,'event_rejected');}
 }
+// Matches the service default OBSERVATION_IDLE_COVERAGE_SECONDS. The service defers an event-free,
+// gap-free summary shorter than this window, and a deferred summary stays pending ahead of later
+// events, so such an interval is left open until it carries events or a gap, or spans the window.
+export const IDLE_COVERAGE_WINDOW_MS=21600000;
+export function coverageDue(data,now,idleWindow=IDLE_COVERAGE_WINDOW_MS){
+ return !!data.pendingCoverage||data.sequence>data.coveredThrough||data.gap!=='none'||now-Date.parse(data.coverageFrom)>=idleWindow;
+}
 export function prepareCoverage(data,now){
  if(!data.preference.sharing_enabled)return null;
  if(data.pendingCoverage)return data.pendingCoverage;

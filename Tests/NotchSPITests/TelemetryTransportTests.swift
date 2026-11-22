@@ -88,6 +88,13 @@ final class TelemetryTransportTests: XCTestCase {
         XCTFail(message)
     }
 
+    func testAnIdleQueueWaitsForTheServiceCoverageWindowBeforeUploadingAgain() {
+        // Matches the service default OBSERVATION_IDLE_COVERAGE_SECONDS: an idle summary sent
+        // sooner would be deferred, and one sent every 30 seconds kept the database awake.
+        XCTAssertEqual(ProductTelemetry.delayAfterUpload(queueEmpty: true), 21_600)
+        XCTAssertEqual(ProductTelemetry.delayAfterUpload(queueEmpty: false), 0.1)
+    }
+
     func testCancellationAndReenablePreserveTheNewUploadAndEraseOldEvents() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("telemetry-test-" + UUID().uuidString)
         let suite = "telemetry-test-" + UUID().uuidString

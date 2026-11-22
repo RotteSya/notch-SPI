@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {Reliability,captureObservation} from '../core/reliability.mjs';
 import {validateProductEvent} from '../../server/src/telemetry.ts';
-import {parseObservationCoverage} from '../../server/src/observation.ts';
+import {parseObservationCoverage,coverageDeferralSeconds} from '../../server/src/observation.ts';
+import {IDLE_COVERAGE_WINDOW_MS} from '../core/observation-journal.mjs';
 function fixture(options={}) {
  let disk=null,remote=null;const calls=[];
  const client={base:'https://example.invalid',token:'test-only',async request(route,body){
@@ -75,6 +76,7 @@ test('lost coverage response retries identical persisted proof after restart',as
  assert.deepEqual(sent,original);assert.equal(restarted.data.pendingCoverage,null);
  assert.equal(restarted.data.gap,'client_restart','old receipt must not erase restart gap');
  await restarted.flush();assert.equal(f.calls.filter(x=>x.body?.coverage).at(-1).body.coverage.coverage_status,'partial');
+ restarted.record('answer_action',{action:'copy'});
  await restarted.flush();assert.equal(f.calls.filter(x=>x.body?.coverage).at(-1).body.coverage.coverage_status,'complete');
 });
 test('zero receipt follows Mac server-disabled loss accounting; partial receipt does not',async()=>{
@@ -89,6 +91,20 @@ test('batch limits cannot produce coverage while any events remain',async()=>{
  f.journal.record('answer_action',{action:'copy'});f.journal.record('answer_action',{action:'retry'});
  await f.journal.flush();assert.equal(f.calls.some(x=>x.body?.coverage),false);assert.equal(f.journal.data.queue.length,1);
  await f.journal.flush();assert.equal(f.calls.find(x=>x.body?.coverage).body.coverage.sequence_to,2);
+});
+test('an idle interval is confirmed once per service window and never deferred by the service',async()=>{
+ let now=Date.now();const f=fixture({clock:()=>now});const delays=[];f.journal.schedule=delay=>delays.push(delay);
+ const coverages=()=>f.calls.filter(x=>x.body?.coverage).map(x=>x.body.coverage);
+ await f.journal.flush();
+ assert.equal(coverages().length,0);assert.deepEqual(delays,[IDLE_COVERAGE_WINDOW_MS]);
+ f.journal.record('answer_action',{action:'copy'});await f.journal.flush();
+ assert.equal(coverages().length,1);assert.equal(coverages()[0].sequence_to,1);
+ await f.journal.flush();assert.equal(coverages().length,1);
+ now+=IDLE_COVERAGE_WINDOW_MS;await f.journal.flush();
+ assert.equal(coverages().length,2);assert.equal(coverages()[1].sequence_from,coverages()[1].sequence_to);
+ // Every summary this client sends passes the service's own stateless admission rule.
+ for(const coverage of coverages())assert.equal(coverageDeferralSeconds(parseObservationCoverage(coverage,now),IDLE_COVERAGE_WINDOW_MS/1000,now),0);
+ assert.equal(delays.at(-1),IDLE_COVERAGE_WINDOW_MS);
 });
 test('clock skew creates invalid-time gap and backs off without sending events',async()=>{
  const f=fixture();const delays=[];f.journal.schedule=delay=>delays.push(delay);

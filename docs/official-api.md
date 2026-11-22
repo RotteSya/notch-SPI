@@ -594,6 +594,10 @@ coverage 含 observation_id（UUID v4）、consent_epoch、valid_from/to、seque
 queue_drop_count、coverage_status=complete|partial|unknown|telemetry_disabled、gap_reason。
 序列范围为半开区间；时间跨度最多 7 天，valid_to 不早于当前 7 天、不晚于当前 5 分钟。
 声明 complete 的序列跨度最多 10,000；更大的离线缺口只能声明非 complete。
+空闲 coverage（sequence_from 等于 sequence_to、状态 complete、无缺口无丢弃）在时间跨度不足 `OBSERVATION_IDLE_COVERAGE_SECONDS`
+（默认 21600，0 为关闭）且 valid_to 距当前也不足该时长时，返回 429 与 `Retry-After`。该判断只依赖
+请求体和服务器时钟，先于鉴权且不访问数据库，因此无效令牌在此情形同样得到 429。客户端原样重发
+同一 observation_id 即可，到期后按原有幂等规则记录；含事件、含缺口或跨度已满的 coverage 不受影响。
 服务端验证偏好有效区间、全部序列回执及事件发生时间后，才保留 complete；丢弃、拒收、重启、
 时钟、未同步偏好、缺序列、存储问题或服务总开关均保留为 partial/unknown 等明确状态。
 gap_reason 白名单为 none、queue_drop、invalid_time、unsupported_schema、preference_unsynced、

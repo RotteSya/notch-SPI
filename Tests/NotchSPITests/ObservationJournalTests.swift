@@ -122,6 +122,22 @@ final class ObservationJournalTests: XCTestCase {
         XCTAssertEqual(journal.gapReason, "preference_unsynced")
     }
 
+    func testAnEventFreeIntervalStaysOpenUntilItSpansTheIdleWindow() throws {
+        var journal = ObservationJournal(sharingEnabled: true, now: now)
+        let window: TimeInterval = 21_600
+        XCTAssertFalse(journal.coverageDue(now: now.addingTimeInterval(30), idleWindow: window))
+        XCTAssertTrue(journal.coverageDue(now: now.addingTimeInterval(window), idleWindow: window))
+        journal.append(event(), now: now)
+        journal.acknowledgeEvents(journal.queue, rejected: 0)
+        XCTAssertTrue(journal.coverageDue(now: now.addingTimeInterval(1), idleWindow: window))
+        let proof = try XCTUnwrap(journal.prepareCoverage(now: now.addingTimeInterval(1)))
+        XCTAssertTrue(journal.coverageDue(now: now.addingTimeInterval(2), idleWindow: window), "a pending summary is always resent")
+        journal.acknowledgeCoverage(proof)
+        XCTAssertFalse(journal.coverageDue(now: now.addingTimeInterval(31), idleWindow: window))
+        journal.gap("client_restart")
+        XCTAssertTrue(journal.coverageDue(now: now.addingTimeInterval(32), idleWindow: window), "gap evidence is never held back")
+    }
+
     func testExpiredAndFutureEventsAreDiscardedWithEvidence() {
         var journal = ObservationJournal(sharingEnabled: true, now: now)
         journal.append(event(at: now.addingTimeInterval(-8 * 86_400)), now: now)

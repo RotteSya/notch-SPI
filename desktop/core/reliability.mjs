@@ -1,4 +1,4 @@
-import {freshJournal,gap,resetSharing,bindJournal,reconcile,prune,resume,appendEvent,acknowledgeEvents,prepareCoverage,acknowledgeCoverage,shutdown} from './observation-journal.mjs';
+import {freshJournal,gap,resetSharing,bindJournal,reconcile,prune,resume,appendEvent,acknowledgeEvents,prepareCoverage,coverageDue,acknowledgeCoverage,shutdown,IDLE_COVERAGE_WINDOW_MS} from './observation-journal.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 const enums={variant:['control','objective_v1'],trigger:['capture_hotkey','context_hotkey','personality_hotkey','auto','qa'],error_code:['protocol_invalid','invalid_scope','multiple_targets','unsupported_scope','no_usable_result','feature_disabled','budget_exceeded','upstream_error','model_output_limit','upstream_timeout','internal','transport_error','blank_capture','capture_failed','watchdog_timeout','user_toggled','capture_hotkey','stop_button','question_cap','quota_exhausted','run_failed','idle_timeout','hash_failures'],mode:['tutor','personality'],channel:['official','custom_key','cli'],operation:['solve','explain','recover'],completion_kind:['usable','retake','no_result','failed','canceled'],parser_path:['v1','legacy_fallback','legacy','none'],result_state:['ready','review','retake'],action:['copy','reveal_reasoning','retry','show_explanation','add_context','remove_context','start_new_session','select_region','confirm_review','recover_answer','export_feedback']};
@@ -104,7 +104,7 @@ export class Reliability {
         else throw new Error('Partial event receipt');this.persist();
       }
       if(!data.queue.length){
-        const coverage=prepareCoverage(data,this.clock());
+        const coverage=coverageDue(data,this.clock())?prepareCoverage(data,this.clock()):null;
         if(coverage){
           this.persist();
           const receipt=await request('/v1/device-observation',{schema_version:1,coverage});current();
@@ -112,7 +112,7 @@ export class Reliability {
           acknowledgeCoverage(data,coverage);this.persist();
         }
       }
-      this.retryIndex=0;this.schedule(data.queue.length?100:30000);
+      this.retryIndex=0;this.schedule(data.queue.length?100:IDLE_COVERAGE_WINDOW_MS);
     })().catch(()=>{
       if(this.controller!==controller||controller.signal.aborted||this.client.token!==token||this.client.base!==base)return;
       this.persist();this.schedule([60000,300000,1800000][Math.min(this.retryIndex++,2)]);

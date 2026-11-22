@@ -57,6 +57,19 @@ export function parseObservationCoverage(raw:unknown,now=Date.now()):Observation
     sequenceFrom:value.sequence_from,sequenceTo:value.sequence_to,queueDropCount:value.queue_drop_count,
     coverageStatus:value.coverage_status as CoverageStatus,gapReason:value.gap_reason as CoverageGap};
 }
+/**
+ * Seconds an idle coverage summary must still wait, or 0 to admit it now. The answer depends only
+ * on the request and the clock, so a deferred heartbeat never reaches (or wakes) the database.
+ * A summary is admitted once it carries events or reports a gap, spans the window, or has aged
+ * past it; clients resend the identical pending summary, so every deferred one is eventually admitted.
+ */
+export function coverageDeferralSeconds(input:ObservationCoverage,windowSeconds:number,now=Date.now()):number {
+  if(windowSeconds<=0||input.sequenceTo>input.sequenceFrom||input.coverageStatus!=='complete'||
+    input.gapReason!=='none'||input.queueDropCount>0) return 0;
+  const from=Date.parse(input.validFrom),to=Date.parse(input.validTo),window=windowSeconds*1000;
+  if(to-from>=window) return 0;
+  return Math.max(0,Math.ceil((to+window-now)/1000));
+}
 export function eventObservation(event:ProductEventInput):{epoch:number;sequence:number}|null {
   if(event.extensions?.schema_version!==2)return null;
   const epoch=event.extensions?.consent_epoch,sequence=event.extensions?.event_sequence;
