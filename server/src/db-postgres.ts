@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { SQLBilling, BILLING_SCHEMA, type Transaction } from './billing-sql.ts';
 import { SQLPaymentLedger, PAYMENT_SCHEMA } from './payment-ledger-sql.ts';
 import { SQLObservationStore, OBSERVATION_SCHEMA } from './observation-sql.ts';
+import { SQLQuestionBankStore, questionBankSchema } from './question-bank-sql.ts';
 import { SQLReportingStore, REPORTING_SCHEMA } from './reporting-sql.ts';
 import {SQLPaymentFinance} from './payment-finance-sql.ts';
 import type { RegistrationInput } from './billing.ts';
@@ -155,6 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_refunds_payment_intent ON payment_refunds(payment
 CREATE INDEX IF NOT EXISTS idx_refunds_charge ON payment_refunds(charge_id);
 ALTER TABLE attempt_budget_holds ADD COLUMN IF NOT EXISTS device_id BIGINT REFERENCES devices(id);
 UPDATE attempt_budget_holds SET device_id=(SELECT device_id FROM model_attempts WHERE model_attempts.attempt_id=attempt_budget_holds.attempt_id) WHERE device_id IS NULL;
+${questionBankSchema('BYTEA')}
 `;
 
 interface DeviceRow {
@@ -233,6 +235,7 @@ export class PostgresStore implements Store {
   readonly finance = new SQLPaymentFinance(transaction => this.runBilling(transaction));
   private readonly purchases = new SQLPurchaseSessions(transaction => this.runBilling(transaction));
   readonly observations = new SQLObservationStore(transaction => this.runBilling(transaction));
+  readonly questionBank = new SQLQuestionBankStore(transaction => this.runBilling(transaction));
   readonly reporting = new SQLReportingStore((transaction, options) => this.runBilling(transaction, false, options?.readOnlySnapshot),true);
   private ready: Promise<void> | null = null;
 

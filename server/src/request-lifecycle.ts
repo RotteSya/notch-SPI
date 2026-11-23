@@ -1,13 +1,22 @@
 import type {IncomingMessage, ServerResponse} from 'node:http';
 let reported=false;
 const work = new WeakMap<IncomingMessage, Promise<void>>();
+const pending = new Set<Promise<void>>();
 
 // The transport may close before a negotiated capture has durably settled.
 // Keep that work attached to the serverless invocation, never fire-and-forget.
 export function trackRequestWork(req:IncomingMessage, run:()=>Promise<void>):Promise<void> {
   const running=Promise.resolve().then(run);
-  work.set(req,running.then(()=>{},()=>{}));
+  const settled=running.then(()=>{},()=>{});
+  pending.add(settled);
+  void settled.then(()=>{ pending.delete(settled); });
+  work.set(req,settled);
   return running;
+}
+// inject resolves on the response, which finishes before the handler's trailing work.
+// serveRequest waits for that work; tests use the same boundary.
+export function settledRequestWork():Promise<void> {
+  return Promise.all([...pending]).then(()=>{});
 }
 export function serveRequest(req:IncomingMessage,res:ServerResponse,dispatch:()=>void):Promise<void> {
  const running=(async()=>{

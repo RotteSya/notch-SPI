@@ -5,6 +5,7 @@ import { MemoryBilling } from './billing-memory.ts';
 import { MemoryPaymentLedger } from './payment-ledger-memory.ts';
 import {MemoryPaymentFinance} from './payment-finance-memory.ts';
 import { MemoryObservationStore } from './observation.ts';
+import { MemoryQuestionBankStore } from './question-bank-memory.ts';
 import { MemoryReportingStore } from './reporting-memory.ts';
 import type { ReportAdjustment } from './reporting.ts';
 import {receiptIdentity} from './reporting-receipts.ts';
@@ -62,6 +63,7 @@ export class MemoryStore implements Store {
   readonly plus: MemoryPlus = new MemoryPlus(token => this.devices.get(hashToken(token))?.id ?? null, (token,source) => this.billing.plusUsage(token,source),id=>this.admin.grants.get(id)??null);
   readonly billing: MemoryBilling = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event), id => this.plus.records.get(id) ?? null,id=>this.admin.grants.get(id)??null,id=>this.plus.compensations.get(id)??null);
   readonly observations = new MemoryObservationStore(token=>this.devices.get(hashToken(token))?.id??null,this.productEvents);
+  readonly questionBank = new MemoryQuestionBankStore(token=>this.devices.get(hashToken(token))?.id??null);
   readonly reporting = new MemoryReportingStore(q=>{
     const devices=[...this.devices.values()].filter(d=>d.createdAt>=q.cohortFrom&&d.createdAt<q.cohortTo);
     const ids=new Set(devices.map(d=>d.id)),billing=this.billing.report(ids,q.asOf),payment=this.payments.reportFacts(ids,q.asOf,q.cohortFrom);

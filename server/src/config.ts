@@ -225,6 +225,8 @@ export const config = {
   // database; 0 disables the deferral. Capped at one day: a summary older than seven days is
   // rejected outright, so the window must stay well inside that limit.
   observationIdleCoverageSeconds: boundedInt(envInt('OBSERVATION_IDLE_COVERAGE_SECONDS', 21_600), 21_600, 0, 86_400),
+  // Consent gate for the question bank. Off ignores question_bank_v1 on every request.
+  questionBankEnabled: envStr('QUESTION_BANK_ENABLED', '0') === '1',
   modelPricingJSON: envStr('MODEL_PRICING_JSON', '[]'),
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
   requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),

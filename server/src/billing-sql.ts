@@ -19,7 +19,7 @@ import { validateUsageEvidence, type AttemptUsageEvidence, type CaptureAdmission
 
 // Generators describe one transaction. SQLite runs every step synchronously, without yielding
 // its connection; Postgres awaits each query on a dedicated, row-locked transaction connection.
-export interface Statement { sql: string; args: Array<string | number | null> }
+export interface Statement { sql: string; args: Array<string | number | null | Buffer> }
 export type Row = Record<string, unknown>;
 export type Transaction<T> = Generator<Statement, T, Row[]>;
 export type RunTransaction = <T>(transaction: Transaction<T>, options?: {readOnlySnapshot?: boolean}) => Promise<T>;
