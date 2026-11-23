@@ -7,7 +7,11 @@ import { TransientProviderError, type CaptureRequest, type Provider, type Usage 
 import { parseTranscript, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT } from './question-bank-prompt.ts';
 import type { ClaimedTranscription } from './question-bank.ts';
 
-/** One round: at most 60 s, 4 calls at a time, 20 s per call, 12 calls. */
+/**
+ * One round: new calls start only within the first 60 s, 4 at a time, at most 12. A call already
+ * started runs to its own limit: the first-progress limit its upstream declares (60 s for Terra,
+ * which says nothing until its reasoning is complete), otherwise 20 s.
+ */
 export const QUESTION_BANK_ROUND = {
   totalMs: 60_000, concurrency: 4, callMs: 20_000, maxCalls: 12,
   /** A claimed job not finished by then counts one call and is retried; well past any round. */
@@ -39,6 +43,11 @@ type Outcome = 'empty' | 'skipped' | 'completed' | 'failed' | { stop: 'budget' |
 export function questionBankHoldId(modelAttemptId: string): string { return modelAttemptId + ':question_bank'; }
 
 function holdIds(modelAttemptId: string): string[] { return [modelAttemptId, questionBankHoldId(modelAttemptId)]; }
+
+/** The same allowance the answer path gives this upstream before its first sign of life. */
+export function questionBankCallLimitMs(provider: Provider): number {
+  return provider.firstProgressMs ?? QUESTION_BANK_ROUND.callMs;
+}
 
 /** Rate limiting, overload, or an exhausted upstream account: every further call this round would fail the same way. */
 export function upstreamSaturated(error: unknown): boolean {
@@ -89,8 +98,8 @@ async function round(deps: QuestionBankRoundDeps): Promise<QuestionBankRoundResu
     for (;;) {
       if (stop) return;
       if (result.calls >= QUESTION_BANK_ROUND.maxCalls) { halt('call_limit'); return; }
-      // Start a call only when its whole time limit fits in the round.
-      if (deadline - clock() < QUESTION_BANK_ROUND.callMs) { halt('deadline'); return; }
+      // The round limit governs starting a call; one already started finishes within its own limit.
+      if (clock() >= deadline) { halt('deadline'); return; }
       result.calls += 1;
       let outcome: Outcome;
       try { outcome = await transcribeOne(deps, clock); }
@@ -176,7 +185,7 @@ async function transcribeOne(deps: QuestionBankRoundDeps, clock: () => number): 
       return { stop: start, called: false };
     }
     begun = true;
-    const timeout = AbortSignal.timeout(QUESTION_BANK_ROUND.callMs);
+    const timeout = AbortSignal.timeout(questionBankCallLimitMs(provider));
     let text = '', usage: Usage | null = null, error: unknown = null;
     try { usage = await provider.stream(request, delta => { text += delta; }, timeout); }
     catch (caught) { error = caught; }

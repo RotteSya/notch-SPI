@@ -18,7 +18,8 @@ import {
   type QuestionBankOccurrenceRow, type QuestionBankTranscript,
 } from '../src/question-bank.ts';
 import { parseTranscript, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT } from '../src/question-bank-prompt.ts';
-import { QUESTION_BANK_ROUND, questionBankHoldId, runQuestionBankRound, type QuestionBankRoundResult } from '../src/question-bank-worker.ts';
+import { QUESTION_BANK_ROUND, questionBankCallLimitMs, questionBankHoldId, runQuestionBankRound, type QuestionBankRoundResult } from '../src/question-bank-worker.ts';
+import { OpenAIProvider, TERRA_MODEL } from '../src/providers/openai.ts';
 import { settledRequestWork } from '../src/request-lifecycle.ts';
 import { corruptPixels, pngBase64 as png } from './helpers/images.ts';
 import { openEphemeralPostgres } from './helpers/ephemeral-postgres.ts';
@@ -49,6 +50,7 @@ interface Bank {
   settings: Config;
   replies: Reply[];
   requests: CaptureRequest[];
+  provider: Provider;
   transcribeCalls: () => number;
   maxInFlight: () => number;
   register: () => Promise<string>;
@@ -107,7 +109,7 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   const register = async () => (await store.registerDevice({ platform: 'macos', appVersion: '4.0', trialQuestions: 30 })).token;
   const token = await register();
   return {
-    store, schema, token, settings, replies, requests,
+    store, schema, token, settings, replies, requests, provider,
     transcribeCalls: () => calls,
     maxInFlight: () => maxInFlight,
     register,
@@ -456,5 +458,45 @@ test('memory: one round makes at most 12 calls, 4 at a time', async () => {
     assert.deepEqual([round.stop, round.calls, round.completed], ['call_limit', QUESTION_BANK_ROUND.maxCalls, QUESTION_BANK_ROUND.maxCalls]);
     assert.equal(b.transcribeCalls(), QUESTION_BANK_ROUND.maxCalls);
     assert.ok(b.maxInFlight() <= QUESTION_BANK_ROUND.concurrency && b.maxInFlight() > 1, String(b.maxInFlight()));
+  } finally { await b.close(); }
+});
+
+test('a call gets the first-progress limit its upstream declares: 60 s for Terra, otherwise 20 s', () => {
+  assert.equal(questionBankCallLimitMs(new OpenAIProvider('sk-test', 'https://api.openai.com', TERRA_MODEL, 4096)), 60_000);
+  assert.equal(questionBankCallLimitMs(new OpenAIProvider('sk-test', 'https://api.openai.com', 'gpt-other', 4096)), 20_000);
+  assert.equal(questionBankCallLimitMs({ name: 'mock', stream: async () => ({ inputTokens: 0, outputTokens: 0 }) }), QUESTION_BANK_ROUND.callMs);
+});
+
+test('memory: a call that outlives its declared limit is cut there and fails as a timeout', async () => {
+  const b = await bank('memory');
+  try {
+    const captureId = await b.solve();
+    const silent: Provider = {
+      name: 'mock', firstProgressMs: 50,
+      stream: (_req, _delta, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+    };
+    const startedAt = Date.now();
+    const round = await runQuestionBankRound({ config: b.settings, store: b.store, provider: silent, providerDegraded: null });
+    assert.ok(Date.now() - startedAt < 5_000, 'cut at the declared 50 ms, not the 20 s default');
+    assert.deepEqual([round.calls, round.failed], [1, 1]);
+    const saved = await b.store.questionBank.findByCapture(captureId);
+    assert.deepEqual([saved?.jobStatus, saved?.jobErrorCode, saved?.jobAttemptCount], ['pending', 'timeout', 1]);
+  } finally { await b.close(); }
+});
+
+test('memory: the 60 s round limit only governs starting a call', async () => {
+  const b = await bank('memory');
+  try {
+    const captureId = await b.solve();
+    const clockAt = (offset: number) => { const t0 = Date.now(); let first = true; return () => { if (first) { first = false; return t0; } return t0 + offset; }; };
+    const late = await runQuestionBankRound({ config: b.settings, store: b.store, provider: b.provider, providerDegraded: null, now: clockAt(QUESTION_BANK_ROUND.totalMs) });
+    assert.deepEqual([late.stop, late.calls], ['deadline', 0], 'nothing starts at the 60 s mark');
+    assert.equal((await b.store.questionBank.findByCapture(captureId))?.jobStatus, 'pending');
+    b.replies.push(transcript(SPEED));
+    const lastSecond = await runQuestionBankRound({ config: b.settings, store: b.store, provider: b.provider, providerDegraded: null, now: clockAt(QUESTION_BANK_ROUND.totalMs - 1000) });
+    assert.deepEqual([lastSecond.calls, lastSecond.completed], [1, 1], 'a call may start with less than its own limit left in the round');
+    assert.equal((await b.store.questionBank.findByCapture(captureId))?.jobStatus, 'done');
   } finally { await b.close(); }
 });
