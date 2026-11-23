@@ -47,7 +47,7 @@ export const companyCSS = `
 .company-band{background:var(--paper);color:var(--ink);padding:32px 16px}
 .company-inner{width:100%;margin:auto}
 .company-heading{text-align:center;margin-bottom:20px}
-.company-heading h2{font-size:18px;line-height:1.7;font-weight:600;letter-spacing:.02em;margin:0;color:#536176}
+.company-heading h2{font-size:18px;line-height:1.7;font-weight:600;letter-spacing:.02em;margin:0;color:var(--secondary)}
 .company-window:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .company-window{display:flex;align-items:center;height:80px;overflow:hidden;mask-image:linear-gradient(to right,transparent,#000 128px,#000 calc(100% - 128px),transparent)}
 .company-track{display:flex;width:max-content;animation:company-scroll ${companyCycleSeconds(48,150,64,86.2545)}s linear infinite}
