@@ -123,7 +123,7 @@ final class MotionContinuityTests: XCTestCase {
             notch.model.depthLabel = "Low"
             notch.model.expanded = true; notch.view.refreshScreenshotTray()
             for _ in 0..<40 { notch.view.qaAdvanceMorph(by: 0.02) }
-            func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+            @MainActor func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
             let brand = try XCTUnwrap(descendants(notch.view).compactMap { $0 as? NSTextField }.first { $0.stringValue == "NotchSPI" })
             let pill = try XCTUnwrap(descendants(notch.view).first { String(describing: type(of: $0)) == "NotchCapsuleButton" })
             let settledBrand = brand.frame.width, settledPill = pill.frame.width
@@ -271,7 +271,7 @@ final class MotionContinuityTests: XCTestCase {
             }
             tray.qaUseManualHandoffClock()
             update(compact: false)
-            func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+            @MainActor func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
             let picture = try XCTUnwrap(descendants(tray).compactMap { $0 as? NSImageView }.first)
             let card = try XCTUnwrap(picture.superview)
             let large = card.frame
@@ -322,7 +322,7 @@ final class MotionContinuityTests: XCTestCase {
             model.expanded = true; view.refreshScreenshotTray()
             for _ in 0..<40 { view.qaAdvanceMorph(by: 0.02) }
             XCTAssertEqual(panel.frame, expanded)
-            func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
+            @MainActor func descendants(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(descendants) }
             let strip = try XCTUnwrap(descendants(view).compactMap { $0 as? ScreenshotTray }.first)
             @MainActor func edge() -> CGFloat { panel.frame.height - NotchMetrics.shadowMarginBottom }   // the card's lower edge
             // The strip has only just arrived below the answer; that handoff owns its motion
