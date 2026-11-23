@@ -1,6 +1,9 @@
 /** One solve lease; phase limits consume this lease and never restart it. */
 export const CAPTURE_DEADLINE = {
   leaseMs: 120_000, generationMs: 90_000, firstProgressMs: 20_000,
+  // For an upstream that returns nothing, not even response headers, until its reasoning is
+  // complete: silence there is thinking time, about 70 output tokens per second on Terra.
+  silentThinkingMs: 60_000,
   settlementMarginMs: 2_000, workerLeaseMs: 8_000, heartbeatMs: 2_000,
 } as const;
 
