@@ -393,12 +393,15 @@ for (const kind of kinds) {
     } finally { await b.close(); }
   });
 
-  test(`${kind}: shadow statistics: first, same-account and cross-account repeats, and a device later marked internal`, async () => {
+  test(`${kind}: shadow statistics: first, same-account and cross-account repeats, release-qa excluded, and a device later marked internal`, async () => {
     const b = await bank(kind);
     try {
       const other = await b.register();
+      // A release-qa device is test traffic, as the admin overview classifies it: saved, never counted.
+      const qa = (await b.store.registerDevice({ platform: 'release-qa', appVersion: '4.0', trialQuestions: 30 })).token;
       const solved: Record<string, string> = {};
       const steps: Array<[string, string | undefined, string]> = [
+        ['q1', qa, transcript(SPEED)],
         ['a1', undefined, transcript(SPEED)],
         ['a2', undefined, JSON.stringify({ status: 'ok', language: 'en', stem: '  A car travels １２０ km in 2 hours.  What is its average speed?',
           options: [{ label: 'B', text: '60 KM/H' }, { label: 'A', text: '40 km/h' }], has_figure: false })],
@@ -428,6 +431,7 @@ for (const kind of kinds) {
       assert.deepEqual([summary.denominator, summary.repeated, summary.sameAccount, summary.otherAccount], [6, 2, 1, 1]);
       const cards = await Promise.all(['a1', 'a2', 'b1', 'b2', 'b3', 'b4'].map(async name => (await b.store.questionBank.findByCapture(solved[name]!))!.cardId));
       assert.equal(new Set(cards.slice(0, 3)).size, 1, 'whitespace, full-width and option order share one card');
+      assert.equal((await b.store.questionBank.findByCapture(solved.q1!))!.cardId, cards[0], 'the release-qa attempt is saved and linked as usual');
       assert.equal(new Set(cards).size, 4, 'a figure question and a multiple-question capture each get their own card');
       for (const cardId of cards.slice(4)) {
         const own = await b.store.questionBank.findCard(cardId!);

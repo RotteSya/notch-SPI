@@ -432,8 +432,10 @@ export class SQLQuestionBankStore implements QuestionBankStore {
 
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]> {
     return this.run((function* (): Transaction<QuestionBankOccurrenceRow[]> {
+      // Internal or test, as the admin overview classifies devices.
       const rows = yield* query(
-        `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable, d.is_internal, j.status AS job_status
+        `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable,
+           CASE WHEN d.is_internal = 1 OR d.platform = 'release-qa' THEN 1 ELSE 0 END AS internal, j.status AS job_status
          FROM question_bank_attempts a
          LEFT JOIN question_bank_cards c ON c.card_id = a.card_id
          LEFT JOIN devices d ON d.id = a.device_id
@@ -441,7 +443,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
       );
       return rows.map(row => ({
         attemptId: String(row.attempt_id), deviceId: integer(row.device_id), createdAt: String(row.created_at),
-        internal: row.is_internal === true || Number(row.is_internal) === 1, jobStatus: textOrNull(row.job_status),
+        internal: Number(row.internal) === 1, jobStatus: textOrNull(row.job_status),
         cardId: textOrNull(row.card_id), matchable: integerOrNull(row.matchable) === 1,
       }));
     })());
