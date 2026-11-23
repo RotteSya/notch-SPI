@@ -235,7 +235,7 @@ export class PostgresStore implements Store {
   readonly finance = new SQLPaymentFinance(transaction => this.runBilling(transaction));
   private readonly purchases = new SQLPurchaseSessions(transaction => this.runBilling(transaction));
   readonly observations = new SQLObservationStore(transaction => this.runBilling(transaction));
-  readonly questionBank = new SQLQuestionBankStore(transaction => this.runBilling(transaction));
+  readonly questionBank = new SQLQuestionBankStore(transaction => this.runBilling(transaction), true);
   readonly reporting = new SQLReportingStore((transaction, options) => this.runBilling(transaction, false, options?.readOnlySnapshot),true);
   private ready: Promise<void> | null = null;
 

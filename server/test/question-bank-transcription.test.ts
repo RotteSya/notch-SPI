@@ -228,7 +228,7 @@ test('a stem that normalizes to nothing never matches, with or without options',
 
 test('the three seen-before flags come only from earlier counted solves', () => {
   const row = (attemptId: string, deviceId: number, minute: number, cardId: string, extra: Partial<QuestionBankOccurrenceRow> = {}): QuestionBankOccurrenceRow =>
-    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 1, minute)), internal: false, jobStatus: 'done', cardId, matchable: true, ...extra });
+    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 1, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, ...extra });
   const summary = questionBankOccurrences([
     row('a8', 9, 0, 'q2', { internal: true }),
     row('a3', 2, 3, 'q1'), row('a1', 1, 1, 'q1'), row('a2', 1, 2, 'q1'), row('a4', 2, 4, 'q2'),

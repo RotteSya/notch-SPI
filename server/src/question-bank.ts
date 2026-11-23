@@ -92,8 +92,71 @@ export interface QuestionBankOccurrenceRow {
   createdAt: string;
   internal: boolean;
   jobStatus: string | null;
+  jobErrorCode: string | null;
   cardId: string | null;
   matchable: boolean;
+}
+
+/** A solve shown for a spot check: its own transcript and which of its images are still stored. */
+export interface QuestionBankSample {
+  attemptId: string;
+  createdAt: string;
+  cardId: string | null;
+  transcript: QuestionBankTranscript | null;
+  images: Array<{ ordinal: number; mediaType: string; byteCount: number; stored: boolean }>;
+}
+
+/** Two solves linked to the same matchable card. */
+export interface QuestionBankMatchSample { cardId: string; first: QuestionBankSample; second: QuestionBankSample }
+
+export type QuestionBankMarkKind = 'transcript' | 'match';
+export type QuestionBankVerdict = 'correct' | 'wrong' | 'same' | 'different';
+export const MARK_VERDICTS: Record<QuestionBankMarkKind, readonly QuestionBankVerdict[]> = {
+  transcript: ['correct', 'wrong'], match: ['same', 'different'],
+};
+
+/** A spot-check verdict. A match mark names its pair in attempt id order. */
+export interface QuestionBankMark {
+  markId: string;
+  kind: QuestionBankMarkKind;
+  attemptId: string;
+  otherAttemptId: string | null;
+  verdict: QuestionBankVerdict;
+  actor: string;
+  createdAt: string;
+}
+
+/** Stored content, as opposed to the shadow statistics: cards, images and the question bank's own model costs. */
+export interface QuestionBankInventory {
+  cards: Array<{ state: QuestionBankCard['state']; matchable: boolean; count: number }>;
+  images: { stored: number; storedBytes: number; cleared: number };
+  costs: Array<{ purpose: string; currency: string; calls: number; knownMicros: string; unknown: number }>;
+}
+
+/** What deleting one account's question-bank data removes, and the cards other accounts keep. */
+export interface QuestionBankFootprint {
+  attempts: number;
+  images: number;
+  storedImages: number;
+  jobs: number;
+  marks: number;
+  cardsDeleted: number;
+  cardsKept: number;
+}
+
+/** An audited admin action. The same operation id returns its first result; a different request under it is a conflict. */
+export type QuestionBankOperation<T> = { result: T; replayed: boolean } | 'conflict';
+
+/** One row of the admin audit log. */
+export interface QuestionBankOperationRecord {
+  operationId: string;
+  kind: 'requeue_failed' | 'delete_account';
+  deviceId: number | null;
+  actor: string;
+  reason: string;
+  createdAt: string;
+  before: unknown;
+  after: unknown;
 }
 
 export interface StoredQuestionBankAttempt {
@@ -168,6 +231,26 @@ export interface QuestionBankStore {
    */
   requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number>;
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]>;
+  inventory(): Promise<QuestionBankInventory>;
+  /** Random solves with a transcript and at least one stored image. */
+  sampleTranscripts(count: number): Promise<QuestionBankSample[]>;
+  /** Random matchable cards with two solves that still have images; a random pair from each. */
+  sampleMatches(count: number): Promise<QuestionBankMatchSample[]>;
+  image(attemptId: string, ordinal: number): Promise<{ mediaType: string; bytes: Buffer } | null>;
+  /** `missing`: no such transcribed solve, or a match pair not on one matchable card. */
+  recordMark(input: QuestionBankMark): Promise<'recorded' | 'replayed' | 'conflict' | 'missing'>;
+  marks(): Promise<QuestionBankMark[]>;
+  /** `requeueFailedTranscriptions` as an audited admin operation. */
+  requeueFailed(input: { operationId: string; actor: string; reason: string; now: string; maxTokens: number }): Promise<QuestionBankOperation<{ requeued: number }>>;
+  accountFootprint(deviceId: number): Promise<QuestionBankFootprint>;
+  /**
+   * Delete one account's solves, images, jobs and the spot-check marks that name them, then every
+   * card no other account's solve links to, with its state events. Works on `device_id` alone, so
+   * it also clears solves whose devices row no longer exists.
+   */
+  deleteAccount(input: { operationId: string; deviceId: number; actor: string; reason: string; now: string }): Promise<QuestionBankOperation<QuestionBankFootprint>>;
+  /** The audit log, newest first. */
+  operations(limit: number): Promise<QuestionBankOperationRecord[]>;
 }
 
 /**
@@ -276,6 +359,99 @@ export function questionBankOccurrences(rows: QuestionBankOccurrenceRow[]): Ques
     skipped: external.filter(row => row.jobStatus === 'skipped').length,
     occurrences,
   };
+}
+
+export const QUESTION_BANK_CHECKPOINTS = [1000, 1500, 2000] as const;
+export const QUESTION_BANK_TOP_ACCOUNTS = 5;
+
+export interface QuestionBankStats {
+  denominator: number;
+  repeated: number;
+  sameAccount: number;
+  otherAccount: number;
+  repeatRate: number | null;
+  sameAccountRate: number | null;
+  otherAccountRate: number | null;
+  checkpoints: { reached: number[]; next: number | null };
+  topAccounts: Array<{ deviceId: number; solves: number; share: number }>;
+  /** The top accounts left out as if internal: neither counted nor a precedent for others. */
+  withoutTopAccounts: { denominator: number; repeated: number; repeatRate: number | null };
+  /** Non-internal solves by transcription state. `coverage` is done ÷ solves. */
+  transcription: { solves: number; done: number; waiting: number; failed: number; skipped: number; coverage: number | null; failedByError: Record<string, number> };
+}
+
+const ratio = (numerator: number, denominator: number) => denominator === 0 ? null : numerator / denominator;
+
+/** The statistics page numbers, all computed now from the solves (section 9 of the plan). */
+export function questionBankStats(rows: QuestionBankOccurrenceRow[]): QuestionBankStats {
+  const all = questionBankOccurrences(rows);
+  const perAccount = new Map<number, number>();
+  for (const row of all.occurrences) perAccount.set(row.deviceId, (perAccount.get(row.deviceId) ?? 0) + 1);
+  const top = [...perAccount].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, QUESTION_BANK_TOP_ACCOUNTS);
+  const topIds = new Set(top.map(([deviceId]) => deviceId));
+  const without = questionBankOccurrences(rows.map(row => topIds.has(row.deviceId) ? { ...row, internal: true } : row));
+  const external = rows.filter(row => !row.internal);
+  const failedByError: Record<string, number> = {};
+  for (const row of external) if (row.jobStatus === 'failed') failedByError[row.jobErrorCode ?? 'unknown'] = (failedByError[row.jobErrorCode ?? 'unknown'] ?? 0) + 1;
+  return {
+    denominator: all.denominator, repeated: all.repeated, sameAccount: all.sameAccount, otherAccount: all.otherAccount,
+    repeatRate: ratio(all.repeated, all.denominator),
+    sameAccountRate: ratio(all.sameAccount, all.denominator),
+    otherAccountRate: ratio(all.otherAccount, all.denominator),
+    checkpoints: {
+      reached: QUESTION_BANK_CHECKPOINTS.filter(point => all.denominator >= point),
+      next: QUESTION_BANK_CHECKPOINTS.find(point => all.denominator < point) ?? null,
+    },
+    topAccounts: top.map(([deviceId, solves]) => ({ deviceId, solves, share: solves / all.denominator })),
+    withoutTopAccounts: { denominator: without.denominator, repeated: without.repeated, repeatRate: ratio(without.repeated, without.denominator) },
+    transcription: {
+      solves: external.length, done: all.denominator, waiting: all.waiting, failed: all.failed, skipped: all.skipped,
+      coverage: ratio(all.denominator, external.length), failedByError,
+    },
+  };
+}
+
+/** Counts of each verdict, taking only the latest mark per solve or per pair. */
+export function questionBankMarkSummary(marks: QuestionBankMark[]): { transcript: { correct: number; wrong: number }; match: { same: number; different: number } } {
+  const latest = new Map<string, QuestionBankMark>();
+  for (const mark of [...marks].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.markId.localeCompare(b.markId))) {
+    latest.set(JSON.stringify([mark.kind, mark.attemptId, mark.otherAttemptId]), mark);
+  }
+  const summary = { transcript: { correct: 0, wrong: 0 }, match: { same: 0, different: 0 } };
+  for (const mark of latest.values()) {
+    if (mark.kind === 'transcript' && (mark.verdict === 'correct' || mark.verdict === 'wrong')) summary.transcript[mark.verdict] += 1;
+    if (mark.kind === 'match' && (mark.verdict === 'same' || mark.verdict === 'different')) summary.match[mark.verdict] += 1;
+  }
+  return summary;
+}
+
+/** Transcription and review model calls by purpose and currency; a missing cost stays unknown. */
+export function questionBankCosts(attempts: Array<{ purpose: string; currency: string; costMicros: string | null }>): QuestionBankInventory['costs'] {
+  const rows = new Map<string, QuestionBankInventory['costs'][number]>();
+  for (const attempt of attempts) {
+    const key = JSON.stringify([attempt.purpose, attempt.currency]);
+    const row = rows.get(key) ?? { purpose: attempt.purpose, currency: attempt.currency, calls: 0, knownMicros: '0', unknown: 0 };
+    row.calls += 1;
+    if (attempt.costMicros === null || !/^\d+$/.test(attempt.costMicros)) row.unknown += 1;
+    else row.knownMicros = (BigInt(row.knownMicros) + BigInt(attempt.costMicros)).toString();
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => a.purpose.localeCompare(b.purpose) || a.currency.localeCompare(b.currency));
+}
+
+/** Binds an operation id to the request it was first used for. */
+export function operationFingerprint(parts: unknown[]): string {
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+}
+
+/** A random selection without repeats; `Math.random` is enough for a spot check. */
+export function sampleOf<T>(items: T[], count: number): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+  }
+  return copy.slice(0, count);
 }
 
 let writeFailures = 0;

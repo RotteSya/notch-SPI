@@ -91,6 +91,15 @@
 | admin | GET | /admin/ops/actions |
 | admin | POST | /admin/ops/plus/preview |
 | admin | POST | /admin/ops/plus/grant |
+| admin | GET | /admin/question-bank |
+| admin | GET | /admin/question-bank/stats |
+| admin | POST | /admin/question-bank/requeue |
+| admin | GET | /admin/question-bank/samples/transcripts |
+| admin | GET | /admin/question-bank/samples/matches |
+| admin | GET | /admin/question-bank/attempts/:attemptId/images/:ordinal |
+| admin | POST | /admin/question-bank/marks |
+| admin | POST | /admin/question-bank/accounts/preview |
+| admin | POST | /admin/question-bank/accounts/delete |
 <!-- route-inventory: end -->
 
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。

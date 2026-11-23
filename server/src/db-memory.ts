@@ -64,7 +64,9 @@ export class MemoryStore implements Store {
   readonly billing: MemoryBilling = new MemoryBilling(token => this.devices.get(hashToken(token)), event => this.usageEvents.push(event), id => this.plus.records.get(id) ?? null,id=>this.admin.grants.get(id)??null,id=>this.plus.compensations.get(id)??null);
   readonly observations = new MemoryObservationStore(token=>this.devices.get(hashToken(token))?.id??null,this.productEvents);
   readonly questionBank = new MemoryQuestionBankStore(token=>this.devices.get(hashToken(token))?.id??null,
-    id=>this.reporting.isInternal(id)||[...this.devices.values()].some(d=>d.id===id&&d.platform==='release-qa'));
+    id=>this.reporting.isInternal(id)||[...this.devices.values()].some(d=>d.id===id&&d.platform==='release-qa'),
+    ()=>this.billing.adminTraffic().attempts.filter(a=>['transcribe','review'].includes(a.purpose))
+      .map(a=>({purpose:a.purpose,currency:a.currency,costMicros:a.costMicros})));
   readonly reporting = new MemoryReportingStore(q=>{
     const devices=[...this.devices.values()].filter(d=>d.createdAt>=q.cohortFrom&&d.createdAt<q.cohortTo);
     const ids=new Set(devices.map(d=>d.id)),billing=this.billing.report(ids,q.asOf),payment=this.payments.reportFacts(ids,q.asOf,q.cohortFrom);

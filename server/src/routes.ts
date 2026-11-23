@@ -1,6 +1,7 @@
 import {releaseDownload} from './release-download.ts';
 import {budgetStatus} from './budget-policy.ts';
 import {registerAdminRoutes} from './admin-routes.ts';
+import { registerQuestionBankAdmin } from './question-bank-admin.ts';
 import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
@@ -139,6 +140,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   };
 
   registerAdminRoutes(app,ctx,requireAdmin);
+  registerQuestionBankAdmin(app, ctx, requireAdmin);
 
   // Best-effort abuse limits (see rateLimit.ts): a per-IP cap on anonymous registration and a
   // per-token cap on concurrent captures. Instantiated once so state lives for the process.

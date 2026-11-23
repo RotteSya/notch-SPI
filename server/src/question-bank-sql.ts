@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { hashToken } from './db.ts';
 import { query, type Row, type RunTransaction, type Transaction } from './billing-sql.ts';
 import {
-  imageDigest, promptDigest, questionFingerprint, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
-  type ClaimedTranscription, type QuestionBankCard, type QuestionBankCounts, type QuestionBankOccurrenceRow,
+  imageDigest, operationFingerprint, promptDigest, questionBankCosts, questionFingerprint, sampleOf, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
+  type ClaimedTranscription, type QuestionBankCard, type QuestionBankCounts, type QuestionBankFootprint, type QuestionBankInventory,
+  type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation, type QuestionBankOperationRecord,
+  type QuestionBankSample,
   type QuestionBankSolveInput, type QuestionBankStore, type QuestionBankTranscript, type StaleTranscription,
   type StoredQuestionBankAttempt, type StoredQuestionBankImage, type TranscriptionError,
 } from './question-bank.ts';
@@ -53,6 +55,7 @@ CREATE TABLE IF NOT EXISTS question_bank_attempts (
   transcript_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_attempts_card ON question_bank_attempts(card_id);
+CREATE INDEX IF NOT EXISTS idx_question_bank_attempts_device ON question_bank_attempts(device_id);
 CREATE TABLE IF NOT EXISTS question_bank_images (
   attempt_id TEXT NOT NULL REFERENCES question_bank_attempts(attempt_id),
   ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
@@ -82,6 +85,38 @@ CREATE TABLE IF NOT EXISTS question_bank_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_due ON question_bank_jobs(kind, status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_attempt ON question_bank_jobs(bank_attempt_id);
+CREATE TABLE IF NOT EXISTS question_bank_card_events (
+  event_id TEXT PRIMARY KEY,
+  card_id TEXT NOT NULL REFERENCES question_bank_cards(card_id),
+  at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  from_state TEXT NOT NULL,
+  to_state TEXT NOT NULL,
+  basis TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_question_bank_card_events_card ON question_bank_card_events(card_id);
+CREATE TABLE IF NOT EXISTS question_bank_operations (
+  operation_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('requeue_failed','delete_account')),
+  device_id BIGINT,
+  actor TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  before_json TEXT NOT NULL,
+  after_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS question_bank_marks (
+  mark_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('transcript','match')),
+  attempt_id TEXT NOT NULL,
+  other_attempt_id TEXT,
+  verdict TEXT NOT NULL CHECK(verdict IN ('correct','wrong','same','different')),
+  actor TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_question_bank_marks_attempt ON question_bank_marks(attempt_id);
+CREATE INDEX IF NOT EXISTS idx_question_bank_marks_other ON question_bank_marks(other_attempt_id);
 `;
 }
 
@@ -160,9 +195,101 @@ function card(row: Row): QuestionBankCard {
   };
 }
 
+const OWNED = 'SELECT attempt_id FROM question_bank_attempts WHERE device_id=?';
+
+function* requeueFailedJobs(now: string, maxTokens: number): Transaction<number> {
+  return (yield* query(
+    `UPDATE question_bank_jobs SET status='pending', attempt_count=0, error_code=NULL, truncated_max_tokens=NULL, next_attempt_at=?, updated_at=?
+     WHERE kind='transcribe' AND status='failed' AND (truncated_max_tokens IS NULL OR truncated_max_tokens < ?) RETURNING job_id`,
+    now, now, maxTokens,
+  )).length;
+}
+
+function* samplesOf(ids: string[]): Transaction<QuestionBankSample[]> {
+  const samples: QuestionBankSample[] = [];
+  for (const id of ids) {
+    const row = (yield* query('SELECT attempt_id, created_at, card_id, transcript_json FROM question_bank_attempts WHERE attempt_id=?', id))[0];
+    if (!row) continue;
+    const images = yield* query(
+      `SELECT ordinal, media_type, byte_count, CASE WHEN content IS NULL THEN 0 ELSE 1 END AS stored
+       FROM question_bank_images WHERE attempt_id=? ORDER BY ordinal`, id,
+    );
+    const transcript = textOrNull(row.transcript_json);
+    samples.push({
+      attemptId: String(row.attempt_id), createdAt: String(row.created_at), cardId: textOrNull(row.card_id),
+      transcript: transcript === null ? null : JSON.parse(transcript) as QuestionBankTranscript,
+      images: images.map(image => ({ ordinal: integer(image.ordinal), mediaType: String(image.media_type), byteCount: integer(image.byte_count), stored: integer(image.stored) === 1 })),
+    });
+  }
+  return samples;
+}
+
+/** The account's cards: those only its solves link to, and how many another account's solve also links to. */
+function* cardsOf(deviceId: number): Transaction<{ deleted: string[]; kept: number }> {
+  const rows = yield* query(
+    `SELECT DISTINCT a.card_id,
+       CASE WHEN EXISTS (SELECT 1 FROM question_bank_attempts b WHERE b.card_id = a.card_id AND b.device_id <> ?) THEN 1 ELSE 0 END AS shared
+     FROM question_bank_attempts a WHERE a.device_id=? AND a.card_id IS NOT NULL`,
+    deviceId, deviceId,
+  );
+  return { deleted: rows.filter(row => integer(row.shared) === 0).map(row => String(row.card_id)).sort(), kept: rows.filter(row => integer(row.shared) === 1).length };
+}
+
+function* footprintOf(deviceId: number): Transaction<{ footprint: QuestionBankFootprint; cards: string[] }> {
+  const row = (yield* query(
+    `SELECT
+       (SELECT COUNT(*) FROM question_bank_attempts WHERE device_id=?) AS attempts,
+       (SELECT COUNT(*) FROM question_bank_images WHERE attempt_id IN (${OWNED})) AS images,
+       (SELECT COUNT(*) FROM question_bank_images WHERE content IS NOT NULL AND attempt_id IN (${OWNED})) AS stored_images,
+       (SELECT COUNT(*) FROM question_bank_jobs WHERE bank_attempt_id IN (${OWNED})) AS jobs,
+       (SELECT COUNT(*) FROM question_bank_marks WHERE attempt_id IN (${OWNED}) OR other_attempt_id IN (${OWNED})) AS marks`,
+    deviceId, deviceId, deviceId, deviceId, deviceId, deviceId,
+  ))[0]!;
+  const cards = yield* cardsOf(deviceId);
+  return {
+    footprint: {
+      attempts: integer(row.attempts), images: integer(row.images), storedImages: integer(row.stored_images), jobs: integer(row.jobs),
+      marks: integer(row.marks), cardsDeleted: cards.deleted.length, cardsKept: cards.kept,
+    },
+    cards: cards.deleted,
+  };
+}
+
+/** The first result of an operation id, `conflict` when it was used for another request, null when unused. */
+function* priorOperation<T>(operationId: string, fingerprint: string): Transaction<{ result: T } | 'conflict' | null> {
+  const row = (yield* query('SELECT fingerprint, after_json FROM question_bank_operations WHERE operation_id=?', operationId))[0];
+  if (!row) return null;
+  return String(row.fingerprint) === fingerprint ? { result: JSON.parse(String(row.after_json)) as T } : 'conflict';
+}
+
+function* recordOperation(input: {
+  operationId: string; kind: 'requeue_failed' | 'delete_account'; deviceId: number | null; actor: string; reason: string;
+  fingerprint: string; now: string; before: unknown; after: unknown;
+}): Transaction<void> {
+  yield* query(
+    `INSERT INTO question_bank_operations (operation_id, kind, device_id, actor, reason, fingerprint, created_at, before_json, after_json)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    input.operationId, input.kind, input.deviceId, input.actor, input.reason, input.fingerprint, input.now,
+    JSON.stringify(input.before), JSON.stringify(input.after),
+  );
+}
+
+function mark(row: Row): QuestionBankMark {
+  return {
+    markId: String(row.mark_id), kind: String(row.kind) as QuestionBankMark['kind'], attemptId: String(row.attempt_id),
+    otherAttemptId: textOrNull(row.other_attempt_id), verdict: String(row.verdict) as QuestionBankMark['verdict'],
+    actor: String(row.actor), createdAt: String(row.created_at),
+  };
+}
+
 export class SQLQuestionBankStore implements QuestionBankStore {
   private readonly run: RunTransaction;
-  constructor(run: RunTransaction) { this.run = run; }
+  private readonly pg: boolean;
+  constructor(run: RunTransaction, pg = false) { this.run = run; this.pg = pg; }
+
+  private json(column: string, key: string): string {
+    return this.pg ? `(${column}::jsonb->>'${key}')` : `json_extract(${column},'$.${key}')`;
+  }
 
   recordSolve(input: QuestionBankSolveInput): Promise<void> {
     const digest = promptDigest(input.system, input.task);
@@ -390,7 +517,8 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     return this.run((function* (): Transaction<string | null> {
       const job = (yield* query(`SELECT bank_attempt_id FROM question_bank_jobs WHERE job_id=? AND status='running'`, input.jobId))[0];
       if (!job) return null;
-      const solve = (yield* query('SELECT attempt_id FROM question_bank_attempts WHERE attempt_id=?', textOrNull(job.bank_attempt_id)))[0];
+      // Locked so an account deletion either runs first (no card is made) or sees this card linked.
+      const solve = (yield* query('SELECT attempt_id FROM question_bank_attempts WHERE attempt_id=? FOR UPDATE', textOrNull(job.bank_attempt_id)))[0];
       if (!solve) {
         yield* query(`UPDATE question_bank_jobs SET status='skipped', error_code='attempt_missing', lease_expires_at=NULL, updated_at=? WHERE job_id=?`, input.now, input.jobId);
         return null;
@@ -424,13 +552,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
   }
 
   requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number> {
-    return this.run((function* (): Transaction<number> {
-      return (yield* query(
-        `UPDATE question_bank_jobs SET status='pending', attempt_count=0, error_code=NULL, truncated_max_tokens=NULL, next_attempt_at=?, updated_at=?
-         WHERE kind='transcribe' AND status='failed' AND (truncated_max_tokens IS NULL OR truncated_max_tokens < ?) RETURNING job_id`,
-        now, now, maxTokens,
-      )).length;
-    })());
+    return this.run(requeueFailedJobs(now, maxTokens));
   }
 
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]> {
@@ -438,7 +560,8 @@ export class SQLQuestionBankStore implements QuestionBankStore {
       // Internal or test, as the admin overview classifies devices.
       const rows = yield* query(
         `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable,
-           CASE WHEN d.is_internal = 1 OR d.platform = 'release-qa' THEN 1 ELSE 0 END AS internal, j.status AS job_status
+           CASE WHEN d.is_internal = 1 OR d.platform = 'release-qa' THEN 1 ELSE 0 END AS internal, j.status AS job_status,
+           j.error_code AS job_error_code
          FROM question_bank_attempts a
          LEFT JOIN question_bank_cards c ON c.card_id = a.card_id
          LEFT JOIN devices d ON d.id = a.device_id
@@ -446,8 +569,155 @@ export class SQLQuestionBankStore implements QuestionBankStore {
       );
       return rows.map(row => ({
         attemptId: String(row.attempt_id), deviceId: integer(row.device_id), createdAt: String(row.created_at),
-        internal: Number(row.internal) === 1, jobStatus: textOrNull(row.job_status),
+        internal: Number(row.internal) === 1, jobStatus: textOrNull(row.job_status), jobErrorCode: textOrNull(row.job_error_code),
         cardId: textOrNull(row.card_id), matchable: integerOrNull(row.matchable) === 1,
+      }));
+    })());
+  }
+
+  inventory(): Promise<QuestionBankInventory> {
+    const purpose = this.json('metadata', 'purpose'), currency = this.json('metadata', 'currency'), cost = this.json('metadata', 'costMicros');
+    return this.run((function* (): Transaction<QuestionBankInventory> {
+      const cards = yield* query('SELECT state, matchable, COUNT(*) AS n FROM question_bank_cards GROUP BY state, matchable ORDER BY state, matchable');
+      const images = (yield* query(
+        `SELECT COALESCE(SUM(CASE WHEN content IS NULL THEN 0 ELSE 1 END), 0) AS stored,
+           COALESCE(SUM(CASE WHEN content IS NULL THEN 0 ELSE byte_count END), 0) AS stored_bytes,
+           COALESCE(SUM(CASE WHEN content IS NULL THEN 1 ELSE 0 END), 0) AS cleared
+         FROM question_bank_images`,
+      ))[0]!;
+      const attempts = yield* query(
+        `SELECT ${purpose} AS purpose, ${currency} AS currency, ${cost} AS cost FROM model_attempts WHERE ${purpose} IN ('transcribe','review')`,
+      );
+      return {
+        cards: cards.map(row => ({ state: String(row.state) as QuestionBankCard['state'], matchable: integer(row.matchable) === 1, count: integer(row.n) })),
+        images: { stored: integer(images.stored), storedBytes: integer(images.stored_bytes), cleared: integer(images.cleared) },
+        costs: questionBankCosts(attempts.map(row => ({ purpose: String(row.purpose), currency: String(row.currency), costMicros: textOrNull(row.cost) }))),
+      };
+    })());
+  }
+
+  sampleTranscripts(count: number): Promise<QuestionBankSample[]> {
+    return this.run((function* (): Transaction<QuestionBankSample[]> {
+      const ids = yield* query(
+        `SELECT a.attempt_id FROM question_bank_attempts a
+         WHERE a.transcript_json IS NOT NULL
+           AND EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id AND i.content IS NOT NULL)
+         ORDER BY random() LIMIT ?`,
+        count,
+      );
+      return yield* samplesOf(ids.map(row => String(row.attempt_id)));
+    })());
+  }
+
+  sampleMatches(count: number): Promise<QuestionBankMatchSample[]> {
+    return this.run((function* (): Transaction<QuestionBankMatchSample[]> {
+      const rows = yield* query(
+        `SELECT a.card_id, a.attempt_id FROM question_bank_attempts a JOIN question_bank_cards c ON c.card_id = a.card_id
+         WHERE c.matchable = 1 AND a.transcript_json IS NOT NULL
+           AND EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id AND i.content IS NOT NULL)`,
+      );
+      const byCard = new Map<string, string[]>();
+      for (const row of rows) byCard.set(String(row.card_id), [...byCard.get(String(row.card_id)) ?? [], String(row.attempt_id)]);
+      const pairs: QuestionBankMatchSample[] = [];
+      for (const [cardId, attempts] of sampleOf([...byCard].filter(([, ids]) => ids.length >= 2), count)) {
+        const [first, second] = yield* samplesOf(sampleOf(attempts, 2).sort());
+        if (first && second) pairs.push({ cardId, first, second });
+      }
+      return pairs;
+    })());
+  }
+
+  image(attemptId: string, ordinal: number): Promise<{ mediaType: string; bytes: Buffer } | null> {
+    return this.run((function* (): Transaction<{ mediaType: string; bytes: Buffer } | null> {
+      const row = (yield* query('SELECT media_type, content FROM question_bank_images WHERE attempt_id=? AND ordinal=?', attemptId, ordinal))[0];
+      const bytes = row ? bytesOrNull(row.content) : null;
+      return row && bytes ? { mediaType: String(row.media_type), bytes } : null;
+    })());
+  }
+
+  recordMark(input: QuestionBankMark): Promise<'recorded' | 'replayed' | 'conflict' | 'missing'> {
+    return this.run((function* (): Transaction<'recorded' | 'replayed' | 'conflict' | 'missing'> {
+      const prior = (yield* query('SELECT * FROM question_bank_marks WHERE mark_id=?', input.markId))[0];
+      if (prior) {
+        const before = mark(prior);
+        return before.kind === input.kind && before.attemptId === input.attemptId && before.otherAttemptId === input.otherAttemptId
+          && before.verdict === input.verdict && before.actor === input.actor ? 'replayed' : 'conflict';
+      }
+      if (input.kind === 'transcript') {
+        if (!(yield* query('SELECT 1 FROM question_bank_attempts WHERE attempt_id=? AND transcript_json IS NOT NULL', input.attemptId)).length) return 'missing';
+      } else {
+        const rows = yield* query(
+          `SELECT a.card_id, c.matchable FROM question_bank_attempts a JOIN question_bank_cards c ON c.card_id = a.card_id
+           WHERE a.attempt_id IN (?,?)`,
+          input.attemptId, input.otherAttemptId,
+        );
+        if (input.attemptId === input.otherAttemptId || rows.length !== 2 || String(rows[0]!.card_id) !== String(rows[1]!.card_id)
+          || integer(rows[0]!.matchable) !== 1) return 'missing';
+      }
+      yield* query(
+        `INSERT INTO question_bank_marks (mark_id, kind, attempt_id, other_attempt_id, verdict, actor, created_at) VALUES (?,?,?,?,?,?,?)`,
+        input.markId, input.kind, input.attemptId, input.otherAttemptId, input.verdict, input.actor, input.createdAt,
+      );
+      return 'recorded';
+    })());
+  }
+
+  marks(): Promise<QuestionBankMark[]> {
+    return this.run((function* (): Transaction<QuestionBankMark[]> {
+      return (yield* query('SELECT * FROM question_bank_marks ORDER BY created_at, mark_id')).map(mark);
+    })());
+  }
+
+  requeueFailed(input: { operationId: string; actor: string; reason: string; now: string; maxTokens: number }): Promise<QuestionBankOperation<{ requeued: number }>> {
+    const fingerprint = operationFingerprint(['requeue_failed', input.actor, input.reason, input.maxTokens]);
+    return this.run((function* (): Transaction<QuestionBankOperation<{ requeued: number }>> {
+      const prior = yield* priorOperation<{ requeued: number }>(input.operationId, fingerprint);
+      if (prior === 'conflict') return prior;
+      if (prior) return { result: prior.result, replayed: true };
+      const failed = integer((yield* query(`SELECT COUNT(*) AS n FROM question_bank_jobs WHERE kind='transcribe' AND status='failed'`))[0]!.n);
+      const requeued = yield* requeueFailedJobs(input.now, input.maxTokens);
+      yield* recordOperation({ ...input, kind: 'requeue_failed', deviceId: null, fingerprint, before: { failed }, after: { requeued } });
+      return { result: { requeued }, replayed: false };
+    })());
+  }
+
+  accountFootprint(deviceId: number): Promise<QuestionBankFootprint> {
+    return this.run((function* (): Transaction<QuestionBankFootprint> {
+      return (yield* footprintOf(deviceId)).footprint;
+    })());
+  }
+
+  deleteAccount(input: { operationId: string; deviceId: number; actor: string; reason: string; now: string }): Promise<QuestionBankOperation<QuestionBankFootprint>> {
+    const fingerprint = operationFingerprint(['delete_account', input.deviceId, input.actor, input.reason]);
+    const deviceId = input.deviceId;
+    return this.run((function* (): Transaction<QuestionBankOperation<QuestionBankFootprint>> {
+      const prior = yield* priorOperation<QuestionBankFootprint>(input.operationId, fingerprint);
+      if (prior === 'conflict') return prior;
+      if (prior) return { result: prior.result, replayed: true };
+      // Waits for a transcription that is linking one of these solves to a card, then sees that card.
+      yield* query('SELECT attempt_id FROM question_bank_attempts WHERE device_id=? FOR UPDATE', deviceId);
+      const { footprint, cards } = yield* footprintOf(deviceId);
+      yield* query(`DELETE FROM question_bank_marks WHERE attempt_id IN (${OWNED}) OR other_attempt_id IN (${OWNED})`, deviceId, deviceId);
+      yield* query(`DELETE FROM question_bank_images WHERE attempt_id IN (${OWNED})`, deviceId);
+      yield* query(`DELETE FROM question_bank_jobs WHERE bank_attempt_id IN (${OWNED})`, deviceId);
+      yield* query('DELETE FROM question_bank_attempts WHERE device_id=?', deviceId);
+      for (const cardId of cards) {
+        yield* query('DELETE FROM question_bank_card_events WHERE card_id=?', cardId);
+        yield* query('DELETE FROM question_bank_jobs WHERE card_id=?', cardId);
+        yield* query('DELETE FROM question_bank_cards WHERE card_id=?', cardId);
+      }
+      yield* recordOperation({ ...input, kind: 'delete_account', fingerprint, before: footprint, after: footprint });
+      return { result: footprint, replayed: false };
+    })());
+  }
+
+  operations(limit: number): Promise<QuestionBankOperationRecord[]> {
+    return this.run((function* (): Transaction<QuestionBankOperationRecord[]> {
+      const rows = yield* query('SELECT * FROM question_bank_operations ORDER BY created_at DESC, operation_id DESC LIMIT ?', limit);
+      return rows.map(row => ({
+        operationId: String(row.operation_id), kind: String(row.kind) as QuestionBankOperationRecord['kind'], deviceId: integerOrNull(row.device_id),
+        actor: String(row.actor), reason: String(row.reason), createdAt: String(row.created_at),
+        before: JSON.parse(String(row.before_json)) as unknown, after: JSON.parse(String(row.after_json)) as unknown,
       }));
     })());
   }
