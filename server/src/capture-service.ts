@@ -33,7 +33,7 @@ function quotaRejected(code:'insufficient_quota'|'paid_credits_disabled'):ApiErr
 }
 interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; share:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
 
-function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
+export function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
   if (!usage || usage.inputTokens === null || usage.outputTokens === null) return undefined;
   if (usage.attempts) {
     let total = 0;
@@ -443,7 +443,8 @@ export class CaptureService {
     if(operation==='explain' && (!answerCapture.answerHmac || this.keys.digest('answer',normalizeObjectiveAnswer(answer),parent.keyVersion)!==answerCapture.answerHmac)) throw new ApiError(409,'原答案不匹配','binding_mismatch');
     const selected=this.ctx.objectiveProvider, model=config.objectiveModel;
     if(this.ctx.objectiveProviderDegraded!==null) throw new ApiError(503,'服务不可用','upstream_error');
-    const originalAttempt=(await store.billing.attempts(token)).find(a=>a.captureId===parentId);
+    // A question-bank transcription shares the solve's capture id; only the solve's own attempt names its model.
+    const originalAttempt=(await store.billing.attempts(token)).find(a=>a.captureId===parentId&&a.purpose==='answer');
     if(!originalAttempt || originalAttempt.provider!==selected.name||originalAttempt.model!==model) throw new ApiError(503,'原模型策略已暂停','feature_disabled');
     const requestHmac=this.keys.digest('auxiliary',JSON.stringify({operation,inputHmac,answer:operation==='explain'?answer:null,
       ...(reasoningEffort ? {reasoningEffort} : {}),

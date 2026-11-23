@@ -25,7 +25,7 @@ export interface CaptureRequest {
   /** Persisted client slots: low/high/max -> Terra low/medium/high; DeepSeek keeps native IDs. */
   reasoningEffort?: 'low' | 'high' | 'max';
   /** Assigned by the server route; never read from client-supplied provider options. */
-  purpose?: 'answer' | 'explain' | 'recover';
+  purpose?: 'answer' | 'explain' | 'recover' | 'transcribe';
   /** Negotiated tutor result. Report ambiguity from the original model call. */
   tutorResultV1?: boolean;
 }

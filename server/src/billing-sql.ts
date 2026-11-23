@@ -15,7 +15,7 @@ import {QUOTA_MIGRATION_SCHEMA} from './quota-migration-schema.ts';
 import {FREE_TRIAL_POLICY, trialWindow, trialSnapshot, type FreeTrialSnapshot} from './free-trial.ts';
 import { validateUsageEvidence, type AttemptUsageEvidence, type CaptureAdmission, type CaptureAdmissionInput, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
   type BillingStore, type CaptureRecord, type CaptureSettlement, type CreditInput, type FinishCapture, type QuotaSnapshot,
-  type RegistrationInput } from './billing.ts';
+  type RegistrationInput, type BankAttemptStart, type BankAttemptFinish } from './billing.ts';
 
 // Generators describe one transaction. SQLite runs every step synchronously, without yielding
 // its connection; Postgres awaits each query on a dedicated, row-locked transaction connection.
@@ -252,17 +252,41 @@ export class SQLBilling implements BillingStore {
     if(!Number.isSafeInteger(tokens)||tokens<=0)return Promise.resolve(false);
     return this.run((function*():Transaction<boolean>{
       const d=yield* device(token);if(!d)return false;
-      yield* query('SELECT id FROM provider_capacity_guard WHERE id=1 FOR UPDATE');
-      const prior=(yield* query('SELECT * FROM provider_capacity_leases WHERE id=?',id))[0];
-      if(prior)return Number(prior.device_id)===Number(d.id)&&Number(prior.active)===1&&Number(prior.expires)>now;
-      const stats=(yield* query(`SELECT SUM(CASE WHEN active=1 AND expires>? THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN started>? THEN 1 ELSE 0 END) AS requests,
-        SUM(CASE WHEN started>? THEN tokens ELSE 0 END) AS tokens FROM provider_capacity_leases`,now,now-60000,now-60000))[0]!;
-      const ceiling=capacityCeilings(share);
-      if(Number(stats.active)>=ceiling.concurrency||Number(stats.requests)>=ceiling.requestsPerMinute||Number(stats.tokens)+tokens>ceiling.tokensPerMinute)return false;
-      yield* query('INSERT INTO provider_capacity_leases(id,device_id,tokens,started,expires,active) VALUES(?,?,?,?,?,1)',id,Number(d.id),tokens,now,now+CAPACITY.leaseMs);
-      yield* query('DELETE FROM provider_capacity_leases WHERE expires<=? AND started<=?',now,now-60000);
-      return true;
+      return yield* capacityLeaseForDevice(d,id,tokens,now,share);
+    })());
+  }
+  beginBankAttempt(input:BankAttemptStart):Promise<'started'|'busy'|'budget'|'missing'> {
+    if(!Number.isSafeInteger(input.capacityTokens)||input.capacityTokens<=0)return Promise.resolve('busy');
+    return this.run((function*():Transaction<'started'|'busy'|'budget'|'missing'>{
+      // The device row first, as in every other budget transaction, then the shared guards.
+      const d=(yield* query('SELECT * FROM devices WHERE id=? FOR UPDATE',input.deviceId))[0];if(!d)return 'missing';
+      const settled=(yield* query("SELECT request_id FROM capture_requests WHERE request_id=? AND device_id=? AND state<>'held'",input.requestId,input.deviceId))[0];
+      if(!settled)return 'missing';
+      if(!(yield* capacityLeaseForDevice(d,input.attempt.attemptId,input.capacityTokens,input.now,input.capacityShare)))return 'busy';
+      for(const hold of input.holds){
+        if(hold.limitMicros<=0||input.reservedMicros<=0)continue;
+        // Unguarded: a question-bank call never moves a user channel's circuit breaker.
+        if(!(yield* reserveBudgetForDevice(d,hold.holdId,hold.scope,input.currency,input.reservedMicros,hold.limitMicros,86_400_000,input.now,input.utcOffsetMinutes,false,hold.channel,hold.share)))
+          throw new BankBudgetUnavailable();
+      }
+      const ordinal=Number((yield* query('SELECT COALESCE(MAX(ordinal),0) AS n FROM model_attempts WHERE request_id=?',input.requestId))[0]!.n)+1;
+      const attempt:Attempt={...input.attempt,status:'running',inputTokens:null,outputTokens:null,costMicros:null,startedAt:new Date(input.now).toISOString(),finishedAt:null};
+      yield* query("INSERT INTO model_attempts (attempt_id,request_id,device_id,ordinal,metadata,status) VALUES (?,?,?,?,?,'running')",
+        attempt.attemptId,input.requestId,input.deviceId,ordinal,JSON.stringify(attempt));
+      yield* query(`INSERT INTO attempt_costs (attempt_id,revision,currency,cost_micros,pricing_version,source,calculated_at)
+        VALUES (?,1,?,NULL,?,'unknown',?)`,attempt.attemptId,attempt.currency,attempt.pricingVersion,attempt.startedAt);
+      return 'started';
+    })()).catch(error=>{if(error instanceof BankBudgetUnavailable)return 'budget' as const;throw error;});
+  }
+  finishBankAttempt(input:BankAttemptFinish):Promise<void> {
+    return this.run((function*():Transaction<void>{
+      const d=(yield* query('SELECT * FROM devices WHERE id=? FOR UPDATE',input.deviceId))[0];if(!d)return;
+      yield* finishAttemptForDevice(d,input.attemptId,input.result);
+      for(const holdId of input.holdIds){
+        if(input.started)yield* settleBudgetForDevice(d,holdId,input.actualMicros);else yield* releaseBudgetForDevice(d,holdId);
+      }
+      yield* query(input.started?'UPDATE provider_capacity_leases SET active=0 WHERE id=? AND device_id=?'
+        :'DELETE FROM provider_capacity_leases WHERE id=? AND device_id=?',input.attemptId,input.deviceId);
     })());
   }
   releaseCapacity(token:string,id:string,used=true):Promise<void> {
@@ -549,58 +573,13 @@ export class SQLBilling implements BillingStore {
     if (limitMicros <= 0 || reservedUpperMicros <= 0) return Promise.resolve(true);
     return this.run((function* (): Transaction<boolean> {
       const d = yield* device(token); if (!d) return false;
-      const offset = utcOffsetMinutes * 60_000;
-      const start = Math.floor((now + offset) / windowMs) * windowMs - offset;
-      const windowStart = new Date(start).toISOString(), expiresAt = new Date(start + windowMs).toISOString();
-      const existing = yield* query('SELECT state,device_id FROM attempt_budget_holds WHERE attempt_id=?', attemptId);
-      if (existing.length) return Number(existing[0]!.device_id)===Number(d.id)
-        && (String(existing[0]!.state) === 'held' || String(existing[0]!.state) === 'settled');
-      const channelKey = JSON.stringify([scope,currency,channel]);
-      if (guarded) {
-        yield* query('INSERT INTO request_budget_guards(scope,currency) VALUES (?,?) ON CONFLICT(scope,currency) DO NOTHING',scope,currency);
-        const guard=(yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',scope,currency))[0];
-        if (!guard || Number(guard.tripped)!==0) throw new BudgetAdmissionError('guard_tripped');
-        yield* query('INSERT INTO budget_controls(channel,metadata) VALUES (?,?) ON CONFLICT(channel) DO NOTHING',channelKey,JSON.stringify(emptyControl(channelKey)));
-        const control = JSON.parse(String((yield* query('SELECT metadata FROM budget_controls WHERE channel=? FOR UPDATE',channelKey))[0]!.metadata)) as BudgetControl;
-        if (control.blockedUntil === -1) throw new BudgetAdmissionError('guard_tripped');
-        if (control.blockedUntil > now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
-      }
-      yield* query(`INSERT INTO budget_windows(scope,window_start,currency,limit_micros,expires_at)
-        VALUES (?,?,?,?,?) ON CONFLICT(scope,window_start,currency) DO NOTHING`, scope, windowStart, currency, limitMicros, expiresAt);
-      const row = (yield* query('SELECT spent_micros,held_micros,limit_micros FROM budget_windows WHERE scope=? AND window_start=? AND currency=? FOR UPDATE', scope, windowStart, currency))[0];
-      if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros > budgetCeiling(Number(row.limit_micros), guarded, share)) return false;
-      yield* query(`INSERT INTO attempt_budget_holds(attempt_id,device_id,scope,window_start,currency,reserved_upper_micros,state,created_at)
-        VALUES (?,?,?,?,?,?,'held',?)`, attemptId, Number(d.id), scope, windowStart, currency, reservedUpperMicros, new Date(now).toISOString());
-      yield* query("INSERT INTO budget_accounting(attempt_id,channel,reserved,booked,state,updated_at) VALUES (?,?,?,0,'pending',?)",attemptId,channelKey,reservedUpperMicros,now);
-      if (guarded) {
-        const control = JSON.parse(String((yield* query('SELECT metadata FROM budget_controls WHERE channel=?',channelKey))[0]!.metadata)) as BudgetControl;
-        if (control.blockedUntil > 0) {
-          control.probe = attemptId; control.blockedUntil = now + BUDGET_POLICY.probeMs;
-          yield* query('UPDATE budget_controls SET metadata=? WHERE channel=?',JSON.stringify(control),channelKey);
-        }
-      }
-      if (guarded) yield* query('INSERT INTO guarded_budget_holds(attempt_id,scope,currency) VALUES (?,?,?)',attemptId,scope,currency);
-      yield* query('UPDATE budget_windows SET held_micros=held_micros+? WHERE scope=? AND window_start=? AND currency=?', reservedUpperMicros, scope, windowStart, currency);
-      return true;
+      return yield* reserveBudgetForDevice(d, attemptId, scope, currency, reservedUpperMicros, limitMicros, windowMs, now, utcOffsetMinutes, guarded, channel, share);
     })());
   }
   releaseBudget(token: string, attemptId: string): Promise<void> {
     return this.run((function* (): Transaction<void> {
       const d = yield* device(token); if (!d) return;
-      yield* lockBudgetGuard(attemptId);
-      const hold = (yield* query("SELECT * FROM attempt_budget_holds WHERE attempt_id=? AND device_id=? AND state='held' FOR UPDATE", attemptId, Number(d.id)))[0]; if (!hold) return;
-      const accounting = (yield* query('SELECT * FROM budget_accounting WHERE attempt_id=?',attemptId))[0];
-      if (accounting) {
-        yield* query("UPDATE budget_accounting SET state='released',booked=0,actual=0,updated_at=? WHERE attempt_id=?",Date.now(),attemptId);
-        const controlRow = (yield* query('SELECT metadata FROM budget_controls WHERE channel=? FOR UPDATE',String(accounting.channel)))[0];
-        if (controlRow) {
-          const c=JSON.parse(String(controlRow.metadata)) as BudgetControl;
-          if (c.probe===attemptId) { c.probe=null; c.blockedUntil=Date.now()+BUDGET_POLICY.cooldownMs;
-            yield* query('UPDATE budget_controls SET metadata=? WHERE channel=?',JSON.stringify(c),c.channel); }
-        }
-      }
-      yield* query("UPDATE attempt_budget_holds SET state='released' WHERE attempt_id=?", attemptId);
-      yield* query('UPDATE budget_windows SET held_micros=held_micros-? WHERE scope=? AND window_start=? AND currency=?', Number(hold.reserved_upper_micros), String(hold.scope), String(hold.window_start), String(hold.currency));
+      yield* releaseBudgetForDevice(d, attemptId);
     })());
   }
   settleBudget(token: string, attemptId: string, actualMicros: number | null, anomaly = false): Promise<void> {
@@ -871,6 +850,76 @@ function* lockBudgetGuard(attemptId: string): Transaction<Row | undefined> {
   const guard=(yield* query('SELECT scope,currency FROM guarded_budget_holds WHERE attempt_id=?',attemptId))[0];
   if (guard) yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',String(guard.scope),String(guard.currency));
   return guard;
+}
+/** A supplier capacity lease for a device row the caller has already locked. */
+function* capacityLeaseForDevice(d: Row, id: string, tokens: number, now: number, share: number): Transaction<boolean> {
+  yield* query('SELECT id FROM provider_capacity_guard WHERE id=1 FOR UPDATE');
+  const prior=(yield* query('SELECT * FROM provider_capacity_leases WHERE id=?',id))[0];
+  if(prior)return Number(prior.device_id)===Number(d.id)&&Number(prior.active)===1&&Number(prior.expires)>now;
+  const stats=(yield* query(`SELECT SUM(CASE WHEN active=1 AND expires>? THEN 1 ELSE 0 END) AS active,
+    SUM(CASE WHEN started>? THEN 1 ELSE 0 END) AS requests,
+    SUM(CASE WHEN started>? THEN tokens ELSE 0 END) AS tokens FROM provider_capacity_leases`,now,now-60000,now-60000))[0]!;
+  const ceiling=capacityCeilings(share);
+  if(Number(stats.active)>=ceiling.concurrency||Number(stats.requests)>=ceiling.requestsPerMinute||Number(stats.tokens)+tokens>ceiling.tokensPerMinute)return false;
+  yield* query('INSERT INTO provider_capacity_leases(id,device_id,tokens,started,expires,active) VALUES(?,?,?,?,?,1)',id,Number(d.id),tokens,now,now+CAPACITY.leaseMs);
+  yield* query('DELETE FROM provider_capacity_leases WHERE expires<=? AND started<=?',now,now-60000);
+  return true;
+}
+/** Thrown inside a question-bank begin so that a hold which does not fit rolls back the whole transaction. */
+class BankBudgetUnavailable extends Error {}
+/** Reserve one budget hold for a device row the caller has already locked. */
+function* reserveBudgetForDevice(d: Row, attemptId: string, scope: string, currency: string, reservedUpperMicros: number,
+  limitMicros: number, windowMs: number, now: number, utcOffsetMinutes: number, guarded: boolean, channel: string, share: number): Transaction<boolean> {
+  const offset = utcOffsetMinutes * 60_000;
+  const start = Math.floor((now + offset) / windowMs) * windowMs - offset;
+  const windowStart = new Date(start).toISOString(), expiresAt = new Date(start + windowMs).toISOString();
+  const existing = yield* query('SELECT state,device_id FROM attempt_budget_holds WHERE attempt_id=?', attemptId);
+  if (existing.length) return Number(existing[0]!.device_id)===Number(d.id)
+    && (String(existing[0]!.state) === 'held' || String(existing[0]!.state) === 'settled');
+  const channelKey = JSON.stringify([scope,currency,channel]);
+  if (guarded) {
+    yield* query('INSERT INTO request_budget_guards(scope,currency) VALUES (?,?) ON CONFLICT(scope,currency) DO NOTHING',scope,currency);
+    const guard=(yield* query('SELECT tripped FROM request_budget_guards WHERE scope=? AND currency=? FOR UPDATE',scope,currency))[0];
+    if (!guard || Number(guard.tripped)!==0) throw new BudgetAdmissionError('guard_tripped');
+    yield* query('INSERT INTO budget_controls(channel,metadata) VALUES (?,?) ON CONFLICT(channel) DO NOTHING',channelKey,JSON.stringify(emptyControl(channelKey)));
+    const control = JSON.parse(String((yield* query('SELECT metadata FROM budget_controls WHERE channel=? FOR UPDATE',channelKey))[0]!.metadata)) as BudgetControl;
+    if (control.blockedUntil === -1) throw new BudgetAdmissionError('guard_tripped');
+    if (control.blockedUntil > now) throw new BudgetAdmissionError('cooldown',Math.max(1,Math.ceil((control.blockedUntil-now)/1000)));
+  }
+  yield* query(`INSERT INTO budget_windows(scope,window_start,currency,limit_micros,expires_at)
+    VALUES (?,?,?,?,?) ON CONFLICT(scope,window_start,currency) DO NOTHING`, scope, windowStart, currency, limitMicros, expiresAt);
+  const row = (yield* query('SELECT spent_micros,held_micros,limit_micros FROM budget_windows WHERE scope=? AND window_start=? AND currency=? FOR UPDATE', scope, windowStart, currency))[0];
+  if (!row || Number(row.spent_micros) + Number(row.held_micros) + reservedUpperMicros > budgetCeiling(Number(row.limit_micros), guarded, share)) return false;
+  yield* query(`INSERT INTO attempt_budget_holds(attempt_id,device_id,scope,window_start,currency,reserved_upper_micros,state,created_at)
+    VALUES (?,?,?,?,?,?,'held',?)`, attemptId, Number(d.id), scope, windowStart, currency, reservedUpperMicros, new Date(now).toISOString());
+  yield* query("INSERT INTO budget_accounting(attempt_id,channel,reserved,booked,state,updated_at) VALUES (?,?,?,0,'pending',?)",attemptId,channelKey,reservedUpperMicros,now);
+  if (guarded) {
+    const control = JSON.parse(String((yield* query('SELECT metadata FROM budget_controls WHERE channel=?',channelKey))[0]!.metadata)) as BudgetControl;
+    if (control.blockedUntil > 0) {
+      control.probe = attemptId; control.blockedUntil = now + BUDGET_POLICY.probeMs;
+      yield* query('UPDATE budget_controls SET metadata=? WHERE channel=?',JSON.stringify(control),channelKey);
+    }
+  }
+  if (guarded) yield* query('INSERT INTO guarded_budget_holds(attempt_id,scope,currency) VALUES (?,?,?)',attemptId,scope,currency);
+  yield* query('UPDATE budget_windows SET held_micros=held_micros+? WHERE scope=? AND window_start=? AND currency=?', reservedUpperMicros, scope, windowStart, currency);
+  return true;
+}
+/** Release one held budget hold of a device row the caller has already locked. */
+function* releaseBudgetForDevice(d: Row, attemptId: string): Transaction<void> {
+  yield* lockBudgetGuard(attemptId);
+  const hold = (yield* query("SELECT * FROM attempt_budget_holds WHERE attempt_id=? AND device_id=? AND state='held' FOR UPDATE", attemptId, Number(d.id)))[0]; if (!hold) return;
+  const accounting = (yield* query('SELECT * FROM budget_accounting WHERE attempt_id=?',attemptId))[0];
+  if (accounting) {
+    yield* query("UPDATE budget_accounting SET state='released',booked=0,actual=0,updated_at=? WHERE attempt_id=?",Date.now(),attemptId);
+    const controlRow = (yield* query('SELECT metadata FROM budget_controls WHERE channel=? FOR UPDATE',String(accounting.channel)))[0];
+    if (controlRow) {
+      const c=JSON.parse(String(controlRow.metadata)) as BudgetControl;
+      if (c.probe===attemptId) { c.probe=null; c.blockedUntil=Date.now()+BUDGET_POLICY.cooldownMs;
+        yield* query('UPDATE budget_controls SET metadata=? WHERE channel=?',JSON.stringify(c),c.channel); }
+    }
+  }
+  yield* query("UPDATE attempt_budget_holds SET state='released' WHERE attempt_id=?", attemptId);
+  yield* query('UPDATE budget_windows SET held_micros=held_micros-? WHERE scope=? AND window_start=? AND currency=?', Number(hold.reserved_upper_micros), String(hold.scope), String(hold.window_start), String(hold.currency));
 }
 function* settleBudgetForDevice(d: Row, attemptId: string, actualMicros: number | null, anomaly = false): Transaction<void> {
   if (actualMicros === null && !anomaly) {

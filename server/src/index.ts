@@ -12,6 +12,7 @@ import { StubPaymentProvider, type PaymentProvider } from './payments.ts';
 import { StripePaymentProvider, retrieveStripeRefund, reconcileStripeRefund, retrieveStripeCheckout } from './stripe.ts';
 import type { RefundSnapshot } from './payment-ledger.ts';
 import { registerRoutes } from './routes.ts';
+import { runQuestionBankRound } from './question-bank-worker.ts';
 import { captureRuntimePolicy } from './capture-timing.ts';
 
 // Compose the app so it can also be built in-process by tests (no listen). `overrides.provider`
@@ -79,7 +80,10 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
   });
   let paymentRecovery:Promise<void>|null=null;
   const reaper = config.isServerless ? null : setInterval(() => {
-    void store.billing.reap().catch(() => app.log.error('reservation recovery failed'));
+    // The question-bank round follows the reservation sweep, with the same limits as on the HTTP reaper.
+    void store.billing.reap().catch(() => app.log.error('reservation recovery failed'))
+      .then(() => runQuestionBankRound({config,store,provider:objectiveBuilt.provider,providerDegraded:objectiveBuilt.degraded}))
+      .catch(() => app.log.warn({event:'question_bank_round_failed'},'question_bank_round_failed'));
     void store.pruneProductEvents(new Date(Date.now()-90*86_400_000).toISOString()).catch(()=>app.log.error('event retention failed'));
     if(payment.name==='stripe'&&!paymentRecovery) paymentRecovery=(async()=>{
       const read=overrides.readStripeRefund??((id:string)=>retrieveStripeRefund(config.stripeSecretKey,id));

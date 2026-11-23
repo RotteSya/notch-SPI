@@ -184,8 +184,8 @@ for (const kind of kinds) {
       assert.equal(saved.jobStatus, 'pending');
       assert.equal(saved.jobAttemptCount, 0);
       assert.equal(saved.explanation, null);
-      assert.deepEqual(saved.images.map(image => image.bytes.toString('base64')), first.images_base64);
-      assert.deepEqual(saved.images.map(image => image.byteCount), saved.images.map(image => image.bytes.length));
+      assert.deepEqual(saved.images.map(image => image.bytes?.toString('base64')), first.images_base64);
+      assert.deepEqual(saved.images.map(image => image.byteCount), saved.images.map(image => image.bytes?.length));
       assert.deepEqual(saved.images.map(image => image.ordinal), [0, 1]);
       const second = await f.post('/v1/captures', { ...objective(), question_bank_v1: true });
       assert.equal(second.statusCode, 200);
@@ -200,7 +200,7 @@ for (const kind of kinds) {
         questionKind: again.questionKind, parserPath: again.parserPath, modelOutput: again.modelOutput,
         finalAnswer: again.finalAnswer, answerAttemptId: again.answerAttemptId, inputTokens: again.inputTokens,
         outputTokens: again.outputTokens, system: again.system, task: again.task,
-        images: again.images.map(image => ({ mediaType: image.mediaType, bytes: image.bytes })),
+        images: again.images.map(image => ({ mediaType: image.mediaType, bytes: image.bytes! })),
       });
       assert.equal((await f.store.questionBank.counts()).attempts, 2);
       const replay = await f.post('/v1/captures', { ...first, question_bank_v1: true });
@@ -232,7 +232,7 @@ for (const kind of kinds) {
       assert.ok(saved);
       assert.equal(saved.finalAnswer, 'B');
       assert.equal(saved.jobStatus, 'pending');
-      assert.deepEqual(saved.images.map(image => image.bytes.toString('base64')), solve.images_base64);
+      assert.deepEqual(saved.images.map(image => image.bytes?.toString('base64')), solve.images_base64);
     } finally { await f.close(); }
   });
 
@@ -266,7 +266,7 @@ for (const kind of kinds) {
       const saved = await f.store.questionBank.findByCapture(solve.capture_id);
       assert.ok(saved);
       assert.equal(saved.finalAnswer, 'B');
-      assert.deepEqual(saved.images.map(image => image.bytes.toString('base64')), solve.images_base64);
+      assert.deepEqual(saved.images.map(image => image.bytes?.toString('base64')), solve.images_base64);
     } finally {
       held?.release();
       await f.close();

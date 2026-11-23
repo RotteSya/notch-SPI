@@ -4,6 +4,8 @@ import {registerAdminRoutes} from './admin-routes.ts';
 import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
+import { trackRequestWork } from './request-lifecycle.ts';
+import { runQuestionBankRound } from './question-bank-worker.ts';
 import {trialSnapshot, FREE_TRIAL_POLICY} from './free-trial.ts';
 import type {AccountSnapshot} from './billing.ts';
 import { aggregateCohorts, aggregateEconomics, parseReportQuery, reportTime, decimal, ReportLimitError, type ReportExpense } from './reporting.ts';
@@ -183,6 +185,14 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       try{if(await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments))financeReconciled++;}catch{financeFailed++;}
     }));
     const eventsPruned=await store.pruneProductEvents(new Date(Date.parse(now)-90*86_400_000).toISOString());
+    // Question-bank work starts only once this reply is written, as tracked request work, so the
+    // Worker's deadline, the reply and its fields never depend on it.
+    const replied=new Promise<void>(resolve=>{reply.raw.once('finish',resolve);reply.raw.once('close',resolve);});
+    void trackRequestWork(req.raw,async()=>{
+      await replied;
+      await runQuestionBankRound({config,store,provider:ctx.objectiveProvider,providerDegraded:objectiveProviderDegraded,log:req.log})
+        .catch(()=>req.log.warn({event:'question_bank_round_failed'},'question_bank_round_failed'));
+    });
     return {processed,checked_at:now,more_possible:batch===100,refunds_reconciled:refundsReconciled,refunds_failed:refundsFailed,
       checkouts_credited:checkoutsCredited,checkouts_review:checkoutsReview,checkouts_failed:checkoutsFailed,finance_reconciled:financeReconciled,finance_failed:financeFailed,events_pruned:eventsPruned,
       model_budget:modelBudget};

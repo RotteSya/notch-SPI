@@ -227,6 +227,10 @@ export const config = {
   observationIdleCoverageSeconds: boundedInt(envInt('OBSERVATION_IDLE_COVERAGE_SECONDS', 21_600), 21_600, 0, 86_400),
   // Consent gate for the question bank. Off ignores question_bank_v1 on every request.
   questionBankEnabled: envStr('QUESTION_BANK_ENABLED', '0') === '1',
+  // Question images are cleared this many days after the solve; transcripts and cards stay.
+  questionBankImageRetentionDays: boundedInt(envInt('QUESTION_BANK_IMAGE_RETENTION_DAYS', 90), 90, 1, 3650),
+  // Daily cap for question-bank model calls, on top of the shared daily model budget. 0 stops them.
+  questionBankDailyBudgetMicros: Math.max(0, envInt('QUESTION_BANK_DAILY_BUDGET_MICROS', 3_000_000)),
   modelPricingJSON: envStr('MODEL_PRICING_JSON', '[]'),
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
   requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),
