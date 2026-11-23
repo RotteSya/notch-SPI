@@ -57,6 +57,11 @@ test('three persisted UI slots reach Terra for both provider slots, one/four ima
   assert.equal(seen.length,36);
 });
 
+test('Terra waits out silent reasoning for 60 s before its first progress; other OpenAI-compatible models keep the default',()=>{
+  assert.equal(new OpenAIProvider('offline','https://api.openai.com',TERRA_MODEL,8192).firstProgressMs,60_000);
+  assert.equal(new OpenAIProvider('offline','https://api.openai.com','gpt-6-astra',8192,{astraTier:'default'}).firstProgressMs,undefined);
+  assert.equal(new OpenAIProvider('offline','https://api.deepseek.com',TERRA_MODEL,8192,{name:'deepseek'}).firstProgressMs,undefined);
+});
 test('missing depth explicitly means low; request body and quota preserve the selected output cap',async()=>{
   const provider=new OpenAIProvider('offline','https://api.openai.com',TERRA_MODEL,8192);
   const request={system:'s',task:'t',images:[image]};

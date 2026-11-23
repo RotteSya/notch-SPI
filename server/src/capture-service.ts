@@ -588,6 +588,7 @@ export class CaptureService {
             const trace=new AttemptTrace();
             let outcome: AttemptDiagnostics['outcome']='upstream_error';
             let startupExpired=false,callClosed=false;
+            const firstProgressMs=provider.firstProgressMs??CAPTURE_DEADLINE.firstProgressMs;
             let acceptedUsage: string|undefined;
             const observedInput={...input,clientRequestId:physicalAttempt,
               onTiming:(stage:import('./capture-timing.ts').ProviderTimingStage)=>{if(!callClosed){trace.mark(stage);timing?.mark(stage);}},
@@ -616,7 +617,7 @@ export class CaptureService {
             });
             const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
               startupExpired=true;timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
-            },CAPTURE_DEADLINE.firstProgressMs);});
+            },firstProgressMs);});
             try{const result=await Promise.race([provider.stream(meteredInput,chunk=>{
             if(callClosed||!accepting||signal.aborted) return;
             if(chunk.length)trace.mark('firstProgress');
@@ -639,7 +640,7 @@ export class CaptureService {
             }finally{
               callClosed=true;signal.removeEventListener('abort',cancelAttempt);clearTimeout(firstTimer);attemptAbort.abort();
               // Optional diagnostics join the existing atomic settlement; no extra I/O on the answer path.
-              const diagnostics=trace.finish(outcome,CAPTURE_DEADLINE.firstProgressMs);
+              const diagnostics=trace.finish(outcome,firstProgressMs);
               diagnosticsByAttempt.set(physicalAttempt,diagnostics);
               req.log.info({attemptId:physicalAttempt,captureId:capture.captureId,diagnostics},'model attempt diagnostics');
             }

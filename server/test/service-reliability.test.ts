@@ -14,7 +14,7 @@ import {TransientProviderError,type Provider} from '../src/providers/types.ts';
 import {pngBase64} from './helpers/images.ts';
 const ready='FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
 for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgres']:[])]){
- async function fixture(stream:Provider['stream'],budget=10_000_000){
+ async function fixture(stream:Provider['stream'],budget=10_000_000,firstProgressMs?:number){
   let stores:Store[],cleanup=async()=>{};
   if(kind==='postgres'){
    const url=new URL(process.env.TEST_POSTGRES_URL!);
@@ -27,7 +27,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    cleanup=async()=>{await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();};
   }else stores=[kind==='memory'?new MemoryStore():new SqliteStore(':memory:')];
   const store=stores[0]!,apps=stores.map(()=>Fastify());
-  const provider:Provider={name:'openai',stream,estimateReservation:async()=>({micros:1_000_000,inputUpper:100,outputUpper:100})};
+  const provider:Provider={name:'openai',firstProgressMs,stream,estimateReservation:async()=>({micros:1_000_000,inputUpper:100,outputUpper:100})};
   for(const [index,app] of apps.entries())registerRoutes(app,{config:{...config,provider:'mock',objectiveProvider:'mock',model:'fixture',objectiveModel:'fixture',adminToken:'',
    unpaidSharePercent:100,requestBudgetMode:'guarded-request',captureConcurrencyPerToken:4,modelCostCurrency:'USD',modelDailyBudgetMicros:budget,attemptBudgetUpperMicros:1_000_000,
    modelPricingJSON:JSON.stringify([{model:'openai:fixture',input_micros_per_million_tokens:10_000_000,output_micros_per_million_tokens:10_000_000}])},
@@ -188,6 +188,18 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    assert.ok(failed.diagnostics!.durationMs>=20000);
    const b=await f.store.billing.inspectBudget();assert.equal(b.windows[0]!.spent,1_001_000);assert.equal(b.windows[0]!.held,0);
    assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,99);
+  }finally{await f.close();}
+ });
+ test(`${kind}: a provider's own first-progress limit replaces the default startup deadline`,async()=>{
+  let calls=0;const f=await fixture(async(_r,delta,signal)=>{
+   if(++calls===1)await new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));
+   delta(ready);return {inputTokens:50,outputTokens:50};
+  },10_000_000,300);
+  try{const started=performance.now(),recovered=await f.call();assert.ok(performance.now()-started<CAPTURE_DEADLINE.firstProgressMs/2);
+   assert.match(recovered.body,/"terminal_state":"usable"/);assert.match(recovered.body,/"questions_charged":1/);assert.equal(calls,2);
+   const failed=(await f.store.billing.attempts(f.users[0]!.token)).find(a=>a.status==='failed')!;
+   assert.equal(failed.diagnostics?.outcome,'startup_timeout');assert.equal(failed.diagnostics?.startupLimitMs,300);
+   assert.ok(failed.diagnostics!.durationMs>=300);
   }finally{await f.close();}
  });
  test(`${kind}: persistent HTTP failure stops after two attempts and refunds the question`,async()=>{

@@ -2,6 +2,7 @@ import type { CaptureRequest, Provider, Usage } from './types.ts';
 import { readVendorSSE, TransientProviderError } from './types.ts';
 import { vendorErrorMessage } from './anthropic.ts';
 import { estimateTerraWire } from './astra-budget.ts';
+import { CAPTURE_DEADLINE } from '../capture-deadline.ts';
 
 export type AstraTier = 'default' | 'fast';
 export const TERRA_MODEL = 'gpt-6.1-terra';
@@ -15,6 +16,7 @@ export function terraReasoningEffort(selection: CaptureRequest['reasoningEffort'
 // makes the final chunk carry token usage. Vision image travels as a data-URI image_url.
 export class OpenAIProvider implements Provider {
   readonly name: string;
+  readonly firstProgressMs?: number;
   private readonly apiKey: string;
   private readonly endpoint: string;
   private readonly model: string;
@@ -44,6 +46,8 @@ export class OpenAIProvider implements Provider {
     this.extraBody = options.extraBody ?? {};
     this.explanationExtraBody = options.explanationExtraBody ?? this.extraBody;
     this.astraTier = this.name === 'openai' && model === TERRA_MODEL ? 'default' : options.astraTier;
+    // Terra sends its response headers only once reasoning has finished.
+    if (this.name === 'openai' && model === TERRA_MODEL) this.firstProgressMs = CAPTURE_DEADLINE.silentThinkingMs;
   }
 
   async estimateReservation(req: CaptureRequest, pricingJSON: string) {

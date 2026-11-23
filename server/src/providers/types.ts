@@ -45,6 +45,8 @@ export interface Usage {
 
 export interface Provider {
   readonly name: string;
+  /** Longest healthy silence before the first upstream sign of life; unset uses the service default. */
+  readonly firstProgressMs?: number;
   /** Local estimate, never a client-supplied price or a proven vendor token count. */
   estimateReservation?(req: CaptureRequest, pricingJSON: string): Promise<{ micros: number; inputUpper: number; outputUpper: number }>;
   stream(
