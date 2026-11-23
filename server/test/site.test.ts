@@ -239,7 +239,7 @@ test('automatic-mode recording is seekable and served from the same origin', asy
   assert.match(html, /画面变化，自动查题/);
   assert.doesNotMatch(html, /data-auto-caption|auto-video-badge|data-auto-cues/);
   assert.doesNotMatch(html, /默认快捷键 ⌘⇧0 · 再按一次即可停止（真实 App 操作演示）/);
-  assert.match(html, /按下 ⌘⇧0 ，检测到画面变化自动查题，无需重复按快捷键。/);
+  assert.match(html, /按下 ⌘⇧0，检测到画面变化自动查题，无需重复按快捷键。/);
   assert.match(html, /source src="\/media\/automatic-mode.mp4"/);
 });
 

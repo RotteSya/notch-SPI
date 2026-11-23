@@ -64,7 +64,7 @@ const S = {
       {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
         "q": "截图会被保存吗？",
-        "a": "服务端不保存题图；为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机「最近查题」。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
+        "a": "服务端不保存题图；为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机“最近查题”。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
       },
       {
         "q": "答题失败会扣题吗？",
@@ -72,7 +72,7 @@ const S = {
       },
       {
         "q": "换电脑后余额怎么办？",
-        "a": "在旧 Mac 的设置 →「账户与订阅」保存恢复码，再在新 Mac 恢复原账户。恢复不会合并两个账户的余额；恢复码是账户凭证，请妥善保管。"
+        "a": "在旧 Mac 的设置 →“账户与订阅”保存恢复码，再在新 Mac 恢复原账户。恢复不会合并两个账户的余额；恢复码是账户凭证，请妥善保管。"
       },
       {
         "q": "可以退款吗？",
@@ -110,7 +110,7 @@ const S = {
       {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
         "q": "スクリーンショットは保存されますか？",
-        "a": "サーバーに問題画像は保存しません。切断から自動復旧するため、回答を15分間暗号化してキャッシュします。期限後は取得できず、定期処理で削除します。一時材料は最大15分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去30日・最大100件 / 200 MBへ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
+        "a": "サーバーに問題画像は保存しません。切断から自動復旧するため、回答を 15 分間暗号化してキャッシュします。期限後は取得できず、定期処理で削除します。一時材料は最大 15 分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去 30 日・最大 100 件 / 200 MB へ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
       },
       {
         "q": "回答に失敗したら？",
@@ -133,7 +133,7 @@ const S = {
     "privacyTitle": "プライバシーとデータ利用",
     "privacyBody": [
       "サービス記録にはランダムなデバイス認証情報、残高、依頼の精算、モデル利用量・費用、決済の照合情報を含みます。通常の登録に氏名やメールは不要です。",
-      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像と問題は通常のデータベースやログに保存しません。切断からの自動復旧用に回答を15分間暗号化して保存し、期限後は取得できず定期処理で削除します。回答本文はログに記録しません。自分のキーでは選択したサービスを利用します。",
+      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像と問題は通常のデータベースやログに保存しません。切断からの自動復旧用に回答を 15 分間暗号化して保存し、期限後は取得できず定期処理で削除します。回答本文はログに記録しません。自分のキーでは選択したサービスを利用します。",
       "決済は Stripe が処理し、カード情報は当方には届きません。問い合わせメールや自発的に提供された材料は、その用途に沿って別に扱います。",
       "任意の信頼性データは設定で停止できます。停止時に未送信キューを消去し、行動記録を送りません。必要な請求記録は残ります。詳細イベントは 90 日、本機の送信待ちは最大 7 日です。",
       "入口の回答は任意で、初回案内からスキップできます。選んだ回答はデバイス登録と関連付けます。問題の種類や表示言語から入口を推測しません。",
@@ -172,7 +172,7 @@ const S = {
       },
       {
         "q": "Requirements?",
-        "a": "Standard version: Apple Silicon Mac, macOS 14+. Intel compatibility version: macOS 12.3 or later. Intel 3.0 users must install 3.2.0 manually once; subsequent versions support in-app updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
+        "a": "Standard version: Apple Silicon Mac, macOS 14 or later. Intel compatibility version: macOS 12.3 or later. Intel 3.0 users must install 3.2.0 manually once; subsequent versions support in-app updates. Displays without a notch use a top panel. Screen-recording permission is requested on first use. Windows: Coming soon; not yet released."
       }
     ],
     "legalTitle": "特定商取引法に基づく表記 (Japanese commerce disclosure)",
@@ -261,7 +261,7 @@ export function renderLandingPage(input: SiteInput): string {
   const e = escapeHtml;
   const lines = (v:string) => e(v).replaceAll('\n','<br>');
   const ui = {
-    zh: {watch:'看一次完整演示',platforms:'其他平台与系统要求',plus:'适合每天使用',trial:'先试试看',packs:'偶尔用，按需补充。',packSub:'一次性题包，与 Plus 分开购买。',purchase:'查看购买方式',protect:'关于窗口捕获保护',protectBody:'正式版设有窗口截图排除机制。具体共享或录屏效果取决于系统与软件，尚不提供覆盖所有环境的保证。请先在自己的使用环境中验证。',plain:'下载后，在 App 中查看可用额度与购买选项。',off:'当前暂未开放',history:'回到思路发生的地方。',historyBody:'成功查题的题图和答案保存在本机「最近查题」。需要复习时，再看一次。',planIntro:'同一官方服务，按使用频率选择。免费体验、订阅和一次性题包分别计额。'},
+    zh: {watch:'看一次完整演示',platforms:'其他平台与系统要求',plus:'适合每天使用',trial:'先试试看',packs:'偶尔用，按需补充。',packSub:'一次性题包，与 Plus 分开购买。',purchase:'查看购买方式',protect:'关于窗口捕获保护',protectBody:'正式版设有窗口截图排除机制。具体共享或录屏效果取决于系统与软件，尚不提供覆盖所有环境的保证。请先在自己的使用环境中验证。',plain:'下载后，在 App 中查看可用额度与购买选项。',off:'当前暂未开放',history:'回到思路发生的地方。',historyBody:'成功查题的题图和答案保存在本机“最近查题”。需要复习时，再看一次。',planIntro:'同一官方服务，按使用频率选择。免费体验、订阅和一次性题包分别计额。'},
     ja: {watch:'操作デモを見る',platforms:'その他の環境・動作条件',plus:'毎日使う方へ',trial:'まずは体験',packs:'必要な分だけ、追加。',packSub:'Plus とは別に購入できる一回払いの問題パック。',purchase:'購入方法を見る',protect:'ウィンドウのキャプチャ保護について',protectBody:'正式版にはウィンドウをキャプチャから除外する仕組みがあります。共有・録画の結果は OS とソフトによって異なり、すべての環境での動作は保証していません。ご利用環境で先に確認してください。',plain:'ダウンロード後、アプリで利用可能な枠と購入方法を確認できます。',off:'現在受付停止中',history:'考え方を、もう一度。',historyBody:'解答できた問題の画像と回答は、この Mac の「最近の問題」に保存されます。復習したい時に振り返れます。',planIntro:'同じ公式サービスを、使う頻度に合わせて。体験・月額・問題パックはそれぞれ別の利用枠です。'},
     en: {watch:'Watch the full demo',platforms:'Other platforms & requirements',plus:'For daily practice',trial:'Start with a trial',packs:'A little help, as needed.',packSub:'One-time question packs, purchased separately from Plus.',purchase:'How to purchase',protect:'About window capture protection',protectBody:'Release builds include window capture exclusion. Sharing and recording behavior depends on the OS and capture software; coverage of every environment is not guaranteed. Verify in your own setup first.',plain:'Download to check available credits and purchase options in the app.',off:'Currently unavailable',history:'Return to your train of thought.',historyBody:'Successful question images and answers stay in Recent Questions on this Mac, ready when you want to review.',planIntro:'The same official service, matched to your routine. Trial, subscription and one-time packs have separate allowances.'}
   }[input.lang];
@@ -280,7 +280,7 @@ export function renderLandingPage(input: SiteInput): string {
     en: {silicon:'Download for Apple Silicon',intel:'Download for Intel',siliconNote:'M-series chip · macOS 14+',intelNote:'Intel processor · macOS 12.3+',label:'Choose your Mac chip'},
   }[input.lang];
   const chipGuide = {
-    zh: {prompt:'不确定芯片类型？',action:'查看方法',title:'确认芯片类型方法',step1:'在左上角，打开 <strong>Apple菜单</strong><br>选择<strong>“关于本机”</strong>',step2:'在<strong>“处理器”</strong>或<strong>“芯片”</strong>中<br>查看是<strong>“Intel”</strong>还是<strong>“Apple”</strong>'},
+    zh: {prompt:'不确定芯片类型？',action:'查看方法',title:'确认芯片类型方法',step1:'在左上角打开 <strong>Apple 菜单</strong><br>选择<strong>“关于本机”</strong>',step2:'在<strong>“处理器”</strong>或<strong>“芯片”</strong>中<br>查看是<strong>“Intel”</strong>还是<strong>“Apple”</strong>'},
     ja: {prompt:'チップの種類が不明ですか？',action:'確認方法',title:'チップの種類を確認する方法',step1:'左上の <strong>Apple メニュー</strong>から<br><strong>「この Mac について」</strong>を選択',step2:'<strong>「プロセッサ」</strong>または<strong>「チップ」</strong>で<br><strong>Intel</strong> か <strong>Apple</strong> かを確認'},
     en: {prompt:'Not sure which chip?',action:'How to check',title:'How to check your chip type',step1:'Open the <strong>Apple menu</strong> at the top left.<br>Select <strong>“About This Mac”</strong>.',step2:'Under <strong>“Processor”</strong> or <strong>“Chip”</strong>,<br>look for <strong>“Intel”</strong> or <strong>“Apple”</strong>.'},
   }[input.lang];
@@ -299,7 +299,7 @@ export function renderLandingPage(input: SiteInput): string {
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');
   const plusCopy = {
     zh: {title:'NotchSPI Plus',period:'每月自动续费',benefit:'每日 400 次成功求解，解释与失败不额外扣次。北京时间 00:00 重置，不累计。',cancel:'可随时取消自动续费，已付款周期内仍可使用。题包仍可单独购买。',buy:'App 设置 → 账户与订阅',trial:'新设备可自行选择领取 72 小时免费体验，每日 400 次。引导可选择稍后领取，之后在设置 → 账户与订阅领取。领取时替换初始赠送的未用部分，已购余额保留。免费体验与 Plus 独立计额，先用免费体验，再用 Plus，最后用题包。'},
-    ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日400回の解答。解説・失敗は追加消費なし。北京時間00:00リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。問題パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72時間・毎日400回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
+    ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日 400 回の解答。解説・失敗は追加消費なし。北京時間 00:00 リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。問題パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72 時間・毎日 400 回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
     en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Question packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
   }[input.lang];
   const plusCard = plusEnabled ? `<article class="concept-plan plus-plan" aria-label="${plusCopy.title}"><span class="plan-badge">${c.daily}</span><h3>Plus</h3><p>${c.plusSub}</p><div class="price-line">CNY <span class="price">${amount(PLUS.priceCents,PLUS.currency)}</span> / ${c.month}</div><ul>${c.plusFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#purchase" data-purchase="plus">${c.plusCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
@@ -322,7 +322,7 @@ export function renderLandingPage(input: SiteInput): string {
 <p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}${input.lang==='en'?' ':''}<br><span>${e(d.accent)}</span>`}</h1>
 <p class="sub">${e(entry?.description??d.sub)}</p>${chipDownloads('downloads')}
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
-</div><div class="demo" id="demo"${entry ? '' : ' data-static="true"'}>${entry ? `<fieldset><legend>${d.demoLabel}: ${d.demoTitle}</legend><div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>` : '<div class="demo-content">'}
+</div><div class="demo" id="demo"${entry ? '' : ' data-static="true"'}>${entry ? `<fieldset><legend>${d.demoLabel}${input.lang==='en'?': ':'：'}${d.demoTitle}</legend><div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>` : '<div class="demo-content">'}
 <div class="desktop" id="demo-screen"><div class="menu-bar" aria-hidden="true"><span class="finder-menu">${symbol("apple.logo")}<b>Finder</b>${desktopMenu.map(t=>`<span>${t}</span>`).join('')}</span><span class="system-menu"><img class="menu-ghost" src="${ghostAvatar}" alt="">${symbol("wifi")}${symbol("magnifyingglass")}${symbol("switch.2")}<span>09:41</span></span></div>
 <div class="notch"><div class="native-answer"><div class="native-shot"><img src="${nativeAnswer}" alt="${({zh:"真实 Mac App 答案面板，离线示例：B. 60 km/h",ja:"Mac アプリの実際の画面。オフライン例：B. 60 km/h",en:"Actual Mac app panel, offline example: B. 60 km/h"})[input.lang]}"></div></div><div class="notch-head">${ghost}<b>NotchSPI</b><span class="notch-status"><span class="status-ready">${d.ready}</span><span class="status-capture">${d.processing}</span><span class="status-answer">${d.done}</span></span></div>
 <p class="ready-instruction">${({zh:"⌘ ⇧ 1　截取题目，开始查题",ja:"⌘ ⇧ 1　問題をキャプチャ",en:"⌘ ⇧ 1　Capture a question"})[input.lang]}</p><div class="pending"><span class="capture-thumb" aria-hidden="true">120 km<br>2 h</span>${d.collected}</div><div class="notch-body"><div class="answer-label">${d.answerLabel}</div><div class="answer-value">${d.answer}</div><div class="answer-work">${e(d.explanation)}</div></div></div>
@@ -333,7 +333,7 @@ ${input.entry ? '' : companySection(input.lang)}
 <div class="continuation"><div class="wrap">${protectionSection(input.lang)}${featureSection(input.lang,!entry)}</div>
 <section id="pricing" class="pricing-band" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><h2 id="pricing-title">${input.lang==='ja'?'<span class="phrase">まず体験。</span><wbr><span class="phrase">使う量で選ぶ。</span>':c.pricing}</h2></div>
 <div class="concept-plans">${trialCard}${plusCard}${packCard}</div>
-<details class="pricing-details"><summary>${c.more}</summary><p>${ui.planIntro}</p><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p>${plusEnabled?`<p>${plusCopy.title}: ${plusCopy.period} · ${plusCopy.benefit} ${plusCopy.cancel}</p>`:''}${trialEnabled?`<p>${d.trialNote}</p><p>${plusCopy.trial}</p>`:''}${packs.map(p=>`<p>${d.questions(p.questions)} · ${e(formatMoney(p.amountCents,input.currency))} ${e(input.currency)} · ${d.oneTime} · ${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>`).join('')}</details>
+<details class="pricing-details"><summary>${c.more}</summary><p>${ui.planIntro}</p><p>${d.currencyNote}</p><p>${e(s.priceNote)}</p>${plusEnabled?`<p>${plusCopy.title}${input.lang==='en'?': ':'：'}${plusCopy.period} · ${plusCopy.benefit} ${plusCopy.cancel}</p>`:''}${trialEnabled?`<p>${d.trialNote}</p><p>${plusCopy.trial}</p>`:''}${packs.map(p=>`<p>${d.questions(p.questions)} · ${e(formatMoney(p.amountCents,input.currency))} ${e(input.currency)} · ${d.oneTime} · ${d.per} ${e(formatUnitPrice(p,input.currency,input.lang))}</p>`).join('')}</details>
 <details class="purchase" id="purchase"><summary>${d.purchaseTitle}</summary><div class="purchase-content"><div><p>${ui.plain}</p><p class="selected-purchase" aria-live="polite"></p>${download()}</div><div><ol>${d.purchaseSteps.map(t=>`<li>${t}</li>`).join('')}</ol>${appPack?`<p class="purchase-default">${d.purchaseDefault(appPack.questions)}</p>`:''}</div></div></details></div></section>
 <div class="wrap"><section id="faq" class="faq-section" aria-labelledby="faq-title"><div><h2 id="faq-title">${input.lang==='zh'?'开始前，你可能想知道。':d.faqTitle}</h2><p class="faq-lead">${lines(c.faqSub)}</p></div><div class="faq">${faqItems}</div></section></div>
 <div class="scenic-footer"><section class="closing wrap"><h2>${c.final}${input.lang==='en'?' ':''}<span>${c.finalAccent}</span></h2>${chipDownloads()}<div class="footer-platforms"><button type="button" disabled>${c.windows}</button></div></section>
