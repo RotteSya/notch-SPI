@@ -22,7 +22,8 @@ export interface QuestionBankSolveInput {
   resultState: string | null;
   questionKind: string | null;
   parserPath: string | null;
-  visibleText: string;
+  /** Raw model output, including the machine result line. */
+  modelOutput: string;
   finalAnswer: string;
   answerAttemptId: string | null;
   inputTokens: number | null;
@@ -55,7 +56,7 @@ export interface StoredQuestionBankAttempt {
   resultState: string | null;
   questionKind: string | null;
   parserPath: string | null;
-  visibleText: string;
+  modelOutput: string;
   finalAnswer: string;
   explanation: string | null;
   answerAttemptId: string | null;

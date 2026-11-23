@@ -2,7 +2,9 @@ import { after } from 'node:test';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { ServerResponse } from 'node:http';
+import { once } from 'node:events';
+import http, { ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import Fastify from 'fastify';
 import pg from 'pg';
 import { config, type Config } from '../src/config.ts';
@@ -15,6 +17,8 @@ import type { Provider } from '../src/providers/types.ts';
 import type { Store } from '../src/db.ts';
 import { SCREEN_QUERY_VERSION } from '../src/screen-query.ts';
 import { questionBankWriteFailureCount } from '../src/question-bank.ts';
+import { SQLQuestionBankStore } from '../src/question-bank-sql.ts';
+import type { RunTransaction, Transaction } from '../src/billing-sql.ts';
 import { settledRequestWork } from '../src/request-lifecycle.ts';
 import { corruptPixels, pngBase64 as png } from './helpers/images.ts';
 import { openEphemeralPostgres } from './helpers/ephemeral-postgres.ts';
@@ -23,37 +27,49 @@ const ready = 'FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"
 const retake = 'NSPI_RESULT_V1: {"v":1,"kind":"other","state":"retake","answer":null,"reason":"unreadable"}';
 const legacy = '答案：B。平均速度是 60 km/h。';
 const postgres = await openEphemeralPostgres();
-const admin = new pg.Pool({ connectionString: postgres.url, ssl: resolvePostgresSSL({ connectionString: postgres.url }) });
-after(async () => { await admin.end(); await postgres.close(); });
+const admin = postgres ? new pg.Pool({ connectionString: postgres.url, ssl: resolvePostgresSSL({ connectionString: postgres.url }) }) : null;
+after(async () => { await admin?.end(); await postgres?.close(); });
 
 interface Fixture {
   store: Store;
   schema: string | null;
+  /** Postgres connection string scoped to this fixture's schema; null for memory and SQLite. */
+  connection: string | null;
   post: (url: string, payload: object) => Promise<{ statusCode: number; body: string }>;
   token: string;
   close: () => Promise<void>;
   script: (value: string) => void;
   fail: (value?: boolean) => void;
   replaceRecord: (write: Store['questionBank']['recordSolve']) => void;
+  /** Serve on a loopback port; returns the port and the raw HTTP server. */
+  listen: () => Promise<{ port: number; server: http.Server }>;
+  /** The next provider call reports `started`, then waits until `release` before answering. */
+  holdProvider: () => { started: Promise<void>; release: () => void };
 }
 
 async function fixture(kind: 'memory' | 'sqlite' | 'postgres', enabled: boolean, screen = false): Promise<Fixture> {
   let schema: string | null = null;
+  let connection: string | null = null;
   let store: Store;
   if (kind === 'postgres') {
+    if (!postgres || !admin) throw new Error('PostgreSQL fixture requires a server');
     schema = 'qb_' + randomUUID().replaceAll('-', '');
     await admin.query(`CREATE SCHEMA ${schema}`);
     const url = new URL(postgres.url);
     url.searchParams.set('options', '-c search_path=' + schema);
-    const connection = url.toString();
+    connection = url.toString();
     store = new PostgresStore(connection, resolvePostgresSSL({ connectionString: connection }));
   } else store = kind === 'memory' ? new MemoryStore() : new SqliteStore(':memory:');
   const app = Fastify({ logger: false });
   let script = ready;
   let fail = false;
+  let hold: { started: () => void; released: Promise<void> } | null = null;
   const provider: Provider = {
     name: 'mock',
     async stream(req, delta) {
+      const held = hold;
+      hold = null;
+      if (held) { held.started(); await held.released; }
       if (fail) throw new Error('upstream down');
       const text = req.purpose === 'explain'
         ? JSON.stringify({ consistent: true, explanation: 'Because B.' })
@@ -76,19 +92,32 @@ async function fixture(kind: 'memory' | 'sqlite' | 'postgres', enabled: boolean,
   });
   const { token } = await store.registerDevice({ platform: 'macos', appVersion: '4.0', trialQuestions: 30 });
   return {
-    store, schema, token,
+    store, schema, connection, token,
     post: async (url, payload) => {
-      const response = await app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` }, payload });
-      await settledRequestWork();
-      return response;
+      try {
+        return await app.inject({ method: 'POST', url, headers: { authorization: `Bearer ${token}` }, payload });
+      } finally {
+        await settledRequestWork();
+      }
     },
     script: value => { script = value; },
     fail: value => { fail = value ?? true; },
     replaceRecord: write => { store.questionBank.recordSolve = write; },
+    listen: async () => {
+      await app.listen({ host: '127.0.0.1', port: 0 });
+      return { port: (app.server.address() as AddressInfo).port, server: app.server };
+    },
+    holdProvider: () => {
+      let started!: () => void;
+      let release!: () => void;
+      const startedPromise = new Promise<void>(resolve => { started = resolve; });
+      hold = { started, released: new Promise<void>(resolve => { release = resolve; }) };
+      return { started: startedPromise, release };
+    },
     close: async () => {
       await app.close();
       await store.close();
-      if (schema) await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+      if (schema && admin) await admin.query(`DROP SCHEMA ${schema} CASCADE`);
     },
   };
 }
@@ -127,7 +156,8 @@ function settlement(body: string) {
   };
 }
 
-const kinds = ['memory', 'sqlite', 'postgres'] as const;
+const kinds = ['memory', 'sqlite', ...(postgres ? ['postgres' as const] : [])] as const;
+if (!postgres) test('postgres question bank', { skip: 'no TEST_POSTGRES_URL and no local PostgreSQL binary' }, () => {});
 
 for (const kind of kinds) {
   test(`${kind}: a consented usable objective solve stores the attempt, both images, the prompt, and a pending job`, async () => {
@@ -145,7 +175,7 @@ for (const kind of kinds) {
       assert.equal(saved.system, 'SYS-PROMPT');
       assert.equal(saved.task, 'TASK-PROMPT');
       assert.equal(saved.finalAnswer, 'B');
-      assert.equal(saved.visibleText.includes('FINAL: B'), true);
+      assert.equal(saved.modelOutput.includes('FINAL: B'), true);
       assert.equal(saved.provider, 'mock');
       assert.equal(saved.model, 'bank-test');
       assert.equal(saved.inputTokens, 11);
@@ -167,7 +197,7 @@ for (const kind of kinds) {
         token: f.token, captureId: again.captureId, requestId: again.requestId, createdAt: again.createdAt,
         durationMs: again.durationMs, provider: again.provider, model: again.model, reasoningEffort: again.reasoningEffort,
         configRevision: again.configRevision, resultProtocol: again.resultProtocol, resultState: again.resultState,
-        questionKind: again.questionKind, parserPath: again.parserPath, visibleText: again.visibleText,
+        questionKind: again.questionKind, parserPath: again.parserPath, modelOutput: again.modelOutput,
         finalAnswer: again.finalAnswer, answerAttemptId: again.answerAttemptId, inputTokens: again.inputTokens,
         outputTokens: again.outputTokens, system: again.system, task: again.task,
         images: again.images.map(image => ({ mediaType: image.mediaType, bytes: image.bytes })),
@@ -176,7 +206,7 @@ for (const kind of kinds) {
       const replay = await f.post('/v1/captures', { ...first, question_bank_v1: true });
       assert.equal(replay.statusCode, 200);
       assert.equal((await f.store.questionBank.counts()).attempts, 2);
-      if (f.schema) {
+      if (f.schema && admin) {
         const column = await admin.query(
           `SELECT udt_name FROM information_schema.columns
            WHERE table_schema=$1 AND table_name='question_bank_images' AND column_name='content'`,
@@ -185,6 +215,62 @@ for (const kind of kinds) {
         assert.equal(column.rows[0]?.udt_name, 'bytea');
       }
     } finally { await f.close(); }
+  });
+
+  test(`${kind}: a delivery-recovery solve, the path the Mac client takes, stores the attempt`, async () => {
+    const f = await fixture(kind, true);
+    try {
+      const solve = objective(randomUUID(), { delivery_recovery_v1: true, question_bank_v1: true });
+      const response = await f.post('/v1/captures', solve);
+      assert.equal(response.statusCode, 200);
+      const settled = settlement(response.body);
+      assert.equal(settled.terminal, 'usable');
+      assert.equal(settled.charged, 1);
+      assert.equal(settled.text.includes('FINAL: B'), true);
+      assert.ok((await f.store.billing.capture(f.token, solve.capture_id))?.deliveryOwner);
+      const saved = await f.store.questionBank.findByCapture(solve.capture_id);
+      assert.ok(saved);
+      assert.equal(saved.finalAnswer, 'B');
+      assert.equal(saved.jobStatus, 'pending');
+      assert.deepEqual(saved.images.map(image => image.bytes.toString('base64')), solve.images_base64);
+    } finally { await f.close(); }
+  });
+
+  test(`${kind}: a delivery-recovery solve whose connection closed before it finished is still charged and stored`, async () => {
+    const f = await fixture(kind, true);
+    let held: ReturnType<Fixture['holdProvider']> | null = null;
+    try {
+      const { port, server } = await f.listen();
+      held = f.holdProvider();
+      const solve = objective(randomUUID(), { delivery_recovery_v1: true, question_bank_v1: true });
+      const body = JSON.stringify(solve);
+      const arrived = new Promise<ServerResponse>(resolve => server.once('request', (_request, response) => resolve(response)));
+      const client = http.request({
+        host: '127.0.0.1', port, method: 'POST', path: '/v1/captures',
+        headers: { authorization: `Bearer ${f.token}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+      });
+      client.on('error', () => undefined);
+      client.end(body);
+      const response = await arrived;
+      await held.started;
+      const closed = once(response, 'close');
+      client.destroy();
+      await closed;
+      held.release();
+      await settledRequestWork();
+      const capture = await f.store.billing.capture(f.token, solve.capture_id);
+      assert.ok(capture?.deliveryOwner);
+      assert.equal(capture.settlementStatus, 'settled');
+      assert.equal(capture.terminalState, 'usable');
+      assert.equal((await f.store.getAccount(f.token))?.balanceQuestions, 29);
+      const saved = await f.store.questionBank.findByCapture(solve.capture_id);
+      assert.ok(saved);
+      assert.equal(saved.finalAnswer, 'B');
+      assert.deepEqual(saved.images.map(image => image.bytes.toString('base64')), solve.images_base64);
+    } finally {
+      held?.release();
+      await f.close();
+    }
   });
 
   test(`${kind}: the bank stays empty unless the switch is on, the flag is boolean true, and the solve is a usable objective_v1`, async () => {
@@ -295,3 +381,73 @@ for (const kind of kinds) {
     } finally { await f.close(); }
   });
 }
+
+/** Resolves with the value, or with null when it is still pending after `ms`. */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), ms); })]);
+  } finally { clearTimeout(timer); }
+}
+
+// SQLite runs a transaction synchronously and memory has no row locks, so only Postgres can show this.
+if (postgres) test('postgres: an uncommitted question-bank write does not hold up the same account\'s next solve', async () => {
+  const f = await fixture('postgres', true);
+  const connection = f.connection!;
+  const pool = new pg.Pool({ connectionString: connection, ssl: resolvePostgresSSL({ connectionString: connection }) });
+  let entered!: () => void;
+  let release!: () => void;
+  const inside = new Promise<void>(resolve => { entered = resolve; });
+  const released = new Promise<void>(resolve => { release = resolve; });
+  // Runs the statements the way PostgresStore does, then keeps the transaction open before COMMIT.
+  const heldCommit: RunTransaction = async <T,>(transaction: Transaction<T>): Promise<T> => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      let step = transaction.next();
+      while (!step.done) {
+        let position = 0;
+        const result = await client.query(step.value.sql.replace(/\?/g, () => '$' + (++position)), step.value.args);
+        step = transaction.next(result.rows);
+      }
+      entered();
+      await released;
+      await client.query('COMMIT');
+      return step.value;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally { client.release(); }
+  };
+  const writing = new SQLQuestionBankStore(heldCommit).recordSolve({
+    token: f.token, captureId: randomUUID(), requestId: randomUUID(), createdAt: new Date().toISOString(), durationMs: 1,
+    provider: 'mock', model: 'bank-test', reasoningEffort: 'low', configRevision: 'test', resultProtocol: 'objective_v1',
+    resultState: 'ready', questionKind: 'single_choice', parserPath: 'v1', modelOutput: ready, finalAnswer: 'B',
+    answerAttemptId: null, inputTokens: 11, outputTokens: 7, system: 'SYS-PROMPT', task: 'TASK-PROMPT',
+    images: [{ mediaType: 'image/png', bytes: Buffer.from(png, 'base64') }, { mediaType: 'image/png', bytes: corruptPixels() }],
+  });
+  writing.catch(() => undefined);
+  let next: Promise<{ statusCode: number; body: string }> | null = null;
+  try {
+    await inside;
+    // Without the consent flag, so this solve's own bank write does not wait on the uncommitted prompt row.
+    next = f.post('/v1/captures', objective());
+    next.catch(() => undefined);
+    const outcome = await within(next, 5000);
+    assert.ok(outcome, 'the next solve waited for the question-bank commit');
+    assert.equal(outcome.statusCode, 200);
+    assert.equal(settlement(outcome.body).terminal, 'usable');
+    assert.equal(settlement(outcome.body).charged, 1);
+    assert.equal((await f.store.getAccount(f.token))?.balanceQuestions, 29);
+    assert.equal((await f.store.questionBank.counts()).attempts, 0);
+    release();
+    await writing;
+    assert.equal((await f.store.questionBank.counts()).attempts, 1);
+    assert.equal((await f.store.questionBank.counts()).images, 2);
+  } finally {
+    release();
+    await Promise.allSettled([writing, next]);
+    await pool.end();
+    await f.close();
+  }
+});

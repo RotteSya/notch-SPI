@@ -521,11 +521,9 @@ export class CaptureService {
           const ancestor = operation === 'recover' ? await store.billing.capture(token, parentId) : null;
           send({...terminalUsage(committed,quota,usage),
             ...(ancestor ? this.explanationFields(committed, ancestor) : {explanation_available:false})});
-          if(!reply.raw.destroyed&&!reply.raw.writableEnded){
-            reply.raw.write(SSE_DONE);
-            if(operation==='explain'&&success&&config.questionBankEnabled&&body.question_bank_v1===true&&responseText){
-              explanationWrite=()=>store.questionBank.appendExplanation({token,captureId:parentId,explanation:responseText});
-            }
+          if(!reply.raw.destroyed&&!reply.raw.writableEnded)reply.raw.write(SSE_DONE);
+          if(operation==='explain'&&success&&config.questionBankEnabled&&body.question_bank_v1===true&&responseText){
+            explanationWrite=()=>store.questionBank.appendExplanation({token,captureId:parentId,explanation:responseText});
           }
         } catch {
           req.log.error({captureId},'auxiliary request requires settlement reconciliation');
@@ -714,20 +712,20 @@ export class CaptureService {
       else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
       else if(terminalState==='failed') send({type:'error',error:{code:'upstream_error',message:'未获得可用结果，请稍后重试'}});
       send({...terminalUsage(committed,quota,usage),...this.explanationFields(committed, committed)});
-      if(!reply.raw.destroyed&&!reply.raw.writableEnded) {
-        reply.raw.write(SSE_DONE);
-        if(config.questionBankEnabled&&questionBankConsent&&capture.operation==='solve'&&capture.resultProtocol==='objective_v1'&&terminalState==='usable'&&committed.usableResult){
-          const finished=committed.finishedAt?Date.parse(committed.finishedAt):Date.now();
-          const images=input.images.map(image=>({mediaType:image.mediaType,bytes:Buffer.from(image.base64,'base64')}));
-          questionBankWrite=()=>store.questionBank.recordSolve({
-            token,captureId:capture.captureId,requestId:committed.requestId,createdAt:committed.createdAt,
-            durationMs:Math.max(0,finished-Date.parse(committed.createdAt)),provider:provider.name,model,
-            reasoningEffort:input.reasoningEffort??null,configRevision:committed.configRevision,resultProtocol:'objective_v1',
-            resultState:committed.resultState,questionKind:committed.questionKind,parserPath:committed.parserPath,
-            visibleText:raw,finalAnswer:finalAnswer??'',answerAttemptId:admission.providerStarted?attemptId:null,
-            inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,system:input.system,task:input.task,images,
-          });
-        }
+      if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.write(SSE_DONE);
+      // Saving follows settlement, not the socket. A client that already disconnected still
+      // has a charged usable solve, including the delivery-recovery path.
+      if(config.questionBankEnabled&&questionBankConsent&&capture.operation==='solve'&&capture.resultProtocol==='objective_v1'&&terminalState==='usable'&&committed.usableResult){
+        const finished=committed.finishedAt?Date.parse(committed.finishedAt):Date.now();
+        questionBankWrite=()=>store.questionBank.recordSolve({
+          token,captureId:capture.captureId,requestId:committed.requestId,createdAt:committed.createdAt,
+          durationMs:Math.max(0,finished-Date.parse(committed.createdAt)),provider:provider.name,model,
+          reasoningEffort:input.reasoningEffort??null,configRevision:committed.configRevision,resultProtocol:'objective_v1',
+          resultState:committed.resultState,questionKind:committed.questionKind,parserPath:committed.parserPath,
+          modelOutput:raw,finalAnswer:finalAnswer??'',answerAttemptId:admission.providerStarted?attemptId:null,
+          inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,system:input.system,task:input.task,
+          images:input.images.map(image=>({mediaType:image.mediaType,bytes:Buffer.from(image.base64,'base64')})),
+        });
       }
     } catch {
       if(admission.providerStarted) {

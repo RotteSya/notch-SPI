@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS question_bank_prompts (
 );
 CREATE TABLE IF NOT EXISTS question_bank_attempts (
   attempt_id TEXT PRIMARY KEY,
-  device_id BIGINT NOT NULL REFERENCES devices(id),
+  device_id BIGINT NOT NULL,
   capture_id TEXT NOT NULL UNIQUE,
   request_id TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS question_bank_attempts (
   result_state TEXT,
   question_kind TEXT,
   parser_path TEXT,
-  visible_text TEXT NOT NULL,
+  model_output TEXT NOT NULL,
   final_answer TEXT NOT NULL,
   explanation TEXT,
   answer_attempt_id TEXT,
@@ -102,7 +102,7 @@ function attempt(row: Row, images: StoredQuestionBankImage[]): StoredQuestionBan
     resultState: textOrNull(row.result_state),
     questionKind: textOrNull(row.question_kind),
     parserPath: textOrNull(row.parser_path),
-    visibleText: String(row.visible_text),
+    modelOutput: String(row.model_output),
     finalAnswer: String(row.final_answer),
     explanation: textOrNull(row.explanation),
     answerAttemptId: textOrNull(row.answer_attempt_id),
@@ -126,7 +126,9 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     const digest = promptDigest(input.system, input.task);
     const createdAt = input.createdAt;
     return this.run((function* (): Transaction<void> {
-      const device = (yield* query('SELECT id FROM devices WHERE token_hash=? FOR UPDATE', hashToken(input.token)))[0];
+      // Unlocked read. Billing admission locks this devices row FOR UPDATE, so neither a row lock
+      // here nor a foreign key to devices (its check takes FOR KEY SHARE) may be held until commit.
+      const device = (yield* query('SELECT id FROM devices WHERE token_hash=?', hashToken(input.token)))[0];
       if (!device) throw new Error('Question bank device missing');
       const deviceId = integer(device.id);
       yield* query(
@@ -138,12 +140,12 @@ export class SQLQuestionBankStore implements QuestionBankStore {
         `INSERT INTO question_bank_attempts (
           attempt_id, device_id, capture_id, request_id, created_at, duration_ms, provider, model,
           reasoning_effort, config_revision, result_protocol, result_state, question_kind, parser_path,
-          visible_text, final_answer, answer_attempt_id, input_tokens, output_tokens, prompt_sha256
+          model_output, final_answer, answer_attempt_id, input_tokens, output_tokens, prompt_sha256
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT (capture_id) DO NOTHING RETURNING attempt_id`,
         attemptId, deviceId, input.captureId, input.requestId, createdAt, input.durationMs, input.provider, input.model,
         input.reasoningEffort, input.configRevision, input.resultProtocol, input.resultState, input.questionKind, input.parserPath,
-        input.visibleText, input.finalAnswer, input.answerAttemptId, input.inputTokens, input.outputTokens, digest,
+        input.modelOutput, input.finalAnswer, input.answerAttemptId, input.inputTokens, input.outputTokens, digest,
       );
       if (!inserted.length) return;
       for (let ordinal = 0; ordinal < input.images.length; ordinal += 1) {
@@ -165,7 +167,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
 
   appendExplanation(input: { token: string; captureId: string; explanation: string }): Promise<void> {
     return this.run((function* (): Transaction<void> {
-      const device = (yield* query('SELECT id FROM devices WHERE token_hash=? FOR UPDATE', hashToken(input.token)))[0];
+      const device = (yield* query('SELECT id FROM devices WHERE token_hash=?', hashToken(input.token)))[0];
       if (!device) return;
       yield* query(
         `UPDATE question_bank_attempts SET explanation=?

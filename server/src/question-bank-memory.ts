@@ -30,7 +30,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
       attemptId, deviceId, captureId: input.captureId, requestId: input.requestId, createdAt: input.createdAt,
       durationMs: input.durationMs, provider: input.provider, model: input.model, reasoningEffort: input.reasoningEffort,
       configRevision: input.configRevision, resultProtocol: input.resultProtocol, resultState: input.resultState,
-      questionKind: input.questionKind, parserPath: input.parserPath, visibleText: input.visibleText,
+      questionKind: input.questionKind, parserPath: input.parserPath, modelOutput: input.modelOutput,
       finalAnswer: input.finalAnswer, explanation: null, answerAttemptId: input.answerAttemptId,
       inputTokens: input.inputTokens, outputTokens: input.outputTokens, promptSha256: sha256,
     });

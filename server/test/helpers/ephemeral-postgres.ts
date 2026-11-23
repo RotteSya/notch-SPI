@@ -8,11 +8,14 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 
-function postgresBin(): string {
-  const roots = ['/opt/homebrew/opt/postgresql@17/bin', '/usr/local/opt/postgresql@17/bin'];
+function postgresBin(): string | null {
+  const roots = ['/opt/homebrew/opt/postgresql@17/bin', '/usr/local/opt/postgresql@17/bin', '/usr/lib/postgresql/17/bin'];
   const found = roots.find(root => existsSync(join(root, 'postgres')));
-  if (!found) throw new Error('PostgreSQL 17 binaries were not found');
-  return found;
+  if (found) return found;
+  for (const dir of (process.env.PATH ?? '').split(':')) {
+    if (dir && existsSync(join(dir, 'postgres')) && existsSync(join(dir, 'initdb'))) return dir;
+  }
+  return null;
 }
 
 function freePort(): Promise<number> {
@@ -35,9 +38,10 @@ export interface EphemeralPostgres {
 
 /**
  * Use TEST_POSTGRES_URL when it names a database containing "test".
- * Otherwise start PostgreSQL 17 on 127.0.0.1 with a temporary data directory and a free port.
+ * Otherwise start a temporary server when a local postgres binary is available.
+ * Returns null when neither is available so callers can skip the Postgres group.
  */
-export async function openEphemeralPostgres(): Promise<EphemeralPostgres> {
+export async function openEphemeralPostgres(): Promise<EphemeralPostgres | null> {
   const configured = process.env.TEST_POSTGRES_URL;
   if (configured) {
     const parsed = new URL(configured);
@@ -45,6 +49,7 @@ export async function openEphemeralPostgres(): Promise<EphemeralPostgres> {
     return { url: configured, close: async () => {} };
   }
   const bin = postgresBin();
+  if (!bin) return null;
   const user = process.env.USER || 'notchspi';
   const dir = await mkdtemp(join(tmpdir(), 'notchspi-qb-pg-'));
   const port = await freePort();
@@ -57,7 +62,8 @@ export async function openEphemeralPostgres(): Promise<EphemeralPostgres> {
       '-D', dir, '-U', user, '--auth-host=trust', '--auth-local=trust', '--locale=C', '--encoding=UTF8', '--no-instructions',
     ]);
     await exec('/bin/sh', ['-c', `printf '%s\n' "listen_addresses = '127.0.0.1'" "port = ${port}" "unix_socket_directories = '${dir}'" >> '${dir}/postgresql.conf'`]);
-    await exec(join(bin, 'pg_ctl'), ['-D', dir, '-l', join(dir, 'server.log'), '-w', '-t', '60', 'start']);
+    // On macOS a non-C inherited locale can make the postmaster refuse to start ("became multithreaded during startup").
+    await exec(join(bin, 'pg_ctl'), ['-D', dir, '-l', join(dir, 'server.log'), '-w', '-t', '60', 'start'], { env: { ...process.env, LC_ALL: 'C' } });
     await exec(join(bin, 'createdb'), ['-h', '127.0.0.1', '-p', String(port), '-U', user, 'notchspi_question_bank_test']);
     return { url: `postgres://${encodeURIComponent(user)}@127.0.0.1:${port}/notchspi_question_bank_test?sslmode=disable`, close: stop };
   } catch (error) {
