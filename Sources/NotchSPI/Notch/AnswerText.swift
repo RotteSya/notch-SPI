@@ -110,7 +110,7 @@ enum AnswerText {
         let closers = open.reversed().joined()
         // A closer cannot follow a space, so it goes before any the line currently ends with.
         let body = String(shown.reversed().drop(while: \.isWhitespace).reversed())
-        let candidate = body + closers + shown.dropFirst(body.count)
+        let candidate = body + closers + String(shown.dropFirst(body.count))
         // The real parser has the last word: if it would print the borrowed closers, keep the
         // line as written rather than invent characters.
         guard let parsed = try? AttributedString(markdown: protect(body + closers).markdown,
