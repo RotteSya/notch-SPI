@@ -14,7 +14,7 @@ import { TransientProviderError, type CaptureRequest, type Provider } from '../s
 import type { Store } from '../src/db.ts';
 import { aggregateEconomics, type ReportQuery } from '../src/reporting.ts';
 import {
-  answerContent, normalizeQuestionText, questionBankOccurrences, questionFingerprint,
+  answerContent, normalizeQuestionText, questionBankOccurrences, questionFingerprint, transcriptMatchable,
   type QuestionBankOccurrenceRow, type QuestionBankTranscript,
 } from '../src/question-bank.ts';
 import { parseTranscript, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT } from '../src/question-bank-prompt.ts';
@@ -42,7 +42,8 @@ function transcript(stem: string, extra: Partial<QuestionBankTranscript> = {}): 
   return JSON.stringify({ status: 'ok', language: 'en', stem, options: [{ label: 'A', text: '40 km/h' }, { label: 'B', text: '60 km/h' }], has_figure: false, ...extra });
 }
 
-type Reply = string | Error | (() => Promise<string>);
+/** A string is the output of a finished call; an object sets how the call ended. */
+type Reply = string | Error | { text: string; finishReason: string } | (() => Promise<string>);
 interface Bank {
   store: Store;
   schema: string | null;
@@ -86,6 +87,7 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
         const next = replies.shift() ?? transcript('Default question');
         const value = typeof next === 'function' ? await next() : next;
         if (value instanceof Error) throw value;
+        if (typeof value === 'object') { delta(value.text); return { inputTokens: 1000, outputTokens: 50, finishReason: value.finishReason }; }
         delta(value);
         return { inputTokens: 1000, outputTokens: 50, finishReason: 'stop' };
       } finally { inFlight -= 1; }
@@ -186,16 +188,42 @@ test('answer content maps choice labels to option text, otherwise it is the norm
   assert.equal(answerContent('６０ km/h', 'numeric', []), JSON.stringify(['60 km/h']));
 });
 
-test('a transcript is exactly one line of JSON with the five keys', () => {
+test('a transcript is exactly one line of JSON with the five keys, optionally inside one code fence', () => {
   const ok = { status: 'ok', language: 'en', stem: 'Q', options: [{ label: 'A', text: '1' }], has_figure: false };
-  assert.deepEqual(parseTranscript(' ' + JSON.stringify(ok) + '\n'), ok);
+  const line = JSON.stringify(ok);
+  for (const good of [' ' + line + '\n', '```json\n' + line + '\n```', '```\n' + line + '\n```\n', '\n```json \n' + line + '\n  ```']) {
+    assert.deepEqual(parseTranscript(good), ok, good);
+  }
   for (const bad of [
-    JSON.stringify(ok, null, 2), '```json\n' + JSON.stringify(ok) + '\n```', JSON.stringify({ ...ok, answer: 'A' }),
+    '```json\n```json\n' + line + '\n```\n```', '```json\n' + line + '\n```\nDone.', 'Here it is:\n```json\n' + line + '\n```',
+    '```json\n' + JSON.stringify(ok, null, 2) + '\n```', '```json ' + line + ' ```', '```python\n' + line + '\n```',
+    JSON.stringify(ok, null, 2), JSON.stringify({ ...ok, answer: 'A' }),
     JSON.stringify({ status: 'ok', language: 'en', stem: 'Q', options: [] }), JSON.stringify({ ...ok, status: 'maybe' }),
     JSON.stringify({ ...ok, has_figure: 'no' }), JSON.stringify({ ...ok, options: [{ label: 'A' }] }),
     JSON.stringify({ ...ok, options: [{ label: 'A', text: '1', note: 'x' }] }), '[]', 'not json', '',
   ]) assert.equal(parseTranscript(bad), null, bad);
   assert.match(TRANSCRIBE_PROMPT.system, /untrusted/);
+});
+
+test('the prompt counts a table as a figure and asks for all the text needed to answer, including the material', () => {
+  assert.match(TRANSCRIBE_PROMPT.system, /has_figure is true when answering needs a figure, chart, diagram, picture or table\./);
+  assert.match(TRANSCRIBE_PROMPT.system, /stem holds every piece of text needed to answer, copied verbatim: any reading passage or other material/);
+  // With output that follows the prompt, a different passage is a different question and a table question never matches.
+  const question = 'Which statement agrees with the passage?';
+  const options = [{ label: 'A', text: 'He left early.' }, { label: 'B', text: 'He stayed late.' }];
+  assert.notEqual(
+    questionFingerprint({ stem: 'Tom finished his work at noon and went home.\n' + question, options }),
+    questionFingerprint({ stem: 'Tom worked until midnight.\n' + question, options }),
+  );
+  const table = { status: 'ok' as const, language: 'en', stem: 'According to the table, which city had the most rain?', options, has_figure: true };
+  assert.equal(transcriptMatchable(table), false);
+});
+
+test('a stem that normalizes to nothing never matches, with or without options', () => {
+  const base = { status: 'ok' as const, language: 'en', options: [] as QuestionBankTranscript['options'], has_figure: false };
+  for (const stem of ['', '   ', '\n\u3000\t']) assert.equal(transcriptMatchable({ ...base, stem }), false, JSON.stringify(stem));
+  assert.equal(transcriptMatchable({ ...base, stem: '', options: [{ label: 'A', text: '1' }] }), false);
+  assert.equal(transcriptMatchable({ ...base, stem: 'Q' }), true);
 });
 
 test('the three seen-before flags come only from earlier counted solves', () => {
@@ -296,13 +324,56 @@ for (const kind of kinds) {
       assert.equal(b.transcribeCalls(), 3);
       await b.solve();
       assert.equal((await b.store.getAccount(b.token))?.balanceQuestions, 28, 'answering and charging are unaffected');
-      assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 61 * MINUTE)), 1);
+      assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 61 * MINUTE), TRANSCRIBE_MAX_TOKENS), 1);
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount], ['pending', 0]);
       b.replies.push(transcript(SPEED), transcript(SPEED));
       assert.equal((await b.round(t0 + 62 * MINUTE)).completed, 2, 'the requeued job and the later solve');
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount, (await job())?.transcript?.stem], ['done', 1, SPEED]);
       const failed = (await b.store.billing.attempts(b.token)).filter(attempt => attempt.purpose === 'transcribe' && attempt.status === 'failed');
       assert.equal(failed.length, 3);
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: an output cut at the token limit fails at once and is requeued only after the limit is raised`, async () => {
+    const b = await bank(kind);
+    try {
+      const job = async (captureId: string) => {
+        const saved = await b.store.questionBank.findByCapture(captureId);
+        return [saved?.jobStatus, saved?.jobAttemptCount, saved?.jobErrorCode];
+      };
+      const cut = await b.solve();
+      const t0 = Date.now();
+      b.replies.push({ text: '', finishReason: 'length' });
+      assert.equal((await b.round(t0)).failed, 1);
+      assert.deepEqual(await job(cut), ['failed', 1, 'output_truncated'], 'no retry: the same limit would cut it again');
+      const broken = await b.solve();
+      b.replies.push('not json', 'not json', 'not json');
+      for (const minute of [11, 22, 33]) assert.equal((await b.round(t0 + minute * MINUTE)).calls, 1, 'only the other job is retried');
+      assert.deepEqual(await job(broken), ['failed', 3, 'invalid_transcript']);
+      assert.equal(b.transcribeCalls(), 4);
+      assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 40 * MINUTE), TRANSCRIBE_MAX_TOKENS), 1);
+      assert.deepEqual([await job(cut), await job(broken)], [['failed', 1, 'output_truncated'], ['pending', 0, null]]);
+      assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 41 * MINUTE), TRANSCRIBE_MAX_TOKENS + 1), 1, 'a higher limit gives it another chance');
+      assert.deepEqual(await job(cut), ['pending', 0, null]);
+      const statuses = (await b.store.billing.attempts(b.token)).filter(attempt => attempt.purpose === 'transcribe').map(attempt => attempt.status);
+      assert.deepEqual(statuses, ['failed', 'failed', 'failed', 'failed']);
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: transcripts with an empty stem each get their own unmatchable card`, async () => {
+    const b = await bank(kind);
+    try {
+      const first = await b.solve(), second = await b.solve();
+      b.replies.push(transcript('', { options: [] }), transcript('  \n', { options: [] }));
+      assert.equal((await b.round()).completed, 2);
+      const cards = await Promise.all([first, second].map(async captureId => (await b.store.questionBank.findByCapture(captureId))!.cardId!));
+      assert.equal(new Set(cards).size, 2);
+      for (const cardId of cards) {
+        const card = await b.store.questionBank.findCard(cardId);
+        assert.deepEqual([card?.matchable, card?.fingerprint], [false, null]);
+      }
+      const summary = questionBankOccurrences(await b.store.questionBank.occurrenceRows());
+      assert.deepEqual([summary.denominator, summary.repeated], [2, 0]);
     } finally { await b.close(); }
   });
 

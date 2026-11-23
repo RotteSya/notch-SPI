@@ -13,7 +13,7 @@ interface ImageRow extends StoredQuestionBankImage { attemptId: string; createdA
 interface JobRow {
   jobId: string; attemptId: string; kind: string; status: string; attemptCount: number; cardId: string | null;
   modelAttemptId: string | null; createdAt: string; updatedAt: string; nextAttemptAt: string;
-  leaseExpiresAt: string | null; errorCode: string | null;
+  leaseExpiresAt: string | null; errorCode: string | null; truncatedMaxTokens: number | null;
 }
 
 // Every method finishes its reads and writes without an await, like one SQL transaction.
@@ -56,7 +56,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     const now = new Date().toISOString();
     this.jobs.push({
       jobId: randomUUID(), attemptId, kind: 'transcribe', status: 'pending', attemptCount: 0, cardId: null, modelAttemptId: null,
-      createdAt: now, updatedAt: now, nextAttemptAt: now, leaseExpiresAt: null, errorCode: null,
+      createdAt: now, updatedAt: now, nextAttemptAt: now, leaseExpiresAt: null, errorCode: null, truncatedMaxTokens: null,
     });
   }
 
@@ -146,12 +146,13 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     if (job) Object.assign(job, { status: 'pending', leaseExpiresAt: null, modelAttemptId: null, updatedAt: now });
   }
 
-  async failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string }): Promise<'pending' | 'failed' | null> {
+  async failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string; truncatedAtMaxTokens?: number }): Promise<'pending' | 'failed' | null> {
     const job = this.running(input.jobId);
     if (!job) return null;
     job.attemptCount += 1;
-    const status = job.attemptCount >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending';
-    Object.assign(job, { status, errorCode: input.errorCode, leaseExpiresAt: null, nextAttemptAt: input.retryAt, updatedAt: input.now });
+    const truncatedMaxTokens = input.truncatedAtMaxTokens ?? null;
+    const status = truncatedMaxTokens !== null || job.attemptCount >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending';
+    Object.assign(job, { status, errorCode: input.errorCode, truncatedMaxTokens, leaseExpiresAt: null, nextAttemptAt: input.retryAt, updatedAt: input.now });
     return status;
   }
 
@@ -187,9 +188,10 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     return found.cardId;
   }
 
-  async requeueFailedTranscriptions(now: string): Promise<number> {
-    const failed = this.jobs.filter(job => job.kind === 'transcribe' && job.status === 'failed');
-    for (const job of failed) Object.assign(job, { status: 'pending', attemptCount: 0, errorCode: null, nextAttemptAt: now, updatedAt: now });
+  async requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number> {
+    const failed = this.jobs.filter(job => job.kind === 'transcribe' && job.status === 'failed'
+      && !(job.truncatedMaxTokens !== null && job.truncatedMaxTokens >= maxTokens));
+    for (const job of failed) Object.assign(job, { status: 'pending', attemptCount: 0, errorCode: null, truncatedMaxTokens: null, nextAttemptAt: now, updatedAt: now });
     return failed.length;
   }
 

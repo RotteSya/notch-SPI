@@ -67,7 +67,7 @@ export interface QuestionBankCard {
 
 /** A model call counts once whatever its outcome; the first call and two retries. */
 export const TRANSCRIPTION_MAX_CALLS = 3;
-export type TranscriptionError = 'invalid_transcript' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing';
+export type TranscriptionError = 'invalid_transcript' | 'output_truncated' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing';
 
 export interface ClaimedTranscription {
   jobId: string;
@@ -153,14 +153,20 @@ export interface QuestionBankStore {
   claimTranscription(input: { now: string; leaseUntil: string; modelAttemptId: string }): Promise<ClaimedTranscription | null>;
   /** Back to pending without counting a call: no budget or capacity, upstream overload, or the round ended. */
   releaseTranscription(jobId: string, now: string): Promise<void>;
-  /** One failed call: pending again from `retryAt`, or failed at the cap. */
-  failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string }): Promise<'pending' | 'failed' | null>;
+  /**
+   * One failed call: pending again from `retryAt`, or failed at the cap. An output cut at the token
+   * limit (`truncatedAtMaxTokens`) fails at once, since the same limit would cut it again.
+   */
+  failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string; truncatedAtMaxTokens?: number }): Promise<'pending' | 'failed' | null>;
   /** Finished without a model call: the images were cleared or the solve is gone. */
   skipTranscription(jobId: string, errorCode: TranscriptionError, now: string): Promise<void>;
   /** Store the transcript on the solve, link its card (shared by fingerprint when matchable), finish the job. */
   completeTranscription(input: { jobId: string; transcript: QuestionBankTranscript; now: string }): Promise<string | null>;
-  /** Failed transcriptions become pending with a fresh call count. Returns how many. */
-  requeueFailedTranscriptions(now: string): Promise<number>;
+  /**
+   * Failed transcriptions become pending with a fresh call count, except outputs truncated at a token
+   * limit of at least `maxTokens`: the current limit would cut them again. Returns how many.
+   */
+  requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number>;
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]>;
 }
 
@@ -182,9 +188,9 @@ function byCodePoint(a: string, b: string): number {
   return x.length - y.length;
 }
 
-/** Only a clean single question without a figure may share a card with another solve. */
+/** Only a clean single question with text and without a figure or table may share a card with another solve. */
 export function transcriptMatchable(transcript: QuestionBankTranscript): boolean {
-  return transcript.status === 'ok' && !transcript.has_figure;
+  return transcript.status === 'ok' && !transcript.has_figure && normalizeQuestionText(transcript.stem) !== '';
 }
 
 /** `fp1:` + SHA-256 of [normalized stem, normalized option texts in code point order]. Labels and option order do not count. */

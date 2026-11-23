@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS question_bank_jobs (
   updated_at TEXT NOT NULL,
   next_attempt_at TEXT NOT NULL,
   lease_expires_at TEXT,
-  error_code TEXT
+  error_code TEXT,
+  truncated_max_tokens INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_due ON question_bank_jobs(kind, status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_attempt ON question_bank_jobs(bank_attempt_id);
@@ -356,16 +357,18 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     })());
   }
 
-  failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string }): Promise<'pending' | 'failed' | null> {
+  failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string; truncatedAtMaxTokens?: number }): Promise<'pending' | 'failed' | null> {
     return this.run((function* (): Transaction<'pending' | 'failed' | null> {
       const job = (yield* query(`SELECT attempt_count FROM question_bank_jobs WHERE job_id=? AND status='running'`, input.jobId))[0];
       if (!job) return null;
       const calls = integer(job.attempt_count) + 1;
-      const status = calls >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending';
+      const truncated = input.truncatedAtMaxTokens ?? null;
+      const status = truncated !== null || calls >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending';
       yield* query(
-        `UPDATE question_bank_jobs SET status=?, attempt_count=?, error_code=?, lease_expires_at=NULL, next_attempt_at=?, updated_at=?
+        `UPDATE question_bank_jobs SET status=?, attempt_count=?, error_code=?, truncated_max_tokens=?, lease_expires_at=NULL,
+           next_attempt_at=?, updated_at=?
          WHERE job_id=? AND status='running'`,
-        status, calls, input.errorCode, input.retryAt, input.now, input.jobId,
+        status, calls, input.errorCode, truncated, input.retryAt, input.now, input.jobId,
       );
       return status;
     })());
@@ -420,12 +423,12 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     })());
   }
 
-  requeueFailedTranscriptions(now: string): Promise<number> {
+  requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number> {
     return this.run((function* (): Transaction<number> {
       return (yield* query(
-        `UPDATE question_bank_jobs SET status='pending', attempt_count=0, error_code=NULL, next_attempt_at=?, updated_at=?
-         WHERE kind='transcribe' AND status='failed' RETURNING job_id`,
-        now, now,
+        `UPDATE question_bank_jobs SET status='pending', attempt_count=0, error_code=NULL, truncated_max_tokens=NULL, next_attempt_at=?, updated_at=?
+         WHERE kind='transcribe' AND status='failed' AND (truncated_max_tokens IS NULL OR truncated_max_tokens < ?) RETURNING job_id`,
+        now, now, maxTokens,
       )).length;
     })());
   }
