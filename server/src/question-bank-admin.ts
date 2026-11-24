@@ -235,12 +235,13 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       const errors = Object.entries(t.failed_by_error);
       if (errors.length) table(out, ['失败原因', '数量'], errors.map(([code, n]) => [ERRORS[code] || code, n]));
       node('p', '以上只算非内部／测试账户：is_internal=1 或平台为 release-qa 的账户不计入，修改内部标记后刷新即重算。', out).className = 'muted';
-      node('h3', '卡片', out);
+      node('h3', '卡片（含内部／测试账户）', out);
+      node('p', '卡片、题图和成本是库存数字，包含内部／测试账户的作答和调用；上面的重复率和转写数字不含。', out).className = 'muted';
       if (d.cards.length) table(out, ['状态', '可匹配', '数量'], d.cards.map(c => [STATES[c.state] || c.state, c.matchable ? '是' : '否', c.count]));
       else node('p', '还没有卡片。', out).className = 'empty';
-      node('h3', '题图', out);
+      node('h3', '题图（含内部／测试账户）', out);
       table(out, ['保存中', '保存中字节数', '已过保留期清理'], [[d.images.stored, d.images.stored_bytes + '（约 ' + (d.images.stored_bytes / 1048576).toFixed(1) + ' MB）', d.images.cleared]]);
-      node('h3', '题库调用成本（累计）', out);
+      node('h3', '题库调用成本（累计，含内部／测试账户）', out);
       if (d.costs.length) table(out, ['用途', '币种', '调用次数', '已知成本', '成本未知次数'], d.costs.map(c => [PURPOSES[c.purpose] || c.purpose, c.currency, c.calls, money(c.known_micros), c.unknown]));
       else node('p', '还没有转写或复核调用。', out).className = 'empty';
       node('h3', '抽查结果', out);
@@ -316,7 +317,7 @@ export const QUESTION_BANK_SCRIPT = String.raw`
     message('正在抽取作答…');
     try {
       const d = await call('/admin/question-bank/samples/transcripts?count=' + encodeURIComponent($('transcript-count').value));
-      if (!d.items.length) node('p', '没有可抽查的作答：需要已转写，且题图仍在保留期内。', out).className = 'empty';
+      if (!d.items.length) node('p', '没有可抽查的作答：需要非内部／测试账户、已转写，且题图仍在保留期内。', out).className = 'empty';
       for (const item of d.items) {
         const pair = node('article', undefined, out); pair.className = 'pair';
         const left = node('div', undefined, pair), right = node('div', undefined, pair);
@@ -333,7 +334,7 @@ export const QUESTION_BANK_SCRIPT = String.raw`
     message('正在抽取作答对…');
     try {
       const d = await call('/admin/question-bank/samples/matches?count=' + encodeURIComponent($('match-count').value));
-      if (!d.items.length) node('p', '没有可抽查的作答对：需要同一张可匹配卡片上有两条题图仍在保留期内的作答。', out).className = 'empty';
+      if (!d.items.length) node('p', '没有可抽查的作答对：需要同一张可匹配卡片上有两条非内部／测试账户、题图仍在保留期内的作答。', out).className = 'empty';
       for (const item of d.items) {
         const card = node('article', undefined, out); card.className = 'match';
         node('p', '卡片 ' + item.card_id, card).className = 'muted';
@@ -394,9 +395,9 @@ export function renderQuestionBankPage(): string {
 <section><h2>看数</h2><div class="actions"><button id="load-stats" class="primary" type="button">加载看数</button></div><div id="stats"></div>
 <h3>全部重新入队</h3><p class="muted">把全部失败的转写任务改回等待，调用次数归零。输出被长度上限截断的任务在上限提高前不放回。</p>
 <div class="grid"><label>原因<input id="requeue-reason" maxlength="500"></label></div><div class="actions"><button id="requeue" type="button">全部重新入队</button></div></section>
-<section><h2>抽查转写</h2><p class="muted">随机抽取已转写、题图仍在保留期内的作答，左边题图，右边转写。</p>
+<section><h2>抽查转写</h2><p class="muted">随机抽取计入看数的作答（非内部／测试账户、已转写），题图仍在保留期内。左边题图，右边转写。</p>
 <div class="grid"><label>数量<input id="transcript-count" type="number" min="1" max="20" value="10"></label></div><div class="actions"><button id="load-transcripts" class="primary" type="button">随机抽取</button></div><div id="transcripts"></div></section>
-<section><h2>抽查匹配</h2><p class="muted">随机抽取被判为同一张卡片的两条作答，并排显示两套题图。</p>
+<section><h2>抽查匹配</h2><p class="muted">随机抽取被判为同一张卡片的两条计入看数的作答（非内部／测试账户），并排显示两套题图。</p>
 <div class="grid"><label>数量<input id="match-count" type="number" min="1" max="20" value="10"></label></div><div class="actions"><button id="load-matches" class="primary" type="button">随机抽取</button></div><div id="matches"></div></section>
 <section><h2>按账户删除</h2><p class="muted">删除该账户的作答、题图、任务和指向这些作答的抽查标记；只有该账户作答的卡片一并删除，有其他账户作答的卡片保留。按账户编号删除，账户行已不存在时同样可以删除。操作写入审计记录。</p>
 <div class="grid"><label>账户编号<input id="device-id" type="number" min="1" step="1"></label><label>原因<input id="delete-reason" maxlength="500"></label></div>

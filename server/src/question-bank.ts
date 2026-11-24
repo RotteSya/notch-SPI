@@ -232,9 +232,9 @@ export interface QuestionBankStore {
   requeueFailedTranscriptions(now: string, maxTokens: number): Promise<number>;
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]>;
   inventory(): Promise<QuestionBankInventory>;
-  /** Random solves with a transcript and at least one stored image. */
+  /** Random counted solves (transcribed, account not internal or release-qa now) with at least one stored image. */
   sampleTranscripts(count: number): Promise<QuestionBankSample[]>;
-  /** Random matchable cards with two solves that still have images; a random pair from each. */
+  /** Random matchable cards with two counted solves that still have images; a random pair from each. */
   sampleMatches(count: number): Promise<QuestionBankMatchSample[]>;
   image(attemptId: string, ordinal: number): Promise<{ mediaType: string; bytes: Buffer } | null>;
   /** `missing`: no such transcribed solve, or a match pair not on one matchable card. */

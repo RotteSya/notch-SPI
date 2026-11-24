@@ -196,6 +196,14 @@ function card(row: Row): QuestionBankCard {
 }
 
 const OWNED = 'SELECT attempt_id FROM question_bank_attempts WHERE device_id=?';
+/** Internal or test, as the admin overview classifies devices; a solve whose devices row is gone counts as external. */
+const INTERNAL = "CASE WHEN d.is_internal = 1 OR d.platform = 'release-qa' THEN 1 ELSE 0 END";
+/**
+ * A solve in the statistics denominator: transcribed (only a finished transcription stores one) and
+ * from an account that is not internal now. Spot checks draw from these alone, as the statistics count.
+ */
+const COUNTED = `a.transcript_json IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM devices d WHERE d.id = a.device_id AND (d.is_internal = 1 OR d.platform = 'release-qa'))`;
 
 function* requeueFailedJobs(now: string, maxTokens: number): Transaction<number> {
   return (yield* query(
@@ -557,10 +565,9 @@ export class SQLQuestionBankStore implements QuestionBankStore {
 
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]> {
     return this.run((function* (): Transaction<QuestionBankOccurrenceRow[]> {
-      // Internal or test, as the admin overview classifies devices.
       const rows = yield* query(
         `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable,
-           CASE WHEN d.is_internal = 1 OR d.platform = 'release-qa' THEN 1 ELSE 0 END AS internal, j.status AS job_status,
+           ${INTERNAL} AS internal, j.status AS job_status,
            j.error_code AS job_error_code
          FROM question_bank_attempts a
          LEFT JOIN question_bank_cards c ON c.card_id = a.card_id
@@ -600,7 +607,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     return this.run((function* (): Transaction<QuestionBankSample[]> {
       const ids = yield* query(
         `SELECT a.attempt_id FROM question_bank_attempts a
-         WHERE a.transcript_json IS NOT NULL
+         WHERE ${COUNTED}
            AND EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id AND i.content IS NOT NULL)
          ORDER BY random() LIMIT ?`,
         count,
@@ -613,7 +620,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     return this.run((function* (): Transaction<QuestionBankMatchSample[]> {
       const rows = yield* query(
         `SELECT a.card_id, a.attempt_id FROM question_bank_attempts a JOIN question_bank_cards c ON c.card_id = a.card_id
-         WHERE c.matchable = 1 AND a.transcript_json IS NOT NULL
+         WHERE c.matchable = 1 AND ${COUNTED}
            AND EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id AND i.content IS NOT NULL)`,
       );
       const byCard = new Map<string, string[]>();

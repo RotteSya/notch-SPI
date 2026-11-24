@@ -312,6 +312,42 @@ for (const kind of kinds) {
     } finally { await b.close(); }
   });
 
+  test(`${kind}: spot checks draw only from the statistics denominator, never internal or release-qa solves`, async () => {
+    const b = await bank(kind);
+    try {
+      const [user, other, staff] = [await b.account(), await b.account(), await b.account()];
+      const qa = await b.account('release-qa');
+      assert.equal(await b.store.reporting.setInternal(staff.id, true, 'qba-' + randomUUID()), true);
+      const counted = await b.solved(user.token, transcript(SPEED));
+      // Test accounts submit the same test image again and again: always the same card.
+      const testSolves = [];
+      for (const token of [staff.token, staff.token, qa.token, qa.token, staff.token, qa.token]) {
+        testSolves.push(await b.solved(token, transcript(TRAIN)));
+      }
+      testSolves.push(await b.solved(staff.token, transcript(SPEED)), await b.solved(qa.token, transcript(SPEED)));
+      const sampled = async () => ({
+        transcripts: ((await b.call('GET', '/admin/question-bank/samples/transcripts?count=20')).json().items as Array<{ attempt_id: string }>)
+          .map(item => item.attempt_id).sort(),
+        matches: ((await b.call('GET', '/admin/question-bank/samples/matches?count=20')).json().items as Array<Record<string, any>>)
+          .map(pair => [pair.card_id, pair.first.attempt_id, pair.second.attempt_id]),
+      });
+      assert.deepEqual(await sampled(), { transcripts: [counted.attemptId], matches: [] },
+        'the internal pairs on TRAIN and a counted solve paired with an internal one are both left out');
+      assert.equal((await b.call('GET', '/admin/question-bank/stats')).json().solves.denominator, 1, 'the same solves the statistics count');
+
+      const second = await b.solved(other.token, transcript(SPEED));
+      assert.deepEqual(await sampled(), {
+        transcripts: [counted.attemptId, second.attemptId].sort(),
+        matches: [[counted.cardId, ...[counted.attemptId, second.attemptId].sort()]],
+      });
+
+      // Read from the current flag, like the statistics.
+      assert.equal(await b.store.reporting.setInternal(staff.id, false, 'qba-' + randomUUID()), true);
+      const staffSolves = testSolves.filter((_, i) => [0, 1, 4, 6].includes(i)).map(row => row.attemptId);
+      assert.deepEqual((await sampled()).transcripts, [counted.attemptId, second.attemptId, ...staffSolves].sort());
+    } finally { await b.close(); }
+  });
+
   test(`${kind}: requeueing all failed transcriptions is audited and idempotent and leaves truncated outputs`, async () => {
     const b = await bank(kind);
     try {

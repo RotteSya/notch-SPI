@@ -242,6 +242,11 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     };
   }
 
+  /** In the statistics denominator: transcribed, and the account is not internal now. Spot checks draw from these alone. */
+  private counted(row: AttemptRow): boolean {
+    return row.transcript !== null && !this.internal(row.deviceId);
+  }
+
   private hasStoredImage(attemptId: string): boolean {
     return this.images.some(image => image.attemptId === attemptId && image.bytes);
   }
@@ -257,14 +262,14 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
   }
 
   async sampleTranscripts(count: number): Promise<QuestionBankSample[]> {
-    const ready = [...this.attempts.values()].filter(row => row.transcript && this.hasStoredImage(row.attemptId));
+    const ready = [...this.attempts.values()].filter(row => this.counted(row) && this.hasStoredImage(row.attemptId));
     return sampleOf(ready, count).map(row => this.sample(row.attemptId)!);
   }
 
   async sampleMatches(count: number): Promise<QuestionBankMatchSample[]> {
     const byCard = new Map<string, string[]>();
     for (const row of this.attempts.values()) {
-      if (!row.cardId || !row.transcript || !this.cards.get(row.cardId)?.matchable || !this.hasStoredImage(row.attemptId)) continue;
+      if (!row.cardId || !this.counted(row) || !this.cards.get(row.cardId)?.matchable || !this.hasStoredImage(row.attemptId)) continue;
       byCard.set(row.cardId, [...byCard.get(row.cardId) ?? [], row.attemptId]);
     }
     return sampleOf([...byCard].filter(([, ids]) => ids.length >= 2), count).map(([cardId, ids]) => {
