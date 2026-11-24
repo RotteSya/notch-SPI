@@ -95,7 +95,7 @@ function budgetToday(inspection: BudgetInspection, scope: string, currency: stri
 function footprint(value: QuestionBankFootprint) {
   return {
     attempts: value.attempts, images: value.images, stored_images: value.storedImages, jobs: value.jobs, marks: value.marks,
-    cards_deleted: value.cardsDeleted, cards_kept: value.cardsKept,
+    cards_deleted: value.cardsDeleted, cards_kept: value.cardsKept, reviews_detached: value.reviewsDetached,
   };
 }
 
@@ -597,8 +597,8 @@ export const QUESTION_BANK_SCRIPT = String.raw`
     const deviceId = Number($('device-id').value);
     try {
       const d = await call('/admin/question-bank/accounts/preview', { device_id: deviceId });
-      table($('delete-preview'), ['作答', '题图（仍保存）', '任务', '抽查标记', '将删除的卡片', '保留的卡片（有其他账户作答）'],
-        [[d.attempts, d.images + '（' + d.stored_images + '）', d.jobs, d.marks, d.cards_deleted, d.cards_kept]]);
+      table($('delete-preview'), ['作答', '题图（仍保存）', '任务', '抽查标记', '将删除的卡片', '保留的卡片（有其他账户作答）', '保留的复核记录（去掉与该账户作答的关联）'],
+        [[d.attempts, d.images + '（' + d.stored_images + '）', d.jobs, d.marks, d.cards_deleted, d.cards_kept, d.reviews_detached]]);
       pending = { deviceId, operationId: uuid() };
       $('confirm-delete').hidden = false;
       message('请核对预览，填写原因后确认删除。');
@@ -613,7 +613,7 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       const d = await call('/admin/question-bank/accounts/delete', { device_id: pending.deviceId, operation_id: pending.operationId, actor: actor(), reason: $('delete-reason').value.trim() });
       const x = d.deleted;
       message((d.replayed ? '这次删除已经执行过。' : '已删除。') + '作答 ' + x.attempts + '，题图 ' + x.images + '，任务 ' + x.jobs + '，抽查标记 ' + x.marks + '，卡片 ' + x.cards_deleted
-        + '；保留 ' + x.cards_kept + ' 张有其他账户作答的卡片。操作号 ' + d.operation_id);
+        + '；保留 ' + x.cards_kept + ' 张有其他账户作答的卡片，' + x.reviews_detached + ' 条复核记录保留并去掉了与该账户作答的关联。操作号 ' + d.operation_id);
       pending = null; $('confirm-delete').hidden = true;
     } catch (error) { message(error.message, true); } finally { $('confirm-delete').disabled = false; }
   });
@@ -647,7 +647,7 @@ export function renderQuestionBankPage(): string {
 <div class="actions"><button id="preview-review" type="button">预览</button><button id="confirm-review" class="primary" type="button" hidden>确认复核</button></div><div id="review-preview"></div></section>
 <section><h2>裁决</h2><p class="muted">列出“有争议”的卡片，显示题图、作答给出的答案和复核结果。填写正确答案和依据后置为“人工裁决”，写入卡片状态记录。</p>
 <div class="actions"><button id="load-disputed" class="primary" type="button">加载有争议的卡片</button></div><div id="disputed"></div></section>
-<section><h2>按账户删除</h2><p class="muted">删除该账户的作答、题图、任务和指向这些作答的抽查标记；只有该账户作答的卡片一并删除，有其他账户作答的卡片保留。按账户编号删除，账户行已不存在时同样可以删除。操作写入审计记录。</p>
+<section><h2>按账户删除</h2><p class="muted">删除该账户的作答、题图、任务和指向这些作答的抽查标记；只有该账户作答的卡片一并删除，有其他账户作答的卡片保留。保留卡片上复核过该账户作答的复核记录留下，只去掉与这条作答的关联。按账户编号删除，账户行已不存在时同样可以删除。操作写入审计记录。</p>
 <div class="grid"><label>账户编号<input id="device-id" type="number" min="1" step="1"></label><label>原因<input id="delete-reason" maxlength="500"></label></div>
 <div class="actions"><button id="preview-delete" type="button">预览</button><button id="confirm-delete" class="primary" type="button" hidden>确认删除</button></div><div id="delete-preview"></div></section>
 </main><script>${QUESTION_BANK_SCRIPT}</script></body></html>`;

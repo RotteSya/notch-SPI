@@ -337,12 +337,15 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     const cardIds = new Set([...this.attempts.values()].filter(row => owned.has(row.attemptId) && row.cardId).map(row => row.cardId!));
     const shared = new Set([...this.attempts.values()].filter(row => !owned.has(row.attemptId) && row.cardId && cardIds.has(row.cardId)).map(row => row.cardId!));
     const cards = [...cardIds].filter(cardId => !shared.has(cardId)).sort();
+    const reviews = this.jobs.filter(job => job.kind === 'review' && job.cardId !== null && cardIds.has(job.cardId));
     return {
       footprint: {
         attempts: owned.size, images: images.length, storedImages: images.filter(image => image.bytes).length,
-        jobs: this.jobs.filter(job => job.attemptId !== null && owned.has(job.attemptId)).length,
+        jobs: this.jobs.filter(job => job.kind === 'transcribe' && job.attemptId !== null && owned.has(job.attemptId)).length
+          + reviews.filter(job => !shared.has(job.cardId!)).length,
         marks: this.markRows.filter(row => owned.has(row.attemptId) || (row.otherAttemptId !== null && owned.has(row.otherAttemptId))).length,
         cardsDeleted: cards.length, cardsKept: shared.size,
+        reviewsDetached: reviews.filter(job => shared.has(job.cardId!) && job.attemptId !== null && owned.has(job.attemptId)).length,
       },
       cards,
     };
@@ -362,6 +365,8 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     const gone = new Set(cards);
     this.markRows = this.markRows.filter(row => !owned.has(row.attemptId) && !(row.otherAttemptId !== null && owned.has(row.otherAttemptId)));
     this.images = this.images.filter(image => !owned.has(image.attemptId));
+    // A review keeps its result; only its link to the solve goes. Reviews of cards that go are deleted with them.
+    for (const job of this.jobs) if (job.kind === 'review' && job.attemptId !== null && owned.has(job.attemptId)) job.attemptId = null;
     this.jobs = this.jobs.filter(job => !(job.attemptId !== null && owned.has(job.attemptId)) && !(job.cardId !== null && gone.has(job.cardId)));
     for (const attemptId of owned) this.attempts.delete(attemptId);
     this.cardEventRows = this.cardEventRows.filter(event => !gone.has(event.cardId));
@@ -389,7 +394,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
         options: structuredClone(row.transcript!.options), imagesStored: this.allImagesStored(row.attemptId),
       })),
       jobs: this.jobs.filter(job => job.kind === 'review' && job.cardId !== null && ids.has(job.cardId)).map(job => ({
-        jobId: job.jobId, cardId: job.cardId!, operationId: job.operationId!, status: job.status, errorCode: job.errorCode,
+        jobId: job.jobId, cardId: job.cardId!, reviewedAttemptId: job.attemptId, operationId: job.operationId!, status: job.status, errorCode: job.errorCode,
         result: job.review ? structuredClone(job.review) : null, createdAt: job.createdAt, updatedAt: job.updatedAt,
       })),
       events: this.cardEventRows.filter(event => ids.has(event.cardId)).map(event => ({ ...event })),

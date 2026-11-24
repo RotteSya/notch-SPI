@@ -389,7 +389,7 @@ for (const kind of kinds) {
       assert.equal((await mark({ kind: 'transcript', attempt_id: theirs.attemptId, verdict: 'correct' })).status, 200);
       const before = await b.store.questionBank.counts();
 
-      const expected = { attempts: 4, images: 8, stored_images: 8, jobs: 4, marks: 2, cards_deleted: 2, cards_kept: 1 };
+      const expected = { attempts: 4, images: 8, stored_images: 8, jobs: 4, marks: 2, cards_deleted: 2, cards_kept: 1, reviews_detached: 0 };
       assert.deepEqual((await b.call('POST', '/admin/question-bank/accounts/preview', { device_id: a.id })).json(), { device_id: a.id, ...expected });
       const body = { device_id: a.id, operation_id: randomUUID(), actor: 'tester', reason: 'the user asked by email' };
       const deleted = await b.call('POST', '/admin/question-bank/accounts/delete', body);
@@ -409,18 +409,18 @@ for (const kind of kinds) {
         ...before, attempts: before.attempts - 4, images: before.images - 8, jobs: before.jobs - 4, cards: before.cards - 2,
       }, 'prompts stay: they are the shared answer prompt, not the user\'s content');
       assert.deepEqual((await b.call('POST', '/admin/question-bank/accounts/preview', { device_id: a.id })).json(),
-        { device_id: a.id, attempts: 0, images: 0, stored_images: 0, jobs: 0, marks: 0, cards_deleted: 0, cards_kept: 0 });
+        { device_id: a.id, attempts: 0, images: 0, stored_images: 0, jobs: 0, marks: 0, cards_deleted: 0, cards_kept: 0, reviews_detached: 0 });
 
       const replay = await b.call('POST', '/admin/question-bank/accounts/delete', body);
       assert.deepEqual(replay.json(), { operation_id: body.operation_id, device_id: a.id, replayed: true, deleted: expected });
       assert.equal((await b.call('POST', '/admin/question-bank/accounts/delete', { ...body, device_id: other.id })).status, 409);
       const [audit] = await b.store.questionBank.operations(10);
       assert.deepEqual([audit?.kind, audit?.deviceId, audit?.actor, audit?.reason], ['delete_account', a.id, 'tester', 'the user asked by email']);
-      assert.deepEqual(audit?.after, { attempts: 4, images: 8, storedImages: 8, jobs: 4, marks: 2, cardsDeleted: 2, cardsKept: 1 });
+      assert.deepEqual(audit?.after, { attempts: 4, images: 8, storedImages: 8, jobs: 4, marks: 2, cardsDeleted: 2, cardsKept: 1, reviewsDetached: 0 });
 
       // Works on device_id alone: an id with no devices row deletes nothing and is still audited.
       const ghost = await b.call('POST', '/admin/question-bank/accounts/delete', { ...body, device_id: 987_654, operation_id: randomUUID() });
-      assert.deepEqual(ghost.json().deleted, { attempts: 0, images: 0, stored_images: 0, jobs: 0, marks: 0, cards_deleted: 0, cards_kept: 0 });
+      assert.deepEqual(ghost.json().deleted, { attempts: 0, images: 0, stored_images: 0, jobs: 0, marks: 0, cards_deleted: 0, cards_kept: 0, reviews_detached: 0 });
       assert.equal((await b.store.questionBank.operations(10)).length, 2);
       assert.equal((await b.call('POST', '/admin/question-bank/accounts/delete', { ...body, operation_id: randomUUID(), device_id: 0 })).status, 400);
       assert.equal((await b.call('POST', '/admin/question-bank/accounts/delete', { ...body, operation_id: randomUUID(), reason: 'x' })).status, 400);

@@ -259,15 +259,24 @@ function* footprintOf(deviceId: number): Transaction<{ footprint: QuestionBankFo
        (SELECT COUNT(*) FROM question_bank_attempts WHERE device_id=?) AS attempts,
        (SELECT COUNT(*) FROM question_bank_images WHERE attempt_id IN (${OWNED})) AS images,
        (SELECT COUNT(*) FROM question_bank_images WHERE content IS NOT NULL AND attempt_id IN (${OWNED})) AS stored_images,
-       (SELECT COUNT(*) FROM question_bank_jobs WHERE bank_attempt_id IN (${OWNED})) AS jobs,
+       (SELECT COUNT(*) FROM question_bank_jobs WHERE kind='transcribe' AND bank_attempt_id IN (${OWNED})) AS jobs,
        (SELECT COUNT(*) FROM question_bank_marks WHERE attempt_id IN (${OWNED}) OR other_attempt_id IN (${OWNED})) AS marks`,
     deviceId, deviceId, deviceId, deviceId, deviceId, deviceId,
   ))[0]!;
   const cards = yield* cardsOf(deviceId);
+  const gone = new Set(cards.deleted);
+  // Review jobs of the account's cards, and whether each re-asked one of its solves.
+  const reviews = yield* query(
+    `SELECT card_id, CASE WHEN bank_attempt_id IN (${OWNED}) THEN 1 ELSE 0 END AS linked FROM question_bank_jobs
+     WHERE kind='review' AND card_id IN (SELECT card_id FROM question_bank_attempts WHERE device_id=? AND card_id IS NOT NULL)`,
+    deviceId, deviceId,
+  );
   return {
     footprint: {
-      attempts: integer(row.attempts), images: integer(row.images), storedImages: integer(row.stored_images), jobs: integer(row.jobs),
+      attempts: integer(row.attempts), images: integer(row.images), storedImages: integer(row.stored_images),
+      jobs: integer(row.jobs) + reviews.filter(review => gone.has(String(review.card_id))).length,
       marks: integer(row.marks), cardsDeleted: cards.deleted.length, cardsKept: cards.kept,
+      reviewsDetached: reviews.filter(review => !gone.has(String(review.card_id)) && integer(review.linked) === 1).length,
     },
     cards: cards.deleted,
   };
@@ -323,7 +332,7 @@ function* reviewRows(cardIds: string[] | null): Transaction<QuestionBankReviewDa
     ...args,
   );
   const jobs = yield* query(
-    `SELECT j.job_id, j.card_id, j.operation_id, j.status, j.error_code, j.review_json, j.created_at, j.updated_at
+    `SELECT j.job_id, j.card_id, j.bank_attempt_id, j.operation_id, j.status, j.error_code, j.review_json, j.created_at, j.updated_at
      FROM question_bank_jobs j JOIN question_bank_cards c ON c.card_id = j.card_id WHERE j.kind = 'review' AND c.matchable = 1${filter}`,
     ...args,
   );
@@ -339,7 +348,8 @@ function* reviewRows(cardIds: string[] | null): Transaction<QuestionBankReviewDa
       imagesStored: integer(row.images_stored) === 1,
     })),
     jobs: jobs.map(row => ({
-      jobId: String(row.job_id), cardId: String(row.card_id), operationId: String(row.operation_id), status: String(row.status),
+      jobId: String(row.job_id), cardId: String(row.card_id), reviewedAttemptId: textOrNull(row.bank_attempt_id),
+      operationId: String(row.operation_id), status: String(row.status),
       errorCode: textOrNull(row.error_code), createdAt: String(row.created_at), updatedAt: String(row.updated_at),
       result: row.review_json === null || row.review_json === undefined ? null : JSON.parse(String(row.review_json)) as QuestionBankReviewResult,
     })),
@@ -796,6 +806,8 @@ export class SQLQuestionBankStore implements QuestionBankStore {
       const { footprint, cards } = yield* footprintOf(deviceId);
       yield* query(`DELETE FROM question_bank_marks WHERE attempt_id IN (${OWNED}) OR other_attempt_id IN (${OWNED})`, deviceId, deviceId);
       yield* query(`DELETE FROM question_bank_images WHERE attempt_id IN (${OWNED})`, deviceId);
+      // A review keeps its result; only its link to the solve goes. Reviews of cards that go are deleted below.
+      yield* query(`UPDATE question_bank_jobs SET bank_attempt_id=NULL WHERE kind='review' AND bank_attempt_id IN (${OWNED})`, deviceId);
       yield* query(`DELETE FROM question_bank_jobs WHERE bank_attempt_id IN (${OWNED})`, deviceId);
       yield* query('DELETE FROM question_bank_attempts WHERE device_id=?', deviceId);
       for (const cardId of cards) {

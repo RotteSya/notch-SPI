@@ -545,27 +545,45 @@ for (const kind of kinds) {
     } finally { await b.close(); }
   });
 
-  test(`${kind}: deleting the reviewed account removes its review job, while the shared card keeps its state and history`, async () => {
+  test(`${kind}: deleting the reviewed account keeps the review with its result and drops only its link; the card keeps its state and history`, async () => {
     const b = await bank(kind);
     try {
       const [a, c] = [await b.account(), await b.account()];
       const x1 = await b.solved(a.token, SPEED);
-      await b.solved(c.token, SPEED);
+      const x2 = await b.solved(c.token, SPEED);
+      const y1 = await b.solved(c.token, TRAIN);
+      await b.solved(a.token, TRAIN);
+      // Y is reviewed on a's solve, so deleting c leaves Y's review linked.
       assert.equal((await b.confirm([x1.cardId])).status, 200);
       await b.round();
-      assert.equal((await b.store.questionBank.findCard(x1.cardId!))?.state, 'verified_model');
-      // The reviewed solve is c's, the latest one: its review job goes with it.
+      assert.equal((await b.confirm([y1.cardId])).status, 200);
+      await b.round();
+      const before = new Map((await b.store.questionBank.reviewData()).jobs.map(job => [job.cardId, job]));
+      assert.equal(before.get(x1.cardId!)?.reviewedAttemptId, x2.attemptId, 'the latest counted solve, c\'s');
+      assert.notEqual(before.get(y1.cardId!)?.reviewedAttemptId, y1.attemptId, 'a\'s solve on Y is the latest');
+
       const preview = (await b.call('POST', '/admin/question-bank/accounts/preview', { device_id: c.id })).json();
-      assert.deepEqual([preview.jobs, preview.cards_kept], [2, 1], 'its transcription job and the review job');
+      assert.deepEqual([preview.jobs, preview.cards_kept, preview.reviews_detached], [2, 2, 1], 'two transcription jobs go; one review is kept and unlinked');
       const deleted = await b.call('POST', '/admin/question-bank/accounts/delete', { device_id: c.id, operation_id: randomUUID(), actor: 'tester', reason: 'the user asked by email' });
       assert.equal(deleted.status, 200);
-      assert.deepEqual((await b.store.questionBank.reviewData([x1.cardId!])).jobs, []);
+      assert.equal(deleted.json().deleted.reviews_detached, 1);
+      const after = new Map((await b.store.questionBank.reviewData()).jobs.map(job => [job.cardId, job]));
+      const kept = after.get(x1.cardId!);
+      assert.deepEqual([kept?.jobId, kept?.status, kept?.result, kept?.reviewedAttemptId], [before.get(x1.cardId!)?.jobId, 'done', before.get(x1.cardId!)?.result, null],
+        'the same review with its result, without the link to the deleted solve');
+      assert.deepEqual(after.get(y1.cardId!), before.get(y1.cardId!), 'a review of another account\'s solve is untouched');
       assert.equal((await b.store.questionBank.findCard(x1.cardId!))?.state, 'verified_model');
       assert.equal((await b.store.questionBank.cardEvents(x1.cardId!)).length, 1);
-      // Deleting the last account removes the card with its history.
-      await b.call('POST', '/admin/question-bank/accounts/delete', { device_id: a.id, operation_id: randomUUID(), actor: 'tester', reason: 'the user asked by email' });
+      assert.equal((await b.call('GET', '/admin/question-bank/review/cards')).json().items.length, 0, 'one counted solve left on each card');
+
+      // Deleting the last account removes the cards with their reviews and history.
+      const last = await b.call('POST', '/admin/question-bank/accounts/delete', { device_id: a.id, operation_id: randomUUID(), actor: 'tester', reason: 'the user asked by email' });
+      assert.deepEqual([last.json().deleted.jobs, last.json().deleted.cards_deleted, last.json().deleted.reviews_detached], [4, 2, 0],
+        'its two transcription jobs and the two review jobs of the cards that go');
       assert.equal(await b.store.questionBank.findCard(x1.cardId!), null);
       assert.deepEqual(await b.store.questionBank.cardEvents(x1.cardId!), []);
+      assert.deepEqual((await b.store.questionBank.reviewData()).jobs, []);
+      assert.equal((await b.store.questionBank.counts()).jobs, 0);
     } finally { await b.close(); }
   });
 

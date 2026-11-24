@@ -155,6 +155,8 @@ export interface ReviewCardRow {
 export interface ReviewJobRow {
   jobId: string;
   cardId: string;
+  /** The solve the review re-asked; null before it is claimed, or once that solve's account was deleted. */
+  reviewedAttemptId: string | null;
   operationId: string;
   status: string;
   errorCode: string | null;
@@ -260,15 +262,18 @@ export interface QuestionBankInventory {
   costs: Array<{ purpose: string; currency: string; calls: number; knownMicros: string; unknown: number }>;
 }
 
-/** What deleting one account's question-bank data removes, and the cards other accounts keep. */
+/** What deleting one account's question-bank data removes, and what other accounts' cards keep. */
 export interface QuestionBankFootprint {
   attempts: number;
   images: number;
   storedImages: number;
+  /** Jobs deleted: the account's transcriptions and the review jobs of cards that go. */
   jobs: number;
   marks: number;
   cardsDeleted: number;
   cardsKept: number;
+  /** Review jobs of kept cards that re-asked one of the account's solves: kept with their result, the link to the solve removed. */
+  reviewsDetached: number;
 }
 
 /** An audited admin action. The same operation id returns its first result; a different request under it is a conflict. */
@@ -373,9 +378,10 @@ export interface QuestionBankStore {
   requeueFailed(input: { operationId: string; actor: string; reason: string; now: string; maxTokens: number }): Promise<QuestionBankOperation<{ requeued: number }>>;
   accountFootprint(deviceId: number): Promise<QuestionBankFootprint>;
   /**
-   * Delete one account's solves, images, jobs and the spot-check marks that name them, then every
-   * card no other account's solve links to, with its state events. Works on `device_id` alone, so
-   * it also clears solves whose devices row no longer exists.
+   * Delete one account's solves, images, transcription jobs and the spot-check marks that name them,
+   * then every card no other account's solve links to, with its state events and review jobs. A kept
+   * card's review job that re-asked one of these solves stays, with its result, and loses only that
+   * link. Works on `device_id` alone, so it also clears solves whose devices row no longer exists.
    */
   deleteAccount(input: { operationId: string; deviceId: number; actor: string; reason: string; now: string }): Promise<QuestionBankOperation<QuestionBankFootprint>>;
   /** The audit log, newest first. */
