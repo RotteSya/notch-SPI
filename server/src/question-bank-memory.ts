@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   blockedForReview, cardAnswers, imageDigest, operationFingerprint, promptDigest, questionBankCardViews, questionBankCosts, questionFingerprint, reviewSolveOf, sampleOf,
-  transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
+  cardUnmatchableReason, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
   type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
   type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
   type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
@@ -227,12 +227,15 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
   }
 
   async occurrenceRows(): Promise<QuestionBankOccurrenceRow[]> {
-    return [...this.attempts.values()].map(row => ({
-      attemptId: row.attemptId, deviceId: row.deviceId, createdAt: row.createdAt, internal: this.internal(row.deviceId),
-      jobStatus: this.jobs.find(job => job.attemptId === row.attemptId && job.kind === 'transcribe')?.status ?? null,
-      jobErrorCode: this.jobs.find(job => job.attemptId === row.attemptId && job.kind === 'transcribe')?.errorCode ?? null,
-      cardId: row.cardId, matchable: row.cardId ? this.cards.get(row.cardId)?.matchable ?? false : false,
-    }));
+    return [...this.attempts.values()].map(row => {
+      const card = row.cardId ? this.cards.get(row.cardId) : undefined;
+      return {
+        attemptId: row.attemptId, deviceId: row.deviceId, createdAt: row.createdAt, internal: this.internal(row.deviceId),
+        jobStatus: this.jobs.find(job => job.attemptId === row.attemptId && job.kind === 'transcribe')?.status ?? null,
+        jobErrorCode: this.jobs.find(job => job.attemptId === row.attemptId && job.kind === 'transcribe')?.errorCode ?? null,
+        cardId: row.cardId, matchable: card?.matchable ?? false, unmatchable: card ? cardUnmatchableReason(card) : null,
+      };
+    });
   }
 
   async inventory(): Promise<QuestionBankInventory> {

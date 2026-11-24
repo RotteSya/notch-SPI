@@ -131,7 +131,7 @@ const ENDPOINTS: Array<['GET' | 'POST', string, Record<string, unknown>?]> = [
 
 test('stats: top accounts are left out entirely for the second rate; checkpoints count the denominator', () => {
   const row = (attemptId: string, deviceId: number, minute: number, cardId: string, extra: Partial<QuestionBankOccurrenceRow> = {}): QuestionBankOccurrenceRow =>
-    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 0, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, ...extra });
+    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 0, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, unmatchable: null, ...extra });
   // Device 1 repeats its own question three times; devices 2–7 each answer once, and 7 repeats 2's question.
   const rows = [
     row('a01', 1, 1, 'c1'), row('a02', 1, 2, 'c1'), row('a03', 1, 3, 'c1'), row('a04', 1, 4, 'c1'),
@@ -146,6 +146,7 @@ test('stats: top accounts are left out entirely for the second rate; checkpoints
   assert.deepEqual(stats.topAccounts.map(a => [a.deviceId, a.solves, a.share]), [[1, 4, 0.4], [2, 1, 0.1], [3, 1, 0.1], [4, 1, 0.1], [5, 1, 0.1]]);
   // Without devices 1–5, device 7's solve has no earlier counted solve on c2: 6 and 7 each answer once, no repeat.
   assert.deepEqual(stats.withoutTopAccounts, { denominator: 2, repeated: 0, repeatRate: 0 });
+  assert.deepEqual(stats.matchability, { matchable: 10, multiple: 0, unreadable: 0, figure: 0, empty_stem: 0 });
   assert.deepEqual(stats.transcription, { solves: 13, done: 10, waiting: 1, failed: 2, skipped: 0, coverage: 10 / 13, failedByError: { timeout: 1, output_truncated: 1 } });
   const many = (n: number) => Array.from({ length: n }, (_, i) => row('m' + String(i).padStart(4, '0'), 100 + i, 0, 'x' + i));
   assert.deepEqual(questionBankStats(many(999)).checkpoints, { reached: [], next: 1000 });
@@ -153,6 +154,23 @@ test('stats: top accounts are left out entirely for the second rate; checkpoints
   assert.deepEqual(questionBankStats(many(2000)).checkpoints, { reached: [1000, 1500, 2000], next: null });
   const empty = questionBankStats([]);
   assert.deepEqual([empty.repeatRate, empty.transcription.coverage, empty.topAccounts], [null, null, []], 'no samples is not 0%');
+});
+
+test('stats split the denominator by why a solve can never match, over the same solves', () => {
+  const row = (attemptId: string, deviceId: number, minute: number, cardId: string | null, extra: Partial<QuestionBankOccurrenceRow> = {}): QuestionBankOccurrenceRow =>
+    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 2, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, unmatchable: null, ...extra });
+  const never = (reason: QuestionBankOccurrenceRow['unmatchable']) => ({ matchable: false, unmatchable: reason });
+  const stats = questionBankStats([
+    row('b1', 1, 1, 'q1'), row('b2', 2, 2, 'q1'),
+    row('b3', 1, 3, 'u1', never('multiple')), row('b4', 2, 4, 'u2', never('multiple')), row('b5', 3, 5, 'u3', never('unreadable')),
+    row('b6', 3, 6, 'u4', never('figure')), row('b7', 4, 7, 'u5', never('empty_stem')),
+    row('b8', 9, 8, 'u6', { ...never('multiple'), internal: true }),                               // internal: not in the denominator
+    row('b9', 4, 9, null, { matchable: false, jobStatus: 'pending' }), row('b10', 4, 10, null, { matchable: false, jobStatus: 'failed' }),
+  ]);
+  assert.equal(stats.denominator, 7);
+  assert.deepEqual(stats.matchability, { matchable: 2, multiple: 2, unreadable: 1, figure: 1, empty_stem: 1 });
+  assert.equal(Object.values(stats.matchability).reduce((sum, n) => sum + n, 0), stats.denominator);
+  assert.equal(stats.repeated, 1, 'the unmatchable solves stay in the denominator and never repeat');
 });
 
 test('mark summary keeps the latest verdict per solve or pair; costs keep unknown costs apart', () => {
@@ -233,6 +251,7 @@ for (const kind of kinds) {
       const ids = [a.id, c.id, d.id].sort((x, y) => x - y);
       assert.deepEqual(stats.top_accounts, ids.map(id => ({ device_id: id, solves: 2, share: 2 / 6 })), 'release-qa is not listed');
       assert.deepEqual(stats.without_top_accounts, { denominator: 0, repeated: 0, repeat_rate: null });
+      assert.deepEqual(stats.matchability, { matchable: 5, multiple: 0, unreadable: 0, figure: 1, empty_stem: 0 });
       assert.deepEqual(stats.transcription, {
         solves: 8, done: 6, waiting: 1, failed: 1, skipped: 0, coverage: 0.75, failed_by_error: { output_truncated: 1 }, max_tokens: TRANSCRIBE_MAX_TOKENS,
       });
@@ -248,6 +267,33 @@ for (const kind of kinds) {
         'recomputed from the current flag: the internal account neither counts nor makes a repeat');
       assert.deepEqual(flagged.top_accounts.map((row: { device_id: number }) => row.device_id), [a.id, c.id].sort((x, y) => x - y));
       assert.equal(s1.transcript?.stem, SPEED);
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: stats show why the denominator's unmatchable solves never match, and follow the internal flag`, async () => {
+    const b = await bank(kind);
+    try {
+      const [a, c] = [await b.account(), await b.account()];
+      const qa = await b.account('release-qa');
+      const none = { options: [] };
+      await b.solved(a.token, transcript(SPEED));
+      await b.solved(c.token, transcript(SPEED));
+      await b.solved(a.token, transcript('', { status: 'multiple', ...none }));   // two questions on one screen
+      await b.solved(c.token, transcript('', { status: 'multiple', ...none }));
+      await b.solved(a.token, transcript('', { status: 'unreadable', ...none }));
+      await b.solved(c.token, transcript(TRAIN, { has_figure: true }));
+      await b.solved(a.token, transcript(' \n'));
+      await b.solved(qa.token, transcript('', { status: 'multiple', ...none }));  // release-qa: not counted
+      const stats = (await b.call('GET', '/admin/question-bank/stats')).json();
+      assert.deepEqual([stats.solves.denominator, stats.solves.repeated], [7, 1]);
+      assert.deepEqual(stats.matchability, { matchable: 2, multiple: 2, unreadable: 1, figure: 1, empty_stem: 1 });
+
+      assert.equal(await b.store.reporting.setInternal(c.id, true, 'qba-' + randomUUID()), true);
+      const flagged = (await b.call('GET', '/admin/question-bank/stats')).json();
+      assert.equal(flagged.solves.denominator, 4);
+      assert.deepEqual(flagged.matchability, { matchable: 1, multiple: 1, unreadable: 1, figure: 0, empty_stem: 1 }, 'the same solves as the denominator');
+      const page = (await b.app.inject({ url: '/admin/question-bank' })).body;
+      for (const label of ['不可匹配：多题', '不可匹配：看不清', '不可匹配：依赖图表', '不可匹配：题干为空']) assert.ok(page.includes(label), label);
     } finally { await b.close(); }
   });
 

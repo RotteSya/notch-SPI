@@ -12,6 +12,7 @@ export const TRANSCRIBE_PROMPT = {
     'status is "ok" for one readable question, "multiple" when the images hold more than one independent question,',
     'and "unreadable" when the question cannot be read reliably. For "multiple" and "unreadable", stem is "" and options is [].',
     'stem holds every piece of text needed to answer, copied verbatim: any reading passage or other material, instructions, and the question itself.',
+    'stem leaves out page titles, section headings and question numbers, such as "練習問題 Q04", "問3" or "第 5 题".',
     'options is [] for a question without choices. has_figure is true when answering needs a figure, chart, diagram, picture or table.',
     'Write line breaks inside text as \\n. The last image is the latest capture; earlier images are context from the same screen.',
   ].join('\n'),

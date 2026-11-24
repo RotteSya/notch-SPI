@@ -251,6 +251,8 @@ export interface QuestionBankOccurrenceRow {
   jobErrorCode: string | null;
   cardId: string | null;
   matchable: boolean;
+  /** Why the solve's card never matches; null when it matches or there is no card yet. */
+  unmatchable: QuestionBankUnmatchableReason | null;
 }
 
 /** A solve shown for a spot check: its own transcript and which of its images are still stored. */
@@ -460,9 +462,26 @@ function byCodePoint(a: string, b: string): number {
   return x.length - y.length;
 }
 
+/** Why a transcript can never share a card with another solve, checked in this order. */
+export type QuestionBankUnmatchableReason = 'multiple' | 'unreadable' | 'figure' | 'empty_stem';
+
+export function unmatchableReason(transcript: Pick<QuestionBankTranscript, 'status' | 'has_figure' | 'stem'>): QuestionBankUnmatchableReason | null {
+  if (transcript.status !== 'ok') return transcript.status;
+  if (transcript.has_figure) return 'figure';
+  return normalizeQuestionText(transcript.stem) === '' ? 'empty_stem' : null;
+}
+
 /** Only a clean single question with text and without a figure or table may share a card with another solve. */
 export function transcriptMatchable(transcript: QuestionBankTranscript): boolean {
-  return transcript.status === 'ok' && !transcript.has_figure && normalizeQuestionText(transcript.stem) !== '';
+  return unmatchableReason(transcript) === null;
+}
+
+/**
+ * The reason for a stored card, from its columns alone. Its `matchable` came from the same checks,
+ * so an unmatchable card that is a readable single question without a figure has an empty stem.
+ */
+export function cardUnmatchableReason(card: Pick<QuestionBankCard, 'matchable' | 'transcriptStatus' | 'hasFigure'>): QuestionBankUnmatchableReason | null {
+  return card.matchable ? null : unmatchableReason({ status: card.transcriptStatus, has_figure: card.hasFigure, stem: '' });
 }
 
 /** `fp1:` + SHA-256 of [normalized stem, normalized option texts in code point order]. Labels and option order do not count. */
@@ -565,6 +584,8 @@ export interface QuestionBankStats {
   topAccounts: Array<{ deviceId: number; solves: number; share: number }>;
   /** The top accounts left out as if internal: neither counted nor a precedent for others. */
   withoutTopAccounts: { denominator: number; repeated: number; repeatRate: number | null };
+  /** The denominator's solves by whether their card can match, and why not; the five add up to the denominator. */
+  matchability: { matchable: number } & Record<QuestionBankUnmatchableReason, number>;
   /** Non-internal solves by transcription state. `coverage` is done ÷ solves. */
   transcription: { solves: number; done: number; waiting: number; failed: number; skipped: number; coverage: number | null; failedByError: Record<string, number> };
 }
@@ -582,6 +603,13 @@ export function questionBankStats(rows: QuestionBankOccurrenceRow[]): QuestionBa
   const external = rows.filter(row => !row.internal);
   const failedByError: Record<string, number> = {};
   for (const row of external) if (row.jobStatus === 'failed') failedByError[row.jobErrorCode ?? 'unknown'] = (failedByError[row.jobErrorCode ?? 'unknown'] ?? 0) + 1;
+  // The same solves as the denominator: non-internal and transcribed.
+  const matchability = { matchable: 0, multiple: 0, unreadable: 0, figure: 0, empty_stem: 0 };
+  for (const row of external) {
+    if (row.jobStatus !== 'done') continue;
+    if (row.matchable) matchability.matchable += 1;
+    else if (row.unmatchable) matchability[row.unmatchable] += 1;
+  }
   return {
     denominator: all.denominator, repeated: all.repeated, sameAccount: all.sameAccount, otherAccount: all.otherAccount,
     repeatRate: ratio(all.repeated, all.denominator),
@@ -593,6 +621,7 @@ export function questionBankStats(rows: QuestionBankOccurrenceRow[]): QuestionBa
     },
     topAccounts: top.map(([deviceId, solves]) => ({ deviceId, solves, share: solves / all.denominator })),
     withoutTopAccounts: { denominator: without.denominator, repeated: without.repeated, repeatRate: ratio(without.repeated, without.denominator) },
+    matchability,
     transcription: {
       solves: external.length, done: all.denominator, waiting: all.waiting, failed: all.failed, skipped: all.skipped,
       coverage: ratio(all.denominator, external.length), failedByError,

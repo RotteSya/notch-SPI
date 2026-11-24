@@ -3,7 +3,7 @@ import { hashToken } from './db.ts';
 import { query, type Row, type RunTransaction, type Transaction } from './billing-sql.ts';
 import {
   blockedForReview, cardAnswers, imageDigest, operationFingerprint, promptDigest, questionBankCardViews, questionBankCosts, questionFingerprint, reviewSolveOf, sampleOf,
-  transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
+  cardUnmatchableReason, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
   type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
   type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
   type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
@@ -666,7 +666,7 @@ export class SQLQuestionBankStore implements QuestionBankStore {
   occurrenceRows(): Promise<QuestionBankOccurrenceRow[]> {
     return this.run((function* (): Transaction<QuestionBankOccurrenceRow[]> {
       const rows = yield* query(
-        `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable,
+        `SELECT a.attempt_id, a.device_id, a.created_at, a.card_id, c.matchable, c.transcript_status, c.has_figure,
            ${INTERNAL} AS internal, j.status AS job_status,
            j.error_code AS job_error_code
          FROM question_bank_attempts a
@@ -678,6 +678,10 @@ export class SQLQuestionBankStore implements QuestionBankStore {
         attemptId: String(row.attempt_id), deviceId: integer(row.device_id), createdAt: String(row.created_at),
         internal: Number(row.internal) === 1, jobStatus: textOrNull(row.job_status), jobErrorCode: textOrNull(row.job_error_code),
         cardId: textOrNull(row.card_id), matchable: integerOrNull(row.matchable) === 1,
+        unmatchable: integerOrNull(row.matchable) === null ? null : cardUnmatchableReason({
+          matchable: integer(row.matchable) === 1, hasFigure: integer(row.has_figure) === 1,
+          transcriptStatus: String(row.transcript_status) as QuestionBankTranscript['status'],
+        }),
       }));
     })());
   }

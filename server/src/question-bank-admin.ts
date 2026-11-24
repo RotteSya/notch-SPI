@@ -163,6 +163,7 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
         without_top_accounts: {
           denominator: stats.withoutTopAccounts.denominator, repeated: stats.withoutTopAccounts.repeated, repeat_rate: stats.withoutTopAccounts.repeatRate,
         },
+        matchability: stats.matchability,
         transcription: {
           solves: stats.transcription.solves, done: stats.transcription.done, waiting: stats.transcription.waiting,
           failed: stats.transcription.failed, skipped: stats.transcription.skipped, coverage: stats.transcription.coverage,
@@ -396,6 +397,11 @@ export const QUESTION_BANK_SCRIPT = String.raw`
         [[s.denominator, s.repeated, pct(s.repeat_rate), s.same_account + ' · ' + pct(s.same_account_rate), s.other_account + ' · ' + pct(s.other_account_rate)]]);
       const cp = d.checkpoints;
       node('p', '判断点 1000 / 1500 / 2000：已到 ' + (cp.reached.length ? cp.reached.join('、') : '无') + '；下一个 ' + (cp.next === null ? '没有了' : cp.next + '（还差 ' + (cp.next - s.denominator) + ' 道）'), out);
+      node('h3', '能否匹配', out);
+      const m = d.matchability;
+      table(out, ['能否匹配', '计数范围内作答（道）', '占比'], [['可匹配', m.matchable], ['不可匹配：多题', m.multiple], ['不可匹配：看不清', m.unreadable],
+        ['不可匹配：依赖图表', m.figure], ['不可匹配：题干为空', m.empty_stem]].map(([label, n]) => [label, n, pct(s.denominator ? n / s.denominator : null)]));
+      node('p', '与上表同一批作答，五项合计等于计数范围内作答。不可匹配的作答留在分母里，但永远不会算作重复：多题是一张截图里有不止一道题；依赖图表是答题要看图形、图表、图片或表格。', out).className = 'muted';
       node('h3', '用量最大的账户', out);
       if (d.top_accounts.length) table(out, ['账户编号', '计数范围内作答', '占比'], d.top_accounts.map(a => [a.device_id, a.solves, pct(a.share)]));
       else node('p', '没有样本。', out).className = 'empty';

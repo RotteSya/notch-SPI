@@ -14,7 +14,7 @@ import { TransientProviderError, type CaptureRequest, type Provider } from '../s
 import type { Store } from '../src/db.ts';
 import { aggregateEconomics, type ReportQuery } from '../src/reporting.ts';
 import {
-  answerContent, normalizeQuestionText, questionBankOccurrences, questionFingerprint, transcriptMatchable,
+  answerContent, cardUnmatchableReason, normalizeQuestionText, questionBankOccurrences, questionFingerprint, transcriptMatchable, unmatchableReason,
   type QuestionBankOccurrenceRow, type QuestionBankTranscript,
 } from '../src/question-bank.ts';
 import { parseTranscript, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT } from '../src/question-bank-prompt.ts';
@@ -226,9 +226,36 @@ test('a stem that normalizes to nothing never matches, with or without options',
   assert.equal(transcriptMatchable({ ...base, stem: 'Q' }), true);
 });
 
+test('the prompt keeps page titles, section headings and question numbers out of the stem', () => {
+  assert.match(TRANSCRIBE_PROMPT.system, /stem leaves out page titles, section headings and question numbers, such as "練習問題 Q04", "問3" or "第 5 题"\./);
+  // The trial's three screenshots of one template: a title kept in one stem made a different card for the same question.
+  const options = [{ label: 'A', text: '60 km/h' }, { label: 'B', text: '40 km/h' }];
+  const stem = '120 km を 2 時間で走る車の平均速度は？';
+  assert.notEqual(questionFingerprint({ stem: '練習問題 Q04\n' + stem, options }), questionFingerprint({ stem, options }));
+});
+
+test('every unmatchable transcript has one reason, and a stored card gives the same reason from its columns', () => {
+  const base = { language: 'en', options: [] as QuestionBankTranscript['options'] };
+  const cases: Array<[QuestionBankTranscript, ReturnType<typeof unmatchableReason>]> = [
+    [{ ...base, status: 'ok', stem: 'Q', has_figure: false }, null],
+    [{ ...base, status: 'multiple', stem: '', has_figure: false }, 'multiple'],
+    [{ ...base, status: 'multiple', stem: '', has_figure: true }, 'multiple'],
+    [{ ...base, status: 'unreadable', stem: '', has_figure: false }, 'unreadable'],
+    [{ ...base, status: 'ok', stem: 'According to the table?', has_figure: true }, 'figure'],
+    [{ ...base, status: 'ok', stem: '', has_figure: true }, 'figure'],
+    [{ ...base, status: 'ok', stem: ' 　\n', has_figure: false }, 'empty_stem'],
+  ];
+  for (const [transcript, reason] of cases) {
+    const label = JSON.stringify(transcript);
+    assert.equal(unmatchableReason(transcript), reason, label);
+    assert.equal(transcriptMatchable(transcript), reason === null, label);
+    assert.equal(cardUnmatchableReason({ matchable: transcriptMatchable(transcript), transcriptStatus: transcript.status, hasFigure: transcript.has_figure }), reason, label);
+  }
+});
+
 test('the three seen-before flags come only from earlier counted solves', () => {
   const row = (attemptId: string, deviceId: number, minute: number, cardId: string, extra: Partial<QuestionBankOccurrenceRow> = {}): QuestionBankOccurrenceRow =>
-    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 1, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, ...extra });
+    ({ attemptId, deviceId, createdAt: iso(Date.UTC(2026, 10, 1, 1, minute)), internal: false, jobStatus: 'done', jobErrorCode: null, cardId, matchable: true, unmatchable: null, ...extra });
   const summary = questionBankOccurrences([
     row('a8', 9, 0, 'q2', { internal: true }),
     row('a3', 2, 3, 'q1'), row('a1', 1, 1, 'q1'), row('a2', 1, 2, 'q1'), row('a4', 2, 4, 'q2'),
