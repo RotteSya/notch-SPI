@@ -65,9 +65,10 @@ export interface QuestionBankCard {
   createdAt: string;
 }
 
-/** A model call counts once whatever its outcome; the first call and two retries. */
+/** A model call counts once whatever its outcome; the first call and two retries. Review jobs use the same cap. */
 export const TRANSCRIPTION_MAX_CALLS = 3;
-export type TranscriptionError = 'invalid_transcript' | 'output_truncated' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing';
+/** Job error codes, for transcription and review jobs alike. Short codes only, never model text. */
+export type TranscriptionError = 'invalid_transcript' | 'output_truncated' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing' | 'card_missing';
 
 export interface ClaimedTranscription {
   jobId: string;
@@ -82,8 +83,134 @@ export interface ClaimedTranscription {
   images: Array<{ mediaType: string; bytes: Buffer | null }>;
 }
 
-/** A running transcription whose lease expired; its model attempt, if any, still needs closing. */
-export interface StaleTranscription { jobId: string; deviceId: number | null; modelAttemptId: string | null }
+/** A running job whose lease expired; its model attempt, if any, still needs closing. */
+export interface StaleTranscription { jobId: string; kind: 'transcribe' | 'review'; deviceId: number | null; modelAttemptId: string | null }
+
+/**
+ * How a review ended. `agrees`: the reviewer's answer content equals the one production answer
+ * content on the card. `disagrees`: it differs. `not_ready`: the reviewer gave no usable ready
+ * result (retake, review, wrong format, cut short). `answers_differ`: the card's own production
+ * answers already differ, so no reviewer was called.
+ */
+export type ReviewOutcome = 'agrees' | 'disagrees' | 'not_ready' | 'answers_differ';
+
+/** What a finished review job keeps for the adjudication page. Null fields: no reviewer call or no usable result. */
+export interface QuestionBankReviewResult {
+  outcome: ReviewOutcome;
+  provider: string | null;
+  model: string | null;
+  state: string | null;
+  kind: string | null;
+  answer: string | null;
+  content: string | null;
+  /** The production answer contents compared against. */
+  answers: string[];
+}
+
+/** The solve a review re-asks: its own saved prompt, effort and images, and its transcript's options. */
+export interface ReviewSolve {
+  bankAttemptId: string;
+  deviceId: number;
+  requestId: string;
+  captureId: string;
+  system: string;
+  task: string;
+  reasoningEffort: QuestionBankReasoningEffort | null;
+  images: Array<{ mediaType: string; bytes: Buffer }>;
+  options: QuestionBankTranscript['options'];
+}
+
+export interface ClaimedReview {
+  jobId: string;
+  attemptCount: number;
+  modelAttemptId: string;
+  operationId: string;
+  cardId: string;
+  /** The latest counted solve on the card whose images are all stored; null when none is left. */
+  solve: ReviewSolve | null;
+  /** Distinct production answer contents among the card's counted solves. */
+  answers: string[];
+}
+
+/** A counted solve on a matchable card, as the review and adjudication lists read it. */
+export interface ReviewSolveRow {
+  attemptId: string;
+  cardId: string;
+  createdAt: string;
+  finalAnswer: string;
+  questionKind: string | null;
+  options: QuestionBankTranscript['options'];
+  /** Every image of the solve is still stored. */
+  imagesStored: boolean;
+}
+
+export interface ReviewCardRow {
+  cardId: string;
+  stem: string;
+  options: QuestionBankTranscript['options'];
+  state: QuestionBankCard['state'];
+  createdAt: string;
+}
+
+export interface ReviewJobRow {
+  jobId: string;
+  cardId: string;
+  operationId: string;
+  status: string;
+  errorCode: string | null;
+  result: QuestionBankReviewResult | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One card state change. Review jobs write actor `review_job` and the outcome as basis. */
+export interface QuestionBankCardEvent {
+  eventId: string;
+  cardId: string;
+  at: string;
+  actor: string;
+  fromState: QuestionBankCard['state'];
+  toState: QuestionBankCard['state'];
+  basis: string;
+  answer: string | null;
+  jobId: string | null;
+  operationId: string | null;
+}
+
+/** Raw rows for the review and adjudication lists; the lists themselves are computed by `questionBankCardViews`. */
+export interface QuestionBankReviewData {
+  cards: ReviewCardRow[];
+  solves: ReviewSolveRow[];
+  jobs: ReviewJobRow[];
+  events: QuestionBankCardEvent[];
+}
+
+/**
+ * Why a card cannot be put up for review now. `review_open`: a review job is pending or running.
+ * `reviewed`: the card is no longer unverified. `not_repeated`: fewer than two counted solves.
+ * `images_expired`: no counted solve still has all its images.
+ */
+export type ReviewBlock = 'review_open' | 'reviewed' | 'not_repeated' | 'images_expired';
+
+export interface QuestionBankCardView {
+  cardId: string;
+  stem: string;
+  options: QuestionBankTranscript['options'];
+  state: QuestionBankCard['state'];
+  createdAt: string;
+  /** Counted solves on the card: transcribed, account not internal or release-qa now. */
+  occurrences: number;
+  answers: Array<{ content: string; example: string; count: number }>;
+  answersDiffer: boolean;
+  /** The solve a review would re-ask: the latest counted one with all images stored. */
+  reviewAttemptId: string | null;
+  blocked: ReviewBlock | null;
+  latestReview: ReviewJobRow | null;
+  latestEvent: QuestionBankCardEvent | null;
+}
+
+/** The outcome of confirming a review batch: the jobs made, or every card that may not be reviewed and why. */
+export type QuestionBankReviewConfirm = QuestionBankOperation<{ cards: string[] }> | { blocked: Array<{ cardId: string; reason: ReviewBlock | 'missing' }> };
 
 /** One stored solve as statistics see it. `internal` is the device's flag at query time. */
 export interface QuestionBankOccurrenceRow {
@@ -147,10 +274,12 @@ export interface QuestionBankFootprint {
 /** An audited admin action. The same operation id returns its first result; a different request under it is a conflict. */
 export type QuestionBankOperation<T> = { result: T; replayed: boolean } | 'conflict';
 
+export type QuestionBankOperationKind = 'requeue_failed' | 'delete_account' | 'review' | 'adjudicate';
+
 /** One row of the admin audit log. */
 export interface QuestionBankOperationRecord {
   operationId: string;
-  kind: 'requeue_failed' | 'delete_account';
+  kind: QuestionBankOperationKind;
   deviceId: number | null;
   actor: string;
   reason: string;
@@ -210,18 +339,18 @@ export interface QuestionBankStore {
   counts(): Promise<QuestionBankCounts>;
   /** Clear the bytes of images created before `cutoff`. Rows, byte counts, transcripts and cards stay. Returns images cleared. */
   purgeImages(cutoff: string, now: string, limit: number): Promise<number>;
-  /** Expired running transcriptions count one call: pending again, or failed at the cap. */
-  recoverStaleTranscriptions(now: string): Promise<StaleTranscription[]>;
+  /** Expired running jobs of either kind count one call: pending again, or failed at the cap. */
+  recoverStaleJobs(now: string): Promise<StaleTranscription[]>;
   /** Claim the oldest due pending transcription under a lease. Null when none is due. */
   claimTranscription(input: { now: string; leaseUntil: string; modelAttemptId: string }): Promise<ClaimedTranscription | null>;
-  /** Back to pending without counting a call: no budget or capacity, upstream overload, or the round ended. */
+  /** Back to pending without counting a call: no budget or capacity, upstream overload, or the round ended. Either job kind. */
   releaseTranscription(jobId: string, now: string): Promise<void>;
   /**
    * One failed call: pending again from `retryAt`, or failed at the cap. An output cut at the token
-   * limit (`truncatedAtMaxTokens`) fails at once, since the same limit would cut it again.
+   * limit (`truncatedAtMaxTokens`) fails at once, since the same limit would cut it again. Either job kind.
    */
   failTranscription(input: { jobId: string; errorCode: TranscriptionError; now: string; retryAt: string; truncatedAtMaxTokens?: number }): Promise<'pending' | 'failed' | null>;
-  /** Finished without a model call: the images were cleared or the solve is gone. */
+  /** Finished without a model call: the images were cleared or the solve is gone. Either job kind. */
   skipTranscription(jobId: string, errorCode: TranscriptionError, now: string): Promise<void>;
   /** Store the transcript on the solve, link its card (shared by fingerprint when matchable), finish the job. */
   completeTranscription(input: { jobId: string; transcript: QuestionBankTranscript; now: string }): Promise<string | null>;
@@ -251,6 +380,28 @@ export interface QuestionBankStore {
   deleteAccount(input: { operationId: string; deviceId: number; actor: string; reason: string; now: string }): Promise<QuestionBankOperation<QuestionBankFootprint>>;
   /** The audit log, newest first. */
   operations(limit: number): Promise<QuestionBankOperationRecord[]>;
+  /** Matchable cards (all, or the given ids) with their counted solves, review jobs and state events. */
+  reviewData(cardIds?: string[]): Promise<QuestionBankReviewData>;
+  /**
+   * The only way a review job comes to exist: one pending job per card, all or none, under an
+   * audited operation id. Every card must pass `reviewBlock` inside the same transaction.
+   */
+  confirmReview(input: { operationId: string; cardIds: string[]; actor: string; reason: string; now: string }): Promise<QuestionBankReviewConfirm>;
+  /** Claim the oldest due review job, pick the solve to re-ask and read the card's production answers. */
+  claimReview(input: { now: string; leaseUntil: string; modelAttemptId: string }): Promise<ClaimedReview | null>;
+  /**
+   * Finish a running review job and move its card from `unverified` to `verified_model` (agrees) or
+   * `disputed` (anything else), with a state event. Returns the new state, or null when the job was
+   * not running or the card had already left `unverified`.
+   */
+  completeReview(input: { jobId: string; now: string; called: boolean; result: QuestionBankReviewResult }): Promise<QuestionBankCard['state'] | null>;
+  /** A disputed card becomes `verified_human` with the admin's answer and basis, under an audited operation id. */
+  adjudicate(input: { operationId: string; cardId: string; answer: string; basis: string; actor: string; now: string }): Promise<QuestionBankOperation<{ state: 'verified_human' }> | 'missing' | 'not_disputed'>;
+  cardEvents(cardId: string): Promise<QuestionBankCardEvent[]>;
+  /** The request a review of this solve would send: its saved prompt, effort and images. Null unless it is transcribed and every image is stored. */
+  reviewSolve(attemptId: string): Promise<ReviewSolve | null>;
+  /** Spot-check views of the given solves, in the given order; missing ones are left out. */
+  solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]>;
 }
 
 /**
@@ -437,6 +588,63 @@ export function questionBankCosts(attempts: Array<{ purpose: string; currency: s
     rows.set(key, row);
   }
   return [...rows.values()].sort((a, b) => a.purpose.localeCompare(b.purpose) || a.currency.localeCompare(b.currency));
+}
+
+/** Distinct answer contents of solves on one card, most frequent first, each with a raw example. */
+export function cardAnswers(solves: Array<Pick<ReviewSolveRow, 'finalAnswer' | 'questionKind' | 'options' | 'createdAt' | 'attemptId'>>): QuestionBankCardView['answers'] {
+  const answers = new Map<string, { content: string; example: string; count: number }>();
+  for (const solve of [...solves].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.attemptId.localeCompare(b.attemptId))) {
+    const content = answerContent(solve.finalAnswer, solve.questionKind, solve.options);
+    const row = answers.get(content) ?? { content, example: solve.finalAnswer, count: 0 };
+    row.count += 1;
+    answers.set(content, row);
+  }
+  return [...answers.values()].sort((a, b) => b.count - a.count || a.content.localeCompare(b.content));
+}
+
+/** The solve a review re-asks: the latest counted one whose images are all still stored. */
+export function reviewSolveOf<T extends Pick<ReviewSolveRow, 'createdAt' | 'attemptId' | 'imagesStored'>>(solves: T[]): T | null {
+  return [...solves].filter(solve => solve.imagesStored)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.attemptId.localeCompare(a.attemptId))[0] ?? null;
+}
+
+const byTime = <T extends { createdAt: string }>(a: T, b: T) => a.createdAt.localeCompare(b.createdAt);
+
+/** The review and adjudication view of each card, computed now from its counted solves, review jobs and events. */
+export function questionBankCardViews(data: QuestionBankReviewData): QuestionBankCardView[] {
+  const solves = new Map<string, ReviewSolveRow[]>(), jobs = new Map<string, ReviewJobRow[]>(), events = new Map<string, QuestionBankCardEvent[]>();
+  for (const solve of data.solves) solves.set(solve.cardId, [...solves.get(solve.cardId) ?? [], solve]);
+  for (const job of data.jobs) jobs.set(job.cardId, [...jobs.get(job.cardId) ?? [], job]);
+  for (const event of data.events) events.set(event.cardId, [...events.get(event.cardId) ?? [], event]);
+  return data.cards.map(card => {
+    const own = solves.get(card.cardId) ?? [];
+    const answers = cardAnswers(own);
+    const reviewSolve = reviewSolveOf(own);
+    const cardJobs = [...jobs.get(card.cardId) ?? []].sort((a, b) => byTime(a, b) || a.jobId.localeCompare(b.jobId));
+    const cardEvents = [...events.get(card.cardId) ?? []].sort((a, b) => a.at.localeCompare(b.at) || a.eventId.localeCompare(b.eventId));
+    const open = cardJobs.some(job => job.status === 'pending' || job.status === 'running');
+    const blocked: ReviewBlock | null = open ? 'review_open' : card.state !== 'unverified' ? 'reviewed'
+      : own.length < 2 ? 'not_repeated' : reviewSolve === null ? 'images_expired' : null;
+    return {
+      cardId: card.cardId, stem: card.stem, options: card.options, state: card.state, createdAt: card.createdAt,
+      occurrences: own.length, answers, answersDiffer: answers.length > 1, reviewAttemptId: reviewSolve?.attemptId ?? null,
+      blocked, latestReview: cardJobs.at(-1) ?? null, latestEvent: cardEvents.at(-1) ?? null,
+    };
+  });
+}
+
+/** Every requested card that may not be put up for review now, with the reason; missing or unmatchable cards included. */
+export function blockedForReview(cardIds: string[], views: QuestionBankCardView[]): Array<{ cardId: string; reason: ReviewBlock | 'missing' }> {
+  const byId = new Map(views.map(view => [view.cardId, view]));
+  return cardIds.flatMap((cardId): Array<{ cardId: string; reason: ReviewBlock | 'missing' }> => {
+    const view = byId.get(cardId);
+    return !view ? [{ cardId, reason: 'missing' }] : view.blocked ? [{ cardId, reason: view.blocked }] : [];
+  });
+}
+
+/** Most counted solves first; then the older card. */
+export function byOccurrences(a: QuestionBankCardView, b: QuestionBankCardView): number {
+  return b.occurrences - a.occurrences || a.createdAt.localeCompare(b.createdAt) || a.cardId.localeCompare(b.cardId);
 }
 
 /** Binds an operation id to the request it was first used for. */

@@ -78,8 +78,8 @@ export interface Attempt {
   diagnostics?: AttemptDiagnostics;
   /** Server-validated metering, retained even if the final stream/COMMIT acknowledgement is lost. */
   usageEvidence?: AttemptUsageEvidence;
-  /** `transcribe` is a question-bank call on an already-settled solve; it never bills a question. */
-  attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover' | 'transcribe';
+  /** `transcribe` and `review` are question-bank calls on an already-settled solve; they never bill a question. */
+  attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover' | 'transcribe' | 'review';
   provider: string; model: string; policyVersion: string;
   status: 'running' | 'succeeded' | 'failed' | 'unknown';
   inputTokens: number | null; outputTokens: number | null; costMicros: string | null;
@@ -126,7 +126,7 @@ export interface BankBudgetHold { holdId: string; scope: string; limitMicros: nu
  * reservations, the question ledger or the capture record.
  */
 export interface BankAttemptStart {
-  deviceId: number; requestId: string; attempt: NewAttempt & { purpose: 'transcribe' };
+  deviceId: number; requestId: string; attempt: NewAttempt & { purpose: 'transcribe' | 'review' };
   reservedMicros: number; currency: string; now: number; utcOffsetMinutes: number;
   holds: BankBudgetHold[]; capacityTokens: number; capacityShare: number;
 }

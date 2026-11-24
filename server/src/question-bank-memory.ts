@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import {
-  imageDigest, operationFingerprint, promptDigest, questionBankCosts, questionFingerprint, sampleOf, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
-  type ClaimedTranscription, type QuestionBankCard, type QuestionBankCounts, type QuestionBankFootprint, type QuestionBankInventory,
-  type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation, type QuestionBankOperationRecord,
-  type QuestionBankSample,
+  blockedForReview, cardAnswers, imageDigest, operationFingerprint, promptDigest, questionBankCardViews, questionBankCosts, questionFingerprint, reviewSolveOf, sampleOf,
+  transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
+  type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
+  type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
+  type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
+  type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
   type QuestionBankSolveInput, type QuestionBankStore, type QuestionBankTranscript, type StaleTranscription,
   type StoredQuestionBankAttempt, type StoredQuestionBankImage, type TranscriptionError,
 } from './question-bank.ts';
@@ -13,13 +15,14 @@ interface AttemptRow extends Omit<StoredQuestionBankAttempt,
   'system' | 'task' | 'images' | 'jobKind' | 'jobStatus' | 'jobAttemptCount' | 'jobErrorCode'> {}
 interface ImageRow extends StoredQuestionBankImage { attemptId: string; createdAt: string; deletedAt: string | null }
 interface JobRow {
-  jobId: string; attemptId: string; kind: string; status: string; attemptCount: number; cardId: string | null;
+  /** The solve a job works on; a review job gets one only when it is claimed. */
+  jobId: string; attemptId: string | null; kind: string; status: string; attemptCount: number; cardId: string | null;
   modelAttemptId: string | null; createdAt: string; updatedAt: string; nextAttemptAt: string;
   leaseExpiresAt: string | null; errorCode: string | null; truncatedMaxTokens: number | null;
+  operationId: string | null; review: QuestionBankReviewResult | null;
 }
-interface CardEventRow { eventId: string; cardId: string; at: string; actor: string; fromState: string; toState: string; basis: string }
 interface OperationRow {
-  operationId: string; kind: 'requeue_failed' | 'delete_account'; deviceId: number | null; actor: string; reason: string;
+  operationId: string; kind: QuestionBankOperationKind; deviceId: number | null; actor: string; reason: string;
   fingerprint: string; createdAt: string; before: unknown; after: unknown;
 }
 /** A transcription or review model call as the question-bank costs read it. */
@@ -32,7 +35,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
   private images: ImageRow[] = [];
   private jobs: JobRow[] = [];
   private cards = new Map<string, QuestionBankCard>();
-  private cardEvents: CardEventRow[] = [];
+  private cardEventRows: QuestionBankCardEvent[] = [];
   private operationRows = new Map<string, OperationRow>();
   private markRows: QuestionBankMark[] = [];
   private readonly deviceId: (token: string) => number | null;
@@ -75,6 +78,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     this.jobs.push({
       jobId: randomUUID(), attemptId, kind: 'transcribe', status: 'pending', attemptCount: 0, cardId: null, modelAttemptId: null,
       createdAt: now, updatedAt: now, nextAttemptAt: now, leaseExpiresAt: null, errorCode: null, truncatedMaxTokens: null,
+      operationId: null, review: null,
     });
   }
 
@@ -123,14 +127,17 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     return cleared;
   }
 
-  async recoverStaleTranscriptions(now: string): Promise<StaleTranscription[]> {
+  async recoverStaleJobs(now: string): Promise<StaleTranscription[]> {
     const stale: StaleTranscription[] = [];
-    for (const job of this.jobs.filter(item => item.kind === 'transcribe' && item.status === 'running' && item.leaseExpiresAt !== null && item.leaseExpiresAt <= now)
+    for (const job of this.jobs.filter(item => item.status === 'running' && item.leaseExpiresAt !== null && item.leaseExpiresAt <= now)
       .sort((a, b) => a.leaseExpiresAt!.localeCompare(b.leaseExpiresAt!)).slice(0, 50)) {
       job.attemptCount += 1;
       job.status = job.attemptCount >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending';
       Object.assign(job, { leaseExpiresAt: null, errorCode: 'lease_expired', nextAttemptAt: now, updatedAt: now });
-      stale.push({ jobId: job.jobId, deviceId: this.attempts.get(job.attemptId)?.deviceId ?? null, modelAttemptId: job.modelAttemptId });
+      stale.push({
+        jobId: job.jobId, kind: job.kind === 'review' ? 'review' : 'transcribe',
+        deviceId: job.attemptId === null ? null : this.attempts.get(job.attemptId)?.deviceId ?? null, modelAttemptId: job.modelAttemptId,
+      });
     }
     return stale;
   }
@@ -140,7 +147,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
       .sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt) || a.createdAt.localeCompare(b.createdAt) || a.jobId.localeCompare(b.jobId));
     for (const job of due) {
       Object.assign(job, { status: 'running', leaseExpiresAt: input.leaseUntil, modelAttemptId: input.modelAttemptId, updatedAt: input.now });
-      const solve = this.attempts.get(job.attemptId);
+      const solve = job.attemptId === null ? undefined : this.attempts.get(job.attemptId);
       if (!solve) {
         Object.assign(job, { status: 'skipped', errorCode: 'attempt_missing', leaseExpiresAt: null, updatedAt: input.now });
         continue;
@@ -182,7 +189,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
   async completeTranscription(input: { jobId: string; transcript: QuestionBankTranscript; now: string }): Promise<string | null> {
     const job = this.running(input.jobId);
     if (!job) return null;
-    const solve = this.attempts.get(job.attemptId);
+    const solve = job.attemptId === null ? undefined : this.attempts.get(job.attemptId);
     if (!solve) {
       Object.assign(job, { status: 'skipped', errorCode: 'attempt_missing', leaseExpiresAt: null, updatedAt: input.now });
       return null;
@@ -333,7 +340,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     return {
       footprint: {
         attempts: owned.size, images: images.length, storedImages: images.filter(image => image.bytes).length,
-        jobs: this.jobs.filter(job => owned.has(job.attemptId)).length,
+        jobs: this.jobs.filter(job => job.attemptId !== null && owned.has(job.attemptId)).length,
         marks: this.markRows.filter(row => owned.has(row.attemptId) || (row.otherAttemptId !== null && owned.has(row.otherAttemptId))).length,
         cardsDeleted: cards.length, cardsKept: shared.size,
       },
@@ -355,15 +362,151 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     const gone = new Set(cards);
     this.markRows = this.markRows.filter(row => !owned.has(row.attemptId) && !(row.otherAttemptId !== null && owned.has(row.otherAttemptId)));
     this.images = this.images.filter(image => !owned.has(image.attemptId));
-    this.jobs = this.jobs.filter(job => !owned.has(job.attemptId) && !(job.cardId !== null && gone.has(job.cardId)));
+    this.jobs = this.jobs.filter(job => !(job.attemptId !== null && owned.has(job.attemptId)) && !(job.cardId !== null && gone.has(job.cardId)));
     for (const attemptId of owned) this.attempts.delete(attemptId);
-    this.cardEvents = this.cardEvents.filter(event => !gone.has(event.cardId));
+    this.cardEventRows = this.cardEventRows.filter(event => !gone.has(event.cardId));
     for (const cardId of gone) this.cards.delete(cardId);
     this.operationRows.set(input.operationId, {
       operationId: input.operationId, kind: 'delete_account', deviceId: input.deviceId, actor: input.actor, reason: input.reason, fingerprint,
       createdAt: input.now, before: footprint, after: footprint,
     });
     return { result: structuredClone(footprint), replayed: false };
+  }
+
+  private allImagesStored(attemptId: string): boolean {
+    const images = this.images.filter(image => image.attemptId === attemptId);
+    return images.length > 0 && images.every(image => image.bytes !== null);
+  }
+
+  private reviewRows(cardIds: string[] | null): QuestionBankReviewData {
+    const wanted = cardIds ? new Set(cardIds) : null;
+    const cards = [...this.cards.values()].filter(card => card.matchable && (!wanted || wanted.has(card.cardId)));
+    const ids = new Set(cards.map(card => card.cardId));
+    return {
+      cards: cards.map(card => ({ cardId: card.cardId, stem: card.stem, options: structuredClone(card.options), state: card.state, createdAt: card.createdAt })),
+      solves: [...this.attempts.values()].filter(row => row.cardId !== null && ids.has(row.cardId) && this.counted(row)).map(row => ({
+        attemptId: row.attemptId, cardId: row.cardId!, createdAt: row.createdAt, finalAnswer: row.finalAnswer, questionKind: row.questionKind,
+        options: structuredClone(row.transcript!.options), imagesStored: this.allImagesStored(row.attemptId),
+      })),
+      jobs: this.jobs.filter(job => job.kind === 'review' && job.cardId !== null && ids.has(job.cardId)).map(job => ({
+        jobId: job.jobId, cardId: job.cardId!, operationId: job.operationId!, status: job.status, errorCode: job.errorCode,
+        result: job.review ? structuredClone(job.review) : null, createdAt: job.createdAt, updatedAt: job.updatedAt,
+      })),
+      events: this.cardEventRows.filter(event => ids.has(event.cardId)).map(event => ({ ...event })),
+    };
+  }
+
+  async reviewData(cardIds?: string[]): Promise<QuestionBankReviewData> {
+    return this.reviewRows(cardIds ?? null);
+  }
+
+  async confirmReview(input: { operationId: string; cardIds: string[]; actor: string; reason: string; now: string }): Promise<QuestionBankReviewConfirm> {
+    const cardIds = [...new Set(input.cardIds)].sort();
+    const fingerprint = operationFingerprint(['review', cardIds, input.actor, input.reason]);
+    const prior = this.prior<{ cards: string[] }>(input.operationId, fingerprint);
+    if (prior === 'conflict') return prior;
+    if (prior) return { result: prior.result, replayed: true };
+    const blocked = blockedForReview(cardIds, questionBankCardViews(this.reviewRows(cardIds)));
+    if (blocked.length || !cardIds.length) return { blocked };
+    this.operationRows.set(input.operationId, {
+      operationId: input.operationId, kind: 'review', deviceId: null, actor: input.actor, reason: input.reason, fingerprint,
+      createdAt: input.now, before: { cards: cardIds.length }, after: { cards: cardIds },
+    });
+    for (const cardId of cardIds) {
+      this.jobs.push({
+        jobId: randomUUID(), attemptId: null, kind: 'review', status: 'pending', attemptCount: 0, cardId, modelAttemptId: null,
+        createdAt: input.now, updatedAt: input.now, nextAttemptAt: input.now, leaseExpiresAt: null, errorCode: null, truncatedMaxTokens: null,
+        operationId: input.operationId, review: null,
+      });
+    }
+    return { result: { cards: cardIds }, replayed: false };
+  }
+
+  async claimReview(input: { now: string; leaseUntil: string; modelAttemptId: string }): Promise<ClaimedReview | null> {
+    const due = this.jobs.filter(job => job.kind === 'review' && job.status === 'pending' && job.nextAttemptAt <= input.now)
+      .sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt) || a.createdAt.localeCompare(b.createdAt) || a.jobId.localeCompare(b.jobId));
+    for (const job of due) {
+      Object.assign(job, { status: 'running', leaseExpiresAt: input.leaseUntil, modelAttemptId: input.modelAttemptId, updatedAt: input.now });
+      const data = this.reviewRows([job.cardId!]);
+      if (!data.cards.length) {
+        Object.assign(job, { status: 'skipped', errorCode: 'card_missing', leaseExpiresAt: null, updatedAt: input.now });
+        continue;
+      }
+      const chosen = reviewSolveOf(data.solves);
+      const solve = chosen ? this.reviewSolveOfAttempt(chosen.attemptId) : null;
+      if (solve) job.attemptId = solve.bankAttemptId;
+      return {
+        jobId: job.jobId, attemptCount: job.attemptCount, modelAttemptId: input.modelAttemptId, operationId: job.operationId!, cardId: job.cardId!,
+        solve, answers: cardAnswers(data.solves).map(answer => answer.content),
+      };
+    }
+    return null;
+  }
+
+  async completeReview(input: { jobId: string; now: string; called: boolean; result: QuestionBankReviewResult }): Promise<QuestionBankCard['state'] | null> {
+    const job = this.jobs.find(item => item.jobId === input.jobId && item.kind === 'review' && item.status === 'running');
+    if (!job) return null;
+    const target: QuestionBankCard['state'] = input.result.outcome === 'agrees' ? 'verified_model' : 'disputed';
+    const card = this.cards.get(job.cardId!);
+    const moved = card?.state === 'unverified';
+    if (card && moved) {
+      card.state = target;
+      this.cardEventRows.push({
+        eventId: randomUUID(), cardId: card.cardId, at: input.now, actor: 'review_job', fromState: 'unverified', toState: target,
+        basis: input.result.outcome, answer: input.result.answer, jobId: job.jobId, operationId: job.operationId,
+      });
+    }
+    Object.assign(job, {
+      status: 'done', attemptCount: job.attemptCount + (input.called ? 1 : 0), errorCode: null, leaseExpiresAt: null,
+      review: structuredClone(input.result), modelAttemptId: input.called ? job.modelAttemptId : null, updatedAt: input.now,
+    });
+    return moved ? target : null;
+  }
+
+  async adjudicate(input: { operationId: string; cardId: string; answer: string; basis: string; actor: string; now: string }): Promise<QuestionBankOperation<{ state: 'verified_human' }> | 'missing' | 'not_disputed'> {
+    const fingerprint = operationFingerprint(['adjudicate', input.cardId, input.answer, input.basis, input.actor]);
+    const prior = this.prior<{ state: 'verified_human' }>(input.operationId, fingerprint);
+    if (prior === 'conflict') return prior;
+    if (prior) return { result: prior.result, replayed: true };
+    const card = this.cards.get(input.cardId);
+    if (!card) return 'missing';
+    if (card.state !== 'disputed') return 'not_disputed';
+    card.state = 'verified_human';
+    this.cardEventRows.push({
+      eventId: randomUUID(), cardId: card.cardId, at: input.now, actor: input.actor, fromState: 'disputed', toState: 'verified_human',
+      basis: input.basis, answer: input.answer, jobId: null, operationId: input.operationId,
+    });
+    this.operationRows.set(input.operationId, {
+      operationId: input.operationId, kind: 'adjudicate', deviceId: null, actor: input.actor, reason: input.basis, fingerprint,
+      createdAt: input.now, before: { card_id: input.cardId, state: 'disputed' }, after: { state: 'verified_human' },
+    });
+    return { result: { state: 'verified_human' }, replayed: false };
+  }
+
+  private reviewSolveOfAttempt(attemptId: string): ReviewSolve | null {
+    const row = this.attempts.get(attemptId);
+    const prompt = row ? this.prompts.get(row.promptSha256) : undefined;
+    if (!row?.transcript || !prompt || !this.allImagesStored(attemptId)) return null;
+    return {
+      bankAttemptId: attemptId, deviceId: row.deviceId, requestId: row.requestId, captureId: row.captureId,
+      system: prompt.system, task: prompt.task, reasoningEffort: row.reasoningEffort,
+      images: this.images.filter(image => image.attemptId === attemptId).sort((a, b) => a.ordinal - b.ordinal)
+        .map(image => ({ mediaType: image.mediaType, bytes: Buffer.from(image.bytes!) })),
+      options: structuredClone(row.transcript.options),
+    };
+  }
+
+  async reviewSolve(attemptId: string): Promise<ReviewSolve | null> {
+    return this.reviewSolveOfAttempt(attemptId);
+  }
+
+  async solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]> {
+    return attemptIds.flatMap(attemptId => this.sample(attemptId) ?? []);
+  }
+
+  async cardEvents(cardId: string): Promise<QuestionBankCardEvent[]> {
+    return this.cardEventRows.filter(event => event.cardId === cardId)
+      .sort((a, b) => a.at.localeCompare(b.at) || a.eventId.localeCompare(b.eventId)).map(event => ({ ...event }));
   }
 
   async operations(limit: number): Promise<QuestionBankOperationRecord[]> {

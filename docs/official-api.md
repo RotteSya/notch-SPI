@@ -100,6 +100,11 @@
 | admin | POST | /admin/question-bank/marks |
 | admin | POST | /admin/question-bank/accounts/preview |
 | admin | POST | /admin/question-bank/accounts/delete |
+| admin | GET | /admin/question-bank/review/cards |
+| admin | POST | /admin/question-bank/review/preview |
+| admin | POST | /admin/question-bank/review/confirm |
+| admin | GET | /admin/question-bank/review/disputed |
+| admin | POST | /admin/question-bank/review/adjudicate |
 <!-- route-inventory: end -->
 
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。

@@ -4,15 +4,20 @@ import type { AppContext } from './routes.ts';
 import { ApiError } from './http.ts';
 import { REPORT_STYLE } from './admin-reports.ts';
 import { TRANSCRIBE_MAX_TOKENS } from './question-bank-prompt.ts';
+import { reservation, reviewRequest } from './question-bank-worker.ts';
+import { budgetCeiling, type BudgetInspection } from './budget-policy.ts';
 import {
-  MARK_VERDICTS, questionBankMarkSummary, questionBankStats,
-  type QuestionBankFootprint, type QuestionBankMarkKind, type QuestionBankSample, type QuestionBankVerdict,
+  byOccurrences, MARK_VERDICTS, questionBankCardViews, questionBankMarkSummary, questionBankStats,
+  type QuestionBankCardView, type QuestionBankFootprint, type QuestionBankMarkKind, type QuestionBankSample, type QuestionBankVerdict,
 } from './question-bank.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 /** The repeat-rate threshold in the plan; shown beside the rate, not applied by the server. */
 const TARGET_REPEAT_RATE = 0.15;
+/** Cards one review confirmation may name, and cards the review list shows. */
+const REVIEW_BATCH = 50;
+const REVIEW_LIST = 200;
 
 function objectBody(req: FastifyRequest, allowed: string[]): Record<string, unknown> {
   const body = req.body;
@@ -53,6 +58,40 @@ function sample(item: QuestionBankSample) {
   };
 }
 
+function cardIdsOf(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > REVIEW_BATCH) throw new ApiError(400, '请选择 1–' + REVIEW_BATCH + ' 张卡片');
+  const ids = value.map(id => uuidOf(id, '卡片编号无效'));
+  if (new Set(ids).size !== ids.length) throw new ApiError(400, '卡片编号重复');
+  return [...ids].sort();
+}
+
+function cardView(view: QuestionBankCardView) {
+  const review = view.latestReview, event = view.latestEvent;
+  return {
+    card_id: view.cardId, stem: view.stem, options: view.options, state: view.state, created_at: view.createdAt,
+    occurrences: view.occurrences, answers: view.answers, answers_differ: view.answersDiffer,
+    review_attempt_id: view.reviewAttemptId, blocked: view.blocked,
+    latest_review: review && {
+      job_id: review.jobId, operation_id: review.operationId, status: review.status, error_code: review.errorCode, updated_at: review.updatedAt,
+      outcome: review.result?.outcome ?? null, provider: review.result?.provider ?? null, model: review.result?.model ?? null,
+      state: review.result?.state ?? null, answer: review.result?.answer ?? null,
+    },
+    latest_event: event && {
+      at: event.at, actor: event.actor, from_state: event.fromState, to_state: event.toState, basis: event.basis, answer: event.answer,
+    },
+  };
+}
+
+/** Today's window of one budget scope: the window's own limit once it exists, else the configured one. */
+function budgetToday(inspection: BudgetInspection, scope: string, currency: string, limit: number, offsetMinutes: number, share = 1) {
+  const offset = offsetMinutes * 60_000, now = Date.now();
+  const start = new Date(Math.floor((now + offset) / 86_400_000) * 86_400_000 - offset).toISOString();
+  const window = inspection.windows.find(w => w.scope === scope && w.currency === currency && w.start === start);
+  const windowLimit = window?.limit ?? limit;
+  const spent = window?.spent ?? 0, held = window?.held ?? 0;
+  return { limit_micros: windowLimit, spent_micros: spent, held_micros: held, remaining_micros: Math.max(0, budgetCeiling(windowLimit, false, share) - spent - held) };
+}
+
 function footprint(value: QuestionBankFootprint) {
   return {
     attempts: value.attempts, images: value.images, stored_images: value.storedImages, jobs: value.jobs, marks: value.marks,
@@ -62,9 +101,16 @@ function footprint(value: QuestionBankFootprint) {
 
 export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext, requireAdmin: (req: FastifyRequest) => void): void {
   const adminToken = ctx.config.adminToken;
-  const bank = ctx.store.questionBank;
+  const store = ctx.store, bank = store.questionBank;
   const actorOf = (value: unknown) => textOf(value, adminToken, 2, 80, '请填写操作人（2–80 字）');
   const reasonOf = (value: unknown) => textOf(value, adminToken, 5, 500, '请填写原因（5–500 字）');
+  const reviewer = ctx.reviewProvider ?? null;
+  /** Review needs a configured, healthy reviewer; preview and confirmation refuse otherwise. */
+  const requireReviewer = () => {
+    if (reviewer === null) throw new ApiError(409, '复核未配置：需要设置 QUESTION_BANK_REVIEW_PROVIDER 和 QUESTION_BANK_REVIEW_MODEL', 'feature_disabled');
+    if ((ctx.reviewProviderDegraded ?? null) !== null) throw new ApiError(409, '复核服务配置有误，暂不可用', 'feature_disabled');
+    return reviewer;
+  };
 
   // The page carries no secret; the key is entered on the page and sent with each request.
   app.get('/admin/question-bank', async (_req, reply) => {
@@ -91,6 +137,10 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
       const marks = questionBankMarkSummary(await bank.marks());
       const operations = await bank.operations(20);
       const stats = questionBankStats(rows);
+      const reviewData = await bank.reviewData();
+      const views = questionBankCardViews(reviewData);
+      const reviewJobs: Record<string, number> = {};
+      for (const job of reviewData.jobs) reviewJobs[job.status] = (reviewJobs[job.status] ?? 0) + 1;
       return {
         definition: 'question-bank-stats-v1', generated_at: new Date().toISOString(), enabled: ctx.config.questionBankEnabled,
         solves: {
@@ -109,6 +159,8 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
           failed_by_error: stats.transcription.failedByError, max_tokens: TRANSCRIBE_MAX_TOKENS,
         },
         cards: inventory.cards,
+        answers_differ: views.filter(view => view.answersDiffer).length,
+        review_jobs: reviewJobs,
         images: { stored: inventory.images.stored, stored_bytes: inventory.images.storedBytes, cleared: inventory.images.cleared },
         costs: inventory.costs.map(cost => ({ purpose: cost.purpose, currency: cost.currency, calls: cost.calls, known_micros: cost.knownMicros, unknown: cost.unknown })),
         marks,
@@ -163,6 +215,87 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
       return { mark_id: markId, replayed: outcome === 'replayed' };
     });
 
+    scope.get('/admin/question-bank/review/cards', async () => {
+      const repeated = questionBankCardViews(await bank.reviewData()).filter(view => view.occurrences >= 2).sort(byOccurrences);
+      return {
+        reviewer: reviewer === null ? null : { provider: reviewer.name, model: ctx.config.questionBankReviewModel, available: (ctx.reviewProviderDegraded ?? null) === null },
+        total: repeated.length, items: repeated.slice(0, REVIEW_LIST).map(cardView),
+      };
+    });
+
+    scope.post('/admin/question-bank/review/preview', { bodyLimit: 16_384 }, async req => {
+      const provider = requireReviewer();
+      const cardIds = cardIdsOf(objectBody(req, ['card_ids']).card_ids);
+      const views = new Map(questionBankCardViews(await bank.reviewData(cardIds)).map(view => [view.cardId, view]));
+      const items = [];
+      let estimated = 0;
+      for (const cardId of cardIds) {
+        const view = views.get(cardId);
+        const blocked = !view ? 'missing' : view.blocked;
+        const call = !blocked && !view!.answersDiffer;
+        let micros = 0;
+        if (call) {
+          // The same reservation the review call takes; estimating never calls the reviewer.
+          const solve = await bank.reviewSolve(view!.reviewAttemptId!);
+          micros = solve ? (await reservation(ctx.config, provider, reviewRequest(solve), ctx.config.objectiveMaxTokens)).micros : 0;
+          estimated += micros;
+        }
+        items.push({ card_id: cardId, blocked, call, answers_differ: view?.answersDiffer ?? false, estimated_micros: micros });
+      }
+      const inspection = await store.billing.inspectBudget();
+      const config = ctx.config;
+      const review = budgetToday(inspection, 'question_bank_review', config.modelCostCurrency, config.questionBankReviewDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes);
+      const share = Math.min(100, Math.max(0, config.unpaidSharePercent)) / 100 * (config.requestBudgetMode === 'guarded-request' ? 0.8 : 1);
+      const official = config.modelDailyBudgetMicros > 0
+        ? budgetToday(inspection, 'official', config.modelCostCurrency, config.modelDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes, share) : null;
+      return {
+        cards: cardIds.length, calls: items.filter(item => item.call).length, without_call: items.filter(item => !item.blocked && !item.call).length,
+        blocked: items.filter(item => item.blocked).length, estimated_micros: estimated, currency: config.modelCostCurrency, items,
+        review_budget: { ...review, enough: review.remaining_micros >= estimated },
+        official_budget: official && { ...official, enough: official.remaining_micros >= estimated },
+      };
+    });
+
+    scope.post('/admin/question-bank/review/confirm', { bodyLimit: 16_384 }, async (req, reply) => {
+      requireReviewer();
+      const body = objectBody(req, ['card_ids', 'operation_id', 'actor', 'reason']);
+      const cardIds = cardIdsOf(body.card_ids), operationId = uuidOf(body.operation_id, '操作号无效');
+      const outcome = await bank.confirmReview({ operationId, cardIds, actor: actorOf(body.actor), reason: reasonOf(body.reason), now: new Date().toISOString() });
+      if (outcome === 'conflict') throw new ApiError(409, '这个操作号已用于另一次操作，请重新预览后再确认', 'idempotency_conflict');
+      if ('blocked' in outcome) {
+        return reply.code(409).send({
+          error: { code: 'review_blocked', message: '有卡片不能复核，本次一张都没有提交，请重新加载列表后再选' },
+          blocked: outcome.blocked.map(item => ({ card_id: item.cardId, reason: item.reason })),
+        });
+      }
+      return { operation_id: operationId, cards: outcome.result.cards, replayed: outcome.replayed };
+    });
+
+    scope.get('/admin/question-bank/review/disputed', async () => {
+      const disputed = questionBankCardViews(await bank.reviewData()).filter(view => view.state === 'disputed').sort(byOccurrences).slice(0, REVIEW_LIST);
+      const samples = new Map((await bank.solveSamples(disputed.flatMap(view => view.reviewAttemptId ?? []))).map(item => [item.attemptId, item]));
+      return {
+        items: disputed.map(view => {
+          const shown = view.reviewAttemptId ? samples.get(view.reviewAttemptId) : undefined;
+          return { ...cardView(view), images: shown ? sample(shown) : null };
+        }),
+      };
+    });
+
+    scope.post('/admin/question-bank/review/adjudicate', { bodyLimit: 8192 }, async (req, reply) => {
+      const body = objectBody(req, ['card_id', 'operation_id', 'answer', 'basis', 'actor']);
+      const cardId = uuidOf(body.card_id, '卡片编号无效'), operationId = uuidOf(body.operation_id, '操作号无效');
+      const outcome = await bank.adjudicate({
+        operationId, cardId, actor: actorOf(body.actor),
+        answer: textOf(body.answer, adminToken, 1, 500, '请填写正确答案（1–500 字）'),
+        basis: textOf(body.basis, adminToken, 5, 500, '请填写依据（5–500 字）'), now: new Date().toISOString(),
+      });
+      if (outcome === 'conflict') throw new ApiError(409, '这个操作号已用于另一次操作，请刷新页面后重试', 'idempotency_conflict');
+      if (outcome === 'missing') throw new ApiError(404, '卡片不存在');
+      if (outcome === 'not_disputed') return reply.code(409).send({ error: { code: 'card_not_disputed', message: '这张卡片不是“有争议”状态，不能裁决' } });
+      return { operation_id: operationId, card_id: cardId, state: outcome.result.state, replayed: outcome.replayed };
+    });
+
     scope.post('/admin/question-bank/accounts/preview', { bodyLimit: 4096 }, async req => {
       const deviceId = deviceIdOf(objectBody(req, ['device_id']).device_id);
       return { device_id: deviceId, ...footprint(await bank.accountFootprint(deviceId)) };
@@ -191,7 +324,11 @@ export const QUESTION_BANK_SCRIPT = String.raw`
   const STATES = { unverified: '未核实', verified_model: '模型复核一致', verified_human: '人工裁决', disputed: '有争议' };
   const STATUS = { ok: '单题', multiple: '多道题', unreadable: '读不清' };
   const PURPOSES = { transcribe: '转写', review: '复核' };
-  const urls = { transcripts: [], matches: [] };
+  const OUTCOMES = { agrees: '复核一致', disagrees: '复核答案不同', not_ready: '复核未给出可用答案', answers_differ: '已有答案不一致，未调用模型' };
+  const BLOCKS = { review_open: '复核进行中', reviewed: '已复核或已裁决', not_repeated: '计入看数的作答少于 2 次', images_expired: '题图已过期，不能复核', missing: '卡片不存在或不可匹配' };
+  const JOBS = { pending: '等待', running: '进行中', done: '完成', failed: '失败', skipped: '跳过' };
+  const OPERATIONS = { requeue_failed: '全部重新入队', delete_account: '按账户删除', review: '确认复核', adjudicate: '裁决' };
+  const urls = { transcripts: [], matches: [], disputed: [] };
   const message = (text, error) => { $('status').textContent = text; $('status').className = error ? 'error' : 'muted'; };
   const key = () => $('key').value.trim();
   const actor = () => $('actor').value.trim();
@@ -239,6 +376,9 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       node('p', '卡片、题图和成本是库存数字，包含内部／测试账户的作答和调用；上面的重复率和转写数字不含。', out).className = 'muted';
       if (d.cards.length) table(out, ['状态', '可匹配', '数量'], d.cards.map(c => [STATES[c.state] || c.state, c.matchable ? '是' : '否', c.count]));
       else node('p', '还没有卡片。', out).className = 'empty';
+      node('p', '答案不一致的卡片：' + d.answers_differ + ' 张（同一张可匹配卡片上，计入看数的作答给出了不止一种答案内容；只算非内部／测试账户的作答）。', out);
+      const jobs = Object.entries(d.review_jobs);
+      node('p', '复核任务：' + (jobs.length ? jobs.map(([status, n]) => (JOBS[status] || status) + ' ' + n).join('，') : '还没有'), out).className = 'muted';
       node('h3', '题图（含内部／测试账户）', out);
       table(out, ['保存中', '保存中字节数', '已过保留期清理'], [[d.images.stored, d.images.stored_bytes + '（约 ' + (d.images.stored_bytes / 1048576).toFixed(1) + ' MB）', d.images.cleared]]);
       node('h3', '题库调用成本（累计，含内部／测试账户）', out);
@@ -249,7 +389,7 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       node('p', '同一条作答或同一对作答只算最后一次标记。', out).className = 'muted';
       node('h3', '最近的管理操作', out);
       if (d.recent_operations.length) table(out, ['时间', '操作', '账户编号', '操作人', '原因', '结果'], d.recent_operations.map(o => [o.created_at,
-        o.kind === 'delete_account' ? '按账户删除' : '全部重新入队', o.device_id === null ? '—' : o.device_id, o.actor, o.reason, JSON.stringify(o.result)]));
+        OPERATIONS[o.kind] || o.kind, o.device_id === null ? '—' : o.device_id, o.actor, o.reason, JSON.stringify(o.result)]));
       else node('p', '还没有管理操作。', out).className = 'empty';
       message('看数已更新 · ' + d.generated_at);
     } catch (error) { message(error.message, true); }
@@ -347,6 +487,108 @@ export const QUESTION_BANK_SCRIPT = String.raw`
     } catch (error) { message(error.message, true); }
   });
 
+  const brief = text => text.length > 80 ? text.slice(0, 80) + '…' : text;
+  const answerText = item => item.answers.map(a => a.example + ' ×' + a.count).join('；') + (item.answers_differ ? '（答案不一致）' : '');
+  const reviewText = r => !r ? '—' : r.outcome ? OUTCOMES[r.outcome] + (r.answer ? '：' + r.answer : '') : (JOBS[r.status] || r.status) + (r.error_code ? '（' + (ERRORS[r.error_code] || r.error_code) + '）' : '');
+  let pendingReview = null;
+  const resetReview = () => { pendingReview = null; $('confirm-review').hidden = true; $('review-preview').replaceChildren(); };
+  const selectedCards = () => [...document.querySelectorAll('#review input[type=checkbox]:checked')].map(box => box.value);
+  $('load-review').addEventListener('click', async () => {
+    resetReview(); const out = $('review'); out.replaceChildren();
+    message('正在读取复核列表…');
+    try {
+      const d = await call('/admin/question-bank/review/cards');
+      node('p', d.reviewer ? '复核模型：' + d.reviewer.provider + ' / ' + d.reviewer.model + (d.reviewer.available ? '' : '（配置有误，暂不可用）') : '复核未配置：需要设置 QUESTION_BANK_REVIEW_PROVIDER 和 QUESTION_BANK_REVIEW_MODEL。', out).className = 'muted';
+      if (!d.items.length) { node('p', '还没有重复出现的卡片。', out).className = 'empty'; message('复核列表已更新。'); return; }
+      const wrap = node('div', undefined, out); wrap.className = 'table-scroll'; wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', '复核列表，可横向滚动');
+      const t = node('table', undefined, wrap), head = node('tr', undefined, node('thead', undefined, t));
+      for (const h of ['选择', '出现次数', '题干', '答案（次数）', '状态', '不能复核的原因', '最近一次复核']) { const th = node('th', h, head); th.scope = 'col'; }
+      const body = node('tbody', undefined, t);
+      for (const item of d.items) {
+        const tr = node('tr', undefined, body), cell = node('td', undefined, tr);
+        const box = node('input', undefined, cell); box.type = 'checkbox'; box.value = item.card_id; box.disabled = !!item.blocked;
+        box.setAttribute('aria-label', '选择卡片 ' + item.card_id); box.addEventListener('change', resetReview);
+        for (const value of [item.occurrences, brief(item.stem), answerText(item), STATES[item.state] || item.state, item.blocked ? BLOCKS[item.blocked] : '—', reviewText(item.latest_review)]) node('td', value, tr);
+      }
+      if (d.total > d.items.length) node('p', '共 ' + d.total + ' 张，只显示出现次数最多的 ' + d.items.length + ' 张。', out).className = 'muted';
+      message('复核列表已更新。');
+    } catch (error) { message(error.message, true); }
+  });
+  $('preview-review').addEventListener('click', async () => {
+    resetReview();
+    const cardIds = selectedCards();
+    if (!cardIds.length) { message('请先勾选卡片。', true); return; }
+    try {
+      const d = await call('/admin/question-bank/review/preview', { card_ids: cardIds });
+      const out = $('review-preview');
+      table(out, ['卡片', '调用模型', '不调用、直接置为有争议', '不能复核', '预计成本（按预留上限，' + d.currency + '）'], [[d.cards, d.calls, d.without_call, d.blocked, money(d.estimated_micros)]]);
+      const r = d.review_budget;
+      node('p', '复核预算今日剩余 ' + money(r.remaining_micros) + '（上限 ' + money(r.limit_micros) + '，已用 ' + money(r.spent_micros) + '，占用中 ' + money(r.held_micros) + '）：' + (r.enough ? '够这一批' : '不够这一批，用尽后任务会等到明天'), out).className = r.enough ? 'muted' : 'error';
+      if (d.official_budget) node('p', '共享每日模型预算中题库可用的剩余 ' + money(d.official_budget.remaining_micros) + '：' + (d.official_budget.enough ? '够这一批' : '不够这一批'), out).className = d.official_budget.enough ? 'muted' : 'error';
+      if (d.blocked) {
+        table(out, ['不能复核的卡片', '原因'], d.items.filter(i => i.blocked).map(i => [i.card_id, BLOCKS[i.blocked] || i.blocked]));
+        message('有卡片不能复核，请取消勾选后重新预览。', true); return;
+      }
+      pendingReview = { cardIds, operationId: uuid() };
+      $('confirm-review').hidden = false;
+      message('请核对预览，填写原因后确认复核。');
+    } catch (error) { message(error.message, true); }
+  });
+  $('confirm-review').addEventListener('click', async () => {
+    if (!pendingReview) return;
+    if (!actor()) { message('请填写操作人。', true); return; }
+    if (!confirm('为 ' + pendingReview.cardIds.length + ' 张卡片生成复核任务？确认后由后台调用复核模型并产生费用。')) return;
+    $('confirm-review').disabled = true;
+    try {
+      const d = await call('/admin/question-bank/review/confirm', { card_ids: pendingReview.cardIds, operation_id: pendingReview.operationId, actor: actor(), reason: $('review-reason').value.trim() });
+      message((d.replayed ? '这次确认已经执行过：' : '') + '已为 ' + d.cards.length + ' 张卡片生成复核任务，后台下一轮开始处理。操作号 ' + d.operation_id);
+      resetReview();
+    } catch (error) { message(error.message, true); } finally { $('confirm-review').disabled = false; }
+  });
+
+  $('load-disputed').addEventListener('click', async () => {
+    release('disputed'); const out = $('disputed'); out.replaceChildren();
+    message('正在读取有争议的卡片…');
+    try {
+      const d = await call('/admin/question-bank/review/disputed');
+      if (!d.items.length) node('p', '没有“有争议”的卡片。', out).className = 'empty';
+      for (const item of d.items) {
+        const card = node('article', undefined, out); card.className = 'match';
+        node('p', '卡片 ' + item.card_id + ' · 计入看数的作答 ' + item.occurrences + ' 次', card).className = 'muted';
+        const pair = node('div', undefined, card); pair.className = 'pair';
+        const left = node('div', undefined, pair), right = node('div', undefined, pair);
+        node('p', item.stem || '（题干为空）', right).className = 'stem';
+        if (item.options.length) { const list = node('ol', undefined, right); list.className = 'options'; for (const o of item.options) node('li', o.label + '  ' + o.text, list); }
+        node('h3', '作答给出的答案', right);
+        if (item.answers.length) { const list = node('ul', undefined, right); for (const a of item.answers) node('li', a.example + ' · ' + a.count + ' 次', list); }
+        else node('p', '没有计入看数的作答。', right).className = 'muted';
+        if (item.answers_differ) node('p', '答案不一致', right).className = 'error';
+        const r = item.latest_review;
+        node('h3', '复核', right);
+        node('p', r ? (r.provider ? r.provider + ' / ' + r.model + ' · ' : '') + reviewText(r) + (r.state ? '（状态 ' + r.state + '）' : '') : '没有复核记录。', right);
+        const form = node('div', undefined, right); form.className = 'grid';
+        const answerLabel = node('label', '正确答案', form), answer = node('input', undefined, answerLabel); answer.maxLength = 500;
+        const basisLabel = node('label', '依据', form), basis = node('input', undefined, basisLabel); basis.maxLength = 500;
+        const row = node('div', undefined, right); row.className = 'actions';
+        const button = node('button', '提交裁决', row); button.type = 'button'; button.className = 'primary';
+        const note = node('span', '', row);
+        let operationId = uuid();
+        button.addEventListener('click', async () => {
+          if (!actor()) { message('请填写操作人。', true); return; }
+          button.disabled = true;
+          try {
+            const result = await call('/admin/question-bank/review/adjudicate', { card_id: item.card_id, operation_id: operationId, answer: answer.value.trim(), basis: basis.value.trim(), actor: actor() });
+            note.textContent = (result.replayed ? '这次裁决已经提交过。' : '') + '已置为“人工裁决”。'; note.className = 'muted';
+            answer.disabled = true; basis.disabled = true;
+          } catch (error) { note.textContent = error.message; note.className = 'error'; operationId = uuid(); button.disabled = false; }
+        });
+        if (item.images) { for (const image of item.images.images) await picture(left, 'disputed', item.images.attempt_id, image); }
+        else node('p', '题图已过期，不能显示。', left).className = 'muted';
+      }
+      message('已读取 ' + d.items.length + ' 张有争议的卡片。');
+    } catch (error) { message(error.message, true); }
+  });
+
   let pending = null;
   const resetDelete = () => { pending = null; $('confirm-delete').hidden = true; $('delete-preview').replaceChildren(); };
   $('device-id').addEventListener('input', resetDelete);
@@ -388,9 +630,9 @@ export const QUESTION_BANK_PAGE_CSP = "default-src 'none'; base-uri 'none'; fram
 
 export function renderQuestionBankPage(): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>NotchSPI · 题库</title><style>${REPORT_STYLE}${PAGE_STYLE}</style></head>
-<body><main><a href="/admin">← 管理后台</a><h1>题库</h1><p class="muted">看数、抽查和按账户删除。题目文字和题图只在本页显示，不写进日志。</p>
+<body><main><a href="/admin">← 管理后台</a><h1>题库</h1><p class="muted">看数、抽查、复核、裁决和按账户删除。题目文字和题图只在本页显示，不写进日志。</p>
 <div class="grid"><label class="key">管理员密钥<input id="key" type="password" autocomplete="off" spellcheck="false"></label><label class="key">操作人<input id="actor" maxlength="80" autocomplete="off"></label></div>
-<p class="muted">密钥仅在当前页面使用。重新入队、抽查标记和删除都会记下操作人。</p>
+<p class="muted">密钥仅在当前页面使用。重新入队、抽查标记、复核、裁决和删除都会记下操作人。</p>
 <p id="status" role="status" aria-live="polite" class="muted">输入管理员密钥后加载。</p>
 <section><h2>看数</h2><div class="actions"><button id="load-stats" class="primary" type="button">加载看数</button></div><div id="stats"></div>
 <h3>全部重新入队</h3><p class="muted">把全部失败的转写任务改回等待，调用次数归零。输出被长度上限截断的任务在上限提高前不放回。</p>
@@ -399,6 +641,12 @@ export function renderQuestionBankPage(): string {
 <div class="grid"><label>数量<input id="transcript-count" type="number" min="1" max="20" value="10"></label></div><div class="actions"><button id="load-transcripts" class="primary" type="button">随机抽取</button></div><div id="transcripts"></div></section>
 <section><h2>抽查匹配</h2><p class="muted">随机抽取被判为同一张卡片的两条计入看数的作答（非内部／测试账户），并排显示两套题图。</p>
 <div class="grid"><label>数量<input id="match-count" type="number" min="1" max="20" value="10"></label></div><div class="actions"><button id="load-matches" class="primary" type="button">随机抽取</button></div><div id="matches"></div></section>
+<section><h2>复核</h2><p class="muted">列出重复出现的卡片（同一张可匹配卡片上计入看数的作答不少于 2 次），按出现次数从多到少。勾选后先预览卡片数和预计成本，确认后才生成复核任务，后台每轮最多同时进行一个复核调用。复核使用被复核那次作答原样的提示词和题图，不提供已有答案。已有答案不一致的卡片不调用模型，直接置为“有争议”。题图已过期的卡片不能复核。</p>
+<div class="actions"><button id="load-review" class="primary" type="button">加载复核列表</button></div><div id="review"></div>
+<div class="grid"><label>原因<input id="review-reason" maxlength="500"></label></div>
+<div class="actions"><button id="preview-review" type="button">预览</button><button id="confirm-review" class="primary" type="button" hidden>确认复核</button></div><div id="review-preview"></div></section>
+<section><h2>裁决</h2><p class="muted">列出“有争议”的卡片，显示题图、作答给出的答案和复核结果。填写正确答案和依据后置为“人工裁决”，写入卡片状态记录。</p>
+<div class="actions"><button id="load-disputed" class="primary" type="button">加载有争议的卡片</button></div><div id="disputed"></div></section>
 <section><h2>按账户删除</h2><p class="muted">删除该账户的作答、题图、任务和指向这些作答的抽查标记；只有该账户作答的卡片一并删除，有其他账户作答的卡片保留。按账户编号删除，账户行已不存在时同样可以删除。操作写入审计记录。</p>
 <div class="grid"><label>账户编号<input id="device-id" type="number" min="1" step="1"></label><label>原因<input id="delete-reason" maxlength="500"></label></div>
 <div class="actions"><button id="preview-delete" type="button">预览</button><button id="confirm-delete" class="primary" type="button" hidden>确认删除</button></div><div id="delete-preview"></div></section>

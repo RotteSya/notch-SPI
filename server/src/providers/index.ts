@@ -12,7 +12,7 @@ interface ProviderSelection {
   deepseekReasoningEffort: Config['deepseekReasoningEffort'];
   deepseekExplanationReasoningEffort: Config['deepseekExplanationReasoningEffort'];
   configurationError: string | null;
-  settingName: 'OFFICIAL_PROVIDER' | 'OBJECTIVE_RESULT_V1_PROVIDER';
+  settingName: 'OFFICIAL_PROVIDER' | 'OBJECTIVE_RESULT_V1_PROVIDER' | 'QUESTION_BANK_REVIEW_PROVIDER';
 }
 
 /**
@@ -53,6 +53,29 @@ export function makeObjectiveProvider(
     deepseekExplanationReasoningEffort: config.objectiveDeepseekExplanationReasoningEffort,
     configurationError: config.objectiveProviderConfigurationError,
     settingName: 'OBJECTIVE_RESULT_V1_PROVIDER',
+  }, warn);
+}
+
+/**
+ * The reviewer for admin-confirmed question-bank reviews, or null when QUESTION_BANK_REVIEW_PROVIDER
+ * or QUESTION_BANK_REVIEW_MODEL is empty. Astra here never gets its Fast second call: that belongs to
+ * the objective slot only, and a review call is not an answer call either.
+ */
+export function makeReviewProvider(
+  config: Config,
+  warn: (msg: string) => void,
+): { provider: Provider; degraded: string | null } | null {
+  if (config.questionBankReviewProvider === '' || config.questionBankReviewModel === '') return null;
+  const name = config.questionBankReviewProvider.toLowerCase();
+  const provider = name === 'anthropic' || name === 'deepseek' || name === 'openai' || name === 'mock' ? name : null;
+  return makeSelectedProvider(config, {
+    provider: provider ?? 'mock',
+    model: config.questionBankReviewModel,
+    maxTokens: config.objectiveMaxTokens,
+    deepseekReasoningEffort: config.objectiveDeepseekReasoningEffort,
+    deepseekExplanationReasoningEffort: config.objectiveDeepseekExplanationReasoningEffort,
+    configurationError: provider === null ? 'QUESTION_BANK_REVIEW_PROVIDER is not a known provider' : null,
+    settingName: 'QUESTION_BANK_REVIEW_PROVIDER',
   }, warn);
 }
 

@@ -53,6 +53,9 @@ export interface AppContext {
   objectiveProvider: Provider;
   /** Objective misconfiguration is isolated from control captures but visible in health. */
   objectiveProviderDegraded: string | null;
+  /** The question-bank reviewer; absent or null when not configured. Called only for admin-confirmed review jobs. */
+  reviewProvider?: Provider | null;
+  reviewProviderDegraded?: string | null;
   payment: PaymentProvider;
   readStripeRefund?: (id: string) => Promise<RefundSnapshot>;
   createStripeCheckout?: typeof createCheckoutSession;
@@ -192,7 +195,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const replied=new Promise<void>(resolve=>{reply.raw.once('finish',resolve);reply.raw.once('close',resolve);});
     void trackRequestWork(req.raw,async()=>{
       await replied;
-      await runQuestionBankRound({config,store,provider:ctx.objectiveProvider,providerDegraded:objectiveProviderDegraded,log:req.log})
+      await runQuestionBankRound({config,store,provider:ctx.objectiveProvider,providerDegraded:objectiveProviderDegraded,
+        reviewProvider:ctx.reviewProvider??null,reviewProviderDegraded:ctx.reviewProviderDegraded??null,log:req.log})
         .catch(()=>req.log.warn({event:'question_bank_round_failed'},'question_bank_round_failed'));
     });
     return {processed,checked_at:now,more_possible:batch===100,refunds_reconciled:refundsReconciled,refunds_failed:refundsFailed,

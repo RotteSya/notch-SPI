@@ -24,8 +24,11 @@ export interface CaptureRequest {
   maxTokens?: number;
   /** Persisted client slots: low/high/max -> Terra low/medium/high; DeepSeek keeps native IDs. */
   reasoningEffort?: 'low' | 'high' | 'max';
-  /** Assigned by the server route; never read from client-supplied provider options. */
-  purpose?: 'answer' | 'explain' | 'recover' | 'transcribe';
+  /**
+   * Assigned by the server route; never read from client-supplied provider options. `transcribe` and
+   * `review` are question-bank calls; neither is `answer`, so Astra never adds its second call.
+   */
+  purpose?: 'answer' | 'explain' | 'recover' | 'transcribe' | 'review';
   /** Negotiated tutor result. Report ambiguity from the original model call. */
   tutorResultV1?: boolean;
 }

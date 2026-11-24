@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { hashToken } from './db.ts';
 import { query, type Row, type RunTransaction, type Transaction } from './billing-sql.ts';
 import {
-  imageDigest, operationFingerprint, promptDigest, questionBankCosts, questionFingerprint, sampleOf, transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
-  type ClaimedTranscription, type QuestionBankCard, type QuestionBankCounts, type QuestionBankFootprint, type QuestionBankInventory,
-  type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation, type QuestionBankOperationRecord,
-  type QuestionBankSample,
+  blockedForReview, cardAnswers, imageDigest, operationFingerprint, promptDigest, questionBankCardViews, questionBankCosts, questionFingerprint, reviewSolveOf, sampleOf,
+  transcriptMatchable, TRANSCRIPTION_MAX_CALLS,
+  type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
+  type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
+  type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
+  type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
   type QuestionBankSolveInput, type QuestionBankStore, type QuestionBankTranscript, type StaleTranscription,
   type StoredQuestionBankAttempt, type StoredQuestionBankImage, type TranscriptionError,
 } from './question-bank.ts';
@@ -68,6 +70,17 @@ CREATE TABLE IF NOT EXISTS question_bank_images (
   PRIMARY KEY(attempt_id, ordinal)
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_images_created ON question_bank_images(created_at);
+CREATE TABLE IF NOT EXISTS question_bank_operations (
+  operation_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('requeue_failed','delete_account','review','adjudicate')),
+  device_id BIGINT,
+  actor TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  before_json TEXT NOT NULL,
+  after_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS question_bank_jobs (
   job_id TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK(kind IN ('transcribe','review')),
@@ -81,10 +94,15 @@ CREATE TABLE IF NOT EXISTS question_bank_jobs (
   next_attempt_at TEXT NOT NULL,
   lease_expires_at TEXT,
   error_code TEXT,
-  truncated_max_tokens INTEGER
+  truncated_max_tokens INTEGER,
+  operation_id TEXT REFERENCES question_bank_operations(operation_id),
+  review_json TEXT,
+  -- A review job exists only under the admin operation that confirmed it.
+  CHECK((kind = 'transcribe' AND operation_id IS NULL) OR (kind = 'review' AND operation_id IS NOT NULL AND card_id IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_due ON question_bank_jobs(kind, status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_attempt ON question_bank_jobs(bank_attempt_id);
+CREATE INDEX IF NOT EXISTS idx_question_bank_jobs_card ON question_bank_jobs(card_id);
 CREATE TABLE IF NOT EXISTS question_bank_card_events (
   event_id TEXT PRIMARY KEY,
   card_id TEXT NOT NULL REFERENCES question_bank_cards(card_id),
@@ -92,20 +110,12 @@ CREATE TABLE IF NOT EXISTS question_bank_card_events (
   actor TEXT NOT NULL,
   from_state TEXT NOT NULL,
   to_state TEXT NOT NULL,
-  basis TEXT NOT NULL
+  basis TEXT NOT NULL,
+  answer TEXT,
+  job_id TEXT,
+  operation_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_question_bank_card_events_card ON question_bank_card_events(card_id);
-CREATE TABLE IF NOT EXISTS question_bank_operations (
-  operation_id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK(kind IN ('requeue_failed','delete_account')),
-  device_id BIGINT,
-  actor TEXT NOT NULL,
-  reason TEXT NOT NULL,
-  fingerprint TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  before_json TEXT NOT NULL,
-  after_json TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS question_bank_marks (
   mark_id TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK(kind IN ('transcript','match')),
@@ -271,7 +281,7 @@ function* priorOperation<T>(operationId: string, fingerprint: string): Transacti
 }
 
 function* recordOperation(input: {
-  operationId: string; kind: 'requeue_failed' | 'delete_account'; deviceId: number | null; actor: string; reason: string;
+  operationId: string; kind: QuestionBankOperationKind; deviceId: number | null; actor: string; reason: string;
   fingerprint: string; now: string; before: unknown; after: unknown;
 }): Transaction<void> {
   yield* query(
@@ -280,6 +290,81 @@ function* recordOperation(input: {
     input.operationId, input.kind, input.deviceId, input.actor, input.reason, input.fingerprint, input.now,
     JSON.stringify(input.before), JSON.stringify(input.after),
   );
+}
+
+function cardEvent(row: Row): QuestionBankCardEvent {
+  return {
+    eventId: String(row.event_id), cardId: String(row.card_id), at: String(row.at), actor: String(row.actor),
+    fromState: String(row.from_state) as QuestionBankCard['state'], toState: String(row.to_state) as QuestionBankCard['state'],
+    basis: String(row.basis), answer: textOrNull(row.answer), jobId: textOrNull(row.job_id), operationId: textOrNull(row.operation_id),
+  };
+}
+
+function* insertCardEvent(event: Omit<QuestionBankCardEvent, 'eventId'>): Transaction<void> {
+  yield* query(
+    `INSERT INTO question_bank_card_events (event_id, card_id, at, actor, from_state, to_state, basis, answer, job_id, operation_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    randomUUID(), event.cardId, event.at, event.actor, event.fromState, event.toState, event.basis, event.answer, event.jobId, event.operationId,
+  );
+}
+
+/** Matchable cards (all, or the given ids) with their counted solves, review jobs and state events. */
+function* reviewRows(cardIds: string[] | null): Transaction<QuestionBankReviewData> {
+  if (cardIds && !cardIds.length) return { cards: [], solves: [], jobs: [], events: [] };
+  const filter = cardIds ? ` AND c.card_id IN (${cardIds.map(() => '?').join(',')})` : '';
+  const args = cardIds ?? [];
+  const cards = yield* query(`SELECT c.card_id, c.stem, c.options_json, c.state, c.created_at FROM question_bank_cards c WHERE c.matchable = 1${filter}`, ...args);
+  const solves = yield* query(
+    `SELECT a.attempt_id, a.card_id, a.created_at, a.final_answer, a.question_kind, a.transcript_json,
+       CASE WHEN EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id)
+         AND NOT EXISTS (SELECT 1 FROM question_bank_images i WHERE i.attempt_id = a.attempt_id AND i.content IS NULL) THEN 1 ELSE 0 END AS images_stored
+     FROM question_bank_attempts a JOIN question_bank_cards c ON c.card_id = a.card_id
+     WHERE c.matchable = 1 AND ${COUNTED}${filter}`,
+    ...args,
+  );
+  const jobs = yield* query(
+    `SELECT j.job_id, j.card_id, j.operation_id, j.status, j.error_code, j.review_json, j.created_at, j.updated_at
+     FROM question_bank_jobs j JOIN question_bank_cards c ON c.card_id = j.card_id WHERE j.kind = 'review' AND c.matchable = 1${filter}`,
+    ...args,
+  );
+  const events = yield* query(`SELECT e.* FROM question_bank_card_events e JOIN question_bank_cards c ON c.card_id = e.card_id WHERE c.matchable = 1${filter}`, ...args);
+  return {
+    cards: cards.map(row => ({
+      cardId: String(row.card_id), stem: String(row.stem), options: JSON.parse(String(row.options_json)) as QuestionBankCard['options'],
+      state: String(row.state) as QuestionBankCard['state'], createdAt: String(row.created_at),
+    })),
+    solves: solves.map(row => ({
+      attemptId: String(row.attempt_id), cardId: String(row.card_id), createdAt: String(row.created_at), finalAnswer: String(row.final_answer),
+      questionKind: textOrNull(row.question_kind), options: (JSON.parse(String(row.transcript_json)) as QuestionBankTranscript).options,
+      imagesStored: integer(row.images_stored) === 1,
+    })),
+    jobs: jobs.map(row => ({
+      jobId: String(row.job_id), cardId: String(row.card_id), operationId: String(row.operation_id), status: String(row.status),
+      errorCode: textOrNull(row.error_code), createdAt: String(row.created_at), updatedAt: String(row.updated_at),
+      result: row.review_json === null || row.review_json === undefined ? null : JSON.parse(String(row.review_json)) as QuestionBankReviewResult,
+    })),
+    events: events.map(cardEvent),
+  };
+}
+
+function* reviewSolveOfAttempt(attemptId: string): Transaction<ReviewSolve | null> {
+  const row = (yield* query(
+    `SELECT a.attempt_id, a.device_id, a.request_id, a.capture_id, a.reasoning_effort, a.transcript_json, p.system_text, p.task_text
+     FROM question_bank_attempts a JOIN question_bank_prompts p ON p.prompt_sha256 = a.prompt_sha256 WHERE a.attempt_id=?`,
+    attemptId,
+  ))[0];
+  if (!row || row.transcript_json === null || row.transcript_json === undefined) return null;
+  const images = (yield* query('SELECT media_type, content FROM question_bank_images WHERE attempt_id=? ORDER BY ordinal', attemptId))
+    .map(image => ({ mediaType: String(image.media_type), bytes: bytesOrNull(image.content) }));
+  if (!images.length || images.some(image => image.bytes === null)) return null;
+  const effort = textOrNull(row.reasoning_effort);
+  return {
+    bankAttemptId: attemptId, deviceId: integer(row.device_id), requestId: String(row.request_id), captureId: String(row.capture_id),
+    system: String(row.system_text), task: String(row.task_text),
+    reasoningEffort: effort === 'low' || effort === 'high' || effort === 'max' ? effort : null,
+    images: images.map(image => ({ mediaType: image.mediaType, bytes: image.bytes! })),
+    options: (JSON.parse(String(row.transcript_json)) as QuestionBankTranscript).options,
+  };
 }
 
 function mark(row: Row): QuestionBankMark {
@@ -420,12 +505,12 @@ export class SQLQuestionBankStore implements QuestionBankStore {
     })());
   }
 
-  recoverStaleTranscriptions(now: string): Promise<StaleTranscription[]> {
+  recoverStaleJobs(now: string): Promise<StaleTranscription[]> {
     return this.run((function* (): Transaction<StaleTranscription[]> {
       const rows = yield* query(
-        `SELECT j.job_id, j.attempt_count, j.model_attempt_id, a.device_id
+        `SELECT j.job_id, j.kind, j.attempt_count, j.model_attempt_id, a.device_id
          FROM question_bank_jobs j LEFT JOIN question_bank_attempts a ON a.attempt_id = j.bank_attempt_id
-         WHERE j.kind='transcribe' AND j.status='running' AND j.lease_expires_at<=? ORDER BY j.lease_expires_at LIMIT 50`,
+         WHERE j.status='running' AND j.lease_expires_at<=? ORDER BY j.lease_expires_at LIMIT 50`,
         now,
       );
       const stale: StaleTranscription[] = [];
@@ -436,7 +521,12 @@ export class SQLQuestionBankStore implements QuestionBankStore {
              next_attempt_at=?, updated_at=? WHERE job_id=? AND status='running' RETURNING job_id`,
           calls >= TRANSCRIPTION_MAX_CALLS ? 'failed' : 'pending', calls, now, now, String(row.job_id),
         );
-        if (updated.length) stale.push({ jobId: String(row.job_id), deviceId: integerOrNull(row.device_id), modelAttemptId: textOrNull(row.model_attempt_id) });
+        if (updated.length) {
+          stale.push({
+            jobId: String(row.job_id), kind: String(row.kind) === 'review' ? 'review' : 'transcribe',
+            deviceId: integerOrNull(row.device_id), modelAttemptId: textOrNull(row.model_attempt_id),
+          });
+        }
       }
       return stale;
     })());
@@ -727,5 +817,125 @@ export class SQLQuestionBankStore implements QuestionBankStore {
         before: JSON.parse(String(row.before_json)) as unknown, after: JSON.parse(String(row.after_json)) as unknown,
       }));
     })());
+  }
+
+  reviewData(cardIds?: string[]): Promise<QuestionBankReviewData> {
+    return this.run(reviewRows(cardIds ?? null));
+  }
+
+  confirmReview(input: { operationId: string; cardIds: string[]; actor: string; reason: string; now: string }): Promise<QuestionBankReviewConfirm> {
+    const cardIds = [...new Set(input.cardIds)].sort();
+    const fingerprint = operationFingerprint(['review', cardIds, input.actor, input.reason]);
+    return this.run((function* (): Transaction<QuestionBankReviewConfirm> {
+      const prior = yield* priorOperation<{ cards: string[] }>(input.operationId, fingerprint);
+      if (prior === 'conflict') return prior;
+      if (prior) return { result: prior.result, replayed: true };
+      // Two confirmations of one card queue here; the second sees the first one's open job.
+      if (cardIds.length) yield* query(`SELECT card_id FROM question_bank_cards WHERE card_id IN (${cardIds.map(() => '?').join(',')}) ORDER BY card_id FOR UPDATE`, ...cardIds);
+      const blocked = blockedForReview(cardIds, questionBankCardViews(yield* reviewRows(cardIds)));
+      if (blocked.length || !cardIds.length) return { blocked };
+      yield* recordOperation({
+        operationId: input.operationId, kind: 'review', deviceId: null, actor: input.actor, reason: input.reason, fingerprint, now: input.now,
+        before: { cards: cardIds.length }, after: { cards: cardIds },
+      });
+      for (const cardId of cardIds) {
+        yield* query(
+          `INSERT INTO question_bank_jobs (job_id, kind, status, attempt_count, card_id, operation_id, created_at, updated_at, next_attempt_at)
+           VALUES (?,'review','pending',0,?,?,?,?,?)`,
+          randomUUID(), cardId, input.operationId, input.now, input.now, input.now,
+        );
+      }
+      return { result: { cards: cardIds }, replayed: false };
+    })());
+  }
+
+  claimReview(input: { now: string; leaseUntil: string; modelAttemptId: string }): Promise<ClaimedReview | null> {
+    return this.run((function* (): Transaction<ClaimedReview | null> {
+      const due = yield* query(
+        `SELECT job_id FROM question_bank_jobs WHERE kind='review' AND status='pending' AND next_attempt_at<=?
+         ORDER BY next_attempt_at, created_at, job_id LIMIT 8`,
+        input.now,
+      );
+      for (const candidate of due) {
+        const claimed = (yield* query(
+          `UPDATE question_bank_jobs SET status='running', lease_expires_at=?, model_attempt_id=?, updated_at=?
+           WHERE job_id=? AND status='pending' RETURNING job_id, attempt_count, card_id, operation_id`,
+          input.leaseUntil, input.modelAttemptId, input.now, String(candidate.job_id),
+        ))[0];
+        if (!claimed) continue;
+        const jobId = String(claimed.job_id), cardId = String(claimed.card_id);
+        const data = yield* reviewRows([cardId]);
+        if (!data.cards.length) {
+          yield* query(`UPDATE question_bank_jobs SET status='skipped', error_code='card_missing', lease_expires_at=NULL, updated_at=? WHERE job_id=?`, input.now, jobId);
+          continue;
+        }
+        const chosen = reviewSolveOf(data.solves);
+        const solve = chosen ? yield* reviewSolveOfAttempt(chosen.attemptId) : null;
+        if (solve) yield* query('UPDATE question_bank_jobs SET bank_attempt_id=? WHERE job_id=?', solve.bankAttemptId, jobId);
+        return {
+          jobId, attemptCount: integer(claimed.attempt_count), modelAttemptId: input.modelAttemptId, operationId: String(claimed.operation_id),
+          cardId, solve, answers: cardAnswers(data.solves).map(answer => answer.content),
+        };
+      }
+      return null;
+    })());
+  }
+
+  completeReview(input: { jobId: string; now: string; called: boolean; result: QuestionBankReviewResult }): Promise<QuestionBankCard['state'] | null> {
+    const target: QuestionBankCard['state'] = input.result.outcome === 'agrees' ? 'verified_model' : 'disputed';
+    return this.run((function* (): Transaction<QuestionBankCard['state'] | null> {
+      const job = (yield* query(`SELECT card_id, operation_id FROM question_bank_jobs WHERE job_id=? AND kind='review' AND status='running'`, input.jobId))[0];
+      if (!job) return null;
+      const cardId = String(job.card_id);
+      const moved = (yield* query(`UPDATE question_bank_cards SET state=? WHERE card_id=? AND state='unverified' RETURNING card_id`, target, cardId)).length > 0;
+      if (moved) {
+        yield* insertCardEvent({
+          cardId, at: input.now, actor: 'review_job', fromState: 'unverified', toState: target, basis: input.result.outcome,
+          answer: input.result.answer, jobId: input.jobId, operationId: String(job.operation_id),
+        });
+      }
+      yield* query(
+        `UPDATE question_bank_jobs SET status='done', attempt_count=attempt_count+?, error_code=NULL, lease_expires_at=NULL, review_json=?,
+           model_attempt_id=CASE WHEN ?=1 THEN model_attempt_id ELSE NULL END, updated_at=? WHERE job_id=?`,
+        input.called ? 1 : 0, JSON.stringify(input.result), input.called ? 1 : 0, input.now, input.jobId,
+      );
+      return moved ? target : null;
+    })());
+  }
+
+  adjudicate(input: { operationId: string; cardId: string; answer: string; basis: string; actor: string; now: string }): Promise<QuestionBankOperation<{ state: 'verified_human' }> | 'missing' | 'not_disputed'> {
+    const fingerprint = operationFingerprint(['adjudicate', input.cardId, input.answer, input.basis, input.actor]);
+    return this.run((function* (): Transaction<QuestionBankOperation<{ state: 'verified_human' }> | 'missing' | 'not_disputed'> {
+      const prior = yield* priorOperation<{ state: 'verified_human' }>(input.operationId, fingerprint);
+      if (prior === 'conflict') return prior;
+      if (prior) return { result: prior.result, replayed: true };
+      const row = (yield* query('SELECT state FROM question_bank_cards WHERE card_id=? FOR UPDATE', input.cardId))[0];
+      if (!row) return 'missing';
+      if (String(row.state) !== 'disputed') return 'not_disputed';
+      yield* query(`UPDATE question_bank_cards SET state='verified_human' WHERE card_id=?`, input.cardId);
+      yield* insertCardEvent({
+        cardId: input.cardId, at: input.now, actor: input.actor, fromState: 'disputed', toState: 'verified_human', basis: input.basis,
+        answer: input.answer, jobId: null, operationId: input.operationId,
+      });
+      yield* recordOperation({
+        operationId: input.operationId, kind: 'adjudicate', deviceId: null, actor: input.actor, reason: input.basis, fingerprint, now: input.now,
+        before: { card_id: input.cardId, state: 'disputed' }, after: { state: 'verified_human' },
+      });
+      return { result: { state: 'verified_human' }, replayed: false };
+    })());
+  }
+
+  cardEvents(cardId: string): Promise<QuestionBankCardEvent[]> {
+    return this.run((function* (): Transaction<QuestionBankCardEvent[]> {
+      return (yield* query('SELECT * FROM question_bank_card_events WHERE card_id=? ORDER BY at, event_id', cardId)).map(cardEvent);
+    })());
+  }
+
+  reviewSolve(attemptId: string): Promise<ReviewSolve | null> {
+    return this.run(reviewSolveOfAttempt(attemptId));
+  }
+
+  solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]> {
+    return this.run(samplesOf(attemptIds));
   }
 }
