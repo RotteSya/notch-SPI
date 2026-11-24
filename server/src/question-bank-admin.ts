@@ -5,9 +5,10 @@ import { ApiError } from './http.ts';
 import { REPORT_STYLE } from './admin-reports.ts';
 import { TRANSCRIBE_MAX_TOKENS } from './question-bank-prompt.ts';
 import { reservation, reviewRequest } from './question-bank-worker.ts';
+import { captureCost } from './capture-service.ts';
 import { budgetCeiling, type BudgetInspection } from './budget-policy.ts';
 import {
-  byOccurrences, MARK_VERDICTS, questionBankCardViews, questionBankMarkSummary, questionBankStats,
+  byOccurrences, MARK_VERDICTS, questionBankCardViews, questionBankMarkSummary, questionBankStats, reviewBudgetFit,
   type QuestionBankCardView, type QuestionBankFootprint, type QuestionBankMarkKind, type QuestionBankSample, type QuestionBankVerdict,
 } from './question-bank.ts';
 
@@ -18,6 +19,10 @@ const TARGET_REPEAT_RATE = 0.15;
 /** Cards one review confirmation may name, and cards the review list shows. */
 const REVIEW_BATCH = 50;
 const REVIEW_LIST = 200;
+/** Recent calls whose mean actual cost estimates a review call. */
+const REVIEW_COST_HISTORY = 100;
+/** Without any call history: output tokens assumed per review call when estimating from the price table. */
+const ASSUMED_REVIEW_OUTPUT_TOKENS = 1000;
 
 function objectBody(req: FastifyRequest, allowed: string[]): Record<string, unknown> {
   const body = req.body;
@@ -89,7 +94,8 @@ function budgetToday(inspection: BudgetInspection, scope: string, currency: stri
   const window = inspection.windows.find(w => w.scope === scope && w.currency === currency && w.start === start);
   const windowLimit = window?.limit ?? limit;
   const spent = window?.spent ?? 0, held = window?.held ?? 0;
-  return { limit_micros: windowLimit, spent_micros: spent, held_micros: held, remaining_micros: Math.max(0, budgetCeiling(windowLimit, false, share) - spent - held) };
+  const usable = budgetCeiling(windowLimit, false, share);
+  return { limit_micros: windowLimit, usable_micros: usable, spent_micros: spent, held_micros: held, remaining_micros: Math.max(0, usable - spent - held) };
 }
 
 function footprint(value: QuestionBankFootprint) {
@@ -225,34 +231,56 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
 
     scope.post('/admin/question-bank/review/preview', { bodyLimit: 16_384 }, async req => {
       const provider = requireReviewer();
+      const config = ctx.config, model = config.questionBankReviewModel, currency = config.modelCostCurrency;
       const cardIds = cardIdsOf(objectBody(req, ['card_ids']).card_ids);
       const views = new Map(questionBankCardViews(await bank.reviewData(cardIds)).map(view => [view.cardId, view]));
-      const items = [];
-      let estimated = 0;
+      // Without a price a call reserves the attempt upper bound and its cost stays unknown, booked at that reservation.
+      const priced = captureCost(config.modelPricingJSON, provider.name, model, { inputTokens: 0, outputTokens: 0 }) !== undefined;
+      // A review sends exactly the request an answer did, so recent calls of this model show what one costs.
+      const history = await bank.recentModelCosts({ provider: provider.name, model, currency, limit: REVIEW_COST_HISTORY });
+      const mean = history.length ? Math.round(history.reduce((sum, call) => sum + call.costMicros, 0) / history.length) : null;
+      const items: Array<{ card_id: string; blocked: string | null; call: boolean; answers_differ: boolean; reservation_micros: number; expected_micros: number | null }> = [];
       for (const cardId of cardIds) {
         const view = views.get(cardId);
         const blocked = !view ? 'missing' : view.blocked;
         const call = !blocked && !view!.answersDiffer;
-        let micros = 0;
+        let reservationMicros = 0, expected: number | null = 0;
         if (call) {
           // The same reservation the review call takes; estimating never calls the reviewer.
           const solve = await bank.reviewSolve(view!.reviewAttemptId!);
-          micros = solve ? (await reservation(ctx.config, provider, reviewRequest(solve), ctx.config.objectiveMaxTokens)).micros : 0;
-          estimated += micros;
+          const quote = solve ? await reservation(config, provider, reviewRequest(solve), config.objectiveMaxTokens) : null;
+          reservationMicros = quote?.micros ?? 0;
+          expected = mean ?? (priced && quote?.inputUpper != null
+            ? captureCost(config.modelPricingJSON, provider.name, model, { inputTokens: quote.inputUpper, outputTokens: ASSUMED_REVIEW_OUTPUT_TOKENS }) ?? null : null);
         }
-        items.push({ card_id: cardId, blocked, call, answers_differ: view?.answersDiffer ?? false, estimated_micros: micros });
+        items.push({ card_id: cardId, blocked, call, answers_differ: view?.answersDiffer ?? false, reservation_micros: reservationMicros, expected_micros: expected });
       }
+      const calls = items.filter(item => item.call);
+      const expectedTotal = calls.every(item => item.expected_micros !== null) ? calls.reduce((sum, item) => sum + item.expected_micros!, 0) : null;
+      const basis = mean !== null ? 'history' : expectedTotal !== null ? 'pricing' : 'unknown';
+      const fit = (remaining: number) => {
+        const result = reviewBudgetFit(remaining, calls.map(item => ({ reservation: item.reservation_micros, expected: item.expected_micros })));
+        return { expected_calls: result.expectedCalls, fits_expected: result.fitsExpected, worst_case_calls: result.worstCaseCalls, fits_worst_case: result.fitsWorstCase };
+      };
       const inspection = await store.billing.inspectBudget();
-      const config = ctx.config;
-      const review = budgetToday(inspection, 'question_bank_review', config.modelCostCurrency, config.questionBankReviewDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes);
+      const review = budgetToday(inspection, 'question_bank_review', currency, config.questionBankReviewDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes);
       const share = Math.min(100, Math.max(0, config.unpaidSharePercent)) / 100 * (config.requestBudgetMode === 'guarded-request' ? 0.8 : 1);
       const official = config.modelDailyBudgetMicros > 0
-        ? budgetToday(inspection, 'official', config.modelCostCurrency, config.modelDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes, share) : null;
+        ? budgetToday(inspection, 'official', currency, config.modelDailyBudgetMicros, config.modelBudgetUtcOffsetMinutes, share) : null;
       return {
-        cards: cardIds.length, calls: items.filter(item => item.call).length, without_call: items.filter(item => !item.blocked && !item.call).length,
-        blocked: items.filter(item => item.blocked).length, estimated_micros: estimated, currency: config.modelCostCurrency, items,
-        review_budget: { ...review, enough: review.remaining_micros >= estimated },
-        official_budget: official && { ...official, enough: official.remaining_micros >= estimated },
+        cards: cardIds.length, calls: calls.length, without_call: items.filter(item => !item.blocked && !item.call).length,
+        blocked: items.filter(item => item.blocked).length, currency, items,
+        expected: {
+          micros: expectedTotal, basis, per_call_micros: mean,
+          history_calls: history.length, history_review_calls: history.filter(call => call.purpose === 'review').length,
+          history_answer_calls: history.filter(call => call.purpose === 'answer').length,
+          assumed_output_tokens: basis === 'pricing' ? ASSUMED_REVIEW_OUTPUT_TOKENS : null,
+        },
+        worst_case_micros: calls.reduce((sum, item) => sum + item.reservation_micros, 0),
+        max_reservation_micros: Math.max(0, ...calls.map(item => item.reservation_micros)),
+        pricing_missing: !priced, provider: provider.name, model,
+        review_budget: { ...review, ...fit(review.remaining_micros) },
+        official_budget: official && { ...official, ...fit(official.remaining_micros) },
       };
     });
 
@@ -520,11 +548,25 @@ export const QUESTION_BANK_SCRIPT = String.raw`
     if (!cardIds.length) { message('请先勾选卡片。', true); return; }
     try {
       const d = await call('/admin/question-bank/review/preview', { card_ids: cardIds });
-      const out = $('review-preview');
-      table(out, ['卡片', '调用模型', '不调用、直接置为有争议', '不能复核', '预计成本（按预留上限，' + d.currency + '）'], [[d.cards, d.calls, d.without_call, d.blocked, money(d.estimated_micros)]]);
-      const r = d.review_budget;
-      node('p', '复核预算今日剩余 ' + money(r.remaining_micros) + '（上限 ' + money(r.limit_micros) + '，已用 ' + money(r.spent_micros) + '，占用中 ' + money(r.held_micros) + '）：' + (r.enough ? '够这一批' : '不够这一批，用尽后任务会等到明天'), out).className = r.enough ? 'muted' : 'error';
-      if (d.official_budget) node('p', '共享每日模型预算中题库可用的剩余 ' + money(d.official_budget.remaining_micros) + '：' + (d.official_budget.enough ? '够这一批' : '不够这一批'), out).className = d.official_budget.enough ? 'muted' : 'error';
+      const out = $('review-preview'), cur = ' ' + d.currency;
+      table(out, ['卡片', '调用模型', '不调用、直接置为有争议', '不能复核'], [[d.cards, d.calls, d.without_call, d.blocked]]);
+      if (d.pricing_missing) node('p', '价格表（MODEL_PRICING_JSON）里没有复核模型 ' + d.provider + ':' + d.model + ' 的价格：每次调用会按单次上限（ATTEMPT_BUDGET_UPPER_MICROS）预留，实际成本记为未知、按预留额计入，复核预算很快用尽。启用复核前请先加上它的价格。', out).className = 'error';
+      const e = d.expected;
+      node('p', '预计花费：' + (e.micros === null ? '无法估算' : money(e.micros) + cur) + '。' + (e.basis === 'history'
+        ? '按该模型最近 ' + e.history_calls + ' 次调用（复核 ' + e.history_review_calls + ' 次、答题 ' + e.history_answer_calls + ' 次；复核发送的请求与答题相同）的实际成本均值 ' + money(e.per_call_micros) + cur + '/次估算。'
+        : e.basis === 'pricing' ? '该模型还没有调用记录，按价格表估算：输入取本次请求的输入上限，输出假设每次 ' + e.assumed_output_tokens + ' 个 token。'
+        : '该模型还没有调用记录，也无法按价格表估算。'), out);
+      node('p', '最坏情况（每张都花满预留上限）：' + money(d.worst_case_micros) + cur + '。', out).className = 'muted';
+      node('p', '任务逐个执行：每次调用只占用一份预留（这一批单张最多 ' + money(d.max_reservation_micros) + cur + '），调用结束后按实际成本结算，多余的预留退回。所以剩余额度只要够下一张的预留就能继续。', out).className = 'muted';
+      const budget = (label, b) => {
+        const cap = b.usable_micros === b.limit_micros ? '上限 ' + money(b.limit_micros) : '上限 ' + money(b.limit_micros) + '，题库最多用其中 ' + money(b.usable_micros);
+        const parts = [label + '今日剩余 ' + money(b.remaining_micros) + cur + '（' + cap + '，已用 ' + money(b.spent_micros) + '，占用中 ' + money(b.held_micros) + '）。'];
+        if (b.fits_expected !== null) parts.push(b.fits_expected ? '按预计花费：够这一批。' : '按预计花费：今天约能做 ' + b.expected_calls + ' 张，其余等到明天。');
+        parts.push(b.fits_worst_case ? '按最坏情况也够。' : '按最坏情况：今天至少能做 ' + b.worst_case_calls + ' 张。');
+        node('p', parts.join(''), out).className = b.fits_expected === false || (b.fits_expected === null && !b.fits_worst_case) ? 'error' : 'muted';
+      };
+      budget('复核预算', d.review_budget);
+      if (d.official_budget) budget('共享每日模型预算（题库排在用户之后，只用其中一部分）', d.official_budget);
       if (d.blocked) {
         table(out, ['不能复核的卡片', '原因'], d.items.filter(i => i.blocked).map(i => [i.card_id, BLOCKS[i.blocked] || i.blocked]));
         message('有卡片不能复核，请取消勾选后重新预览。', true); return;

@@ -5,7 +5,7 @@ import {
   type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
   type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
   type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
-  type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
+  type ModelCallCost, type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
   type QuestionBankSolveInput, type QuestionBankStore, type QuestionBankTranscript, type StaleTranscription,
   type StoredQuestionBankAttempt, type StoredQuestionBankImage, type TranscriptionError,
 } from './question-bank.ts';
@@ -25,8 +25,10 @@ interface OperationRow {
   operationId: string; kind: QuestionBankOperationKind; deviceId: number | null; actor: string; reason: string;
   fingerprint: string; createdAt: string; before: unknown; after: unknown;
 }
-/** A transcription or review model call as the question-bank costs read it. */
-export interface MemoryBankAttempt { purpose: string; currency: string; costMicros: string | null }
+/** A model call as the question-bank costs read it. */
+export interface MemoryBankAttempt {
+  purpose: string; currency: string; costMicros: string | null; provider: string; model: string; status: string; startedAt: string;
+}
 
 // Every method finishes its reads and writes without an await, like one SQL transaction.
 export class MemoryQuestionBankStore implements QuestionBankStore {
@@ -245,7 +247,7 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     return {
       cards: [...cards.values()].sort((a, b) => a.state.localeCompare(b.state) || Number(a.matchable) - Number(b.matchable)),
       images: { stored: stored.length, storedBytes: stored.reduce((sum, image) => sum + image.byteCount, 0), cleared: this.images.length - stored.length },
-      costs: questionBankCosts(this.bankAttempts()),
+      costs: questionBankCosts(this.bankAttempts().filter(attempt => attempt.purpose === 'transcribe' || attempt.purpose === 'review')),
     };
   }
 
@@ -507,6 +509,15 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
 
   async solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]> {
     return attemptIds.flatMap(attemptId => this.sample(attemptId) ?? []);
+  }
+
+  async recentModelCosts(input: { provider: string; model: string; currency: string; limit: number }): Promise<ModelCallCost[]> {
+    return this.bankAttempts()
+      .filter(attempt => attempt.status === 'succeeded' && (attempt.purpose === 'answer' || attempt.purpose === 'review')
+        && attempt.provider === input.provider && attempt.model === input.model && attempt.currency === input.currency
+        && attempt.costMicros !== null && /^\d+$/.test(attempt.costMicros))
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, input.limit)
+      .map(attempt => ({ purpose: attempt.purpose, costMicros: Number(attempt.costMicros), startedAt: attempt.startedAt }));
   }
 
   async cardEvents(cardId: string): Promise<QuestionBankCardEvent[]> {

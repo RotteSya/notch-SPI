@@ -211,6 +211,33 @@ export interface QuestionBankCardView {
   latestEvent: QuestionBankCardEvent | null;
 }
 
+/** The known cost of one finished model call, for estimating what a review batch will spend. */
+export interface ModelCallCost { purpose: string; costMicros: number; startedAt: string }
+
+/**
+ * How much of a review batch today's remaining budget allows. Jobs run one at a time: each holds its
+ * own reservation only while it runs and is then settled at its actual cost. Both counts walk the
+ * batch in order; `expectedCalls` at the expected costs (null when any is unknown), the worst case at
+ * the full reservations.
+ */
+export function reviewBudgetFit(remaining: number, cards: Array<{ reservation: number; expected: number | null }>) {
+  const run = (cost: (card: { reservation: number; expected: number | null }) => number) => {
+    let left = remaining, calls = 0;
+    for (const card of cards) {
+      if (left < card.reservation) break;
+      left -= cost(card);
+      calls += 1;
+    }
+    return calls;
+  };
+  const expectedCalls = cards.every(card => card.expected !== null) ? run(card => card.expected!) : null;
+  const worstCaseCalls = run(card => card.reservation);
+  return {
+    expectedCalls, fitsExpected: expectedCalls === null ? null : expectedCalls === cards.length,
+    worstCaseCalls, fitsWorstCase: worstCaseCalls === cards.length,
+  };
+}
+
 /** The outcome of confirming a review batch: the jobs made, or every card that may not be reviewed and why. */
 export type QuestionBankReviewConfirm = QuestionBankOperation<{ cards: string[] }> | { blocked: Array<{ cardId: string; reason: ReviewBlock | 'missing' }> };
 
@@ -408,6 +435,11 @@ export interface QuestionBankStore {
   reviewSolve(attemptId: string): Promise<ReviewSolve | null>;
   /** Spot-check views of the given solves, in the given order; missing ones are left out. */
   solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]>;
+  /**
+   * Known costs of the most recent succeeded answer and review calls of one model, newest first. A
+   * review sends exactly the request an answer did, so both show what a review call costs.
+   */
+  recentModelCosts(input: { provider: string; model: string; currency: string; limit: number }): Promise<ModelCallCost[]>;
 }
 
 /**

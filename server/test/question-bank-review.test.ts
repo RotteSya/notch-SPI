@@ -15,7 +15,7 @@ import { StubPaymentProvider } from '../src/payments.ts';
 import type { CaptureRequest, Provider } from '../src/providers/types.ts';
 import type { Store } from '../src/db.ts';
 import { aggregateEconomics, type ReportQuery } from '../src/reporting.ts';
-import type { QuestionBankTranscript } from '../src/question-bank.ts';
+import { reviewBudgetFit, type QuestionBankTranscript } from '../src/question-bank.ts';
 import { questionBankSchema } from '../src/question-bank-sql.ts';
 import { QUESTION_BANK_ROUND, questionBankReviewHoldId, runQuestionBankRound } from '../src/question-bank-worker.ts';
 import { ASTRA_MODEL, AstraProvider } from '../src/providers/astra.ts';
@@ -53,7 +53,7 @@ function transcript(stem: string): string {
 
 type Reply = string | { text: string; finishReason: string };
 
-async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<Config> = {}, options: { reviewer?: boolean } = {}) {
+async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<Config> = {}, options: { reviewer?: boolean; estimate?: { micros: number; inputUpper: number } } = {}) {
   let schema: string | null = null;
   let store: Store;
   if (kind === 'postgres') {
@@ -81,8 +81,10 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   const reviews = new Map<string, Reply>();
   const reviewRequests: CaptureRequest[] = [];
   let reviewInFlight = 0, reviewMost = 0;
+  const estimate = options.estimate;
   const reviewer: Provider = {
     name: 'mock',
+    ...(estimate ? { estimateReservation: async () => ({ micros: estimate.micros, inputUpper: estimate.inputUpper, outputUpper: 8192 }) } : {}),
     async stream(req, delta) {
       reviewRequests.push(req);
       reviewInFlight += 1; reviewMost = Math.max(reviewMost, reviewInFlight);
@@ -241,6 +243,17 @@ test('Astra makes one call for purpose review even with Fast review on; the revi
   assert.ok(unknown?.degraded, 'an unknown provider name is a configuration error, not a silent mock');
 });
 
+test('a batch fits the budget one job at a time: each needs a full reservation to start and then costs what it costs', () => {
+  const cards = [{ reservation: 50, expected: 5 }, { reservation: 50, expected: 5 }, { reservation: 50, expected: 5 }];
+  assert.deepEqual(reviewBudgetFit(100, cards), { expectedCalls: 3, fitsExpected: true, worstCaseCalls: 2, fitsWorstCase: false });
+  assert.deepEqual(reviewBudgetFit(59, cards), { expectedCalls: 2, fitsExpected: false, worstCaseCalls: 1, fitsWorstCase: false },
+    'after two calls 49 is left, below the next reservation');
+  assert.deepEqual(reviewBudgetFit(49, cards), { expectedCalls: 0, fitsExpected: false, worstCaseCalls: 0, fitsWorstCase: false });
+  assert.deepEqual(reviewBudgetFit(100, [...cards.slice(1), { reservation: 50, expected: null }]),
+    { expectedCalls: null, fitsExpected: null, worstCaseCalls: 2, fitsWorstCase: false }, 'one unknown cost leaves the expected count unknown');
+  assert.deepEqual(reviewBudgetFit(0, []), { expectedCalls: 0, fitsExpected: true, worstCaseCalls: 0, fitsWorstCase: true });
+});
+
 const kinds = ['memory', 'sqlite', ...(postgres ? ['postgres' as const] : [])] as const;
 if (!postgres) test('postgres question-bank review', { skip: 'no TEST_POSTGRES_URL and no local PostgreSQL binary' }, () => {});
 
@@ -264,7 +277,7 @@ for (const kind of kinds) {
       assert.deepEqual(list.items.map((item: Record<string, unknown>) => [item.card_id, item.occurrences, item.blocked]).sort(),
         [[x1.cardId, 2, null], [y1.cardId, 2, null]].sort(), 'only repeated cards are listed');
       const preview = (await b.call('POST', '/admin/question-bank/review/preview', { card_ids: [x1.cardId, y1.cardId] })).json();
-      assert.deepEqual([preview.cards, preview.calls, preview.without_call, preview.blocked, preview.estimated_micros], [2, 2, 0, 0, 20_000],
+      assert.deepEqual([preview.cards, preview.calls, preview.without_call, preview.blocked, preview.worst_case_micros], [2, 2, 0, 0, 20_000],
         'without its own estimate a call reserves ATTEMPT_BUDGET_UPPER_MICROS');
       assert.equal((await b.call('POST', '/admin/question-bank/review/preview', { card_ids: [single.cardId] })).json().items[0].blocked, 'not_repeated');
       assert.equal(b.reviewerCalls(), 0, 'no call before a confirmation');
@@ -299,6 +312,64 @@ for (const kind of kinds) {
       assert.equal((await b.call('POST', '/admin/question-bank/review/confirm', { ...body, card_ids: [] })).status, 400);
       assert.equal((await b.call('POST', '/admin/question-bank/review/confirm', { ...body, operation_id: randomUUID(), reason: 'no' })).status, 400);
     } finally { await b.close(); }
+  });
+
+  test(`${kind}: the preview estimates spend from the model's recent actual costs and shows the reservation worst case apart`, async () => {
+    const b = await bank(kind, {}, { estimate: { micros: 50_000, inputUpper: 3_000 } });
+    try {
+      const [a, c] = [await b.account(), await b.account()];
+      const cards: string[] = [];
+      for (const stem of [SPEED, TRAIN, 'What is 2 + 2?']) {
+        cards.push((await b.solved(a.token, stem)).cardId!);
+        await b.solved(c.token, stem);
+      }
+      const preview = async (ids: string[]) => (await b.call('POST', '/admin/question-bank/review/preview', { card_ids: ids })).json();
+      // No call of this model yet: the price table, the request's input bound and 1,000 output tokens: 3000×1 + 1000×2.
+      const first = await preview(cards);
+      assert.deepEqual(first.expected, {
+        micros: 3 * 5_000, basis: 'pricing', per_call_micros: null, history_calls: 0, history_review_calls: 0, history_answer_calls: 0, assumed_output_tokens: 1000,
+      });
+      assert.deepEqual([first.worst_case_micros, first.max_reservation_micros, first.pricing_missing], [150_000, 50_000, false]);
+      assert.deepEqual(first.items.map((item: Record<string, unknown>) => [item.reservation_micros, item.expected_micros]), [[50_000, 5_000], [50_000, 5_000], [50_000, 5_000]]);
+      assert.deepEqual(first.review_budget, {
+        limit_micros: 100_000, usable_micros: 100_000, spent_micros: 0, held_micros: 0, remaining_micros: 100_000,
+        expected_calls: 3, fits_expected: true, worst_case_calls: 2, fits_worst_case: false,
+      }, 'one reservation at a time: the batch fits although the reservations add up to more than the budget');
+
+      // After one real review the actual cost replaces the assumption.
+      assert.equal((await b.confirm([cards[0]!])).status, 200);
+      assert.equal((await b.round(Date.now() + 2 * 60_000)).reviews.verified, 1);
+      const second = await preview(cards.slice(1));
+      assert.deepEqual(second.expected, {
+        micros: 2 * 2200, basis: 'history', per_call_micros: 2200, history_calls: 1, history_review_calls: 1, history_answer_calls: 0, assumed_output_tokens: null,
+      });
+      assert.deepEqual([second.worst_case_micros, second.review_budget.remaining_micros, second.review_budget.fits_expected], [100_000, 97_800, true]);
+      assert.equal(b.reviewerCalls(), 1, 'previews never call the reviewer');
+      // The shared budget counts only the share an unpaid device may use (80% by default).
+      assert.deepEqual([second.official_budget.limit_micros, second.official_budget.usable_micros], [1_000_000, 800_000]);
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: answer calls of the same model count as history, and a missing price is called out`, async () => {
+    // The review model is the answer model: every answer call (11 in, 7 out: 25 micros) is history.
+    const same = await bank(kind, { questionBankReviewModel: 'bank-test' });
+    try {
+      const [a, c] = [await same.account(), await same.account()];
+      const x1 = await same.solved(a.token, SPEED);
+      await same.solved(c.token, SPEED);
+      const preview = (await same.call('POST', '/admin/question-bank/review/preview', { card_ids: [x1.cardId] })).json();
+      assert.deepEqual([preview.expected.basis, preview.expected.per_call_micros, preview.expected.history_answer_calls, preview.expected.micros], ['history', 25, 2, 25]);
+    } finally { await same.close(); }
+
+    const unpriced = await bank(kind, { modelPricingJSON: JSON.stringify([JSON.parse(PRICING)[0]]) });
+    try {
+      const [a, c] = [await unpriced.account(), await unpriced.account()];
+      const x1 = await unpriced.solved(a.token, SPEED);
+      await unpriced.solved(c.token, SPEED);
+      const preview = (await unpriced.call('POST', '/admin/question-bank/review/preview', { card_ids: [x1.cardId] })).json();
+      assert.deepEqual([preview.pricing_missing, preview.provider, preview.model, preview.expected.basis, preview.expected.micros], [true, 'mock', 'review-model', 'unknown', null]);
+      assert.equal(preview.worst_case_micros, 10_000, 'the call reserves ATTEMPT_BUDGET_UPPER_MICROS');
+    } finally { await unpriced.close(); }
   });
 
   test(`${kind}: without a configured reviewer nothing can be confirmed or called`, async () => {
@@ -385,7 +456,7 @@ for (const kind of kinds) {
       assert.equal(byCard.get(cards.DIFFER)?.answers_differ, true);
       assert.equal((await b.call('GET', '/admin/question-bank/stats')).json().answers_differ, 1);
       const preview = (await b.call('POST', '/admin/question-bank/review/preview', { card_ids: Object.values(cards) })).json();
-      assert.deepEqual([preview.calls, preview.without_call, preview.estimated_micros], [5, 1, 50_000]);
+      assert.deepEqual([preview.calls, preview.without_call, preview.worst_case_micros], [5, 1, 50_000]);
 
       assert.equal((await b.confirm(Object.values(cards))).status, 200);
       // Thirteen answers and transcriptions just filled this minute's supplier window; reviews queue behind it.
@@ -493,8 +564,11 @@ for (const kind of kinds) {
       const x1 = await b.solved(a.token, SPEED);
       await b.solved(c.token, SPEED);
       const preview = (await b.call('POST', '/admin/question-bank/review/preview', { card_ids: [x1.cardId] })).json();
-      assert.deepEqual(preview.review_budget, { limit_micros: 5_000, spent_micros: 0, held_micros: 0, remaining_micros: 5_000, enough: false });
-      assert.equal(preview.official_budget.enough, true);
+      assert.deepEqual(preview.review_budget, {
+        limit_micros: 5_000, usable_micros: 5_000, spent_micros: 0, held_micros: 0, remaining_micros: 5_000,
+        expected_calls: null, fits_expected: null, worst_case_calls: 0, fits_worst_case: false,
+      }, 'no estimate and no history: only the worst case, which does not fit');
+      assert.equal(preview.official_budget.fits_worst_case, true);
       assert.equal((await b.confirm([x1.cardId])).status, 200);
       const waiting = await b.solve(a.token);
       const starved = await b.round();

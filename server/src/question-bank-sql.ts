@@ -7,7 +7,7 @@ import {
   type ClaimedReview, type ClaimedTranscription, type QuestionBankCard, type QuestionBankCardEvent, type QuestionBankCounts, type QuestionBankFootprint,
   type QuestionBankInventory, type QuestionBankMark, type QuestionBankMatchSample, type QuestionBankOccurrenceRow, type QuestionBankOperation,
   type QuestionBankOperationKind, type QuestionBankOperationRecord, type QuestionBankReviewConfirm, type QuestionBankReviewData,
-  type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
+  type ModelCallCost, type QuestionBankReviewResult, type QuestionBankSample, type ReviewSolve,
   type QuestionBankSolveInput, type QuestionBankStore, type QuestionBankTranscript, type StaleTranscription,
   type StoredQuestionBankAttempt, type StoredQuestionBankImage, type TranscriptionError,
 } from './question-bank.ts';
@@ -949,5 +949,22 @@ export class SQLQuestionBankStore implements QuestionBankStore {
 
   solveSamples(attemptIds: string[]): Promise<QuestionBankSample[]> {
     return this.run(samplesOf(attemptIds));
+  }
+
+  recentModelCosts(input: { provider: string; model: string; currency: string; limit: number }): Promise<ModelCallCost[]> {
+    const field = (key: string) => this.json('metadata', key);
+    return this.run((function* (): Transaction<ModelCallCost[]> {
+      const rows = yield* query(
+        `SELECT ${field('purpose')} AS purpose, ${field('costMicros')} AS cost, ${field('startedAt')} AS started FROM model_attempts
+         WHERE status='succeeded' AND ${field('purpose')} IN ('answer','review') AND ${field('provider')}=? AND ${field('model')}=?
+           AND ${field('currency')}=? AND ${field('costMicros')} IS NOT NULL
+         ORDER BY ${field('startedAt')} DESC LIMIT ?`,
+        input.provider, input.model, input.currency, input.limit,
+      );
+      return rows.flatMap(row => {
+        const cost = textOrNull(row.cost);
+        return cost !== null && /^\d+$/.test(cost) ? [{ purpose: String(row.purpose), costMicros: Number(cost), startedAt: String(row.started) }] : [];
+      });
+    })());
   }
 }

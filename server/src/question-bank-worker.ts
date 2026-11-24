@@ -169,8 +169,11 @@ async function round(deps: QuestionBankRoundDeps): Promise<QuestionBankRoundResu
   return finish();
 }
 
-/** The budget reservation for one call: the provider's own estimate, else the configured attempt upper bound. */
-export async function reservation(config: Config, provider: Provider, request: CaptureRequest, outputFallback = TRANSCRIBE_MAX_TOKENS): Promise<{ micros: number; tokens: number }> {
+/**
+ * The budget reservation for one call: the provider's own estimate, else the configured attempt upper
+ * bound. `inputUpper` is the estimate's input token bound, null without an estimate.
+ */
+export async function reservation(config: Config, provider: Provider, request: CaptureRequest, outputFallback = TRANSCRIBE_MAX_TOKENS): Promise<{ micros: number; tokens: number; inputUpper: number | null }> {
   let quote: { micros: number; inputUpper: number; outputUpper: number } | null = null;
   if (provider.estimateReservation && config.modelCostCurrency === 'USD') {
     try {
@@ -181,6 +184,7 @@ export async function reservation(config: Config, provider: Provider, request: C
   return {
     micros: quote?.micros ?? config.attemptBudgetUpperMicros,
     tokens: Math.max(quote?.inputUpper ?? 24_000, quote?.outputUpper ?? outputFallback),
+    inputUpper: quote?.inputUpper ?? null,
   };
 }
 
