@@ -155,6 +155,7 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
         definition: 'question-bank-stats-v1', generated_at: new Date().toISOString(), enabled: ctx.config.questionBankEnabled,
         solves: {
           denominator: stats.denominator, repeated: stats.repeated, repeat_rate: stats.repeatRate, target_rate: TARGET_REPEAT_RATE,
+          matchable: stats.matchability.matchable, matchable_repeat_rate: stats.matchableRepeatRate,
           same_account: stats.sameAccount, same_account_rate: stats.sameAccountRate,
           other_account: stats.otherAccount, other_account_rate: stats.otherAccountRate,
         },
@@ -356,9 +357,9 @@ export const QUESTION_BANK_SCRIPT = String.raw`
   const node = (tag, text, parent) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = String(text); if (parent) parent.append(e); return e; };
   const pct = value => value === null || value === undefined ? '没有样本' : (value * 100).toFixed(1) + '%';
   const money = micros => (Number(micros) / 1e6).toFixed(6);
-  const ERRORS = { invalid_transcript: '输出格式不合格', output_truncated: '输出被长度上限截断', upstream_error: '上游报错', timeout: '超过单次时限', lease_expired: '进程中断，租约过期' };
+  const ERRORS = { invalid_transcript: '输出格式不合格', output_truncated: '输出被长度上限截断', content_filter: '被上游内容过滤拦下', upstream_error: '上游报错', timeout: '超过单次时限', lease_expired: '进程中断，租约过期' };
   const STATES = { unverified: '未核实', verified_model: '模型复核一致', verified_human: '人工裁决', disputed: '有争议' };
-  const STATUS = { ok: '单题', multiple: '多道题', unreadable: '读不清' };
+  const STATUS = { ok: '单题', multiple: '多道题', unreadable: '读不清', not_question: '不是题目' };
   const PURPOSES = { transcribe: '转写', review: '复核' };
   const OUTCOMES = { agrees: '复核一致', disagrees: '复核答案不同', not_ready: '复核未给出可用答案', answers_differ: '已有答案不一致，未调用模型' };
   const BLOCKS = { review_open: '复核进行中', reviewed: '已复核或已裁决', not_repeated: '计入看数的作答少于 2 次', images_expired: '题图已过期，不能复核', missing: '卡片不存在或不可匹配' };
@@ -393,15 +394,17 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       const out = $('stats'); out.replaceChildren();
       node('p', d.enabled ? '服务端题库开关：开' : '服务端题库开关：关（已有数据照常统计）', out).className = 'muted';
       const s = d.solves;
-      table(out, ['计数范围内作答（道）', '重复', '总重复率（与 ' + pct(s.target_rate) + ' 比较）', '与同一账户更早作答重复', '与其他账户更早作答重复'],
-        [[s.denominator, s.repeated, pct(s.repeat_rate), s.same_account + ' · ' + pct(s.same_account_rate), s.other_account + ' · ' + pct(s.other_account_rate)]]);
+      table(out, ['计数范围内作答（道）', '重复', '总重复率（与 ' + pct(s.target_rate) + ' 比较）', '只算可匹配作答的重复率', '与同一账户更早作答重复', '与其他账户更早作答重复'],
+        [[s.denominator, s.repeated, pct(s.repeat_rate), s.repeated + ' / ' + s.matchable + ' · ' + pct(s.matchable_repeat_rate),
+          s.same_account + ' · ' + pct(s.same_account_rate), s.other_account + ' · ' + pct(s.other_account_rate)]]);
+      node('p', '只算可匹配作答的重复率 = 重复 ÷ 计数范围内可匹配的作答（分母见下面“能否匹配”表的“可匹配”一行）。只有可匹配的作答会算作重复，所以分子与总重复率相同。它用来区分“题目本身不重复”和“题目重复但认不出”；达标仍按总重复率判断。', out).className = 'muted';
       const cp = d.checkpoints;
       node('p', '判断点 1000 / 1500 / 2000：已到 ' + (cp.reached.length ? cp.reached.join('、') : '无') + '；下一个 ' + (cp.next === null ? '没有了' : cp.next + '（还差 ' + (cp.next - s.denominator) + ' 道）'), out);
       node('h3', '能否匹配', out);
       const m = d.matchability;
       table(out, ['能否匹配', '计数范围内作答（道）', '占比'], [['可匹配', m.matchable], ['不可匹配：多题', m.multiple], ['不可匹配：看不清', m.unreadable],
-        ['不可匹配：依赖图表', m.figure], ['不可匹配：题干为空', m.empty_stem]].map(([label, n]) => [label, n, pct(s.denominator ? n / s.denominator : null)]));
-      node('p', '与上表同一批作答，五项合计等于计数范围内作答。不可匹配的作答留在分母里，但永远不会算作重复：多题是一张截图里有不止一道题；依赖图表是答题要看图形、图表、图片或表格。', out).className = 'muted';
+        ['不可匹配：不是题目', m.not_question], ['不可匹配：依赖图表', m.figure], ['不可匹配：题干为空', m.empty_stem]].map(([label, n]) => [label, n, pct(s.denominator ? n / s.denominator : null)]));
+      node('p', '与上表同一批作答，六项合计等于计数范围内作答。不可匹配的作答留在分母里，但永远不会算作重复：多题是一张截图里有不止一道题；不是题目是系统弹窗、聊天、代码这类截图，不保留文字；依赖图表是答题要看图形、图表、图片或表格。', out).className = 'muted';
       node('h3', '用量最大的账户', out);
       if (d.top_accounts.length) table(out, ['账户编号', '计数范围内作答', '占比'], d.top_accounts.map(a => [a.device_id, a.solves, pct(a.share)]));
       else node('p', '没有样本。', out).className = 'empty';

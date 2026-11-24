@@ -44,7 +44,7 @@ export interface StoredQuestionBankImage {
 
 /** The transcription call's whole output: one line of JSON with exactly these keys. */
 export interface QuestionBankTranscript {
-  status: 'ok' | 'multiple' | 'unreadable';
+  status: 'ok' | 'multiple' | 'unreadable' | 'not_question';
   language: string;
   stem: string;
   options: Array<{ label: string; text: string }>;
@@ -68,7 +68,7 @@ export interface QuestionBankCard {
 /** A model call counts once whatever its outcome; the first call and two retries. Review jobs use the same cap. */
 export const TRANSCRIPTION_MAX_CALLS = 3;
 /** Job error codes, for transcription and review jobs alike. Short codes only, never model text. */
-export type TranscriptionError = 'invalid_transcript' | 'output_truncated' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing' | 'card_missing';
+export type TranscriptionError = 'invalid_transcript' | 'output_truncated' | 'content_filter' | 'upstream_error' | 'timeout' | 'lease_expired' | 'image_deleted' | 'attempt_missing' | 'card_missing';
 
 export interface ClaimedTranscription {
   jobId: string;
@@ -463,7 +463,7 @@ function byCodePoint(a: string, b: string): number {
 }
 
 /** Why a transcript can never share a card with another solve, checked in this order. */
-export type QuestionBankUnmatchableReason = 'multiple' | 'unreadable' | 'figure' | 'empty_stem';
+export type QuestionBankUnmatchableReason = 'multiple' | 'unreadable' | 'not_question' | 'figure' | 'empty_stem';
 
 export function unmatchableReason(transcript: Pick<QuestionBankTranscript, 'status' | 'has_figure' | 'stem'>): QuestionBankUnmatchableReason | null {
   if (transcript.status !== 'ok') return transcript.status;
@@ -484,10 +484,18 @@ export function cardUnmatchableReason(card: Pick<QuestionBankCard, 'matchable' |
   return card.matchable ? null : unmatchableReason({ status: card.transcriptStatus, has_figure: card.hasFigure, stem: '' });
 }
 
-/** `fp1:` + SHA-256 of [normalized stem, normalized option texts in code point order]. Labels and option order do not count. */
+/** The normalized text with every whitespace character removed, so a screenshot's line breaks, even inside a word, do not count. */
+function fingerprintText(value: string): string {
+  return normalizeQuestionText(value).replace(/\s/gu, '');
+}
+
+/**
+ * `fp1:` + SHA-256 of [stem, option texts in code point order], each in `fingerprintText` form.
+ * Labels, option order and all whitespace do not count; the stored stem keeps its whitespace.
+ */
 export function questionFingerprint(transcript: Pick<QuestionBankTranscript, 'stem' | 'options'>): string {
-  const options = transcript.options.map(option => normalizeQuestionText(option.text)).sort(byCodePoint);
-  const body = JSON.stringify([normalizeQuestionText(transcript.stem), options]);
+  const options = transcript.options.map(option => fingerprintText(option.text)).sort(byCodePoint);
+  const body = JSON.stringify([fingerprintText(transcript.stem), options]);
   return 'fp1:' + createHash('sha256').update(body).digest('hex');
 }
 
@@ -578,13 +586,15 @@ export interface QuestionBankStats {
   sameAccount: number;
   otherAccount: number;
   repeatRate: number | null;
+  /** Repeats over the denominator's matchable solves only: whether questions recur at all, apart from those never recognized. */
+  matchableRepeatRate: number | null;
   sameAccountRate: number | null;
   otherAccountRate: number | null;
   checkpoints: { reached: number[]; next: number | null };
   topAccounts: Array<{ deviceId: number; solves: number; share: number }>;
   /** The top accounts left out as if internal: neither counted nor a precedent for others. */
   withoutTopAccounts: { denominator: number; repeated: number; repeatRate: number | null };
-  /** The denominator's solves by whether their card can match, and why not; the five add up to the denominator. */
+  /** The denominator's solves by whether their card can match, and why not; the six add up to the denominator. */
   matchability: { matchable: number } & Record<QuestionBankUnmatchableReason, number>;
   /** Non-internal solves by transcription state. `coverage` is done ÷ solves. */
   transcription: { solves: number; done: number; waiting: number; failed: number; skipped: number; coverage: number | null; failedByError: Record<string, number> };
@@ -604,7 +614,7 @@ export function questionBankStats(rows: QuestionBankOccurrenceRow[]): QuestionBa
   const failedByError: Record<string, number> = {};
   for (const row of external) if (row.jobStatus === 'failed') failedByError[row.jobErrorCode ?? 'unknown'] = (failedByError[row.jobErrorCode ?? 'unknown'] ?? 0) + 1;
   // The same solves as the denominator: non-internal and transcribed.
-  const matchability = { matchable: 0, multiple: 0, unreadable: 0, figure: 0, empty_stem: 0 };
+  const matchability = { matchable: 0, multiple: 0, unreadable: 0, not_question: 0, figure: 0, empty_stem: 0 };
   for (const row of external) {
     if (row.jobStatus !== 'done') continue;
     if (row.matchable) matchability.matchable += 1;
@@ -613,6 +623,8 @@ export function questionBankStats(rows: QuestionBankOccurrenceRow[]): QuestionBa
   return {
     denominator: all.denominator, repeated: all.repeated, sameAccount: all.sameAccount, otherAccount: all.otherAccount,
     repeatRate: ratio(all.repeated, all.denominator),
+    // Only a matchable solve can repeat, so the numerator is the same.
+    matchableRepeatRate: ratio(all.repeated, matchability.matchable),
     sameAccountRate: ratio(all.sameAccount, all.denominator),
     otherAccountRate: ratio(all.otherAccount, all.denominator),
     checkpoints: {

@@ -178,6 +178,23 @@ test('fingerprint: whitespace, full-width forms, ASCII case, labels and option o
   assert.equal(normalizeQuestionText('ÄBC ＤＥＦ'), 'Äbc def', 'only ASCII letters are lowered');
 });
 
+test('fingerprint: line breaks anywhere, even inside a word, do not matter; numbers still do', () => {
+  // The trial's English reading question: the transcript kept the screenshot's line breaks, "renewable en / ergy" included.
+  const text = 'Countries are investing in renewable energy because the cost of solar power has fallen by 90 percent since 2010.';
+  const options = [{ label: 'A', text: 'Solar power is cheaper' }, { label: 'B', text: 'Wind power is cheaper' }];
+  const wrapped = [
+    'Countries are investing in renewable en\nergy because the cost of solar\npower has fallen by 90 percent since 2010.',
+    'Countries are investing in\nrenewable energy because the cost of solar power has fal\nlen by 90 percent\nsince 2010.',
+    'Countries are investing in renewable en ergy because the cost of solar power has fallen by 90 percent since 2010.',
+  ];
+  for (const stem of wrapped) assert.equal(questionFingerprint({ stem, options }), questionFingerprint({ stem: text, options }), stem);
+  assert.equal(questionFingerprint({ stem: text, options: [{ label: 'A', text: 'Solar power is\ncheaper' }, options[1]!] }), questionFingerprint({ stem: text, options }));
+  assert.notEqual(questionFingerprint({ stem: text.replace('90 percent', '80 percent'), options }), questionFingerprint({ stem: text, options }));
+  assert.notEqual(questionFingerprint({ stem: text.replace('2010', '2012'), options }), questionFingerprint({ stem: wrapped[0]!, options }));
+  // The stored stem keeps its line breaks; only the fingerprint ignores them.
+  assert.equal(parseTranscript(JSON.stringify({ status: 'ok', language: 'en', stem: wrapped[0], options, has_figure: false }))?.stem, wrapped[0]);
+});
+
 test('answer content maps choice labels to option text, otherwise it is the normalized answer', () => {
   const options = [{ label: 'A', text: '40 km/h' }, { label: '(B)', text: '60 km/h' }, { label: 'C.', text: '80 km/h' }];
   assert.equal(answerContent('B', 'single_choice', options), JSON.stringify(['60 km/h']));
@@ -234,6 +251,18 @@ test('the prompt keeps page titles, section headings and question numbers out of
   assert.notEqual(questionFingerprint({ stem: '練習問題 Q04\n' + stem, options }), questionFingerprint({ stem, options }));
 });
 
+test('a screenshot that is not a question keeps no text, like several questions or an unreadable one', () => {
+  assert.match(TRANSCRIBE_PROMPT.system, /"not_question" when the images show no exam question,\nsuch as a system dialog, a chat or code\./);
+  assert.match(TRANSCRIBE_PROMPT.system, /For "multiple", "unreadable" and "not_question", stem is "" and options is \[\]\./);
+  // The trial found an account authorization dialog answered as a question; its text must never be stored.
+  const copied = { language: 'en', stem: 'Allow access for user@example.com?', options: [{ label: 'A', text: 'Allow' }, { label: 'B', text: 'Deny' }], has_figure: false };
+  for (const status of ['not_question', 'multiple', 'unreadable'] as const) {
+    assert.deepEqual(parseTranscript(JSON.stringify({ status, ...copied })), { status, language: 'en', stem: '', options: [], has_figure: false }, status);
+  }
+  assert.equal(parseTranscript(JSON.stringify({ status: 'not_question', ...copied, options: [{ label: 'A' }] })), null, 'the shape is still checked');
+  assert.deepEqual(parseTranscript(JSON.stringify({ status: 'ok', ...copied }))?.stem, copied.stem, 'a single question keeps its text');
+});
+
 test('every unmatchable transcript has one reason, and a stored card gives the same reason from its columns', () => {
   const base = { language: 'en', options: [] as QuestionBankTranscript['options'] };
   const cases: Array<[QuestionBankTranscript, ReturnType<typeof unmatchableReason>]> = [
@@ -241,6 +270,8 @@ test('every unmatchable transcript has one reason, and a stored card gives the s
     [{ ...base, status: 'multiple', stem: '', has_figure: false }, 'multiple'],
     [{ ...base, status: 'multiple', stem: '', has_figure: true }, 'multiple'],
     [{ ...base, status: 'unreadable', stem: '', has_figure: false }, 'unreadable'],
+    [{ ...base, status: 'not_question', stem: '', has_figure: false }, 'not_question'],
+    [{ ...base, status: 'not_question', stem: '', has_figure: true }, 'not_question'],
     [{ ...base, status: 'ok', stem: 'According to the table?', has_figure: true }, 'figure'],
     [{ ...base, status: 'ok', stem: '', has_figure: true }, 'figure'],
     [{ ...base, status: 'ok', stem: ' 　\n', has_figure: false }, 'empty_stem'],
@@ -387,6 +418,35 @@ for (const kind of kinds) {
     } finally { await b.close(); }
   });
 
+  test(`${kind}: a reply stopped by the content filter fails under its own code and retries like an invalid transcript`, async () => {
+    const b = await bank(kind);
+    try {
+      const job = async (captureId: string) => {
+        const saved = await b.store.questionBank.findByCapture(captureId);
+        return [saved?.jobStatus, saved?.jobAttemptCount, saved?.jobErrorCode];
+      };
+      // The trial's English reading question: filtered twice, then transcribed on the third and last call.
+      const recovered = await b.solve();
+      const t0 = Date.now();
+      b.replies.push({ text: '', finishReason: 'content_filter' });
+      assert.equal((await b.round(t0)).failed, 1);
+      assert.deepEqual(await job(recovered), ['pending', 1, 'content_filter'], 'retried, not failed at once like a cut output');
+      b.replies.push({ text: '', finishReason: 'content_filter' });
+      await b.round(t0 + 11 * MINUTE);
+      assert.deepEqual(await job(recovered), ['pending', 2, 'content_filter']);
+      b.replies.push(transcript(SPEED));
+      await b.round(t0 + 22 * MINUTE);
+      assert.deepEqual(await job(recovered), ['done', 3, null]);
+      // Filtered on every call, even with a well-formed reply: never parsed, failed after the third call.
+      const blocked = await b.solve();
+      b.replies.push({ text: '', finishReason: 'content_filter' }, { text: transcript(SPEED), finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' });
+      for (const minute of [30, 41, 52]) assert.equal((await b.round(t0 + minute * MINUTE)).calls, 1);
+      assert.deepEqual(await job(blocked), ['failed', 3, 'content_filter']);
+      assert.equal(b.transcribeCalls(), 6);
+      assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 60 * MINUTE), TRANSCRIBE_MAX_TOKENS), 1, 'requeued like any other failure');
+    } finally { await b.close(); }
+  });
+
   test(`${kind}: transcripts with an empty stem each get their own unmatchable card`, async () => {
     const b = await bank(kind);
     try {
@@ -401,6 +461,35 @@ for (const kind of kinds) {
       }
       const summary = questionBankOccurrences(await b.store.questionBank.occurrenceRows());
       assert.deepEqual([summary.denominator, summary.repeated], [2, 0]);
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: the same question wrapped at another width joins the same card, and each solve keeps its own line breaks`, async () => {
+    const b = await bank(kind);
+    try {
+      const first = await b.solve(), second = await b.solve();
+      const narrow = 'A car travels 120 km in 2 ho\nurs. What is its average\nspeed?';
+      b.replies.push(transcript(SPEED), transcript(narrow));
+      assert.equal((await b.round()).completed, 2);
+      const a = (await b.store.questionBank.findByCapture(first))!, c = (await b.store.questionBank.findByCapture(second))!;
+      assert.equal(a.cardId, c.cardId);
+      assert.deepEqual([a.transcript?.stem, c.transcript?.stem], [SPEED, narrow]);
+      assert.equal((await b.store.questionBank.findCard(a.cardId!))?.stem, SPEED, 'the card keeps the first transcript as written');
+    } finally { await b.close(); }
+  });
+
+  test(`${kind}: a screenshot that is not a question is stored without its text on its own unmatchable card`, async () => {
+    const b = await bank(kind);
+    try {
+      const captureId = await b.solve();
+      b.replies.push(JSON.stringify({ status: 'not_question', language: 'en', stem: 'Allow access for user@example.com?', options: [{ label: 'A', text: 'Allow' }], has_figure: false }));
+      assert.equal((await b.round()).completed, 1);
+      const saved = (await b.store.questionBank.findByCapture(captureId))!;
+      assert.deepEqual(saved.transcript, { status: 'not_question', language: 'en', stem: '', options: [], has_figure: false });
+      const card = (await b.store.questionBank.findCard(saved.cardId!))!;
+      assert.deepEqual([card.transcriptStatus, card.matchable, card.fingerprint, card.stem, card.options], ['not_question', false, null, '', []]);
+      const rows = await b.store.questionBank.occurrenceRows();
+      assert.deepEqual(rows.map(row => [row.matchable, row.unmatchable]), [[false, 'not_question']]);
     } finally { await b.close(); }
   });
 

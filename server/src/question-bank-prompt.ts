@@ -10,7 +10,8 @@ export const TRANSCRIBE_PROMPT = {
     '{"status":"ok","language":"<BCP 47 tag of the question text>","stem":"<all text needed to answer, without the choices>",',
     '"options":[{"label":"<choice label as printed>","text":"<choice text>"}],"has_figure":false}',
     'status is "ok" for one readable question, "multiple" when the images hold more than one independent question,',
-    'and "unreadable" when the question cannot be read reliably. For "multiple" and "unreadable", stem is "" and options is [].',
+    '"unreadable" when the question cannot be read reliably, and "not_question" when the images show no exam question,',
+    'such as a system dialog, a chat or code. For "multiple", "unreadable" and "not_question", stem is "" and options is [].',
     'stem holds every piece of text needed to answer, copied verbatim: any reading passage or other material, instructions, and the question itself.',
     'stem leaves out page titles, section headings and question numbers, such as "練習問題 Q04", "問3" or "第 5 题".',
     'options is [] for a question without choices. has_figure is true when answering needs a figure, chart, diagram, picture or table.',
@@ -23,7 +24,7 @@ export const TRANSCRIBE_PROMPT = {
 export const TRANSCRIBE_MAX_TOKENS = 4096;
 
 const KEYS = ['has_figure', 'language', 'options', 'status', 'stem'];
-const STATUS = new Set(['ok', 'multiple', 'unreadable']);
+const STATUS = new Set(['ok', 'multiple', 'unreadable', 'not_question']);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -52,5 +53,7 @@ export function parseTranscript(output: string): QuestionBankTranscript | null {
       || typeof option.label !== 'string' || typeof option.text !== 'string') return null;
     parsed.push({ label: option.label, text: option.text });
   }
-  return { status: status as QuestionBankTranscript['status'], language, stem, options: parsed, has_figure: hasFigure };
+  // Only a single readable question keeps its text: whatever else the model copied is dropped, never stored.
+  if (status !== 'ok') return { status: status as QuestionBankTranscript['status'], language, stem: '', options: [], has_figure: hasFigure };
+  return { status: 'ok', language, stem, options: parsed, has_figure: hasFigure };
 }

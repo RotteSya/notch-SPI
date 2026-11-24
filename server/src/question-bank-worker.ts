@@ -246,7 +246,9 @@ async function transcribeOne(deps: QuestionBankRoundDeps, clock: () => number): 
     catch (caught) { error = caught; }
     // Cut at the token limit: the same request would be cut again, so it is not retried.
     const truncated = error === null && usage?.finishReason === 'length';
-    const transcript = error === null && !truncated ? parseTranscript(text) : null;
+    // Stopped by the provider's content filter: retried like an invalid transcript, under its own code.
+    const filtered = error === null && usage?.finishReason === 'content_filter';
+    const transcript = error === null && !truncated && !filtered ? parseTranscript(text) : null;
     const cost = usage ? captureCost(config.modelPricingJSON, provider.name, model, usage) ?? null : null;
     await store.billing.finishBankAttempt({
       deviceId: job.deviceId, attemptId: modelAttemptId, holdIds: holdIds(modelAttemptId), started: true, actualMicros: cost,
@@ -262,7 +264,7 @@ async function transcribeOne(deps: QuestionBankRoundDeps, clock: () => number): 
     if (!transcript) {
       await bank.failTranscription({
         jobId: job.jobId,
-        errorCode: truncated ? 'output_truncated' : error === null ? 'invalid_transcript' : timeout.aborted ? 'timeout' : 'upstream_error',
+        errorCode: truncated ? 'output_truncated' : filtered ? 'content_filter' : error === null ? 'invalid_transcript' : timeout.aborted ? 'timeout' : 'upstream_error',
         now: iso(now), retryAt: iso(now + QUESTION_BANK_ROUND.retryDelayMs),
         ...(truncated ? { truncatedAtMaxTokens: TRANSCRIBE_MAX_TOKENS } : {}),
       });

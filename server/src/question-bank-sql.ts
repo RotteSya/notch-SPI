@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS question_bank_cards (
   stem TEXT NOT NULL,
   options_json TEXT NOT NULL,
   has_figure INTEGER NOT NULL CHECK(has_figure IN (0,1)),
-  transcript_status TEXT NOT NULL CHECK(transcript_status IN ('ok','multiple','unreadable')),
+  transcript_status TEXT NOT NULL CHECK(transcript_status IN ('ok','multiple','unreadable','not_question')),
   state TEXT NOT NULL CHECK(state IN ('unverified','verified_model','verified_human','disputed')),
   created_at TEXT NOT NULL
 );
