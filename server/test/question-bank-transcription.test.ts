@@ -554,6 +554,45 @@ for (const kind of kinds) {
     } finally { await b.close(); }
   });
 
+  test(`${kind}: the answer text of a solve that is not a question goes with its images after the period, and only then`, async () => {
+    const b = await bank(kind);
+    try {
+      const [dialog, question, several] = [await b.solve(), await b.solve(), await b.solve()];
+      b.replies.push(
+        JSON.stringify({ status: 'not_question', language: 'en', stem: 'Allow access for user@example.com?', options: [], has_figure: false }),
+        transcript(SPEED), transcript('', { status: 'multiple', options: [] }),
+      );
+      assert.equal((await b.round()).completed, 3);
+      for (const captureId of [dialog, question, several]) {
+        await b.store.questionBank.appendExplanation({ token: b.token, captureId, explanation: 'Because user@example.com asked.' });
+      }
+      const text = async (captureId: string) => {
+        const saved = (await b.store.questionBank.findByCapture(captureId))!;
+        return [saved.modelOutput, saved.finalAnswer, saved.explanation];
+      };
+      const before = { dialog: await text(dialog), question: await text(question), several: await text(several) };
+      for (const kept of Object.values(before)) {
+        assert.ok(kept[0] !== '' && kept[1] !== '' && kept[2] !== null, 'every solve starts with its answer text');
+      }
+      // Inside the period nothing goes, so a real question taken for a dialog can still be looked at again.
+      await b.round(Date.now() + 89 * DAY);
+      assert.deepEqual(await text(dialog), before.dialog);
+      assert.ok((await b.store.questionBank.findByCapture(dialog))!.images.every(image => image.bytes !== null));
+
+      const later = Date.now() + 91 * DAY;
+      assert.equal((await b.round(later)).imagesCleared, 6);
+      assert.deepEqual(await text(dialog), ['', '', null], 'no answer text left');
+      assert.deepEqual((await b.store.questionBank.findByCapture(dialog))!.transcript, { status: 'not_question', language: 'en', stem: '', options: [], has_figure: false });
+      assert.deepEqual(await text(question), before.question, 'a question keeps its answer');
+      assert.deepEqual(await text(several), before.several, 'so does a capture of several questions');
+      // Text written after the images went is cleared on the next pass.
+      await b.store.questionBank.appendExplanation({ token: b.token, captureId: dialog, explanation: 'Late: user@example.com' });
+      assert.equal((await text(dialog))[2], 'Late: user@example.com');
+      await b.round(later + MINUTE);
+      assert.deepEqual(await text(dialog), ['', '', null]);
+    } finally { await b.close(); }
+  });
+
   test(`${kind}: a lease left by a crashed round counts its call and closes its model attempt and holds`, async () => {
     const b = await bank(kind);
     try {

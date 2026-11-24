@@ -511,6 +511,18 @@ export class SQLQuestionBankStore implements QuestionBankStore {
          ) RETURNING attempt_id`,
         now, cutoff, cutoff, limit,
       );
+      // A solve that turned out not to be a question keeps no answer text past the same period. Checked
+      // on every pass, so text written after the images went (a late explanation) is cleared too.
+      yield* query(
+        `UPDATE question_bank_attempts SET model_output='', final_answer='', explanation=NULL
+         WHERE attempt_id IN (
+           SELECT a.attempt_id FROM question_bank_attempts a JOIN question_bank_cards c ON c.card_id = a.card_id
+           WHERE c.transcript_status='not_question' AND a.created_at<?
+             AND (a.model_output<>'' OR a.final_answer<>'' OR a.explanation IS NOT NULL)
+           ORDER BY a.created_at LIMIT ?
+         )`,
+        cutoff, limit,
+      );
       return cleared.length;
     })());
   }

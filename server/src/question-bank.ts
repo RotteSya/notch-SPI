@@ -371,7 +371,11 @@ export interface QuestionBankStore {
   findByCapture(captureId: string): Promise<StoredQuestionBankAttempt | null>;
   findCard(cardId: string): Promise<QuestionBankCard | null>;
   counts(): Promise<QuestionBankCounts>;
-  /** Clear the bytes of images created before `cutoff`. Rows, byte counts, transcripts and cards stay. Returns images cleared. */
+  /**
+   * Clear the bytes of images created before `cutoff`, and the answer text (model output, final answer,
+   * explanation) of `not_question` solves created before it. Rows, byte counts, transcripts and cards stay.
+   * Returns images cleared.
+   */
   purgeImages(cutoff: string, now: string, limit: number): Promise<number>;
   /** Expired running jobs of either kind count one call: pending again, or failed at the cap. */
   recoverStaleJobs(now: string): Promise<StaleTranscription[]>;

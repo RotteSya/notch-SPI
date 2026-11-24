@@ -404,7 +404,7 @@ export const QUESTION_BANK_SCRIPT = String.raw`
       const m = d.matchability;
       table(out, ['能否匹配', '计数范围内作答（道）', '占比'], [['可匹配', m.matchable], ['不可匹配：多题', m.multiple], ['不可匹配：看不清', m.unreadable],
         ['不可匹配：不是题目', m.not_question], ['不可匹配：依赖图表', m.figure], ['不可匹配：题干为空', m.empty_stem]].map(([label, n]) => [label, n, pct(s.denominator ? n / s.denominator : null)]));
-      node('p', '与上表同一批作答，六项合计等于计数范围内作答。不可匹配的作答留在分母里，但永远不会算作重复：多题是一张截图里有不止一道题；不是题目是系统弹窗、聊天、代码这类截图，不保留文字；依赖图表是答题要看图形、图表、图片或表格。', out).className = 'muted';
+      node('p', '与上表同一批作答，六项合计等于计数范围内作答。不可匹配的作答留在分母里，但永远不会算作重复：多题是一张截图里有不止一道题；不是题目是系统弹窗、聊天、代码这类截图，不保留转写文字，答案文字随题图在保留期后一并清除；依赖图表是答题要看图形、图表、图片或表格。', out).className = 'muted';
       node('h3', '用量最大的账户', out);
       if (d.top_accounts.length) table(out, ['账户编号', '计数范围内作答', '占比'], d.top_accounts.map(a => [a.device_id, a.solves, pct(a.share)]));
       else node('p', '没有样本。', out).className = 'empty';

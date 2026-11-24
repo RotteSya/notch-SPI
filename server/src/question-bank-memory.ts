@@ -126,6 +126,12 @@ export class MemoryQuestionBankStore implements QuestionBankStore {
     for (const image of this.images) {
       if (image.bytes && image.createdAt < cutoff && due.has(image.attemptId)) { image.bytes = null; image.deletedAt = now; cleared += 1; }
     }
+    // As in SQL: a solve that is not a question keeps no answer text past the same period.
+    const notQuestion = [...this.attempts.values()]
+      .filter(row => row.createdAt < cutoff && row.cardId !== null && this.cards.get(row.cardId)?.transcriptStatus === 'not_question'
+        && (row.modelOutput !== '' || row.finalAnswer !== '' || row.explanation !== null))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, limit);
+    for (const row of notQuestion) Object.assign(row, { modelOutput: '', finalAnswer: '', explanation: null });
     return cleared;
   }
 
