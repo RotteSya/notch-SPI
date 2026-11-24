@@ -21,7 +21,7 @@ import { QUESTION_BANK_ROUND, questionBankReviewHoldId, runQuestionBankRound } f
 import { ASTRA_MODEL, AstraProvider } from '../src/providers/astra.ts';
 import { makeReviewProvider } from '../src/providers/index.ts';
 import { settledRequestWork } from '../src/request-lifecycle.ts';
-import { corruptPixels, pngBase64 as png } from './helpers/images.ts';
+import { corruptPixels, taggedPngBase64 } from './helpers/images.ts';
 import { openEphemeralPostgres } from './helpers/ephemeral-postgres.ts';
 
 const KEY = 'k'.repeat(40);
@@ -64,13 +64,15 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
     url.searchParams.set('options', '-c search_path=' + schema);
     store = new PostgresStore(url.toString(), resolvePostgresSSL({ connectionString: url.toString() }));
   } else store = kind === 'memory' ? new MemoryStore() : new SqliteStore(':memory:');
-  const answers: string[] = [], transcripts: string[] = [];
+  // Answers come back in solve order (each solve awaits its own). Transcripts belong to a solve, found by its own
+  // first image: jobs due together are claimed in no fixed order.
+  const answers: string[] = [], transcripts = new Map<string, string>(), captureOfImage = new Map<string, string>();
   const provider: Provider = {
     name: 'mock',
     async stream(req, delta) {
       if (req.purpose === 'review') throw new Error('the answer provider never reviews');
       if (req.purpose === 'transcribe') {
-        delta(transcripts.shift() ?? transcript('Default question'));
+        delta(transcripts.get(captureOfImage.get(req.images[0]?.base64 ?? '') ?? '') ?? transcript('Default question'));
         return { inputTokens: 1000, outputTokens: 50, finishReason: 'stop' };
       }
       delta(answers.shift() ?? result('B'));
@@ -117,12 +119,13 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   });
   const account = async (platform = 'macos') => store.registerDevice({ platform, appVersion: '4.0', trialQuestions: 30 });
   const solve = async (token: string, system = 'SYS-PROMPT') => {
-    const captureId = randomUUID();
+    const captureId = randomUUID(), image = taggedPngBase64(captureId);
+    captureOfImage.set(image, captureId);
     const response = await app.inject({
       method: 'POST', url: '/v1/captures', headers: { authorization: `Bearer ${token}` },
       payload: {
         capture_id: captureId, result_protocol: 'objective_v1', operation: 'solve', system, task: 'TASK-PROMPT',
-        images_base64: [png, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'high', question_bank_v1: true,
+        images_base64: [image, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'high', question_bank_v1: true,
       },
     });
     await settledRequestWork();
@@ -139,7 +142,7 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
     await delay(3);
     answers.push(extra.answer ?? result('B'));
     const captureId = await solve(token, extra.system);
-    transcripts.push(transcript(stem));
+    transcripts.set(captureId, transcript(stem));
     await round();
     return (await store.questionBank.findByCapture(captureId))!;
   };

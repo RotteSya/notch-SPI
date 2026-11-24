@@ -21,7 +21,7 @@ import { parseTranscript, TRANSCRIBE_MAX_TOKENS, TRANSCRIBE_PROMPT } from '../sr
 import { QUESTION_BANK_ROUND, questionBankCallLimitMs, questionBankHoldId, runQuestionBankRound, type QuestionBankRoundResult } from '../src/question-bank-worker.ts';
 import { OpenAIProvider, TERRA_MODEL } from '../src/providers/openai.ts';
 import { settledRequestWork } from '../src/request-lifecycle.ts';
-import { corruptPixels, pngBase64 as png } from './helpers/images.ts';
+import { corruptPixels, taggedPngBase64 } from './helpers/images.ts';
 import { openEphemeralPostgres } from './helpers/ephemeral-postgres.ts';
 
 const ready = 'FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
@@ -49,7 +49,10 @@ interface Bank {
   schema: string | null;
   token: string;
   settings: Config;
+  /** Replies in call order, for when at most one transcription is due at a time. */
   replies: Reply[];
+  /** Replies for one solve's calls. Jobs due together are claimed in no fixed order, so several due solves need these. */
+  reply: (captureId: string, ...replies: Reply[]) => void;
   requests: CaptureRequest[];
   provider: Provider;
   transcribeCalls: () => number;
@@ -73,6 +76,8 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
     store = new PostgresStore(url.toString(), resolvePostgresSSL({ connectionString: url.toString() }));
   } else store = kind === 'memory' ? new MemoryStore() : new SqliteStore(':memory:');
   const replies: Reply[] = [], requests: CaptureRequest[] = [];
+  // Each solve sends its own first image, so a call is traced back to its solve by that image.
+  const ownReplies = new Map<string, Reply[]>(), captureOfImage = new Map<string, string>();
   let calls = 0, inFlight = 0, maxInFlight = 0;
   const provider: Provider = {
     name: 'mock',
@@ -84,7 +89,8 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
       calls += 1; inFlight += 1; maxInFlight = Math.max(maxInFlight, inFlight);
       requests.push(req);
       try {
-        const next = replies.shift() ?? transcript('Default question');
+        const own = ownReplies.get(captureOfImage.get(req.images[0]?.base64 ?? '') ?? '');
+        const next = own?.length ? own.shift()! : replies.shift() ?? transcript('Default question');
         const value = typeof next === 'function' ? await next() : next;
         if (value instanceof Error) throw value;
         if (typeof value === 'object') { delta(value.text); return { inputTokens: 1000, outputTokens: 50, finishReason: value.finishReason }; }
@@ -112,16 +118,18 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   const token = await register();
   return {
     store, schema, token, settings, replies, requests, provider,
+    reply: (captureId, ...more) => { ownReplies.set(captureId, [...(ownReplies.get(captureId) ?? []), ...more]); },
     transcribeCalls: () => calls,
     maxInFlight: () => maxInFlight,
     register,
     solve: async (who = token) => {
-      const captureId = randomUUID();
+      const captureId = randomUUID(), image = taggedPngBase64(captureId);
+      captureOfImage.set(image, captureId);
       const response = await app.inject({
         method: 'POST', url: '/v1/captures', headers: { authorization: `Bearer ${who}` },
         payload: {
           capture_id: captureId, result_protocol: 'objective_v1', operation: 'solve', system: 'SYS-PROMPT', task: 'TASK-PROMPT',
-          images_base64: [png, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'low', question_bank_v1: true,
+          images_base64: [image, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'low', question_bank_v1: true,
         },
       });
       await settledRequestWork();
@@ -369,7 +377,7 @@ for (const kind of kinds) {
     try {
       const captureId = await b.solve();
       const t0 = Date.now();
-      b.replies.push('not json', new Error('upstream exploded'), JSON.stringify({ status: 'ok' }));
+      b.reply(captureId, 'not json', new Error('upstream exploded'), JSON.stringify({ status: 'ok' }));
       const job = async () => b.store.questionBank.findByCapture(captureId);
       assert.equal((await b.round(t0)).failed, 1);
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount, (await job())?.jobErrorCode], ['pending', 1, 'invalid_transcript']);
@@ -380,12 +388,14 @@ for (const kind of kinds) {
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount], ['failed', 3]);
       assert.equal((await b.round(t0 + 60 * MINUTE)).calls, 0);
       assert.equal(b.transcribeCalls(), 3);
-      await b.solve();
+      const later = await b.solve();
       assert.equal((await b.store.getAccount(b.token))?.balanceQuestions, 28, 'answering and charging are unaffected');
       assert.equal(await b.store.questionBank.requeueFailedTranscriptions(iso(t0 + 61 * MINUTE), TRANSCRIBE_MAX_TOKENS), 1);
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount], ['pending', 0]);
-      b.replies.push(transcript(SPEED), transcript(SPEED));
+      b.reply(captureId, transcript(SPEED));
+      b.reply(later, transcript('A train travels 300 km in 3 hours. What is its average speed?'));
       assert.equal((await b.round(t0 + 62 * MINUTE)).completed, 2, 'the requeued job and the later solve');
+      assert.equal((await b.store.questionBank.findByCapture(later))?.transcript?.stem, 'A train travels 300 km in 3 hours. What is its average speed?');
       assert.deepEqual([(await job())?.jobStatus, (await job())?.jobAttemptCount, (await job())?.transcript?.stem], ['done', 1, SPEED]);
       const failed = (await b.store.billing.attempts(b.token)).filter(attempt => attempt.purpose === 'transcribe' && attempt.status === 'failed');
       assert.equal(failed.length, 3);
@@ -401,11 +411,11 @@ for (const kind of kinds) {
       };
       const cut = await b.solve();
       const t0 = Date.now();
-      b.replies.push({ text: '', finishReason: 'length' });
+      b.reply(cut, { text: '', finishReason: 'length' });
       assert.equal((await b.round(t0)).failed, 1);
       assert.deepEqual(await job(cut), ['failed', 1, 'output_truncated'], 'no retry: the same limit would cut it again');
       const broken = await b.solve();
-      b.replies.push('not json', 'not json', 'not json');
+      b.reply(broken, 'not json', 'not json', 'not json');
       for (const minute of [11, 22, 33]) assert.equal((await b.round(t0 + minute * MINUTE)).calls, 1, 'only the other job is retried');
       assert.deepEqual(await job(broken), ['failed', 3, 'invalid_transcript']);
       assert.equal(b.transcribeCalls(), 4);
@@ -428,18 +438,18 @@ for (const kind of kinds) {
       // The trial's English reading question: filtered twice, then transcribed on the third and last call.
       const recovered = await b.solve();
       const t0 = Date.now();
-      b.replies.push({ text: '', finishReason: 'content_filter' });
+      b.reply(recovered, { text: '', finishReason: 'content_filter' });
       assert.equal((await b.round(t0)).failed, 1);
       assert.deepEqual(await job(recovered), ['pending', 1, 'content_filter'], 'retried, not failed at once like a cut output');
-      b.replies.push({ text: '', finishReason: 'content_filter' });
+      b.reply(recovered, { text: '', finishReason: 'content_filter' });
       await b.round(t0 + 11 * MINUTE);
       assert.deepEqual(await job(recovered), ['pending', 2, 'content_filter']);
-      b.replies.push(transcript(SPEED));
+      b.reply(recovered, transcript(SPEED));
       await b.round(t0 + 22 * MINUTE);
       assert.deepEqual(await job(recovered), ['done', 3, null]);
       // Filtered on every call, even with a well-formed reply: never parsed, failed after the third call.
       const blocked = await b.solve();
-      b.replies.push({ text: '', finishReason: 'content_filter' }, { text: transcript(SPEED), finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' });
+      b.reply(blocked, { text: '', finishReason: 'content_filter' }, { text: transcript(SPEED), finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' });
       for (const minute of [30, 41, 52]) assert.equal((await b.round(t0 + minute * MINUTE)).calls, 1);
       assert.deepEqual(await job(blocked), ['failed', 3, 'content_filter']);
       assert.equal(b.transcribeCalls(), 6);
@@ -451,7 +461,8 @@ for (const kind of kinds) {
     const b = await bank(kind);
     try {
       const first = await b.solve(), second = await b.solve();
-      b.replies.push(transcript('', { options: [] }), transcript('  \n', { options: [] }));
+      b.reply(first, transcript('', { options: [] }));
+      b.reply(second, transcript('  \n', { options: [] }));
       assert.equal((await b.round()).completed, 2);
       const cards = await Promise.all([first, second].map(async captureId => (await b.store.questionBank.findByCapture(captureId))!.cardId!));
       assert.equal(new Set(cards).size, 2);
@@ -467,10 +478,14 @@ for (const kind of kinds) {
   test(`${kind}: the same question wrapped at another width joins the same card, and each solve keeps its own line breaks`, async () => {
     const b = await bank(kind);
     try {
-      const first = await b.solve(), second = await b.solve();
+      // One round each: the card takes the first transcript to complete, so the order of completion is fixed here.
+      const first = await b.solve();
+      b.reply(first, transcript(SPEED));
+      assert.equal((await b.round()).completed, 1);
+      const second = await b.solve();
       const narrow = 'A car travels 120 km in 2 ho\nurs. What is its average\nspeed?';
-      b.replies.push(transcript(SPEED), transcript(narrow));
-      assert.equal((await b.round()).completed, 2);
+      b.reply(second, transcript(narrow));
+      assert.equal((await b.round()).completed, 1);
       const a = (await b.store.questionBank.findByCapture(first))!, c = (await b.store.questionBank.findByCapture(second))!;
       assert.equal(a.cardId, c.cardId);
       assert.deepEqual([a.transcript?.stem, c.transcript?.stem], [SPEED, narrow]);
@@ -516,7 +531,7 @@ for (const kind of kinds) {
     try {
       const captures: string[] = [];
       for (let i = 0; i < 6; i += 1) captures.push(await b.solve());
-      for (let i = 0; i < 6; i += 1) b.replies.push(new TransientProviderError(429, 1000));
+      for (const captureId of captures) b.reply(captureId, new TransientProviderError(429, 1000));
       const round = await b.round();
       assert.equal(round.stop, 'overload');
       assert.ok(b.transcribeCalls() >= 1 && b.transcribeCalls() <= QUESTION_BANK_ROUND.concurrency, String(b.transcribeCalls()));
@@ -558,10 +573,9 @@ for (const kind of kinds) {
     const b = await bank(kind);
     try {
       const [dialog, question, several] = [await b.solve(), await b.solve(), await b.solve()];
-      b.replies.push(
-        JSON.stringify({ status: 'not_question', language: 'en', stem: 'Allow access for user@example.com?', options: [], has_figure: false }),
-        transcript(SPEED), transcript('', { status: 'multiple', options: [] }),
-      );
+      b.reply(dialog, JSON.stringify({ status: 'not_question', language: 'en', stem: 'Allow access for user@example.com?', options: [], has_figure: false }));
+      b.reply(question, transcript(SPEED));
+      b.reply(several, transcript('', { status: 'multiple', options: [] }));
       assert.equal((await b.round()).completed, 3);
       for (const captureId of [dialog, question, several]) {
         await b.store.questionBank.appendExplanation({ token: b.token, captureId, explanation: 'Because user@example.com asked.' });
@@ -641,7 +655,7 @@ for (const kind of kinds) {
       for (const [name, who, reply] of steps) {
         await delay(3); // distinct creation times; equal times are ordered by attempt id
         solved[name] = await b.solve(who);
-        b.replies.push(reply);
+        b.reply(solved[name]!, reply);
         assert.equal((await b.round()).completed, 1);
       }
       const rows = async () => {
@@ -677,8 +691,7 @@ test('memory: one round makes at most 12 calls, 4 at a time', async () => {
   const b = await bank('memory');
   try {
     for (let i = 0; i < 14; i += 1) {
-      await b.solve();
-      b.replies.push(async () => { await delay(5); return transcript(`Question ${i}`); });
+      b.reply(await b.solve(), async () => { await delay(5); return transcript(`Question ${i}`); });
     }
     const round = await b.round();
     assert.deepEqual([round.stop, round.calls, round.completed], ['call_limit', QUESTION_BANK_ROUND.maxCalls, QUESTION_BANK_ROUND.maxCalls]);

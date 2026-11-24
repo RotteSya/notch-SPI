@@ -19,7 +19,7 @@ import {
 import { runQuestionBankRound } from '../src/question-bank-worker.ts';
 import { TRANSCRIBE_MAX_TOKENS } from '../src/question-bank-prompt.ts';
 import { settledRequestWork } from '../src/request-lifecycle.ts';
-import { corruptPixels, pngBase64 as png } from './helpers/images.ts';
+import { corruptPixels, taggedPngBase64 } from './helpers/images.ts';
 import { openEphemeralPostgres } from './helpers/ephemeral-postgres.ts';
 
 const ready = 'FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
@@ -29,7 +29,8 @@ const CRON = 'c'.repeat(40);
 const PRICING = JSON.stringify([{ model: 'mock:bank-test', input_micros_per_million_tokens: 1_000_000, output_micros_per_million_tokens: 2_000_000 }]);
 const SPEED = 'A car travels 120 km in 2 hours. What is its average speed?';
 const TRAIN = 'A train travels 300 km in 3 hours. What is its average speed?';
-const IMAGE_BYTES = Buffer.from(png, 'base64').length + corruptPixels().length;
+// Each solve's first image carries its capture id, a fixed-length UUID, so every solve stores the same number of bytes.
+const IMAGE_BYTES = Buffer.from(taggedPngBase64(randomUUID()), 'base64').length + corruptPixels().length;
 const MINUTE = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -54,12 +55,14 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
     url.searchParams.set('options', '-c search_path=' + schema);
     store = new PostgresStore(url.toString(), resolvePostgresSSL({ connectionString: url.toString() }));
   } else store = kind === 'memory' ? new MemoryStore() : new SqliteStore(':memory:');
-  const replies: Reply[] = [];
+  // Replies belong to a solve, found by its own first image: jobs due together are claimed in no fixed order.
+  const ownReplies = new Map<string, Reply[]>(), captureOfImage = new Map<string, string>();
+  const reply = (captureId: string, ...more: Reply[]) => { ownReplies.set(captureId, [...(ownReplies.get(captureId) ?? []), ...more]); };
   const provider: Provider = {
     name: 'mock',
     async stream(req, delta) {
       if (req.purpose !== 'transcribe') { delta(ready); return { inputTokens: 11, outputTokens: 7, finishReason: 'stop' }; }
-      const next = replies.shift() ?? transcript('Default question');
+      const next = ownReplies.get(captureOfImage.get(req.images[0]?.base64 ?? '') ?? '')?.shift() ?? transcript('Default question');
       delta(typeof next === 'string' ? next : next.text);
       return { inputTokens: 1000, outputTokens: 50, finishReason: typeof next === 'string' ? 'stop' : next.finishReason };
     },
@@ -81,12 +84,13 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   });
   const account = async (platform = 'macos') => store.registerDevice({ platform, appVersion: '4.0', trialQuestions: 30 });
   const solve = async (token: string) => {
-    const captureId = randomUUID();
+    const captureId = randomUUID(), image = taggedPngBase64(captureId);
+    captureOfImage.set(image, captureId);
     const response = await app.inject({
       method: 'POST', url: '/v1/captures', headers: { authorization: `Bearer ${token}` },
       payload: {
         capture_id: captureId, result_protocol: 'objective_v1', operation: 'solve', system: 'SYS-PROMPT', task: 'TASK-PROMPT',
-        images_base64: [png, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'low', question_bank_v1: true,
+        images_base64: [image, corruptPixels().toString('base64')], image_media_type: 'image/png', reasoning_effort: 'low', question_bank_v1: true,
       },
     });
     await settledRequestWork();
@@ -96,10 +100,10 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   const round = (at?: number) => runQuestionBankRound({
     config: settings, store, provider, providerDegraded: null, ...(at === undefined ? {} : { now: () => at }),
   });
-  /** Solve, then transcribe that solve alone with `reply`, so creation order is the solve order. */
-  const solved = async (token: string, reply: Reply) => {
+  /** Solve, then transcribe that solve with `answer`, so creation order is the solve order. */
+  const solved = async (token: string, answer: Reply) => {
     const captureId = await solve(token);
-    replies.push(reply);
+    reply(captureId, answer);
     await round();
     return (await store.questionBank.findByCapture(captureId))!;
   };
@@ -108,7 +112,7 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
     return { status: response.statusCode, json: () => response.json() as Record<string, any>, response };
   };
   return {
-    store, app, settings, replies, account, solve, round, solved, call,
+    store, app, settings, reply, account, solve, round, solved, call,
     close: async () => {
       await settledRequestWork();
       await app.close();
@@ -290,9 +294,9 @@ for (const kind of kinds) {
       await b.solved(c.token, transcript('Sign in as user@example.com', { status: 'not_question' }));  // a system dialog
       await b.solved(qa.token, transcript('', { status: 'multiple', ...none }));  // release-qa: not counted
       // Filtered on all three calls: failed under its own code.
-      await b.solve(a.token);
+      const filtered = await b.solve(a.token);
       const t0 = Date.now();
-      b.replies.push({ text: '', finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' });
+      b.reply(filtered, { text: '', finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' }, { text: '', finishReason: 'content_filter' });
       for (const minute of [0, 11, 22]) await b.round(t0 + minute * MINUTE);
       const stats = (await b.call('GET', '/admin/question-bank/stats')).json();
       assert.deepEqual([stats.solves.denominator, stats.solves.repeated, stats.solves.matchable], [8, 1, 2]);
@@ -414,7 +418,7 @@ for (const kind of kinds) {
       const user = await b.account();
       const broken = await b.solve(user.token);
       const t0 = Date.now();
-      b.replies.push('not json', 'not json', 'not json');
+      b.reply(broken, 'not json', 'not json', 'not json');
       for (const minute of [0, 11, 22]) await b.round(t0 + minute * MINUTE);
       await b.solved(user.token, { text: '', finishReason: 'length' });
       assert.equal((await b.store.questionBank.findByCapture(broken))?.jobStatus, 'failed');
