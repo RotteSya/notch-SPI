@@ -247,6 +247,18 @@ export const config = {
 
 export type Config = typeof config;
 
+/**
+ * The site's privacy text names OFFICIAL_PROVIDER as the AI provider that reads saved questions. A
+ * question-bank reviewer from any other provider would process them undisclosed, so it is a
+ * configuration error: review can then be neither previewed, confirmed nor called. Null when no
+ * reviewer is configured, or when it is that provider.
+ */
+export function reviewProviderConfigurationError(c: Pick<Config, 'provider' | 'questionBankReviewProvider' | 'questionBankReviewModel'>): string | null {
+  if (c.questionBankReviewProvider === '' || c.questionBankReviewModel === '') return null;
+  return c.questionBankReviewProvider.toLowerCase() === c.provider ? null
+    : 'QUESTION_BANK_REVIEW_PROVIDER must equal OFFICIAL_PROVIDER, the AI provider the privacy text names';
+}
+
 export function validateTrialPolicy(c: Config): void {
   if (!Number.isSafeInteger(c.modelBudgetWarningMicros) || c.modelBudgetWarningMicros < 0
     || (c.modelBudgetWarningMicros > 0 && c.modelBudgetWarningMicros >= c.modelDailyBudgetMicros)) {

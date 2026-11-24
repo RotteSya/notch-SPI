@@ -1,4 +1,4 @@
-import type { Config } from '../config.ts';
+import { reviewProviderConfigurationError, type Config } from '../config.ts';
 import type { Provider } from './types.ts';
 import { MockProvider } from './mock.ts';
 import { AnthropicProvider } from './anthropic.ts';
@@ -58,7 +58,8 @@ export function makeObjectiveProvider(
 
 /**
  * The reviewer for admin-confirmed question-bank reviews, or null when QUESTION_BANK_REVIEW_PROVIDER
- * or QUESTION_BANK_REVIEW_MODEL is empty. Astra here never gets its Fast second call: that belongs to
+ * or QUESTION_BANK_REVIEW_MODEL is empty. A provider other than OFFICIAL_PROVIDER, the one the privacy
+ * text names, is a configuration error. Astra here never gets its Fast second call: that belongs to
  * the objective slot only, and a review call is not an answer call either.
  */
 export function makeReviewProvider(
@@ -74,7 +75,7 @@ export function makeReviewProvider(
     maxTokens: config.objectiveMaxTokens,
     deepseekReasoningEffort: config.objectiveDeepseekReasoningEffort,
     deepseekExplanationReasoningEffort: config.objectiveDeepseekExplanationReasoningEffort,
-    configurationError: provider === null ? 'QUESTION_BANK_REVIEW_PROVIDER is not a known provider' : null,
+    configurationError: provider === null ? 'QUESTION_BANK_REVIEW_PROVIDER is not a known provider' : reviewProviderConfigurationError(config),
     settingName: 'QUESTION_BANK_REVIEW_PROVIDER',
   }, warn);
 }

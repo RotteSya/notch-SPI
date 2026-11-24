@@ -6,6 +6,7 @@ import { REPORT_STYLE } from './admin-reports.ts';
 import { TRANSCRIBE_MAX_TOKENS } from './question-bank-prompt.ts';
 import { reservation, reviewRequest } from './question-bank-worker.ts';
 import { captureCost } from './capture-service.ts';
+import { reviewProviderConfigurationError } from './config.ts';
 import { budgetCeiling, type BudgetInspection } from './budget-policy.ts';
 import {
   byOccurrences, MARK_VERDICTS, questionBankCardViews, questionBankMarkSummary, questionBankStats, reviewBudgetFit,
@@ -114,6 +115,9 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
   /** Review needs a configured, healthy reviewer; preview and confirmation refuse otherwise. */
   const requireReviewer = () => {
     if (reviewer === null) throw new ApiError(409, '复核未配置：需要设置 QUESTION_BANK_REVIEW_PROVIDER 和 QUESTION_BANK_REVIEW_MODEL', 'feature_disabled');
+    if (reviewProviderConfigurationError(ctx.config) !== null) {
+      throw new ApiError(409, '复核服务方必须与 OFFICIAL_PROVIDER（官网隐私说明披露的 AI 服务方）一致，暂不可用', 'feature_disabled');
+    }
     if ((ctx.reviewProviderDegraded ?? null) !== null) throw new ApiError(409, '复核服务配置有误，暂不可用', 'feature_disabled');
     return reviewer;
   };
@@ -224,7 +228,10 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
     scope.get('/admin/question-bank/review/cards', async () => {
       const repeated = questionBankCardViews(await bank.reviewData()).filter(view => view.occurrences >= 2).sort(byOccurrences);
       return {
-        reviewer: reviewer === null ? null : { provider: reviewer.name, model: ctx.config.questionBankReviewModel, available: (ctx.reviewProviderDegraded ?? null) === null },
+        reviewer: reviewer === null ? null : {
+          provider: reviewer.name, model: ctx.config.questionBankReviewModel,
+          available: (ctx.reviewProviderDegraded ?? null) === null && reviewProviderConfigurationError(ctx.config) === null,
+        },
         total: repeated.length, items: repeated.slice(0, REVIEW_LIST).map(cardView),
       };
     });

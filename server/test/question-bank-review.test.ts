@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
 import Fastify from 'fastify';
 import pg from 'pg';
-import { config, type Config } from '../src/config.ts';
+import { config, reviewProviderConfigurationError, type Config } from '../src/config.ts';
 import { registerRoutes } from '../src/routes.ts';
 import { MemoryStore } from '../src/db-memory.ts';
 import { SqliteStore } from '../src/db-sqlite.ts';
@@ -235,7 +235,7 @@ test('Astra makes one call for purpose review even with Fast review on; the revi
   assert.equal(makeReviewProvider(config, assert.fail), null, 'no reviewer unless both settings are set');
   assert.equal(makeReviewProvider({ ...config, questionBankReviewProvider: 'openai', questionBankReviewModel: '' }, assert.fail), null);
   const built = makeReviewProvider({
-    ...config, questionBankReviewProvider: 'openai', questionBankReviewModel: ASTRA_MODEL, openaiKey: 'synthetic',
+    ...config, provider: 'openai', questionBankReviewProvider: 'openai', questionBankReviewModel: ASTRA_MODEL, openaiKey: 'synthetic',
     openaiBaseURL: 'https://vendor.invalid', objectiveAstraFastReview: true,
   }, assert.fail);
   assert.ok(built && built.degraded === null && built.provider instanceof AstraProvider);
@@ -254,6 +254,21 @@ test('a batch fits the budget one job at a time: each needs a full reservation t
   assert.deepEqual(reviewBudgetFit(100, [...cards.slice(1), { reservation: 50, expected: null }]),
     { expectedCalls: null, fitsExpected: null, worstCaseCalls: 2, fitsWorstCase: false }, 'one unknown cost leaves the expected count unknown');
   assert.deepEqual(reviewBudgetFit(0, []), { expectedCalls: 0, fitsExpected: true, worstCaseCalls: 0, fitsWorstCase: true });
+});
+
+test('the reviewer must be OFFICIAL_PROVIDER, the AI provider the privacy text names', () => {
+  const rule = (provider: Config['provider'], review: string, model = 'review-model') =>
+    reviewProviderConfigurationError({ provider, questionBankReviewProvider: review, questionBankReviewModel: model });
+  assert.equal(rule('openai', 'openai'), null);
+  assert.equal(rule('openai', 'OpenAI'), null, 'the setting is read case-insensitively, as the factory reads it');
+  assert.equal(rule('openai', '', ''), null, 'no reviewer configured');
+  assert.match(rule('openai', 'anthropic') ?? '', /OFFICIAL_PROVIDER/);
+  assert.match(rule('deepseek', 'openai') ?? '', /privacy text/);
+  const mismatched = makeReviewProvider({
+    ...config, provider: 'deepseek', questionBankReviewProvider: 'openai', questionBankReviewModel: ASTRA_MODEL, openaiKey: 'synthetic',
+  }, () => {});
+  assert.match(mismatched?.degraded ?? '', /OFFICIAL_PROVIDER/, 'a configuration error, not a working reviewer');
+  assert.ok(!(mismatched?.provider instanceof AstraProvider));
 });
 
 const kinds = ['memory', 'sqlite', ...(postgres ? ['postgres' as const] : [])] as const;
@@ -372,6 +387,30 @@ for (const kind of kinds) {
       assert.deepEqual([preview.pricing_missing, preview.provider, preview.model, preview.expected.basis, preview.expected.micros], [true, 'mock', 'review-model', 'unknown', null]);
       assert.equal(preview.worst_case_micros, 10_000, 'the call reserves ATTEMPT_BUDGET_UPPER_MICROS');
     } finally { await unpriced.close(); }
+  });
+
+  test(`${kind}: a reviewer other than OFFICIAL_PROVIDER can be neither previewed, confirmed nor called`, async () => {
+    // OFFICIAL_PROVIDER is mock here; the reviewer claims to be OpenAI.
+    const b = await bank(kind, { questionBankReviewProvider: 'openai', questionBankReviewModel: 'gpt-6-astra' });
+    try {
+      const [a, c] = [await b.account(), await b.account()];
+      const x1 = await b.solved(a.token, SPEED);
+      await b.solved(c.token, SPEED);
+      assert.equal((await b.call('GET', '/admin/question-bank/review/cards')).json().reviewer.available, false);
+      for (const url of ['/admin/question-bank/review/preview', '/admin/question-bank/review/confirm']) {
+        const reply = await b.call('POST', url, { card_ids: [x1.cardId], operation_id: randomUUID(), actor: 'tester', reason: 'repeated questions' });
+        assert.deepEqual([reply.status, reply.json().error.code], [409, 'feature_disabled'], url);
+        assert.match(reply.json().error.message, /OFFICIAL_PROVIDER/);
+      }
+      assert.deepEqual((await b.store.questionBank.reviewData()).jobs, [], 'nothing was confirmed');
+      // Even a job that exists, say from before the setting changed, is never sent to this reviewer.
+      const seeded = await b.store.questionBank.confirmReview({ operationId: randomUUID(), cardIds: [x1.cardId!], actor: 'tester', reason: 'seeded job', now: new Date().toISOString() });
+      assert.ok(seeded !== 'conflict' && !('blocked' in seeded));
+      const round = await b.round(Date.now() + 2 * 60_000);
+      assert.deepEqual([round.reviews.stop, round.reviews.calls], ['degraded', 0]);
+      assert.equal(b.reviewerCalls(), 0);
+      assert.equal((await b.store.questionBank.reviewData([x1.cardId!])).jobs[0]?.status, 'pending', 'it waits until the setting is fixed');
+    } finally { await b.close(); }
   });
 
   test(`${kind}: without a configured reviewer nothing can be confirmed or called`, async () => {

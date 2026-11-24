@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Config } from './config.ts';
+import { reviewProviderConfigurationError, type Config } from './config.ts';
 import type { Store } from './db.ts';
 import type { BankBudgetHold } from './billing.ts';
 import { captureCost } from './capture-service.ts';
@@ -109,7 +109,9 @@ async function round(deps: QuestionBankRoundDeps): Promise<QuestionBankRoundResu
   }
   const reviewer = deps.reviewProvider ?? null;
   let stop: QuestionBankRoundStop | null = deps.providerDegraded !== null ? 'degraded' : config.questionBankDailyBudgetMicros <= 0 ? 'budget' : null;
-  let reviewStop: QuestionBankRoundStop | null = reviewer === null ? 'disabled' : (deps.reviewProviderDegraded ?? null) !== null ? 'degraded'
+  // A reviewer other than the provider the privacy text names is never called, however it was wired in.
+  let reviewStop: QuestionBankRoundStop | null = reviewer === null ? 'disabled'
+    : (deps.reviewProviderDegraded ?? null) !== null || reviewProviderConfigurationError(config) !== null ? 'degraded'
     : config.questionBankReviewDailyBudgetMicros <= 0 ? 'budget' : null;
   const finish = () => ({ ...result, stop: stop ?? 'drained', reviews: { ...result.reviews, stop: reviewStop ?? 'drained' } });
   if (stop !== null && reviewStop !== null) return finish();
