@@ -64,7 +64,7 @@ const S = {
       {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
         "q": "截图会被保存吗？",
-        "a": "服务端不保存题图；为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机“最近查题”。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
+        "a": "默认开启的“帮助改进答题”会在服务端保存查题的题图、题目和答案，题图 90 天后删除；在设置 → 通用中关闭后不再保存，详见下方隐私说明。关闭时服务端不保存题图。为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机“最近查题”。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
       },
       {
         "q": "答题失败会扣题吗？",
@@ -87,7 +87,8 @@ const S = {
     "privacyTitle": "隐私与数据使用",
     "privacyBody": [
       "服务记录包含随机设备凭证、额度、请求结算、模型用量与成本及付款核对信息。正常注册无需姓名和邮箱。",
-      "官方服务将截图和必要指令交给 AI 服务方（{{AI_PROVIDER}}）处理，实际模型按服务配置选择。图片和题目不写入默认数据库或日志。为自动恢复断线，答案在数据库中加密缓存 15 分钟，到期不可读取并由定期任务清理；答案正文不进入日志。自带 Key 时由你选择的服务处理。",
+      "官方服务将截图和必要指令交给 AI 服务方（{{AI_PROVIDER}}）处理，实际模型按服务配置选择。图片和题目不写入日志；除下一段“帮助改进答题”保存的内容外，也不写入数据库。为自动恢复断线，答案在数据库中加密缓存 15 分钟，到期不可读取并由定期任务清理；答案正文不进入日志。自带 Key 时由你选择的服务处理。",
+      "“帮助改进答题”位于设置 → 通用，默认开启，可随时关闭。开启时，官方服务在查题完成后保存这次的题图、题目文字、所用指令和答案，只用于改进 NotchSPI 自身的答题（识别题目、统计重复题、核对答案），不提供给其他用户，也不交给外部服务训练；识别和核对由上述 AI 服务方处理。题图 90 天后删除，题目文字和答案保留。关闭后不再保存新的查题。如需删除已保存的内容，请通过下方邮箱联系，我们核对账户后按账户删除。",
       "支付由 Stripe 处理，我方不接收卡片信息。支持邮件及你主动提交的材料按相应用途单独处理。",
       "自愿的可靠性数据可在设置关闭。关闭即删除待发送队列并停止行为上传，必要的计费记录仍保留。详细事件保留 90 天，本机待发送队列最多 7 天。",
       "来源选择可在首次引导跳过。你选择的来源与本机注册关联，不根据题目场景或界面语言推断来源。",
@@ -110,7 +111,7 @@ const S = {
       {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
         "q": "スクリーンショットは保存されますか？",
-        "a": "サーバーに問題画像は保存しません。切断から自動復旧するため、回答を 15 分間暗号化してキャッシュします。期限後は取得できず、定期処理で削除します。一時材料は最大 15 分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去 30 日・最大 100 件 / 200 MB へ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
+        "a": "初期状態でオンの「回答の改善に協力」では、問題画像・問題文・回答をサーバーに保存し、画像は 90 日後に削除します。設定 →「一般」でオフにすると保存しません。詳しくは下記のプライバシーをご覧ください。オフのときサーバーに問題画像は保存しません。切断から自動復旧するため、回答を 15 分間暗号化してキャッシュします。期限後は取得できず、定期処理で削除します。一時材料は最大 15 分。成功した質問の画像・回答は「最近の問題」に別途保存します。読み書き時に過去 30 日・最大 100 件 / 200 MB へ整理します。画面から削除できます。書き出したファイルは自分で削除してください。"
       },
       {
         "q": "回答に失敗したら？",
@@ -133,7 +134,8 @@ const S = {
     "privacyTitle": "プライバシーとデータ利用",
     "privacyBody": [
       "サービス記録にはランダムなデバイス認証情報、残高、依頼の精算、モデル利用量・費用、決済の照合情報を含みます。通常の登録に氏名やメールは不要です。",
-      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像と問題は通常のデータベースやログに保存しません。切断からの自動復旧用に回答を 15 分間暗号化して保存し、期限後は取得できず定期処理で削除します。回答本文はログに記録しません。自分のキーでは選択したサービスを利用します。",
+      "公式サービスでは画像と必要な指示を AI プロバイダー（{{AI_PROVIDER}}）で処理します。実際のモデル構成は配信設定に従います。画像と問題はログに記録しません。次の「回答の改善に協力」で保存するものを除き、データベースにも保存しません。切断からの自動復旧用に回答を 15 分間暗号化して保存し、期限後は取得できず定期処理で削除します。回答本文はログに記録しません。自分のキーでは選択したサービスを利用します。",
+      "「回答の改善に協力」は設定 →「一般」にあり、初期状態でオンです。いつでもオフにできます。オンの場合、公式サービスは回答完了後にその問題画像・問題文・使用した指示・回答を保存し、NotchSPI 自身の回答改善（問題の読み取り、重複問題の集計、回答の確認）にのみ使います。他の利用者への提供や外部サービスの学習には使いません。読み取りと確認は上記の AI プロバイダーが処理します。画像は 90 日後に削除し、問題文と回答は保持します。オフにすると以降の回答は保存しません。保存済みの内容を削除したい場合は下記メールへご連絡ください。アカウントを確認のうえ削除します。",
       "決済は Stripe が処理し、カード情報は当方には届きません。問い合わせメールや自発的に提供された材料は、その用途に沿って別に扱います。",
       "任意の信頼性データは設定で停止できます。停止時に未送信キューを消去し、行動記録を送りません。必要な請求記録は残ります。詳細イベントは 90 日、本機の送信待ちは最大 7 日です。",
       "入口の回答は任意で、初回案内からスキップできます。選んだ回答はデバイス登録と関連付けます。問題の種類や表示言語から入口を推測しません。",
@@ -156,7 +158,7 @@ const S = {
       {"q": "How do I upgrade to 3.0?", "a": "From 2.17, download the Mac version and install it manually once. From 3.0 onward, updates can download, verify, install and restart within the app."},
       {
         "q": "Are my screenshots stored?",
-        "a": "The server does not store question images. Answers are encrypted and cached for 15 minutes to recover interrupted delivery, then become unavailable and are removed by scheduled cleanup. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
+        "a": "Help improve answers, on by default, saves question images, text and answers on the server; images are deleted after 90 days. Turn it off in Settings → General to stop saving; see Privacy below. With it off, the server does not store question images. Answers are encrypted and cached for 15 minutes to recover interrupted delivery, then become unavailable and are removed by scheduled cleanup. Temporary material lasts up to 15 minutes. Successful question images and answers are separately saved in Recent Questions on this Mac. On reading or saving records, the app prunes to the last 30 days, 100 entries / 200 MB. Delete records in Recent Questions. Exported feedback files remain until you delete them."
       },
       {
         "q": "What if an answer fails?",
@@ -179,7 +181,8 @@ const S = {
     "privacyTitle": "Privacy and data use",
     "privacyBody": [
       "Service records include a random device credential, balance, request settlement, model usage and costs, and payment reconciliation. Normal registration needs no name or email.",
-      "The official service processes screenshots and necessary instructions through the AI provider ({{AI_PROVIDER}}); actual model routing follows service configuration. Images and questions are excluded from the default database and logs. Answers are encrypted in a 15-minute delivery cache, then become unavailable and are removed by scheduled cleanup. Answer text is not logged. Your own key uses the service you select.",
+      "The official service processes screenshots and necessary instructions through the AI provider ({{AI_PROVIDER}}); actual model routing follows service configuration. Images and questions are never logged, and are not stored in the database except as described under Help improve answers below. Answers are encrypted in a 15-minute delivery cache, then become unavailable and are removed by scheduled cleanup. Answer text is not logged. Your own key uses the service you select.",
+      "Help improve answers is in Settings → General. It is on by default and can be turned off at any time. While it is on, after an answer the official service saves that question's images, question text, the instructions used and the answer, only to improve NotchSPI's own answers (reading questions, counting repeated questions, checking answers). They are not shown to other users or used to train external services. Reading and checking are processed by the AI provider named above. Images are deleted after 90 days; question text and answers are kept. Turning it off stops saving new answers. To delete saved content, email the address below; we verify the account and delete its saved content.",
       "Stripe processes payments; card details do not reach us. Support emails and material you voluntarily submit are handled separately for their stated purpose.",
       "Optional reliability sharing can be disabled in Settings. Disabling clears queued events and stops behavioral uploads; necessary billing records remain. Detailed events are kept for 90 days, with up to 7 days queued locally.",
       "The onboarding source question is optional. A selected answer is linked to this device registration. Question profile and display language do not determine your source.",

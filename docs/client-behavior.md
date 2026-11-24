@@ -29,7 +29,7 @@ Release 排除本应用窗口的软件截图；DEBUG 仅显式 QA 开关可放�
 ## 最近查题与题库
 
 只有合格成功结果进入本机历史；回顾不提交新请求、不扣题。RecentQuestionStore 在串行队列提交独立图片与元数据，并执行容量/条数/时间保留。队列持有原材料直到复制完成。
-本地题库入口、导入、检索及本地答案流程已经移除；旧 Application Support 文件保持原样，当前应用不读取或清理。
+本地题库入口、导入、检索及本地答案流程已经移除；旧 Application Support 文件保持原样，当前应用不读取或清理。服务端题库由设置里的“帮助改进答题”控制，见下一节。
 验证：RecentQuestionTests、ContinuousReadingTests、CaptureFileLifecycleTests。
 
 ## 三通道与账户
@@ -45,6 +45,7 @@ MainSettingsWindow 保留通用、快捷键、账户与订阅、人物像、服�
 账户按体验、订阅、额外用量、恢复组织。来源快照不重复相加；关闭已购题包自动使用由请求及服务端事务共同执行，不能只在界面隐藏消费。
 恢复码只有用户主动查看时显示；恢复前用候选凭证验证完整快照，成功且账户/服务未变化才替换。失败保留原账户，恢复不合并余额。
 Plus 状态区分未知、同步、未开通、待付款、到期及取消续费；回跳只触发刷新，不授予权益。取消续费采用窗口内确认，默认保留订阅。
+应用偏好里的“帮助改进答题”与“共享匿名可靠性数据”是两项独立同意。键名 `questionBank.sharingEnabled`，键不存在时为开，新安装和升级都默认开启。只有该开关开、通道为官方、讲题模式、远程配置 `question_bank_v1` 为布尔 true 四项同时成立时，求解和解释请求才带 `question_bank_v1: true`；配置缺少该字段或不是 true 视为关闭，恢复请求不带。判断在每题开始时随运行快照固定，关闭后从下一题起不再带。不改收流和显示。服务端保存范围见[官方 API](official-api.md)。验证：QuestionBankConsentTests。
 控件保留键盘、辅助功能、焦点和减少动态效果；离页/关闭取消快捷键录制。语言重建后恢复焦点及可见性，异步完成不抢走已转移焦点；切页保留滚动位置。
 验证：AccountOverviewTests、SettingsNavigationAccessibilityTests、UpgradeCompatibilityTests 及相关设置/焦点测试；离线预览使用[QA 工具](prototypes.md)。
 

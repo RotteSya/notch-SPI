@@ -238,7 +238,7 @@ extension SettingsNavigationAccessibilityTests {
         let page = try XCTUnwrap(controller.qaVisiblePage)
         let sliders = descendants(page).compactMap { $0 as? NSSlider }
         let switches = descendants(page).compactMap { $0 as? SettingsToggleButton }
-        XCTAssertEqual(sliders.count, 2); XCTAssertEqual(switches.count, 5)
+        XCTAssertEqual(sliders.count, 2); XCTAssertEqual(switches.count, 6)
         let delay = try XCTUnwrap(sliders.last), stay = try XCTUnwrap(switches.first { $0.identifier?.rawValue == "settings.stayExpanded" })
         XCTAssertTrue(delay.isEnabled)
         stay.performClick(nil); XCTAssertFalse(delay.isEnabled)

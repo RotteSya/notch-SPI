@@ -383,6 +383,22 @@ for (const kind of kinds) {
 }
 
 /** Resolves with the value, or with null when it is still pending after `ms`. */
+test('client-config and registration tell clients to send question_bank_v1 exactly while QUESTION_BANK_ENABLED is on', async () => {
+  for (const enabled of [true, false]) {
+    const f = await fixture('memory', enabled);
+    try {
+      const { port } = await f.listen();
+      const base = `http://127.0.0.1:${port}`;
+      const config = await (await fetch(`${base}/v1/client-config`, { headers: { authorization: `Bearer ${f.token}` } })).json() as Record<string, unknown>;
+      assert.equal(config.question_bank_v1, enabled, 'a boolean equal to the server switch');
+      const registration = await (await fetch(`${base}/v1/devices`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ platform: 'macos', app_version: '4.0' }),
+      })).json() as { client_config: Record<string, unknown> };
+      assert.equal(registration.client_config.question_bank_v1, enabled);
+    } finally { await f.close(); }
+  }
+});
+
 async function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   let timer: NodeJS.Timeout | undefined;
   try {

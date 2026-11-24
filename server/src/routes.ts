@@ -371,6 +371,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       schema_version: 1,
       revision: config.clientConfigRevision,
       tutor_result_v1: true,
+      // Clients send question_bank_v1 only while this is true; a client that finds no field treats it as off.
+      question_bank_v1: config.questionBankEnabled,
       objective_result_v1: treatment
         ? { variant: 'objective_v1', protocol: 'objective_v1', prompt_variant: 'objective_v1' }
         : { variant: 'control', protocol: null, prompt_variant: 'legacy' },
