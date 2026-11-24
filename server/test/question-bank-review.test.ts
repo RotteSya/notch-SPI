@@ -135,6 +135,8 @@ async function bank(kind: 'memory' | 'sqlite' | 'postgres', overrides: Partial<C
   });
   /** Solve with the answer path giving `answer`, then transcribe that solve alone as `stem`. */
   const solved = async (token: string, stem: string, extra: { answer?: string; system?: string } = {}) => {
+    // A later solve must have a later creation time: "the latest solve" breaks a tie by attempt id.
+    await delay(3);
     answers.push(extra.answer ?? result('B'));
     const captureId = await solve(token, extra.system);
     transcripts.push(transcript(stem));
