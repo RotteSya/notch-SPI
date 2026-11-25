@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { OfficialClient, serviceURL } from "../core/official.mjs";
 import { compose } from "../core/answer.mjs";
+import { contextTask, taskText } from "../core/product.mjs";
 for (const k of Object.keys(process.env))
   if (
     ![
@@ -143,6 +144,8 @@ test("Actual server solve, multi-image ordering, full receipt, one debit, duplic
   assert.equal(run.body.tutor_result_v1, true);
   assert.equal(run.structuredTutorResult, true);
   assert.equal(run.body.images_base64.at(-1), run.body.image_base64);
+  // Multi-image runs ask for every problem in the images, not only the last image's.
+  assert.equal(run.body.task, taskText(contextTask, 2));
   const before = providerCalls;
   let shown = "";
   let headersReceived = false;

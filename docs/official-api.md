@@ -303,7 +303,9 @@ Objective V1 为可选扩展；旧客户端字段缺省时行为完全不变：
 ```
 
 模型最后一行固定为 `NSPI_RESULT_V1: <strict JSON>`。`ready/review` 前一行必须为与
-`answer` 规范化后一致的 `FINAL:`；`retake` 只输出机器行。合法 `ready/review` 或
+`answer` 规范化后一致的 `FINAL:`；`retake` 只输出机器行。`FINAL:` 必须是唯一且最后的结论行：
+出现内容不同的多条 `FINAL:`，或 `FINAL:` 行之后还有正文，按 `finalMismatch` 降为
+`legacy_fallback`（需核对），可见文本不删减，扣题不变。合法 `ready/review` 或
 `legacy_fallback` 扣 1 题；`retake`、无可用结果、供应商失败且没有已交付结果均释放预扣，
 并在正常流末发送 `questions_charged: 0`。协议解析在 route 层统一完成，Provider 接口不变。
 服务端以 `result_protocol` 选择 Provider slot：缺省走 `OFFICIAL_PROVIDER/OFFICIAL_MODEL`，

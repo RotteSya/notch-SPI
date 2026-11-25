@@ -108,6 +108,23 @@ export function extractFinalAnswer(text        )                {
   return null;
 }
 
+/**
+ * The FINAL contract is one conclusion on the reply's last visible line. FINAL lines that
+ * disagree (one per question, or a correction), or text after the FINAL line (answers continued
+ * on the next lines), mean the answer card would show one item of a longer answer. Such a reply
+ * is never a clean ready result.
+ */
+function finalLineIsAmbiguous(visibleText        )          {
+  const lines = visibleText.split('\n');
+  const finals = lines.flatMap((line, index) => {
+    const match = /^[ \t]{0,3}(?:#{1,6}[ \t]*)?(?:\*{1,2}|_{1,2})?[ \t]*FINAL[ \t]*[:：][ \t]*(.*)$/iu.exec(line);
+    return match ? [{ index, payload: match[1]  }] : [];
+  });
+  if (finals.length === 0) return false;
+  if (lines.slice(finals.at(-1) .index + 1).some((line) => line.trim() !== '')) return true;
+  return new Set(finals.map((final) => normalizeObjectiveAnswer(final.payload))).size > 1;
+}
+
 function validateObject(raw         , violations                              )                           {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     pushUnique(violations, 'invalidJSON');
@@ -177,7 +194,10 @@ export function composeObjectiveResult(text        , protocolEnabled = true)    
       }
     }
     if (result && result.state !== 'retake') {
-      if (!finalAnswer || !objectiveAnswersAgree(finalAnswer, result.answer ?? '', result.kind)) {
+      // A FINAL that is not the single, last conclusion cannot vouch for the machine answer:
+      // the result falls back to the visible FINAL and is shown as needing review.
+      if (!finalAnswer || !objectiveAnswersAgree(finalAnswer, result.answer ?? '', result.kind)
+          || finalLineIsAmbiguous(visibleText)) {
         pushUnique(violations, 'finalMismatch');
         result = null;
       }

@@ -6,8 +6,9 @@
 
 热键所有者是 Settings.swift：讲题、多图、人格、自动模式和显隐分别保留独立配置，多图持久化键名仍为 context。系统截图键不被占用。
 单图接收成功即提交，不等待缩略图动画。多图收集 2–4 张，末次有效变更后按共享 submitDelay 提交；单张继续等待，预览暂停，关闭重新计时，删除有撤销窗口。取消、目标/账户/模式变化使过期回调失效。
+多图任务说明来自 shared/prompts.json 的 contextTask，三通道共用：只承载材料的图是所属题目的上下文，多张图共同呈现一道题只答一次；各图含多道独立题时按截图顺序逐题作答并标题号，全部结果写在同一条 FINAL 行；个别题无法辨认时保留其余答案并标出该题需重拍，整体按需核对呈现。服务端 screen_query 合约的提示词由服务端持有，仍是单目标。
 题组过期保留已完成正文及解释，清理截图、补取和解释资格；旧回调不能覆盖下一题。最近查题拥有独立图片副本，不能提前删除在途所有者的材料。
-验证：ScreenshotRoundTests、ScreenshotIntakeTests、CaptureFlowStabilityTests、CaptureFileLifecycleTests。
+验证：ScreenshotRoundTests、ScreenshotIntakeTests、CaptureFlowStabilityTests、CaptureFileLifecycleTests、MultiQuestionAnswerTests。
 
 ## 引导
 
@@ -19,7 +20,7 @@ NotchController 和 NotchOnboardingProgress 管理欢迎、单图/多图练习�
 
 ## 答案、公式与 Ghost
 
-流式答案经共享协议校验及可见文本过滤，机器标记不进入正文、剪贴板和辅助功能。人物像、review、retake、忙碌及空答案的复制资格由 shared/ui/reading.mjs 定义。
+流式答案经共享协议校验及可见文本过滤，机器标记不进入正文、剪贴板和辅助功能。结论卡只显示一条 FINAL：回答里有内容不同的多条 FINAL，或 FINAL 行之后还有正文时，结果按需核对呈现，其余内容保留在推理或卡片下方，不当作完整答案。人物像、review、retake、忙碌及空答案的复制资格由 shared/ui/reading.mjs 定义。
 流式期间屏幕上的文字只增不改：尚未闭合的加粗、行内代码、斜体与删除线按已闭合的样式显示，末尾孤立的标记符和未写完的公式暂不显示，公式写完后整体出现；完成后的答案不经过这一步，原样排版。结论卡插入到推理上方、或结论逐字增长时，卡片前后已显示的文字都不重播出现动画；从顶部阅读时，推理文字随面板下缘一起下移，结论卡在其上方空出的位置显现。
 公式使用 SwiftMath，字体 bundle 必须随包交付。共享 Ghost 仿真经 JavaScriptCore 驱动，原生绘制由 BotAvatarsKit 提供。长文换行、选择、滚动、悬停展开、主动收起及硬件刘海避让保留原生适配。
 Release 排除本应用窗口的软件截图；DEBUG 仅显式 QA 开关可放开。

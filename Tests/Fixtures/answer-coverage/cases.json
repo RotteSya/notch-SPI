@@ -1,0 +1,100 @@
+[
+  {
+    "id": "single-question",
+    "images": 1,
+    "protocol": true,
+    "raw": "仕事算：1/6 + 1/12 = 1/4 → 4日\nFINAL: B\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"ready\",\"answer\":\"B\",\"reason\":\"none\"}",
+    "path": "v1",
+    "state": "ready",
+    "final": "B",
+    "items": [
+      "B"
+    ]
+  },
+  {
+    "id": "subparts-one-question",
+    "images": 1,
+    "protocol": true,
+    "raw": "(1) 2x = 6\n(2) (y + 2)(y − 5) = 0\n(3) 3 × 4\nFINAL: (1) x = 3; (2) y = −2 or 5; (3) 12 cm²\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"short_fill\",\"state\":\"ready\",\"answer\":\"(1) x = 3; (2) y = −2 or 5; (3) 12 cm²\",\"reason\":\"none\"}",
+    "path": "v1",
+    "state": "ready",
+    "final": "(1) x = 3; (2) y = −2 or 5; (3) 12 cm²",
+    "items": [
+      "(1) x = 3",
+      "(2) y = −2 or 5",
+      "(3) 12 cm²"
+    ]
+  },
+  {
+    "id": "independent-questions-one-image",
+    "images": 1,
+    "protocol": true,
+    "raw": "Q1 → C\nQ2 → B\nQ3 → A\nQ4 → C\nFINAL: Q1: C; Q2: B; Q3: A; Q4: C\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"ready\",\"answer\":\"Q1: C; Q2: B; Q3: A; Q4: C\",\"reason\":\"none\"}",
+    "path": "v1",
+    "state": "ready",
+    "final": "Q1: C; Q2: B; Q3: A; Q4: C",
+    "items": [
+      "Q1: C",
+      "Q2: B",
+      "Q3: A",
+      "Q4: C"
+    ]
+  },
+  {
+    "id": "independent-questions-across-images",
+    "images": 4,
+    "protocol": true,
+    "raw": "Image 1: Q2, Q3\nImage 3: Q6, Q7\nImage 4: Q8, Q9\nFINAL: Q2: C. 敏速; Q3: A. 破壊; Q6: C（4字）；Q7: A（−2）; Q8: D（2）; Q9: B（−）\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"ready\",\"answer\":\"Q2: C. 敏速; Q3: A. 破壊; Q6: C（4字）；Q7: A（−2）; Q8: D（2）; Q9: B（−）\",\"reason\":\"none\"}",
+    "path": "v1",
+    "state": "ready",
+    "final": "Q2: C. 敏速; Q3: A. 破壊; Q6: C（4字）；Q7: A（−2）; Q8: D（2）; Q9: B（−）",
+    "items": [
+      "Q2: C. 敏速",
+      "Q3: A. 破壊",
+      "Q6: C（4字）",
+      "Q7: A（−2）",
+      "Q8: D（2）",
+      "Q9: B（−）"
+    ]
+  },
+  {
+    "id": "one-question-across-images",
+    "images": 3,
+    "protocol": true,
+    "raw": "本文は画像1–2、設問は画像3。脱文は【b】の直後。\nFINAL: B\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"single_choice\",\"state\":\"ready\",\"answer\":\"B\",\"reason\":\"none\"}",
+    "path": "v1",
+    "state": "ready",
+    "final": "B",
+    "items": [
+      "B"
+    ]
+  },
+  {
+    "id": "one-unreadable-among-independent",
+    "images": 3,
+    "protocol": true,
+    "raw": "Q2 is cut off at the bottom edge of image 2.\nFINAL: Q1: A; Q2: needs retake; Q3: B\nNSPI_RESULT_V1: {\"v\":1,\"kind\":\"other\",\"state\":\"review\",\"answer\":\"Q1: A; Q2: needs retake; Q3: B\",\"reason\":\"missing_context\"}",
+    "path": "v1",
+    "state": "review",
+    "final": "Q1: A; Q2: needs retake; Q3: B",
+    "items": [
+      "Q1: A",
+      "Q2: needs retake",
+      "Q3: B"
+    ]
+  },
+  {
+    "id": "independent-questions-legacy-final",
+    "images": 3,
+    "protocol": false,
+    "raw": "Q1 → A\nQ2 → C\nQ3 → B\nFINAL: Q1: A; Q2: C; Q3: B",
+    "path": "legacy",
+    "state": null,
+    "final": "Q1: A; Q2: C; Q3: B",
+    "items": [
+      "Q1: A",
+      "Q2: C",
+      "Q3: B"
+    ]
+  }
+]
