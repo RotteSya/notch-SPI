@@ -34,6 +34,14 @@ final class Settings {
         set { d.set(newValue, forKey: "allowPurchasedCredits") }
     }
 
+    /// 帮助改进答题: a consent of its own, apart from reliability sharing. On until the user turns
+    /// it off, so new installs and upgrades both start on.
+    static let questionBankSharingKey = "questionBank.sharingEnabled"
+    var questionBankSharingEnabled: Bool {
+        get { d.object(forKey: Self.questionBankSharingKey) as? Bool ?? true }
+        set { d.set(newValue, forKey: Self.questionBankSharingKey) }
+    }
+
     var cli: String {
         get { d.string(forKey: "cli") ?? "codex" }
         set { d.set(newValue, forKey: "cli") }

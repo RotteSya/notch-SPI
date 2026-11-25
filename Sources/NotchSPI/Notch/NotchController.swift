@@ -166,6 +166,8 @@ final class NotchController: NSObject {
         let trigger: String
         let resultProtocol: String?
         let tutorResultV1: Bool
+        /// Fixed when the question starts: switching 帮助改进答题 off applies from the next question.
+        let questionBankV1: Bool
         let configRevision: String
         let experimentVariant: String
         let telemetryEnabled: Bool
@@ -1401,7 +1403,7 @@ final class NotchController: NSObject {
                             captureID: UUID(), screenQuery: run.screenQuery,
                             auxiliary: .init(parentID: capture.captureID, operation: "explain", finalAnswer: answer,
                                              answerCaptureID: currentAnswerCaptureID),
-                            reasoningEffort: run.reasoningEffort,
+                            reasoningEffort: run.reasoningEffort, questionBankV1: run.questionBankV1,
                             environment: .connected(to: .live, expectedAccount: run.binding.officialAccount), onDelta: onDelta, onDone: onDone)
         case .customKey(let key):
             model.statusText = L10n.t("解释将使用所选 API 服务及其计费。", "選択した API の料金が適用されます。", "Explanation uses your selected API service and its billing.")
@@ -2347,6 +2349,7 @@ final class NotchController: NSObject {
         let provider = settings.activeProvider
         let binding = makeRequestBinding(mode: mode)
         let remote = ClientConfigService.shared.current
+        let channel = currentChannel()
         let resultProtocol = mode == "tutor"
             && remote.objectiveResultV1.protocol == "objective_v1" ? "objective_v1" : nil
         let profile = UserDefaults.standard.string(forKey: "screenQuery.profileID") ?? "general"
@@ -2360,6 +2363,8 @@ final class NotchController: NSObject {
             trigger: trigger ?? (mode == "personality" ? "personality_hotkey" : "capture_hotkey"),
             resultProtocol: resultProtocol,
             tutorResultV1: mode == "tutor" && remote.tutorResultV1 == true,
+            questionBankV1: remote.sendsQuestionBank(mode: mode, official: channel == .official,
+                                                     localEnabled: settings.questionBankSharingEnabled),
             configRevision: remote.revision,
             experimentVariant: remote.objectiveResultV1.variant,
             telemetryEnabled: ProductTelemetry.shared.sharingEnabled && remote.telemetry.enabled,
@@ -2371,7 +2376,7 @@ final class NotchController: NSObject {
             personaName: settings.personaName,
             personaText: settings.personaText,
             captureTarget: settings.captureTarget,
-            channel: currentChannel(),
+            channel: channel,
             cliID: settings.cli,
             provider: provider,
             apiEndpoint: settings.endpoint(for: provider),
@@ -3207,6 +3212,7 @@ final class NotchController: NSObject {
                     imagePaths: imagePaths, prompt: prompt,
                     resultProtocol: snapshot.resultProtocol, captureID: snapshot.captureID, screenQuery: snapshot.screenQuery,
                     reasoningEffort: snapshot.reasoningEffort, tutorResultV1: snapshot.tutorResultV1,
+                    questionBankV1: snapshot.questionBankV1,
                     environment: .connected(to: .live, expectedAccount: snapshot.binding.officialAccount),
                     recoveryMode: snapshot.mode, onSubmitted: { [weak self] in
                         guard let self, self.accepts(snapshot, generation: generation) else { return }
