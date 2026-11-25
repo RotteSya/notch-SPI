@@ -63,9 +63,12 @@ enum Prompts {
 
     // MARK: - 上下文追问 (two-image runs)
 
-    /// Task line for a context run: the first image is the remembered ⌘⇧1 shot, the last is the
-    /// fresh capture. Swapped in for the plain tutor task only — the system prompt (depth
-    /// contract, FINAL line) is unchanged, so a context answer renders exactly like a tutor one.
+    /// Task line for a multi-image run (2–4 images in capture order). Swapped in for the plain
+    /// tutor task only — the system prompt (depth contract, FINAL line) is unchanged, so a
+    /// multi-image answer renders exactly like a tutor one. It must never name one image as the
+    /// only target: the images may jointly show one problem (answered once) or carry several
+    /// independent problems, and telling the model to answer "the last image" silently dropped
+    /// every earlier problem. All results go, labelled, into the single FINAL line.
     static let contextTask = SharedProduct.prompt("contextTask")
 
     /// The user-turn text every transport sends alongside the image block(s). Kept here so the
