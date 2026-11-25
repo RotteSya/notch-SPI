@@ -241,7 +241,10 @@ export class PostgresStore implements Store {
 
   // connectionTimeoutMillis is overridable so tests that queue hundreds of transactions
   // behind the five-connection pool measure admission, not runner speed.
-  constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }, connectionTimeoutMillis = 3000) {
+  // The default must outlast a Neon scale-to-zero wake (observed up to 2.6 s, plus about
+  // 0.8 s of proxy overhead; 3 s failed wakes of 2.3 s) yet leave the request time to answer
+  // before the Mac client's 8 s inactivity deadline (OfficialCaptureDeadline.inactivity).
+  constructor(connectionString: string, ssl: PgSSLConfig = { rejectUnauthorized: true }, connectionTimeoutMillis = 5000) {
     this.healthConnection = { connectionString, ssl };
     this.pool = new pg.Pool({
       connectionString,
