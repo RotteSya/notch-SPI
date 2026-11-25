@@ -11,6 +11,8 @@ import type {FinanceRevision} from './payment-finance.ts';
 import {reportFinance} from './reporting-finance.ts';
 
 export const REPORT_DEFINITION='cohort-economics-v4';
+/** Model attempts made for the question bank, never for a user's answer. */
+const QUESTION_BANK_PURPOSES=new Set(['transcribe','review']);
 export const DAY=86_400_000;
 export type ReportChannel='official'|'custom_key'|'cli'|'mixed';
 export interface ReportQuery {
@@ -300,8 +302,10 @@ export function aggregateEconomics(facts:ReportingFacts,q:ReportQuery){
     const paid=nets.reduce((s,n)=>s+n.paid,0n),refunded=nets.reduce((s,n)=>s+n.refunds,0n),disputed=nets.reduce((s,n)=>s+n.disputes,0n);
     const pendingReceipts=unresolvedReceipts.filter(r=>r.currency===null||r.currency===currency);
     const net=nets.some(n=>n.integrity)?null:paid-refunded-disputed;
-    const localAttempts=attempts.filter(a=>a.currency===currency),unknown=localAttempts.filter(a=>a.costMicros===null);
-    const known=localAttempts.reduce((s,a)=>s+(a.costMicros===null?0n:BigInt(a.costMicros)),0n);
+    // Inference cost is answer cost. Question-bank calls are listed in by_purpose only.
+    const localAttempts=attempts.filter(a=>a.currency===currency),costAttempts=localAttempts.filter(a=>!QUESTION_BANK_PURPOSES.has(a.purpose));
+    const unknown=costAttempts.filter(a=>a.costMicros===null);
+    const known=costAttempts.reduce((s,a)=>s+(a.costMicros===null?0n:BigInt(a.costMicros)),0n);
     const unknownUpper=unknown.some(a=>a.upperMicros===null)?null:unknown.reduce((s,a)=>s+BigInt(a.upperMicros!),0n);
     const upper=unknownUpper===null||incompleteLegacyHistory?null:known+unknownUpper;
     const total=unknown.length||incompleteLegacyHistory?null:known;
@@ -341,12 +345,12 @@ export function aggregateEconomics(facts:ReportingFacts,q:ReportQuery){
     return {currency:currency==='unknown'?null:currency,cash_minor:{confirmed:paid.toString(),succeeded_refunds:nets.some(n=>n.integrity)?null:refunded.toString(),
       succeeded_refunds_known_subtotal:refunded.toString(),confirmed_dispute_losses:disputed.toString(),net:net?.toString()??null,
       payment_fees_known:feesKnown.toString(),payment_fees_total:feeIncomplete?null:feesKnown.toString(),orders_missing_fee_data:feeUnknown,foreign_orders_with_incomplete_fees:foreignIncomplete},
-      inference_micros:{attempts:localAttempts.length,known_subtotal:known.toString(),total:total?.toString()??null,unknown_count:unknown.length,
-        recorded_attempt_unknown_fraction:localAttempts.length?unknown.length/localAttempts.length:null,conservative_upper:upper?.toString()??null,
+      inference_micros:{attempts:costAttempts.length,known_subtotal:known.toString(),total:total?.toString()??null,unknown_count:unknown.length,
+        recorded_attempt_unknown_fraction:costAttempts.length?unknown.length/costAttempts.length:null,conservative_upper:upper?.toString()??null,
         historical_attempt_coverage:incompleteLegacyHistory?'incomplete_pre_ledger_history':'recorded_attempts',
         unknown_upper_basis:'configured_attempt_budget_reservation; not a provider settlement',
         by_purpose:Object.fromEntries([...new Set(localAttempts.map(a=>a.purpose))].sort().map(p=>[p,localAttempts.filter(a=>a.purpose===p).length])),
-        pricing_versions:[...new Set(localAttempts.map(a=>a.pricingVersion))].sort(),cost_per_client_usable_solve:ratio(total,BigInt(delivery.length))},
+        pricing_versions:[...new Set(costAttempts.map(a=>a.pricingVersion))].sort(),cost_per_client_usable_solve:ratio(total,BigInt(delivery.length))},
       paid_liability_scenarios:scenarios,
       allocated_service_expenses_micros:service?.toString()??null,acquisition_expenses_micros:acquisition?.toString()??null,
       contribution_before_paid_liability_micros:ratio(beforeLiability,BigInt(devices.length)),

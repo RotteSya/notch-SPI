@@ -208,6 +208,7 @@ export interface Store {
   readonly finance: import('./payment-finance.ts').PaymentFinance;
   readonly reporting: import('./reporting.ts').ReportingStore;
   readonly observations: import('./observation.ts').ObservationStore;
+  readonly questionBank: import('./question-bank.ts').QuestionBankStore;
   readonly payments: import('./payment-ledger.ts').PaymentLedger;
   readonly plus: import('./plus.ts').PlusStore;
   readonly billing: BillingStore;

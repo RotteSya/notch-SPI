@@ -4,7 +4,8 @@ import {withCompensation,type PlusCompensation} from './plus-compensation.ts';
 import { BUDGET_POLICY, budgetCeiling, budgetOutcome, emptyControl, validCost, validateReconciliation, type BudgetAccounting, type BudgetControl, type BudgetInspection } from './budget-policy.ts';
 import {PLUS,compensationPaidPeriod,plusEntitlement,type PlusRecord} from './plus.ts';
 import { validateUsageEvidence, type AttemptUsageEvidence, type CaptureAdmission, type CaptureAdmissionInput, BudgetAdmissionError, assertAttemptBinding, combineAccountSnapshot, duplicateCapture, isRecoveredAnswerFor, newCapture, validQuestions, type AccountSnapshot, type Attempt, type NewAttempt, type BeginCapture, type BeginResult,
-  type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot } from './billing.ts';
+  type BillingStore, type CaptureRecord, type CaptureSettlement, type FinishCapture, type LotKind, type QuotaSnapshot,
+  type BankAttemptStart, type BankAttemptFinish } from './billing.ts';
 import type { StoredUsageMetric } from './db.ts';
 import { applyLotPolicy, type RefundLot, type RefundPolicy } from './payment-ledger.ts';
 import { randomUUID } from 'node:crypto';
@@ -410,10 +411,41 @@ export class MemoryBilling implements BillingStore {
     this.finishAttemptFor(d, attemptId, input);
     this.settleBudgetFor(d, attemptId, actualMicros, anomaly);
   }
+  async beginBankAttempt(input:BankAttemptStart):Promise<'started'|'busy'|'budget'|'missing'> {
+    // No await: the lease, every hold and the attempt are decided and written in one JS turn,
+    // like the SQL transaction that rolls back when any hold does not fit.
+    const d=this.devices.get(input.deviceId);if(!d)return 'missing';
+    const state=this.state(d),capture=state.captures.get(input.attempt.captureId)?.record;
+    if(!capture||capture.requestId!==input.requestId||capture.settlementStatus==='held')return 'missing';
+    if(!Number.isSafeInteger(input.capacityTokens)||input.capacityTokens<=0)return 'busy';
+    const now=input.now,owner='question-bank:'+d.id,id=input.attempt.attemptId;
+    for(const [k,l] of this.capacity)if(l.expires<=now&&l.started<=now-60000)this.capacity.delete(k);
+    if(this.capacity.has(id)||!capacityAvailable([...this.capacity.values()],input.capacityTokens,now,input.capacityShare))return 'busy';
+    const holds=input.holds.filter(h=>h.limitMicros>0&&input.reservedMicros>0);
+    const offset=input.utcOffsetMinutes*60_000,start=Math.floor((now+offset)/86_400_000)*86_400_000-offset;
+    if(holds.some(h=>{
+      const budget=this.budgets.get(`${h.scope}:${start}:${input.currency}`);
+      return this.budgetHolds.has(h.holdId)||(budget?.spent??0)+(budget?.held??0)+input.reservedMicros>budgetCeiling(budget?.limit??h.limitMicros,false,h.share);
+    }))return 'budget';
+    this.capacity.set(id,{id,owner,tokens:input.capacityTokens,started:now,expires:now+CAPACITY.leaseMs,active:true});
+    for(const h of holds)this.reserveFor(d,h.holdId,h.scope,input.currency,input.reservedMicros,h.limitMicros,86_400_000,now,input.utcOffsetMinutes,false,h.channel,h.share);
+    state.attempts.set(id,{...input.attempt,status:'running',inputTokens:null,outputTokens:null,costMicros:null,startedAt:new Date(now).toISOString(),finishedAt:null});
+    return 'started';
+  }
+  async finishBankAttempt(input:BankAttemptFinish):Promise<void> {
+    const d=this.devices.get(input.deviceId);if(!d)return;
+    this.finishAttemptFor(d,input.attemptId,input.result);
+    for(const holdId of input.holdIds){if(input.started)this.settleBudgetFor(d,holdId,input.actualMicros);else this.releaseFor(d,holdId);}
+    const lease=this.capacity.get(input.attemptId);
+    if(lease?.owner==='question-bank:'+d.id){if(input.started)lease.active=false;else this.capacity.delete(input.attemptId);}
+  }
   async reserveBudget(token:string,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs=86_400_000,now=Date.now(),utcOffsetMinutes=0,guarded=false,channel='default',share=1):Promise<boolean> {
     const d = this.lookup(token); if (!d) return false;
     this.devices.set(d.id,d);
     if (limitMicros<=0 || reservedUpperMicros<=0) return true;
+    return this.reserveFor(d,attemptId,scope,currency,reservedUpperMicros,limitMicros,windowMs,now,utcOffsetMinutes,guarded,channel,share);
+  }
+  private reserveFor(d:MemoryQuotaDevice,attemptId:string,scope:string,currency:string,reservedUpperMicros:number,limitMicros:number,windowMs:number,now:number,utcOffsetMinutes:number,guarded:boolean,channel:string,share:number):boolean {
     const offset=utcOffsetMinutes*60_000,start=Math.floor((now+offset)/windowMs)*windowMs-offset;
     const key=`${scope}:${start}:${currency}`,existing=this.budgetHolds.get(attemptId);
     if (existing) return existing.deviceId===d.id && (existing.state==='held'||existing.state==='settled');
@@ -432,7 +464,10 @@ export class MemoryBilling implements BillingStore {
     budget.held+=reservedUpperMicros; this.budgets.set(key,budget); this.budgetHolds.set(attemptId,{deviceId:d.id,key,group:guardKey,reserved:reservedUpperMicros,createdAt:now,state:'held'}); return true;
   }
   async releaseBudget(token:string,attemptId:string):Promise<void> {
-    const d=this.lookup(token); if (!d) return; const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
+    const d=this.lookup(token); if (!d) return; this.releaseFor(d,attemptId);
+  }
+  private releaseFor(d:MemoryQuotaDevice,attemptId:string):void {
+    const hold=this.budgetHolds.get(attemptId); if (!hold||hold.deviceId!==d.id||hold.state!=='held') return;
     const budget=this.budgets.get(hold.key); if (budget) budget.held=Math.max(0,budget.held-hold.reserved); hold.state='released';
     const a=this.accounting.get(attemptId);if(a){a.state='released';a.actual=0;a.booked=0;a.updatedAt=Date.now();
       const c=this.controls.get(a.channel);if(c?.probe===attemptId){c.probe=null;c.blockedUntil=Date.now()+BUDGET_POLICY.cooldownMs;}}

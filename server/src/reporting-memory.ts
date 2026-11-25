@@ -21,6 +21,8 @@ export class MemoryReportingStore implements ReportingStore {
     facts.expenses=[...this.expenses.values()].filter(e=>e.recordedAt<=q.asOf&&e.cohortFrom===q.cohortFrom&&e.cohortTo===q.cohortTo).map(e=>({...e}));
     return structuredClone(facts);
   }
+  /** The device's internal flag now, as the SQL stores read devices.is_internal. */
+  isInternal(deviceId:number):boolean{return this.internal.get(deviceId)??false;}
   async setInternal(deviceId:number,internal:boolean,reference:string):Promise<boolean>{
     if(!this.device(deviceId))return false;
     const previous=this.references.get(reference);if(previous)return previous.deviceId===deviceId&&previous.internal===internal;

@@ -85,6 +85,9 @@ npm --prefix desktop run check
 - `INV-RESULT-001/002`：机器协议不进入正文/剪贴板/辅助功能；ready/review 有答案，retake/无结果不扣题。
 - `INV-TELEM-001/002`：事件只含固定键/枚举；关闭匿名数据即删队列。覆盖 telemetry/observation 测试。
 - `INV-PROVIDER-001`：无 result_protocol 走 control，objective_v1 才走 treatment。覆盖 provider-routing/objective-routes。
+- `INV-QBANK-001`：无同意标记或服务端开关关闭时不落题目内容。覆盖 question-bank、Swift QuestionBankConsent 测试。
+- `INV-QBANK-002`：转写与复核不改题数余额和账本。覆盖 question-bank-transcription/review。
+- `INV-QBANK-003`：复核只在管理员确认后发生。覆盖 question-bank-review。
 
 [兼容账本](docs/compatibility.md) 定义旧账户、Keychain、热键、协议和迁移的保留条件。Plus 自然月续费；关闭新购时仍保留已付权益、webhook、门户及取消能力，不回退到不识别 Plus 的服务，不恢复数据库覆盖付款。
 

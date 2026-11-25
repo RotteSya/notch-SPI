@@ -142,7 +142,8 @@
       ],
       "checks": [
         "Tests/NotchSPITests/CaptureFlowStabilityTests.swift",
-        "Tests/NotchSPITests/SettingsNavigationAccessibilityTests.swift"
+        "Tests/NotchSPITests/SettingsNavigationAccessibilityTests.swift",
+        "Tests/NotchSPITests/QuestionBankConsentTests.swift"
       ]
     },
     {
@@ -260,7 +261,8 @@
       ],
       "checks": [
         "server/test/route-inventory.test.ts",
-        "server/test/terra-provider.test.ts"
+        "server/test/terra-provider.test.ts",
+        "server/test/question-bank.test.ts"
       ]
     },
     {
@@ -734,11 +736,14 @@
         "server/src/admin-plus.ts",
         "server/src/admin-sql.ts",
         "server/src/admin.ts",
-        "server/src/plus-routes.ts"
+        "server/src/plus-routes.ts",
+        "server/src/question-bank-admin.ts"
       ],
       "checks": [
         "server/test/admin-operations.test.ts",
-        "server/test/admin-entitlement.test.ts"
+        "server/test/admin-entitlement.test.ts",
+        "server/test/question-bank-admin.test.ts",
+        "server/test/question-bank-review.test.ts"
       ]
     },
     {

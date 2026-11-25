@@ -6,17 +6,18 @@ import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 import { config, validateTrialPolicy } from './config.ts';
 import { makeStore } from './storage.ts';
-import { makeObjectiveProvider, makeProvider } from './providers/index.ts';
+import { makeObjectiveProvider, makeProvider, makeReviewProvider } from './providers/index.ts';
 import type { Provider } from './providers/types.ts';
 import { StubPaymentProvider, type PaymentProvider } from './payments.ts';
 import { StripePaymentProvider, retrieveStripeRefund, reconcileStripeRefund, retrieveStripeCheckout } from './stripe.ts';
 import type { RefundSnapshot } from './payment-ledger.ts';
 import { registerRoutes } from './routes.ts';
+import { runQuestionBankRound } from './question-bank-worker.ts';
 import { captureRuntimePolicy } from './capture-timing.ts';
 
 // Compose the app so it can also be built in-process by tests (no listen). `overrides.provider`
 // is a test-only seam for exercising vendor-failure paths (the real provider is chosen by config).
-export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.ts').PlusStripe; provider?: Provider; objectiveProvider?: Provider; readStripeRefund?: (id:string)=>Promise<RefundSnapshot>; createStripeCheckout?: typeof import('./stripe.ts').createCheckoutSession; readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>; readPurchaseProgress?: (id:string)=>Promise<import('./stripe.ts').CheckoutProgress>; readStripeFinance?:(order:FinanceOrder)=>Promise<FinanceSnapshot>; onRoute?: (route: { method: string | string[]; url: string }) => void } = {}) {
+export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.ts').PlusStripe; provider?: Provider; objectiveProvider?: Provider; reviewProvider?: Provider; readStripeRefund?: (id:string)=>Promise<RefundSnapshot>; createStripeCheckout?: typeof import('./stripe.ts').createCheckoutSession; readStripeCheckout?: (id:string)=>Promise<CheckoutSnapshot>; readPurchaseProgress?: (id:string)=>Promise<import('./stripe.ts').CheckoutProgress>; readStripeFinance?:(order:FinanceOrder)=>Promise<FinanceSnapshot>; onRoute?: (route: { method: string | string[]; url: string }) => void } = {}) {
   validateTrialPolicy(config);
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info',
@@ -54,6 +55,10 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
     : overrides.provider
       ? { provider: overrides.provider, degraded: null }
       : makeObjectiveProvider(config, (msg) => app.log.warn(msg));
+  // Question-bank review only; null unless both review settings are present. Never used for answers.
+  const reviewBuilt = overrides.reviewProvider
+    ? { provider: overrides.reviewProvider, degraded: null }
+    : makeReviewProvider(config, (msg) => app.log.warn(msg));
   if (process.env.NSPI_SERVER_LATENCY_TRACE === '1' && !overrides.provider && !overrides.objectiveProvider) {
     app.log.info({ captureRuntimePolicy: captureRuntimePolicy(config) }, 'capture runtime policy');
   }
@@ -75,11 +80,16 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
     config, store, storeKind, plusStripe: overrides.plusStripe,
     provider: built.provider, providerDegraded: built.degraded,
     objectiveProvider: objectiveBuilt.provider, objectiveProviderDegraded: objectiveBuilt.degraded,
+    reviewProvider: reviewBuilt?.provider ?? null, reviewProviderDegraded: reviewBuilt?.degraded ?? null,
     payment, readPurchaseProgress:overrides.readPurchaseProgress, readStripeRefund:overrides.readStripeRefund, createStripeCheckout:overrides.createStripeCheckout, readStripeCheckout:overrides.readStripeCheckout,readStripeFinance:overrides.readStripeFinance,
   });
   let paymentRecovery:Promise<void>|null=null;
   const reaper = config.isServerless ? null : setInterval(() => {
-    void store.billing.reap().catch(() => app.log.error('reservation recovery failed'));
+    // The question-bank round follows the reservation sweep, with the same limits as on the HTTP reaper.
+    void store.billing.reap().catch(() => app.log.error('reservation recovery failed'))
+      .then(() => runQuestionBankRound({config,store,provider:objectiveBuilt.provider,providerDegraded:objectiveBuilt.degraded,
+        reviewProvider:reviewBuilt?.provider??null,reviewProviderDegraded:reviewBuilt?.degraded??null}))
+      .catch(() => app.log.warn({event:'question_bank_round_failed'},'question_bank_round_failed'));
     void store.pruneProductEvents(new Date(Date.now()-90*86_400_000).toISOString()).catch(()=>app.log.error('event retention failed'));
     if(payment.name==='stripe'&&!paymentRecovery) paymentRecovery=(async()=>{
       const read=overrides.readStripeRefund??((id:string)=>retrieveStripeRefund(config.stripeSecretKey,id));

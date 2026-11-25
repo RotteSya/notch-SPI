@@ -225,6 +225,17 @@ export const config = {
   // database; 0 disables the deferral. Capped at one day: a summary older than seven days is
   // rejected outright, so the window must stay well inside that limit.
   observationIdleCoverageSeconds: boundedInt(envInt('OBSERVATION_IDLE_COVERAGE_SECONDS', 21_600), 21_600, 0, 86_400),
+  // Consent gate for the question bank. Off ignores question_bank_v1 on every request.
+  questionBankEnabled: envStr('QUESTION_BANK_ENABLED', '0') === '1',
+  // Question images are cleared this many days after the solve; transcripts and cards stay.
+  questionBankImageRetentionDays: boundedInt(envInt('QUESTION_BANK_IMAGE_RETENTION_DAYS', 90), 90, 1, 3650),
+  // Daily cap for question-bank model calls, on top of the shared daily model budget. 0 stops them.
+  questionBankDailyBudgetMicros: Math.max(0, envInt('QUESTION_BANK_DAILY_BUDGET_MICROS', 3_000_000)),
+  // The reviewer for admin-confirmed question-bank reviews. Either one empty disables review.
+  questionBankReviewProvider: envStr('QUESTION_BANK_REVIEW_PROVIDER', ''),
+  questionBankReviewModel: envStr('QUESTION_BANK_REVIEW_MODEL', ''),
+  // Daily cap for review calls alone, apart from the cap above, and still within the shared daily model budget. 0 stops them.
+  questionBankReviewDailyBudgetMicros: Math.max(0, envInt('QUESTION_BANK_REVIEW_DAILY_BUDGET_MICROS', 5_000_000)),
   modelPricingJSON: envStr('MODEL_PRICING_JSON', '[]'),
   modelPricingVersion: envStr('MODEL_PRICING_VERSION', 'unset'),
   requestBudgetMode: envStr('ASTRA_REQUEST_BUDGET_MODE', 'fixed'),
@@ -235,6 +246,18 @@ export const config = {
 } as const;
 
 export type Config = typeof config;
+
+/**
+ * The site's privacy text names OFFICIAL_PROVIDER as the AI provider that reads saved questions. A
+ * question-bank reviewer from any other provider would process them undisclosed, so it is a
+ * configuration error: review can then be neither previewed, confirmed nor called. Null when no
+ * reviewer is configured, or when it is that provider.
+ */
+export function reviewProviderConfigurationError(c: Pick<Config, 'provider' | 'questionBankReviewProvider' | 'questionBankReviewModel'>): string | null {
+  if (c.questionBankReviewProvider === '' || c.questionBankReviewModel === '') return null;
+  return c.questionBankReviewProvider.toLowerCase() === c.provider ? null
+    : 'QUESTION_BANK_REVIEW_PROVIDER must equal OFFICIAL_PROVIDER, the AI provider the privacy text names';
+}
 
 export function validateTrialPolicy(c: Config): void {
   if (!Number.isSafeInteger(c.modelBudgetWarningMicros) || c.modelBudgetWarningMicros < 0

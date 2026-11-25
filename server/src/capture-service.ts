@@ -2,6 +2,7 @@ import {AttemptTrace, type AttemptDiagnostics} from './attempt-diagnostics.ts';
 import {CAPTURE_DEADLINE, WorkerLease} from './capture-deadline.ts';
 import {CAPACITY} from './capacity-policy.ts';
 import {trackRequestWork} from './request-lifecycle.ts';
+import { noteQuestionBankWriteFailure } from './question-bank.ts';
 import {sealAnswer,openAnswer,settleReliably} from './answer-delivery.ts';
 import {reserveWithWait} from './admission-wait.ts';
 import {TransientProviderError} from './providers/types.ts';
@@ -32,7 +33,7 @@ function quotaRejected(code:'insufficient_quota'|'paid_credits_disabled'):ApiErr
 }
 interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; share:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
 
-function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
+export function captureCost(pricing: string, provider: string, model: string, usage: Usage | null): number | undefined {
   if (!usage || usage.inputTokens === null || usage.outputTokens === null) return undefined;
   if (usage.attempts) {
     let total = 0;
@@ -387,7 +388,7 @@ export class CaptureService {
         profileId,profileVersion,promptVersion,resultProtocol:protocol??undefined,responseContract:screen?'screen_query_v1':undefined,
         configRevision:config.clientConfigRevision,deliveryRecovery:body.delivery_recovery_v1===true,exclusive:screen,leaseMs:CAPTURE_DEADLINE.leaseMs,legacy:!suppliedId},
       {purpose:'answer',provider:captureProvider.name,model,policyVersion:config.clientConfigRevision,currency:config.modelCostCurrency,pricingVersion:config.modelPricingVersion},reservedMicros,
-      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,providerInput,captureProvider,model,screen,abort,admission));
+      (capture,quota,admission)=>this.stream(req,reply,token,capture,quota,providerInput,captureProvider,model,screen,abort,admission,body.question_bank_v1===true));
   }
   async auxiliary(req:FastifyRequest,reply:FastifyReply,operation:'explain'|'recover'):Promise<void> {
     return this.connected(req,reply,abort=>this.auxiliaryConnected(req,reply,operation,abort));
@@ -442,7 +443,8 @@ export class CaptureService {
     if(operation==='explain' && (!answerCapture.answerHmac || this.keys.digest('answer',normalizeObjectiveAnswer(answer),parent.keyVersion)!==answerCapture.answerHmac)) throw new ApiError(409,'原答案不匹配','binding_mismatch');
     const selected=this.ctx.objectiveProvider, model=config.objectiveModel;
     if(this.ctx.objectiveProviderDegraded!==null) throw new ApiError(503,'服务不可用','upstream_error');
-    const originalAttempt=(await store.billing.attempts(token)).find(a=>a.captureId===parentId);
+    // A question-bank transcription shares the solve's capture id; only the solve's own attempt names its model.
+    const originalAttempt=(await store.billing.attempts(token)).find(a=>a.captureId===parentId&&a.purpose==='answer');
     if(!originalAttempt || originalAttempt.provider!==selected.name||originalAttempt.model!==model) throw new ApiError(503,'原模型策略已暂停','feature_disabled');
     const requestHmac=this.keys.digest('auxiliary',JSON.stringify({operation,inputHmac,answer:operation==='explain'?answer:null,
       ...(reasoningEffort ? {reasoningEffort} : {}),
@@ -462,6 +464,7 @@ export class CaptureService {
       const {attemptId}=admission;let raw='',completed=false,usage:Usage|null=null;
       let timer:ReturnType<typeof setTimeout>|undefined;let send:(event:StreamEvent)=>void=()=>{};
       let success=false, responseText='';
+      let explanationWrite: (() => Promise<void>) | undefined;
       let recoveryResult:ReturnType<typeof composeScreenQuery>|undefined;
       try {
         reply.hijack();const writer=beginSSE(reply);send=e=>{if(!reply.raw.destroyed&&!reply.raw.writableEnded){try{writer(e);}catch{}}};
@@ -520,21 +523,34 @@ export class CaptureService {
           send({...terminalUsage(committed,quota,usage),
             ...(ancestor ? this.explanationFields(committed, ancestor) : {explanation_available:false})});
           if(!reply.raw.destroyed&&!reply.raw.writableEnded)reply.raw.write(SSE_DONE);
+          if(operation==='explain'&&success&&config.questionBankEnabled&&body.question_bank_v1===true&&responseText){
+            explanationWrite=()=>store.questionBank.appendExplanation({token,captureId:parentId,explanation:responseText});
+          }
         } catch {
           req.log.error({captureId},'auxiliary request requires settlement reconciliation');
           send({type:'error',error:{code:'internal',message:'正在核对本次请求，请查询请求状态'}});
         } finally {
           this.logTiming(req,'responseFinishing');
           if(!reply.raw.destroyed&&!reply.raw.writableEnded)reply.raw.end();
+          if(explanationWrite)await this.persistQuestionBank(req,parentId,explanationWrite);
         }
       }
     });
   }
+  private async persistQuestionBank(req:FastifyRequest,captureId:string,write:()=>Promise<void>):Promise<void> {
+    try { await write(); }
+    catch {
+      noteQuestionBankWriteFailure();
+      req.log.warn({captureId,event:'question_bank_write_failed'},'question_bank_write_failed');
+    }
+  }
   private async stream(req:FastifyRequest,reply:FastifyReply,token:string,capture:CaptureRecord,initial:QuotaSnapshot,
-    input:CaptureRequest,provider:AppContext['provider'],model:string,screen:boolean,abort:AbortController,admission:Admission):Promise<void> {
+    input:CaptureRequest,provider:AppContext['provider'],model:string,screen:boolean,abort:AbortController,admission:Admission,
+    questionBankConsent:boolean):Promise<void> {
     const {store,config}=this.ctx;
     let {attemptId}=admission;
     let raw='',overflow=false,deliveredChars=0,accepting=true,usage:Usage|null=null,upstreamFailed=false,timedOut=false;
+    let questionBankWrite: (() => Promise<void>) | undefined;
     const recoverable=!!capture.deliveryOwner;
     let lostLease=false;
     const lease=recoverable ? new WorkerLease(capture.workerAliveUntil ?? Date.now(),
@@ -699,6 +715,20 @@ export class CaptureService {
       else if(terminalState==='failed') send({type:'error',error:{code:'upstream_error',message:'未获得可用结果，请稍后重试'}});
       send({...terminalUsage(committed,quota,usage),...this.explanationFields(committed, committed)});
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.write(SSE_DONE);
+      // Saving follows settlement, not the socket. A client that already disconnected still
+      // has a charged usable solve, including the delivery-recovery path.
+      if(config.questionBankEnabled&&questionBankConsent&&capture.operation==='solve'&&capture.resultProtocol==='objective_v1'&&terminalState==='usable'&&committed.usableResult){
+        const finished=committed.finishedAt?Date.parse(committed.finishedAt):Date.now();
+        questionBankWrite=()=>store.questionBank.recordSolve({
+          token,captureId:capture.captureId,requestId:committed.requestId,createdAt:committed.createdAt,
+          durationMs:Math.max(0,finished-Date.parse(committed.createdAt)),provider:provider.name,model,
+          reasoningEffort:input.reasoningEffort??null,configRevision:committed.configRevision,resultProtocol:'objective_v1',
+          resultState:committed.resultState,questionKind:committed.questionKind,parserPath:committed.parserPath,
+          modelOutput:raw,finalAnswer:finalAnswer??'',answerAttemptId:admission.providerStarted?attemptId:null,
+          inputTokens:usage?.inputTokens??null,outputTokens:usage?.outputTokens??null,system:input.system,task:input.task,
+          images:input.images.map(image=>({mediaType:image.mediaType,bytes:Buffer.from(image.base64,'base64')})),
+        });
+      }
     } catch {
       if(admission.providerStarted) {
         await store.billing.finishAttempt(token,attemptId,{diagnostics:diagnosticsByAttempt.get(attemptId),status:'unknown',inputTokens:usage?.inputTokens??null,
@@ -718,6 +748,7 @@ export class CaptureService {
       await usageWrite;
       this.logTiming(req,'responseFinishing');
       if(!reply.raw.destroyed&&!reply.raw.writableEnded) reply.raw.end();
+      if(questionBankWrite)await this.persistQuestionBank(req,capture.captureId,questionBankWrite);
     }
   }
 }

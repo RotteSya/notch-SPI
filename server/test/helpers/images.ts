@@ -16,3 +16,7 @@ export function corruptPixels():Buffer {
   output.writeUInt32BE(crc32(output.subarray(offset+4,offset+8+length)),offset+8+length);
   return output;
 }
+/** The fixture PNG with a tEXt chunk carrying `tag` before IEND: still a valid image, its bytes unique to the tag. */
+export function taggedPngBase64(tag:string):string {
+  return Buffer.concat([pngBytes.subarray(0,-12),pngChunk('tEXt',Buffer.from('nspi-test\0'+tag,'latin1')),pngBytes.subarray(-12)]).toString('base64');
+}

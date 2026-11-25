@@ -524,6 +524,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
     private let loginCheckbox = SettingsToggleButton()
     private let loginCaption = captionLabel("")
     private let telemetryCheckbox = SettingsToggleButton()
+    private let questionBankCheckbox = SettingsToggleButton()
     private let autoCopyCheckbox = SettingsToggleButton()
 
     private static let autoCapChoices = SharedProduct.autoCaps
@@ -532,7 +533,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
 
     override func loadView() {
         let shell = SettingsFlippedView(frame: NSRect(origin: .zero, size: MainSettingsWindowController.pageSize))
-        let root = SettingsFlippedView(frame: NSRect(x: 0, y: 0, width: MainSettingsWindowController.pageSize.width, height: 840))
+        let root = SettingsFlippedView(frame: NSRect(x: 0, y: 0, width: MainSettingsWindowController.pageSize.width, height: 940))
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 114, width: MainSettingsWindowController.pageSize.width, height: 488))
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
@@ -623,9 +624,16 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         telemetryCheckbox.frame = NSRect(x: 52, y: 720, width: 536, height: 30); root.addSubview(telemetryCheckbox)
         let privacy = captionLabel(L10n.t("共享状态、场景、耗时、操作与数据缺失记录，不含截图、题目、答案或提示词。关闭后清空待传数据；计费记录保留。", "状態・用途・時間・操作・データ欠落を共有。画像・問題・回答・プロンプトは対象外。停止時は送信待ちを削除し、課金記録は保持。", "Shares status, profiles, timing, actions and data gaps; never screenshots, questions, answers or prompts. Turning this off clears pending diagnostics; billing records remain."))
         privacy.frame = NSRect(x: 52, y: 758, width: 536, height: 40); root.addSubview(privacy)
+        // A consent of its own, apart from reliability sharing; saving happens on the server only.
+        questionBankCheckbox.identifier = NSUserInterfaceItemIdentifier("settings.questionBank")
+        questionBankCheckbox.title = L10n.t("帮助改进答题", "回答の改善に協力", "Help improve answers")
+        questionBankCheckbox.target = self; questionBankCheckbox.action = #selector(questionBankToggled)
+        questionBankCheckbox.frame = NSRect(x: 52, y: 820, width: 536, height: 30); root.addSubview(questionBankCheckbox)
+        let questionBankNote = captionLabel(L10n.t("官方服务查题时保存题图、题目和答案，只用于改进本应用的答题，题图 90 天后删除。关闭后不再保存新的查题；删除已保存内容请邮件联系支持。", "公式サービスでの回答時に画像・問題・回答を保存し、本アプリの回答改善だけに使います。画像は 90 日後に削除。オフにすると以降は保存しません。削除はサポートへメールで。", "Saves question images, text and answers from official solves, only to improve this app's answers. Images are deleted after 90 days. Off stops new saves; email support to delete."))
+        questionBankNote.frame = NSRect(x: 52, y: 858, width: 536, height: 40); root.addSubview(questionBankNote)
         settingsCard(root, y: 28, height: 230, separators: [120, 182])
         settingsCard(root, y: 308, height: 228, separators: [166])
-        settingsCard(root, y: 590, height: 228, separators: [52, 118])
+        settingsCard(root, y: 590, height: 328, separators: [52, 118, 218])
         view = shell; syncSizeUI(); syncDelayUI()
     }
 
@@ -641,6 +649,7 @@ private final class GeneralPageController: NSViewController, SettingsPage {
         reloadTargets()
         reloadLoginState()
         telemetryCheckbox.state = ProductTelemetry.shared.sharingEnabled ? .on : .off
+        questionBankCheckbox.state = Settings.shared.questionBankSharingEnabled ? .on : .off
     }
 
     // MARK: Answer size
@@ -768,6 +777,10 @@ private final class GeneralPageController: NSViewController, SettingsPage {
 
     @objc private func telemetryToggled() {
         ProductTelemetry.shared.sharingEnabled = telemetryCheckbox.state == .on
+    }
+
+    @objc private func questionBankToggled() {
+        Settings.shared.questionBankSharingEnabled = questionBankCheckbox.state == .on
     }
 }
 

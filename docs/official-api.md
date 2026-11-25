@@ -91,6 +91,20 @@
 | admin | GET | /admin/ops/actions |
 | admin | POST | /admin/ops/plus/preview |
 | admin | POST | /admin/ops/plus/grant |
+| admin | GET | /admin/question-bank |
+| admin | GET | /admin/question-bank/stats |
+| admin | POST | /admin/question-bank/requeue |
+| admin | GET | /admin/question-bank/samples/transcripts |
+| admin | GET | /admin/question-bank/samples/matches |
+| admin | GET | /admin/question-bank/attempts/:attemptId/images/:ordinal |
+| admin | POST | /admin/question-bank/marks |
+| admin | POST | /admin/question-bank/accounts/preview |
+| admin | POST | /admin/question-bank/accounts/delete |
+| admin | GET | /admin/question-bank/review/cards |
+| admin | POST | /admin/question-bank/review/preview |
+| admin | POST | /admin/question-bank/review/confirm |
+| admin | GET | /admin/question-bank/review/disputed |
+| admin | POST | /admin/question-bank/review/adjudicate |
 <!-- route-inventory: end -->
 
 **计费：** 账户余额是整数「题数」。一次成功截屏问答扣 1 题，失败不扣。
@@ -259,9 +273,12 @@ Bearer 鉴权。客户端启动与热键预热异步刷新，缓存 24 小时；
   "schema_version": 1,
   "revision": "2026-objective-v1-r1",
   "objective_result_v1": {"variant":"objective_v1","protocol":"objective_v1","prompt_variant":"objective_v1"},
+  "question_bank_v1": false,
   "telemetry": {"enabled":true,"max_batch_size":50,"max_queue_age_days":7}
 }
 ```
+
+`question_bank_v1` 是布尔值，等于服务端 `QUESTION_BANK_ENABLED`。客户端只在它为 `true` 时才可能随请求发送同名标记；旧服务没有该字段，客户端视为关闭。
 
 ## POST /v1/captures — 截图问答（SSE，1 题/次）
 
@@ -297,6 +314,8 @@ Objective V1 为可选扩展；旧客户端字段缺省时行为完全不变：
 答题结果和结算，遇到歧义保留本次模型的候选答案，使用一次模型请求。题型只描述结果，`kind=other`
 也接受 `ready` 和 `review`。较长的作答正文放在简短 `FINAL:` 前。缺少会影响答案的材料时返回
 `retake` 并释放预扣。
+
+题库（`question_bank_v1`）：Mac 客户端在设置“帮助改进答题”开启、官方通道、讲题模式、配置 `question_bank_v1: true` 四项同时成立时，随求解和解释请求发送 `question_bank_v1: true`。服务端只在 `QUESTION_BANK_ENABLED` 开启、字段为布尔 `true`、操作为求解、`result_protocol` 为 `objective_v1` 且结果可用时，在结算和终止事件之后保存一条作答记录：全部题图、实际使用的 `system` / `task`、档位、模型原始输出、最终答案和用量；同一 capture 之后的解释正文补在这条记录上。标记不参与 `requestHmac` / `inputHmac`，不改变答题、收流、结算或扣题；保存失败只计数，不影响响应。题图 90 天（`QUESTION_BANK_IMAGE_RETENTION_DAYS`）后删除，作答文字和去重后的题目卡片保留，只用于改进本服务的答题，不提供给其他用户，也不交给外部服务训练。服务端随后在后台让当前客观题模型读图转写（`purpose=transcribe`）；管理员确认后才会让复核模型重答（`purpose=review`）。两者都不改变题数余额或账本，成本不计入答题成本。用户经支持邮箱申请后，管理员按账户删除，见[管理后台](admin-operations.md)。
 
 上下文追问（⌘⇧2）可追加 `images_base64`（有序：老上下文在前、新截图在后，单张上限与
 `image_base64` 相同，数量上限 4，仍只扣 1 题）。该字段存在时优先；客户端同时把**最后一张**
@@ -1076,11 +1095,11 @@ Rollback must retain compensation/manual Plus, multiple-attempt accounting, tran
 
 ## GET /v1/captures/:id/delivery — 断流后的原答案
 
-设备凭证绑定查询。完成的可用答案返回原始 SSE 正文、当前账户版本的同一次结算和 DONE；不调用模型、不再扣题或记费。进行中返回 202；不存在返回 404；超出 15 分钟恢复期返回 410。答案以 AES-256-GCM 加密，密钥按现有 HMAC key version、设备凭证及 capture ID 派生；没有新增明文题图或提示词存储。
+设备凭证绑定查询。完成的可用答案返回原始 SSE 正文、当前账户版本的同一次结算和 DONE；不调用模型、不再扣题或记费。进行中返回 202；不存在返回 404；超出 15 分钟恢复期返回 410。答案以 AES-256-GCM 加密，密钥按现有 HMAC key version、设备凭证及 capture ID 派生；恢复缓存本身没有新增明文题图或提示词存储。带 `question_bank_v1` 的可用求解另按上文题库规则保存一次。
 
 相同 capture ID、相同完整请求的重复 POST 在恢复期限内也直接返回已保存的完整答案，包含未声明恢复协议的 3.1 客户端。失败或进行中的请求仍返回明确状态，内容变化仍返回幂等冲突；不把其他题目的答案当作重放。
 
-`delivery_recovery_v1: true` 协商后，连接中断不会立刻取消已经开始的生成；仍受 90 秒生成期限约束。工作进程每 2 秒续租、8 秒失联后允许使用原 capture ID 接管一次；旧尝试全额暂记，新尝试单独预占，每题仍最多两次模型调用。题图和提示词由客户端在这一次接管中重新提交，服务端不持久化。客户端主动取消通过 POST cancel 落库，提前取消同样阻止稍晚到达的原请求。
+`delivery_recovery_v1: true` 协商后，连接中断不会立刻取消已经开始的生成；仍受 90 秒生成期限约束。工作进程每 2 秒续租、8 秒失联后允许使用原 capture ID 接管一次；旧尝试全额暂记，新尝试单独预占，每题仍最多两次模型调用。题图和提示词由客户端在这一次接管中重新提交，接管本身不另存一份；带 `question_bank_v1` 的求解结算后仍只保存一条作答记录。客户端主动取消通过 POST cancel 落库，提前取消同样阻止稍晚到达的原请求。
 
 服务器以 `X-NotchSPI-Delivery: v1` 标识能力。原始求解连接连续 8 秒无数据后进入恢复；服务器每 2 秒发送不含答案的 SSE 心跳。3.1.3 区分传输失联与模型正常生成：供应商首次有效进展保留原来的 20 秒容忍期，不因 8 秒没有首个事件而重试；已有有效进展的生成仍受原来的 90 秒期限保护。
 

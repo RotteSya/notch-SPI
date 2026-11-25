@@ -63,12 +63,15 @@ struct NotchClientConfig: Codable, Equatable {
     let telemetry: TelemetryRemoteConfig
     var screenQuery: ScreenQueryRemoteConfig? = nil
     var payments: PaymentsRemoteConfig? = nil
+    /// The service is saving consented solves. Absent (an older service) means off.
+    var questionBankV1: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case revision
         case objectiveResultV1 = "objective_result_v1"
         case tutorResultV1 = "tutor_result_v1"
+        case questionBankV1 = "question_bank_v1"
         case telemetry
         case screenQuery = "screen_query"
         case payments
@@ -84,6 +87,12 @@ struct NotchClientConfig: Codable, Equatable {
     var accepted: Bool {
         schemaVersion == 1 && (objectiveResultV1.protocol == nil
             || objectiveResultV1.protocol == "objective_v1")
+    }
+
+    /// Whether a solve or explain request carries `question_bank_v1`: only a tutor-mode request on
+    /// the official channel, with the local 帮助改进答题 switch on and this config saying boolean true.
+    func sendsQuestionBank(mode: String, official: Bool, localEnabled: Bool) -> Bool {
+        mode == "tutor" && official && localEnabled && questionBankV1 == true
     }
 }
 

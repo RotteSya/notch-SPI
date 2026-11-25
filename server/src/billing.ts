@@ -78,7 +78,8 @@ export interface Attempt {
   diagnostics?: AttemptDiagnostics;
   /** Server-validated metering, retained even if the final stream/COMMIT acknowledgement is lost. */
   usageEvidence?: AttemptUsageEvidence;
-  attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover';
+  /** `transcribe` and `review` are question-bank calls on an already-settled solve; they never bill a question. */
+  attemptId: string; captureId: string; purpose: 'answer' | 'explain' | 'recover' | 'transcribe' | 'review';
   provider: string; model: string; policyVersion: string;
   status: 'running' | 'succeeded' | 'failed' | 'unknown';
   inputTokens: number | null; outputTokens: number | null; costMicros: string | null;
@@ -117,7 +118,30 @@ export class BudgetAdmissionError extends Error {
     super(reason); this.name = 'BudgetAdmissionError'; this.reason = reason; this.retryAfter = retryAfter;
   }
 }
+/** One budget hold for a question-bank call. The hold id never equals another attempt's id. */
+export interface BankBudgetHold { holdId: string; scope: string; limitMicros: number; channel: string; share: number }
+/**
+ * A question-bank model call on a request that is already settled. It takes a supplier capacity
+ * lease and budget holds and records a model attempt; it never reads or writes quota lots,
+ * reservations, the question ledger or the capture record.
+ */
+export interface BankAttemptStart {
+  deviceId: number; requestId: string; attempt: NewAttempt & { purpose: 'transcribe' | 'review' };
+  reservedMicros: number; currency: string; now: number; utcOffsetMinutes: number;
+  holds: BankBudgetHold[]; capacityTokens: number; capacityShare: number;
+}
+export interface BankAttemptFinish {
+  deviceId: number; attemptId: string; holdIds: string[];
+  result: Pick<Attempt, 'status' | 'inputTokens' | 'outputTokens' | 'costMicros'>;
+  actualMicros: number | null;
+  /** False when the provider was never called: holds are released and the lease leaves the rate window. */
+  started: boolean;
+}
 export interface BillingStore {
+  /** `busy`: no supplier capacity; `budget`: a hold did not fit; `missing`: device or settled request not found. */
+  beginBankAttempt(input: BankAttemptStart): Promise<'started' | 'busy' | 'budget' | 'missing'>;
+  /** Idempotent: an attempt that is no longer running and holds that are no longer held are left alone. */
+  finishBankAttempt(input: BankAttemptFinish): Promise<void>;
   checkpointCompletion(input: FinishCapture & {captureId: string}): Promise<void>;
   recordAttemptUsage(token: string, attemptId: string, evidence: AttemptUsageEvidence): Promise<void>;
   cancelCapture(token:string,id:string):Promise<void>;

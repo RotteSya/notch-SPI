@@ -1,9 +1,12 @@
 import {releaseDownload} from './release-download.ts';
 import {budgetStatus} from './budget-policy.ts';
 import {registerAdminRoutes} from './admin-routes.ts';
+import { registerQuestionBankAdmin } from './question-bank-admin.ts';
 import {siteMedia} from './site-media.ts';
 import {plusService} from './plus-routes.ts';
 import { CaptureService } from './capture-service.ts';
+import { trackRequestWork } from './request-lifecycle.ts';
+import { runQuestionBankRound } from './question-bank-worker.ts';
 import {trialSnapshot, FREE_TRIAL_POLICY} from './free-trial.ts';
 import type {AccountSnapshot} from './billing.ts';
 import { aggregateCohorts, aggregateEconomics, parseReportQuery, reportTime, decimal, ReportLimitError, type ReportExpense } from './reporting.ts';
@@ -50,6 +53,9 @@ export interface AppContext {
   objectiveProvider: Provider;
   /** Objective misconfiguration is isolated from control captures but visible in health. */
   objectiveProviderDegraded: string | null;
+  /** The question-bank reviewer; absent or null when not configured. Called only for admin-confirmed review jobs. */
+  reviewProvider?: Provider | null;
+  reviewProviderDegraded?: string | null;
   payment: PaymentProvider;
   readStripeRefund?: (id: string) => Promise<RefundSnapshot>;
   createStripeCheckout?: typeof createCheckoutSession;
@@ -137,6 +143,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   };
 
   registerAdminRoutes(app,ctx,requireAdmin);
+  registerQuestionBankAdmin(app, ctx, requireAdmin);
 
   // Best-effort abuse limits (see rateLimit.ts): a per-IP cap on anonymous registration and a
   // per-token cap on concurrent captures. Instantiated once so state lives for the process.
@@ -183,6 +190,15 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       try{if(await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments))financeReconciled++;}catch{financeFailed++;}
     }));
     const eventsPruned=await store.pruneProductEvents(new Date(Date.parse(now)-90*86_400_000).toISOString());
+    // Question-bank work starts only once this reply is written, as tracked request work, so the
+    // Worker's deadline, the reply and its fields never depend on it.
+    const replied=new Promise<void>(resolve=>{reply.raw.once('finish',resolve);reply.raw.once('close',resolve);});
+    void trackRequestWork(req.raw,async()=>{
+      await replied;
+      await runQuestionBankRound({config,store,provider:ctx.objectiveProvider,providerDegraded:objectiveProviderDegraded,
+        reviewProvider:ctx.reviewProvider??null,reviewProviderDegraded:ctx.reviewProviderDegraded??null,log:req.log})
+        .catch(()=>req.log.warn({event:'question_bank_round_failed'},'question_bank_round_failed'));
+    });
     return {processed,checked_at:now,more_possible:batch===100,refunds_reconciled:refundsReconciled,refunds_failed:refundsFailed,
       checkouts_credited:checkoutsCredited,checkouts_review:checkoutsReview,checkouts_failed:checkoutsFailed,finance_reconciled:financeReconciled,finance_failed:financeFailed,events_pruned:eventsPruned,
       model_budget:modelBudget};
@@ -355,6 +371,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       schema_version: 1,
       revision: config.clientConfigRevision,
       tutor_result_v1: true,
+      // Clients send question_bank_v1 only while this is true; a client that finds no field treats it as off.
+      question_bank_v1: config.questionBankEnabled,
       objective_result_v1: treatment
         ? { variant: 'objective_v1', protocol: 'objective_v1', prompt_variant: 'objective_v1' }
         : { variant: 'control', protocol: null, prompt_variant: 'legacy' },

@@ -85,6 +85,8 @@ export class SQLAdmin implements AdminStore {
   })(),{readOnlySnapshot:true});}
   overview(q:AdminWindow){const now=new Date().toISOString(),a=activeSQL(now),soon=new Date(Date.now()+7*86400000).toISOString(),state=this.json('c.metadata','terminalState'),duration=this.duration(),day=this.day('c.created_at'),error=this.json('c.metadata','terminalReason');
     const model=this.json('a.metadata','model'),provider=this.json('a.metadata','provider'),currency=this.json('a.metadata','currency'),cost=this.json('a.metadata','costMicros');
+    // Question-bank calls are not answer costs; they are reported on their own page.
+    const answering=`COALESCE(${this.json('a.metadata','purpose')},'answer') NOT IN ('transcribe','review')`;
     const category="CASE WHEN d.is_internal=1 OR d.platform='release-qa' THEN 'internal' ELSE 'user' END";
     return this.run((function*():Transaction<AdminOverview>{
       const devices=(yield* query(`SELECT COUNT(*) AS total,SUM(CASE WHEN d.created_at>=? AND d.created_at<? THEN 1 ELSE 0 END) AS registered,
@@ -93,14 +95,14 @@ export class SQLAdmin implements AdminStore {
         SUM(CASE WHEN ${state}='usable' THEN 1 ELSE 0 END) AS usable,AVG(${duration}) AS latency,COUNT(${duration}) AS samples FROM capture_requests c WHERE c.created_at>=? AND c.created_at<?`,q.from,q.to))[0]!;
       const trend=yield* query(`SELECT ${day} AS day,COUNT(*) AS n,SUM(CASE WHEN ${state}='usable' THEN 1 ELSE 0 END) AS usable,COUNT(DISTINCT c.device_id) AS active FROM capture_requests c WHERE c.created_at>=? AND c.created_at<? GROUP BY ${day} ORDER BY day`,q.from,q.to);
       const errors=yield* query(`SELECT COALESCE(${error},'unknown') AS error,COUNT(*) AS n FROM capture_requests c WHERE c.created_at>=? AND c.created_at<? AND ${state}='failed' GROUP BY COALESCE(${error},'unknown') ORDER BY n DESC LIMIT 20`,q.from,q.to);
-      const models=yield* query(`SELECT ${category} AS category,${model} AS model,${provider} AS provider,${currency} AS currency,COUNT(*) AS n,SUM(CAST(${cost} AS BIGINT)) AS cost,SUM(CASE WHEN ${cost} IS NULL THEN 1 ELSE 0 END) AS unknown FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id JOIN devices d ON d.id=a.device_id WHERE c.created_at>=? AND c.created_at<? GROUP BY ${category},${model},${provider},${currency} ORDER BY n DESC LIMIT 50`,q.from,q.to);
+      const models=yield* query(`SELECT ${category} AS category,${model} AS model,${provider} AS provider,${currency} AS currency,COUNT(*) AS n,SUM(CAST(${cost} AS BIGINT)) AS cost,SUM(CASE WHEN ${cost} IS NULL THEN 1 ELSE 0 END) AS unknown FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id JOIN devices d ON d.id=a.device_id WHERE c.created_at>=? AND c.created_at<? AND ${answering} GROUP BY ${category},${model},${provider},${currency} ORDER BY n DESC LIMIT 50`,q.from,q.to);
       const costs=yield* query(`SELECT ${category} AS category,${currency} AS currency,COUNT(*) AS n,
         SUM(CASE WHEN b.state IN ('observed','reconciled','released') THEN b.actual ELSE CAST(${cost} AS BIGINT) END) AS cost,
         SUM(CASE WHEN b.state IN ('observed','reconciled','released') OR ${cost} IS NOT NULL THEN 0 ELSE 1 END) AS unknown,
         COALESCE(SUM(CASE WHEN b.state='provisional' THEN b.booked ELSE 0 END),0) AS provisional,
         COALESCE(SUM(b.booked),0) AS booked,SUM(CASE WHEN b.attempt_id IS NULL THEN 1 ELSE 0 END) AS unbooked
         FROM model_attempts a JOIN capture_requests c ON c.request_id=a.request_id JOIN devices d ON d.id=a.device_id
-        LEFT JOIN budget_accounting b ON b.attempt_id=a.attempt_id WHERE c.created_at>=? AND c.created_at<? GROUP BY ${category},${currency} ORDER BY ${currency},${category}`,q.from,q.to);
+        LEFT JOIN budget_accounting b ON b.attempt_id=a.attempt_id WHERE c.created_at>=? AND c.created_at<? AND ${answering} GROUP BY ${category},${currency} ORDER BY ${currency},${category}`,q.from,q.to);
       return {costs:costs.map(r=>({category:r.category as 'internal'|'user',currency:String(r.currency),count:Number(r.n),knownCostMicros:r.cost===null?null:String(r.cost),unknownCost:Number(r.unknown),provisionalMicros:String(r.provisional),bookedMicros:String(r.booked),unbooked:Number(r.unbooked)})),registered:Number(devices.registered??0),totalDevices:Number(devices.total),activePlus:Number(devices.plus??0),expiringPlus:Number(devices.expiring??0),
         requests:Number(captures.n),activeDevices:Number(captures.active),completed:Number(captures.completed??0),usable:Number(captures.usable??0),latencyMs:captures.latency===null?null:Math.round(Number(captures.latency)),latencySamples:Number(captures.samples),
         trend:trend.map(r=>({day:String(r.day),requests:Number(r.n),usable:Number(r.usable),activeDevices:Number(r.active)})),errors:errors.map(r=>({error:String(r.error),count:Number(r.n)})),
