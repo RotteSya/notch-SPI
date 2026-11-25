@@ -708,6 +708,10 @@ test('a call gets the first-progress limit its upstream declares: 60 s for Terra
 
 test('memory: a call that outlives its declared limit is cut there and fails as a timeout', async () => {
   const b = await bank('memory');
+  // The worker cuts the call with AbortSignal.timeout, whose timer does not keep the event loop alive. The
+  // silent provider below holds no handle either, so without this ref'ed timer Node 22's test runner sees
+  // the loop drain while the call waits for its abort and cancels the test.
+  const keep = setTimeout(() => {}, 60_000);
   try {
     const captureId = await b.solve();
     const silent: Provider = {
@@ -722,7 +726,7 @@ test('memory: a call that outlives its declared limit is cut there and fails as 
     assert.deepEqual([round.calls, round.failed], [1, 1]);
     const saved = await b.store.questionBank.findByCapture(captureId);
     assert.deepEqual([saved?.jobStatus, saved?.jobErrorCode, saved?.jobAttemptCount], ['pending', 'timeout', 1]);
-  } finally { await b.close(); }
+  } finally { clearTimeout(keep); await b.close(); }
 });
 
 test('memory: the 60 s round limit only governs starting a call', async () => {
