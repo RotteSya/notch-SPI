@@ -590,12 +590,18 @@ for (const kind of kinds) {
       assert.equal((await b.call('POST', '/admin/question-bank/review/adjudicate', { ...body, operation_id: randomUUID(), basis: 'no' })).status, 400);
 
       assert.equal((await b.store.questionBank.findCard(x1.cardId!))?.state, 'verified_human');
+      // The dispute and the ruling can fall in one millisecond, and events in one millisecond come back in no fixed
+      // order, so each is found by its transition rather than by its place in the list.
       const events = await b.store.questionBank.cardEvents(x1.cardId!);
-      assert.deepEqual(events.map(event => [event.actor, event.fromState, event.toState, event.basis, event.answer, event.operationId]), [
-        ['review_job', 'unverified', 'disputed', 'disagrees', 'A', events[0]!.operationId],
-        ['tester', 'disputed', 'verified_human', 'distance over time is 60 km/h', 'B: 60 km/h', body.operation_id],
-      ]);
-      const [audit] = await b.store.questionBank.operations(5);
+      const transition = (to: string) => events.filter(event => event.toState === to)
+        .map(event => [event.actor, event.fromState, event.basis, event.answer, event.operationId === body.operation_id]);
+      assert.equal(events.length, 2);
+      assert.deepEqual(transition('disputed'), [['review_job', 'unverified', 'disagrees', 'A', false]]);
+      assert.deepEqual(transition('verified_human'), [['tester', 'disputed', 'distance over time is 60 km/h', 'B: 60 km/h', true]]);
+      const at = (to: string) => events.find(event => event.toState === to)!.at;
+      assert.ok(at('disputed') <= at('verified_human'), 'the ruling is not dated before the dispute');
+      // Likewise the audit: the confirmation and the ruling are both operations, found here by kind.
+      const audit = (await b.store.questionBank.operations(5)).find(operation => operation.kind === 'adjudicate');
       assert.deepEqual([audit?.kind, audit?.actor, audit?.reason, audit?.after], ['adjudicate', 'tester', 'distance over time is 60 km/h', { state: 'verified_human' }]);
       assert.deepEqual((await b.call('GET', '/admin/question-bank/review/disputed')).json().items, []);
     } finally { await b.close(); }
