@@ -27,13 +27,13 @@ export const words = {
   recoveryWarning: ["此码可以访问你的账户和权益。请保存到密码管理器，不要发送给客服或他人。","このコードでアカウントを利用できます。パスワード管理アプリに保存し、他人に送らないでください。","This code grants access to your account. Save it in a password manager; do not send it to support or other people."],
   languageMode: ["界面语言","表示言語","Interface language"],
   systemLanguage: ["跟随系统","システムに従う","Follow system"],
-  officialServiceHint: ["默认。开箱即用，按题数额度计费。","標準。設定不要で回数枠を利用。","Default. Ready to use with question credits."],
+  officialServiceHint: ["默认。开箱即用，按次数计费。","標準。設定不要で回数枠を利用。","Default. Ready to use with credits."],
   apiServiceHint: ["用你自己的第三方 API Key 直连，费用走你的账户。","ご自身の API Key で直接接続します。","Connect with your own API key; billed to your provider account."],
   cliServiceHint: ["驱动本机已登录的 codex / claude 命令行。","ログイン済みの codex / claude を利用。","Use your signed-in local codex / claude CLI."],
   accountSubtitle: ["你的计划、用量与支付，尽在此处。","プラン、利用状況、お支払いをここで。","Your plan, usage and payments in one place."],
   serviceSubtitle: ["选择回答来源，管理连接与更新。","回答元、接続と更新を管理。","Choose your answer source, connections and updates."],
   allowPurchasedCredits: [
-    "允许使用已购题包",
+    "允许使用已购次数包",
     "購入済み回数を利用",
     "Allow purchased credits",
   ],
@@ -243,11 +243,11 @@ export const words = {
   plus: ["订阅计划", "サブスクリプション", "Subscription"],
   extra: ["额外用量", "追加利用分", "Extra usage"],
   allowPurchased: [
-    "自动使用已购题包",
+    "自动使用已购次数包",
     "購入済み回数を自動使用",
     "Automatically use purchased packs",
   ],
-  buy: ["购买题包", "回数を購入", "Buy question pack"],
+  buy: ["购买次数包", "回数を購入", "Buy credit pack"],
   restore: ["恢复账户", "アカウントを復元", "Restore account"],
   restoreHint: [
     "恢复会切换账户，不合并余额。请先保存当前恢复码。",
@@ -290,7 +290,7 @@ export const words = {
     "No saved questions yet",
   ],
   historyHint: [
-    "仅保存在本机；回看不扣题。",
+    "仅保存在本机；回看不扣次。",
     "この端末に保存。見返しても消費しません。",
     "Stored on this device; reviewing uses no credits.",
   ],

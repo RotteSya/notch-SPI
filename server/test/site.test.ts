@@ -156,7 +156,7 @@ test('pack recommendations match the app purchase entry, with precise fractional
   assert.match(formatUnitPrice({id:'usd',questions:30,amountCents:500},'USD','en'), /0\.17/);
   const page=renderLandingPage({packs,trialQuestions:30,currency:'JPY',lang:'en',aiProvider:'deepseek'});
   assert.match(page, /value="daily" data-questions="300" checked/);
-  assert.match(page, /offers all packs and selects 300 questions by default/);
+  assert.match(page, /offers all packs and selects 300 credits by default/);
   assert.match(page, /href="#purchase"/);
   const choices=page.match(/<label class="pack-choice"[\s\S]*?<\/label>/g)??[];
   assert.equal(choices.length,3);

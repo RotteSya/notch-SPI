@@ -50,7 +50,7 @@ enum CaptureProcessing {
         switch Settings.shared.serviceMode {
         case ServiceMode.customKey: return L10n.t("题图将发送至所选 API 服务，费用由你的 API 账户承担。", "選択したAPIに画像を送信し、ご自身のアカウントに課金されます。", "Images go to your selected API; its billing applies.")
         case ServiceMode.cli: return L10n.t("题图将交给所选本机 CLI，按该服务的规则处理和计费。", "選択したCLIで処理し、そのサービスの料金が適用されます。", "Images go to your selected local CLI; its processing and billing apply.")
-        default: return L10n.t("题图将发送至官方 AI 服务；成功获得可用答案扣 1 题。", "公式AIに画像を送信します。有効な回答で1問分を消費。", "Images go to the official AI service; a usable answer costs one question.")
+        default: return L10n.t("题图将发送至官方 AI 服务；成功获得可用答案扣 1 次。", "公式AIに画像を送信します。有効な回答で1回分を消費。", "Images go to the official AI service; a usable answer costs one credit.")
         }
     }
 }

@@ -156,7 +156,7 @@ export class CaptureService {
         const code=hold.reason;
         if(code==='service_maintenance') reply.header('Retry-After','60');
         throw new ApiError(code==='service_maintenance'?503:code==='unknown_token'?401:(code==='insufficient_quota'||code==='paid_credits_disabled')?402:code==='device_busy'?429:409,
-          code==='paid_credits_disabled'?'每日额度已用完，题包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
+          code==='paid_credits_disabled'?'每日额度已用完，次数包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code==='unknown_token'?'invalid_token':code);
       }
       owned=hold.capture;
       if(!abort.signal.aborted)await run(hold.capture,hold.quota,admission);
@@ -391,7 +391,7 @@ export class CaptureService {
           if(!quota||!committed||committed.settlementStatus==='held'||(success&&!committed.usableResult)) throw new Error('Settlement pending');
           if(success)send({type:'delta',text:responseText});
           if(!success)send({type:'error',error:usage?.finishReason==='length'
-            ?{code:'model_output_limit',message:'补充生成达到长度上限，原答案保持不变，本次不另扣题。'}
+            ?{code:'model_output_limit',message:'补充生成达到长度上限，原答案保持不变，本次不另扣次。'}
             :{code:'upstream_error',message:'未获得补充结果；原答案保持不变'}});
           const ancestor = operation === 'recover' ? await store.billing.capture(token, parentId) : null;
           send({...terminalUsage(committed,quota,usage),
@@ -471,8 +471,8 @@ export class CaptureService {
         finishReason:usage?.finishReason??null,inputTokens:usage?.inputTokens??null,
         outputTokens:usage?.outputTokens??null,visibleCharacters:deliveredChars,
         settlementStatus:committed.settlementStatus},'answer generation failed');
-      if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣题。请缩小到一个小问后重试。'}});
-      else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣题。请稍后重试。'}});
+      if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣次。请缩小到一个小问后重试。'}});
+      else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣次。请稍后重试。'}});
       else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
       else if(terminalState==='failed') send({type:'error',error:{code:'upstream_error',message:'未获得可用结果，请稍后重试'}});
       send({...terminalUsage(committed,quota,usage),...this.explanationFields(committed, committed)});

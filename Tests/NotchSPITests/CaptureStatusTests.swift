@@ -6,7 +6,7 @@ final class CaptureStatusTests: XCTestCase {
         let model = TutorModel()
         model.status = .idle
         model.answer = "FINAL: B"
-        model.statusText = "完成 · 剩余 864 题"
+        model.statusText = "完成 · 剩余 864 次"
         XCTAssertEqual(model.captureHeading, L10n.statusDone)
         XCTAssertEqual(model.captureStatusDetail, model.statusText)
         model.resultState = .review
@@ -48,13 +48,13 @@ final class CaptureStatusTests: XCTestCase {
         XCTAssertEqual(model.screenshotHint, model.screenshotNotice)
         XCTAssertEqual(model.captureStatusDetail, model.screenshotNotice)
         model.screenshotRoundActive = false; model.status = .running; model.recoveryAttempted = true
-        model.statusText = "正在恢复本次答案 · 不另扣题"
+        model.statusText = "正在恢复本次答案 · 不另扣次"
         XCTAssertEqual(model.captureHeading, L10n.t("恢复中", "復元中", "Recovering"))
         XCTAssertEqual(model.captureStatusDetail, model.statusText)
         model.status = .error; model.captureFeedback = "连接已中断，请重新截图。"
         XCTAssertEqual(model.displayedAnswer, model.captureFeedback)
         XCTAssertEqual(model.captureStatusDetail, model.captureFeedback)
-        model.captureFeedback = ""; model.status = .idle; model.statusText = "完成 · 剩余 864 题"
+        model.captureFeedback = ""; model.status = .idle; model.statusText = "完成 · 剩余 864 次"
         XCTAssertEqual(model.captureHeading, model.statusText)
     }
 }

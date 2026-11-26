@@ -218,29 +218,29 @@ enum OfficialAPI {
     /// own message. Known classes carry a way out with zero jargon.
     static func localizedMessage(code: String?, fallback: String) -> String {
         switch code {
-        case "paid_credits_disabled": return L10n.t("每日额度已用完，题包自动使用已关闭。可等待重置，或在「账户与订阅」中开启。", "毎日の枠を使い切りました。パックの自動利用はオフです。", "Daily allowance is exhausted and pack spending is off. Wait for reset or enable it in Account & plan.")
+        case "paid_credits_disabled": return L10n.t("每日额度已用完，次数包自动使用已关闭。可等待重置，或在「账户与订阅」中开启。", "毎日の枠を使い切りました。パックの自動利用はオフです。", "Daily allowance is exhausted and pack spending is off. Wait for reset or enable it in Account & plan.")
         case "budget_exceeded":
-            return L10n.t("服务端今日预算已用完，本次未扣题。你的剩余题数不受影响，请联系支持恢复服务。",
-                          "本日のサービス予算に達しました。今回は質問数を消費していません。サポートにお問い合わせください。",
+            return L10n.t("服务端今日预算已用完，本次未扣次。你的剩余次数不受影响，请联系支持恢复服务。",
+                          "本日のサービス予算に達しました。今回は回数を消費していません。サポートにお問い合わせください。",
                           "The service's daily budget is exhausted. This attempt was not charged. Contact support to restore service.")
         case "payload_too_large":
             return captureTooLargeMessage
         case "insufficient_quota":
             return L10n.t(
-                "题数已用完，本次没有消耗额度。充值后即可继续使用。",
-                "質問数を使い切りました(今回は消費されていません)。チャージすると続けられます。",
-                "You're out of questions — this attempt wasn't charged. Top up to keep going.")
+                "次数已用完，本次没有消耗额度。充值后即可继续使用。",
+                "回数を使い切りました(今回は消費されていません)。チャージすると続けられます。",
+                "You're out of credits — this attempt wasn't charged. Top up to keep going.")
         case "invalid_token":
             return L10n.t(
                 "服务暂时未接受本机凭证。凭证已保留，请在账户页重试或联系支持。",
                 "認証情報は保持されています。アカウント画面から再試行するか、サポートにお問い合わせください。",
                 "The service did not accept this device credential. It has been preserved. Retry in Account or contact support.")
         case "model_output_limit":
-            return L10n.t("本题生成长度达到上限，未获得完整答案，本次未扣题。可缩小到一个小问后重试。",
+            return L10n.t("本题生成长度达到上限，未获得完整答案，本次未扣次。可缩小到一个小问后重试。",
                           "生成の長さが上限に達し、回答を完成できませんでした。今回は消費されていません。小問ごとにお試しください。",
                           "The output limit was reached before a complete answer. This attempt was not charged. Try one subquestion at a time.")
         case "upstream_timeout":
-            return L10n.t("本题生成超时，未获得完整答案，本次未扣题。请稍后重试。",
+            return L10n.t("本题生成超时，未获得完整答案，本次未扣次。请稍后重试。",
                           "回答の生成がタイムアウトしました。今回は消費されていません。しばらくして再試行してください。",
                           "Answer generation timed out. This attempt was not charged. Try again shortly.")
         case "upstream_error":
@@ -632,7 +632,7 @@ enum OfficialAPI {
         let deliveryCancellation = DeliveryCancellation()
         let allowPurchased = Settings.shared.allowPurchasedCredits
         if !allowPurchased && operation == "solve" && accountState.value("spendingPolicySupported") as? Bool != true {
-            DispatchQueue.main.async { onDone(false, L10n.t("当前服务尚未确认题包保护支持。请刷新账户后重试；本次未发起求解。", "パック保護を確認できません。アカウントを更新してください。", "Pack protection is not confirmed by this service. Refresh your account before trying again.")) }
+            DispatchQueue.main.async { onDone(false, L10n.t("当前服务尚未确认次数包保护支持。请刷新账户后重试；本次未发起求解。", "パック保護を確認できません。アカウントを更新してください。", "Pack protection is not confirmed by this service. Refresh your account before trying again.")) }
             return nil
         }
         return Task.detached(priority: .userInitiated) {

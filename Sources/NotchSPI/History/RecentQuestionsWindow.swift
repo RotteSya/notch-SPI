@@ -32,7 +32,7 @@ final class RecentQuestionsWindowController: NSWindowController, NSTableViewData
         let header = NSTextField(labelWithString: L10n.t("最近查题", "最近の問題", "Recent Questions"))
         header.font = InformationHierarchy.pageTitle
         let subtitle = NSTextField(labelWithString: L10n.t(
-            "自动保存在本机 · 最近 30 天，最多 100 条 / 200 MB · 回看不扣题",
+            "自动保存在本机 · 最近 30 天，最多 100 条 / 200 MB · 回看不扣次",
             "このMacに自動保存 · 過去30日、最大100件 / 200 MB · 閲覧は消費なし",
             "Saved on this Mac · Last 30 days, up to 100 entries / 200 MB · No charge to review"))
         subtitle.font = InformationHierarchy.subtitle; subtitle.textColor = .secondaryLabelColor

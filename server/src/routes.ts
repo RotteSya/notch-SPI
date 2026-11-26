@@ -510,7 +510,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     reply.header('Cache-Control','no-store');
     const body=(req.body??{}) as PurchaseSessionBody;
     const pack=findPack(config.packs,str(body.pack_id));
-    if(!pack) throw new ApiError(400,'题包无效');
+    if(!pack) throw new ApiError(400,'次数包无效');
     if(str(body.catalog_version)!==config.catalogVersion) throw new ApiError(409,'价格目录已更新，请刷新后重试','idempotency_conflict');
     const purchaseId=str(body.purchase_id);
     if(!/^[0-9a-f-]{16,80}$/i.test(purchaseId)) throw new ApiError(400,'purchase_id 无效');
@@ -676,7 +676,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     // The token must belong to a real account — no checkout sessions for junk tokens.
     if ((await store.getAccount(token)) === null) throw new ApiError(401, '设备令牌无效');
     const pack = findPack(config.packs, str(body.pack_id));
-    if (!pack) throw new ApiError(400, '题包无效');
+    if (!pack) throw new ApiError(400, '次数包无效');
 
     const result = await createCheckoutSession(config.stripeSecretKey, {
       pack,
@@ -761,7 +761,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     const token = str(body.device_token);
     if (!token) throw new ApiError(400, '缺少设备令牌');
     const pack = findPack(config.packs, str(body.pack_id));
-    if (!pack) throw new ApiError(400, '题包无效');
+    if (!pack) throw new ApiError(400, '次数包无效');
 
     const newBalance = await store.credit({
       token,

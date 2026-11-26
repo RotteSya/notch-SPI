@@ -225,14 +225,14 @@ test('top-up page renders localized HTML with the pack catalog', async () => {
   assert.equal(zh.status, 200);
   assert.match(zh.headers.get('content-type') ?? '', /text\/html/);
   const zhText = await zh.text();
-  assert.match(zhText, /充值题数/);
-  assert.match(zhText, /100 题/);
+  assert.match(zhText, /充值次数/);
+  assert.match(zhText, /100 次/);
   assert.match(zhText, /¥9/);
 
   const ja = await (await fetch(`${base}/topup?device=${token}&lang=ja`)).text();
   assert.match(ja, /チャージ/);
   const en = await (await fetch(`${base}/topup?device=${token}&lang=en`)).text();
-  assert.match(en, /Top Up Questions/);
+  assert.match(en, /Top Up Credits/);
 });
 
 test('GET /dl counts the click and streams the DMG from this origin; /stats reports the tally', async () => {

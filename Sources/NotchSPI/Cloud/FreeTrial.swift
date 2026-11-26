@@ -41,9 +41,9 @@ struct FreeTrialSnapshot: Codable, Equatable {
     var exhaustedNotice: String? {
         guard status == .active, dailyRemaining == 0 else { return nil }
         if let end = date(expiresAt), let reset = date(resetsAt), end <= reset {
-            return L10n.t("本次体验的免费额度已用完，可使用已购题数继续。", "体験期間の無料枠を使い切りました。購入済み残高で続けられます。", "Your trial’s free allowance is used up. You can continue with purchased credits.")
+            return L10n.t("本次体验的免费额度已用完，可使用已购次数继续。", "体験期間の無料枠を使い切りました。購入済み残高で続けられます。", "Your trial’s free allowance is used up. You can continue with purchased credits.")
         }
-        return L10n.t("今日 400 次免费额度已用完，北京时间 00:00 恢复。也可使用已购题数继续。", "本日の無料枠400回を使い切りました。北京時間00:00にリセットされます。購入済み残高でも続けられます。", "Today’s 400 free solves are used up. They reset at 00:00 Beijing time. You can also continue with purchased credits.")
+        return L10n.t("今日 400 次免费额度已用完，北京时间 00:00 恢复。也可使用已购次数继续。", "本日の無料枠400回を使い切りました。北京時間00:00にリセットされます。購入済み残高でも続けられます。", "Today’s 400 free solves are used up. They reset at 00:00 Beijing time. You can also continue with purchased credits.")
     }
 }
 

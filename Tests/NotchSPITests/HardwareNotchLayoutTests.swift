@@ -299,7 +299,7 @@ final class HardwareNotchLayoutTests: XCTestCase {
             view.resetScreenFrames(collapsed: collapsed, expanded: expanded)
             model.mode = "personality"
             model.personaLabel = String(repeating: "Long persona name", count: 20)
-            model.statusText = "完成 · 剩余 864 题"
+            model.statusText = "完成 · 剩余 864 次"
             model.expanded = true
             view.refreshScreenshotTray()
             let all = descendants(view)
