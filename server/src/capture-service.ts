@@ -29,7 +29,7 @@ function requestReasoningEffort(value: unknown): CaptureRequest['reasoningEffort
 /** Compensation answers a failure of ours. A caller who hung up on its own recovery keeps the original charge. */
 function clientLeft(abort:AbortController):boolean { return abort.signal.reason==='client_disconnect'; }
 function quotaRejected(code:'insufficient_quota'|'paid_credits_disabled'):ApiError {
-  return new ApiError(402,code==='paid_credits_disabled'?'每日额度已用完，题包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code);
+  return new ApiError(402,code==='paid_credits_disabled'?'每日额度已用完，次数包自动使用已关闭。可等待重置或在账户设置中开启。':'请求未开始，请查询状态或稍后重试',code);
 }
 interface Admission { recoverableAbandon?:boolean; attemptId: string; providerStarted: boolean; reservedMicros:number; tokenUpper:number; share:number; template:Omit<NewAttempt,'attemptId'|'captureId'> }
 
@@ -223,7 +223,7 @@ export class CaptureService {
     const verdict=await store.billing.admitCapture({token,captureId,operation:input.operation,allowPurchasedCredits:input.allowPurchasedCredits},config.capturePerMinute);
     if(verdict?.rejection==='rate_limited') {
       reply.header('Retry-After',String(60-Math.floor(Date.now()/1000)%60));
-      throw new ApiError(429,'请求过于频繁，本次未扣题，请稍后重试','rate_limited');
+      throw new ApiError(429,'请求过于频繁，本次未扣次，请稍后重试','rate_limited');
     }
     if(verdict?.rejection)throw quotaRejected(verdict.rejection);
     if(abort.signal.aborted)return;
@@ -240,20 +240,20 @@ export class CaptureService {
           const offset=config.modelBudgetUtcOffsetMinutes*60_000;
           const resetsAt=new Date((Math.floor((Date.now()+offset)/86_400_000)+1)*86_400_000-offset);
           reply.header('Retry-After',String(Math.max(1,Math.ceil((resetsAt.getTime()-Date.now())/1000))));
-          throw new ApiError(503,`当前服务预算不足以接收本次请求，本次未扣题；下一预算周期始于 ${resetsAt.toISOString()}`,'budget_exceeded');
+          throw new ApiError(503,`当前服务预算不足以接收本次请求，本次未扣次；下一预算周期始于 ${resetsAt.toISOString()}`,'budget_exceeded');
         }
       } catch (error) {
         if (!(error instanceof BudgetAdmissionError)) throw error;
         req.log.warn({budgetAdmission: error.reason}, 'request budget admission rejected');
         if (error.reason === 'busy') {
           reply.header('Retry-After','5');
-          throw new ApiError(429,'当前服务请求较多，本次未扣题，请稍后重试','rate_limited');
+          throw new ApiError(429,'当前服务请求较多，本次未扣次，请稍后重试','rate_limited');
         }
         if (error.reason === 'cooldown') {
           reply.header('Retry-After',String(error.retryAfter));
-          throw new ApiError(503,'当前模型通道暂不可用，本次未扣题，请稍后重试','service_maintenance');
+          throw new ApiError(503,'当前模型通道暂不可用，本次未扣次，请稍后重试','service_maintenance');
         }
-        throw new ApiError(503,'当前模型通道费用核验异常，本次未扣题，请联系支持','service_maintenance');
+        throw new ApiError(503,'当前模型通道费用核验异常，本次未扣次，请联系支持','service_maintenance');
       }
       this.timings.get(req)?.mark('budgetReady');
       if(abort.signal.aborted)return;
@@ -517,7 +517,7 @@ export class CaptureService {
           if(!quota||!committed||committed.settlementStatus==='held'||(success&&!committed.usableResult)) throw new Error('Settlement pending');
           if(success)send({type:'delta',text:responseText});
           if(!success)send({type:'error',error:usage?.finishReason==='length'
-            ?{code:'model_output_limit',message:'补充生成达到长度上限，原答案保持不变，本次不另扣题。'}
+            ?{code:'model_output_limit',message:'补充生成达到长度上限，原答案保持不变，本次不另扣次。'}
             :{code:'upstream_error',message:'未获得补充结果；原答案保持不变'}});
           const ancestor = operation === 'recover' ? await store.billing.capture(token, parentId) : null;
           send({...terminalUsage(committed,quota,usage),
@@ -709,8 +709,8 @@ export class CaptureService {
         outputTokens:usage?.outputTokens??null,visibleCharacters:deliveredChars,
         settlementStatus:committed.settlementStatus},'answer generation failed');
       if(recoverable&&committed.usableResult&&committed.sealedAnswer){send({type:'delta',text:raw});this.timings.get(req)?.mark('firstDeltaSent');}
-      if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣题。请缩小到一个小问后重试。'}});
-      else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣题。请稍后重试。'}});
+      if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣次。请缩小到一个小问后重试。'}});
+      else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣次。请稍后重试。'}});
       else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});
       else if(terminalState==='failed') send({type:'error',error:{code:'upstream_error',message:'未获得可用结果，请稍后重试'}});
       send({...terminalUsage(committed,quota,usage),...this.explanationFields(committed, committed)});

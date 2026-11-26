@@ -59,7 +59,7 @@ const S = {
     "freeCard": {
       "name": "免费体验"
     },
-    "priceNote": "一次请求交付可用答案扣 1 题；没有可用答案的失败不扣。可用不等于保证答对，重新执行是新请求。支付由 Stripe 处理。",
+    "priceNote": "一次请求交付可用答案扣 1 次；没有可用答案的失败不扣。可用不等于保证答对，重新执行是新请求。支付由 Stripe 处理。",
     "faqs": [
       {"q": "如何升级到 3.0？", "a": "从 2.17 升级请下载 Mac 版并手动安装一次。3.0 起支持应用内下载、校验、安装和重启。"},
       {
@@ -67,8 +67,8 @@ const S = {
         "a": "默认开启的“帮助改进答题”会在服务端保存查题的题图、题目和答案，题图 90 天后删除；在设置 → 通用中关闭后不再保存，详见下方隐私说明。关闭时服务端不保存题图。为自动恢复断线，答案加密缓存 15 分钟，到期不可读取并由定期任务清理。临时题组材料最多保留 15 分钟；成功查题的题图与答案会另存到本机“最近查题”。应用读取或保存记录时按最近 30 天、最多 100 条 / 200 MB 清理，可在最近查题中删除。主动导出的反馈文件需自行删除。"
       },
       {
-        "q": "答题失败会扣题吗？",
-        "a": "没有可用答案的失败不扣题。断线后请先核对本次结算状态；再次执行可能产生新请求。"
+        "q": "答题失败会扣次吗？",
+        "a": "没有可用答案的失败不扣次。断线后请先核对本次结算状态；再次执行可能产生新请求。"
       },
       {
         "q": "换电脑后余额怎么办？",
@@ -76,7 +76,7 @@ const S = {
       },
       {
         "q": "可以退款吗？",
-        "a": "题包退款规则见下方政策。答错反馈需核验，额度补偿与现金退款分别处理。"
+        "a": "次数包退款规则见下方政策。答错反馈需核验，额度补偿与现金退款分别处理。"
       },
       {
         "q": "系统要求？",
@@ -96,9 +96,9 @@ const S = {
     ],
     "refundTitle": "退款与取消政策",
     "refundBody": [
-      "题数充值属数字商品，到账后原则上不支持因个人原因的退款。",
+      "次数充值属数字商品，到账后原则上不支持因个人原因的退款。",
       "如遇重复扣款、支付后未到账等我方原因的问题，将全额退款；请在 7 天内邮件联系。",
-      "答题失败不消耗题数（系统自动保障）。"
+      "答题失败不消耗次数（系统自动保障）。"
     ]
   },
   "ja": {
@@ -106,7 +106,7 @@ const S = {
     "freeCard": {
       "name": "おためし"
     },
-    "priceNote": "一つの依頼で利用可能な回答を受け取ると 1 問分を消費。回答なしの失敗は消費しません。利用可能は正解保証ではありません。別の再実行は新しい依頼です。決済は Stripe が処理します。",
+    "priceNote": "一つの依頼で利用可能な回答を受け取ると 1 回分を消費。回答なしの失敗は消費しません。利用可能は正解保証ではありません。別の再実行は新しい依頼です。決済は Stripe が処理します。",
     "faqs": [
       {"q": "3.0 への更新方法は？", "a": "2.17 からは Mac 版をダウンロードし、一度手動でインストールしてください。3.0 以降はアプリ内でダウンロード、検証、インストール、再起動ができます。"},
       {
@@ -123,7 +123,7 @@ const S = {
       },
       {
         "q": "返金はできますか？",
-        "a": "下記の返金ポリシーをご覧ください。誤答の報告は確認が必要で、題数の補償と返金は別に処理します。"
+        "a": "下記の返金ポリシーをご覧ください。誤答の報告は確認が必要で、回数の補償と返金は別に処理します。"
       },
       {
         "q": "動作環境は？",
@@ -143,9 +143,9 @@ const S = {
     ],
     "refundTitle": "返金・キャンセルポリシー",
     "refundBody": [
-      "デジタル商品（質問数チャージ）の性質上、チャージ完了後のお客様都合による返金は原則承っておりません。",
+      "デジタル商品（回数チャージ）の性質上、チャージ完了後のお客様都合による返金は原則承っておりません。",
       "二重課金・チャージ未反映など、当方の責によるトラブルの場合は全額返金いたします。お問い合わせから 7 日以内にメールでご連絡ください。",
-      "回答の生成に失敗した場合、質問数は消費されません（自動的に保護されます）。"
+      "回答の生成に失敗した場合、回数は消費されません（自動的に保護されます）。"
     ]
   },
   "en": {
@@ -153,7 +153,7 @@ const S = {
     "freeCard": {
       "name": "Try it"
     },
-    "priceNote": "One request delivering a usable answer costs one question. Failures without a usable answer are not charged. Usable does not guarantee correct; running it again is a new request. Stripe processes payments.",
+    "priceNote": "One request delivering a usable answer costs one credit. Failures without a usable answer are not charged. Usable does not guarantee correct; running it again is a new request. Stripe processes payments.",
     "faqs": [
       {"q": "How do I upgrade to 3.0?", "a": "From 2.17, download the Mac version and install it manually once. From 3.0 onward, updates can download, verify, install and restart within the app."},
       {
@@ -190,7 +190,7 @@ const S = {
     ],
     "refundTitle": "Refund & Cancellation Policy",
     "refundBody": [
-      "Question credits are digital goods and are generally non-refundable after delivery.",
+      "Credits are digital goods and are generally non-refundable after delivery.",
       "Issues caused by us — double charges, credits not delivered — are fully refunded; email within 7 days.",
       "Failed answers never consume credits (enforced automatically)."
     ]
@@ -207,8 +207,8 @@ function tokushohoTable(): string {
     ['販売価格', '各チャージページに表示の金額（消費税込み）'],
     ['商品代金以外の必要料金', 'なし（通信料はお客様負担）'],
     ['お支払い方法', 'クレジットカード等（Stripe 決済）'],
-    ['支払時期', '問題パックは購入時。Plus は申込時および毎月の更新時に自動決済'],
-    ['商品の引渡時期', '決済確認後、問題数残高または Plus の利用権に反映'],
+    ['支払時期', '回数パックは購入時。Plus は申込時および毎月の更新時に自動決済'],
+    ['商品の引渡時期', '決済確認後、回数残高または Plus の利用権に反映'],
     ['返品・キャンセル', 'デジタル商品の性質上、チャージ後の返金は原則不可。当方の不具合による場合は全額返金いたします（返金ポリシー参照）'],
     ['動作環境', 'Apple Silicon Mac / macOS 14 以降、Intel Mac / macOS 12.3 以降（ノッチのない画面では上部パネル）'],
   ];
@@ -222,7 +222,7 @@ function entryCopy(input:SiteInput) {
   const reading=input.entry==='reading_practice',beta=input.entryStatus==='beta';
   if(input.lang==='zh')return {
     title:reading?'在 Mac 上练习阅读题。':'在 Mac 上准备 SPI。',
-    description:reading?'把题目、选项和阅读材料放在一起，围绕一道题练习理解。与 SPI 入口使用同一 NotchSPI、下载和题包。':'保留熟悉的 SPI 备考入口，围绕屏幕上的一道题查看答案。与阅读练习共用 NotchSPI、下载和题包。',
+    description:reading?'把题目、选项和阅读材料放在一起，围绕一道题练习理解。与 SPI 入口使用同一 NotchSPI、下载和次数包。':'保留熟悉的 SPI 备考入口，围绕屏幕上的一道题查看答案。与阅读练习共用 NotchSPI、下载和次数包。',
     scopeTitle:'当前支持与开放状态',
     scope:reading?(beta?'阅读练习处于内部测试，尚无完成独立评测的公开支持组合。':'阅读练习尚未开放，授权题集与独立评测仍在准备。'):
       '既有 SPI 入口继续可用。新版查题合约的题型、语言和版面组合仍待独立评测；不能把历史 SPI 结果视为所有题目的正确率。',
@@ -231,7 +231,7 @@ function entryCopy(input:SiteInput) {
   };
   if(input.lang==='ja')return {
     title:reading?'Mac で読解練習。':'Mac で SPI 対策。',
-    description:reading?'問題・選択肢・文章を揃えて、一問の理解に取り組みます。SPI の入口と同じ NotchSPI、ダウンロード、題数パックを使います。':'慣れた SPI 対策の入口から、画面上の一問の回答を確認。読解練習と同じ NotchSPI、ダウンロード、題数パックです。',
+    description:reading?'問題・選択肢・文章を揃えて、一問の理解に取り組みます。SPI の入口と同じ NotchSPI、ダウンロード、回数パックを使います。':'慣れた SPI 対策の入口から、画面上の一問の回答を確認。読解練習と同じ NotchSPI、ダウンロード、回数パックです。',
     scopeTitle:'現在の対応範囲と公開状況',
     scope:reading?(beta?'読解練習は内部テスト中です。独立評価が完了した公開対応の組み合わせはまだありません。':'読解練習はまだ公開されていません。許諾済みの問題集と独立評価を準備しています。'):
       '既存の SPI 入口は継続します。新しい質問機能の題型・言語・レイアウトは独立評価待ちです。過去の SPI 結果を全問題の正解率とは扱いません。',
@@ -240,7 +240,7 @@ function entryCopy(input:SiteInput) {
   };
   return {
     title:reading?'Practice reading questions on your Mac.':'Prepare for SPI on your Mac.',
-    description:reading?'Bring the question, options and reading material together to work through one question. Use the same NotchSPI app, download and question packs as the SPI entry.':'Keep the familiar SPI preparation entry and review one question on screen. It shares the NotchSPI app, download and question packs with reading practice.',
+    description:reading?'Bring the question, options and reading material together to work through one question. Use the same NotchSPI app, download and credit packs as the SPI entry.':'Keep the familiar SPI preparation entry and review one question on screen. It shares the NotchSPI app, download and credit packs with reading practice.',
     scopeTitle:'Current scope and availability',
     scope:reading?(beta?'Reading practice is in internal testing. No public support combinations have completed independent evaluation yet.':'Reading practice is not open yet. Authorized material and independent evaluation are being prepared.'):
       'The existing SPI entry continues. Question types, languages and layouts for the new query contract await independent evaluation. Historical SPI results do not establish accuracy for all questions.',
@@ -264,9 +264,9 @@ export function renderLandingPage(input: SiteInput): string {
   const e = escapeHtml;
   const lines = (v:string) => e(v).replaceAll('\n','<br>');
   const ui = {
-    zh: {watch:'看一次完整演示',platforms:'其他平台与系统要求',plus:'适合每天使用',trial:'先试试看',packs:'偶尔用，按需补充。',packSub:'一次性题包，与 Plus 分开购买。',purchase:'查看购买方式',protect:'关于窗口捕获保护',protectBody:'正式版设有窗口截图排除机制。具体共享或录屏效果取决于系统与软件，尚不提供覆盖所有环境的保证。请先在自己的使用环境中验证。',plain:'下载后，在 App 中查看可用额度与购买选项。',off:'当前暂未开放',history:'回到思路发生的地方。',historyBody:'成功查题的题图和答案保存在本机“最近查题”。需要复习时，再看一次。',planIntro:'同一官方服务，按使用频率选择。免费体验、订阅和一次性题包分别计额。'},
-    ja: {watch:'操作デモを見る',platforms:'その他の環境・動作条件',plus:'毎日使う方へ',trial:'まずは体験',packs:'必要な分だけ、追加。',packSub:'Plus とは別に購入できる一回払いの問題パック。',purchase:'購入方法を見る',protect:'ウィンドウのキャプチャ保護について',protectBody:'正式版にはウィンドウをキャプチャから除外する仕組みがあります。共有・録画の結果は OS とソフトによって異なり、すべての環境での動作は保証していません。ご利用環境で先に確認してください。',plain:'ダウンロード後、アプリで利用可能な枠と購入方法を確認できます。',off:'現在受付停止中',history:'考え方を、もう一度。',historyBody:'解答できた問題の画像と回答は、この Mac の「最近の問題」に保存されます。復習したい時に振り返れます。',planIntro:'同じ公式サービスを、使う頻度に合わせて。体験・月額・問題パックはそれぞれ別の利用枠です。'},
-    en: {watch:'Watch the full demo',platforms:'Other platforms & requirements',plus:'For daily practice',trial:'Start with a trial',packs:'A little help, as needed.',packSub:'One-time question packs, purchased separately from Plus.',purchase:'How to purchase',protect:'About window capture protection',protectBody:'Release builds include window capture exclusion. Sharing and recording behavior depends on the OS and capture software; coverage of every environment is not guaranteed. Verify in your own setup first.',plain:'Download to check available credits and purchase options in the app.',off:'Currently unavailable',history:'Return to your train of thought.',historyBody:'Successful question images and answers stay in Recent Questions on this Mac, ready when you want to review.',planIntro:'The same official service, matched to your routine. Trial, subscription and one-time packs have separate allowances.'}
+    zh: {watch:'看一次完整演示',platforms:'其他平台与系统要求',plus:'适合每天使用',trial:'先试试看',packs:'偶尔用，按需补充。',packSub:'一次性次数包，与 Plus 分开购买。',purchase:'查看购买方式',protect:'关于窗口捕获保护',protectBody:'正式版设有窗口截图排除机制。具体共享或录屏效果取决于系统与软件，尚不提供覆盖所有环境的保证。请先在自己的使用环境中验证。',plain:'下载后，在 App 中查看可用额度与购买选项。',off:'当前暂未开放',history:'回到思路发生的地方。',historyBody:'成功查题的题图和答案保存在本机“最近查题”。需要复习时，再看一次。',planIntro:'同一官方服务，按使用频率选择。免费体验、订阅和一次性次数包分别计额。'},
+    ja: {watch:'操作デモを見る',platforms:'その他の環境・動作条件',plus:'毎日使う方へ',trial:'まずは体験',packs:'必要な分だけ、追加。',packSub:'Plus とは別に購入できる一回払いの回数パック。',purchase:'購入方法を見る',protect:'ウィンドウのキャプチャ保護について',protectBody:'正式版にはウィンドウをキャプチャから除外する仕組みがあります。共有・録画の結果は OS とソフトによって異なり、すべての環境での動作は保証していません。ご利用環境で先に確認してください。',plain:'ダウンロード後、アプリで利用可能な枠と購入方法を確認できます。',off:'現在受付停止中',history:'考え方を、もう一度。',historyBody:'解答できた問題の画像と回答は、この Mac の「最近の問題」に保存されます。復習したい時に振り返れます。',planIntro:'同じ公式サービスを、使う頻度に合わせて。体験・月額・回数パックはそれぞれ別の利用枠です。'},
+    en: {watch:'Watch the full demo',platforms:'Other platforms & requirements',plus:'For daily practice',trial:'Start with a trial',packs:'A little help, as needed.',packSub:'One-time credit packs, purchased separately from Plus.',purchase:'How to purchase',protect:'About window capture protection',protectBody:'Release builds include window capture exclusion. Sharing and recording behavior depends on the OS and capture software; coverage of every environment is not guaranteed. Verify in your own setup first.',plain:'Download to check available credits and purchase options in the app.',off:'Currently unavailable',history:'Return to your train of thought.',historyBody:'Successful question images and answers stay in Recent Questions on this Mac, ready when you want to review.',planIntro:'The same official service, matched to your routine. Trial, subscription and one-time packs have separate allowances.'}
   }[input.lang];
   const ghost = `<img class="ghost-mark" src="/media/notchspi-ghost-logo.png?v=right-20261117" alt="" width="100" height="100" aria-hidden="true">`;
   const packs = [...input.packs].sort((a,b)=>a.questions-b.questions);
@@ -301,9 +301,9 @@ export function renderLandingPage(input: SiteInput): string {
   const privacy=s.privacyBody.map(p=>`<p>${e(p.replaceAll('{{AI_PROVIDER}}',providerName))}</p>`).join('');
   const refund=s.refundBody.map(p=>`<p>${e(p)}</p>`).join('');
   const plusCopy = {
-    zh: {title:'NotchSPI Plus',period:'每月自动续费',benefit:'每日 400 次成功求解，解释与失败不额外扣次。北京时间 00:00 重置，不累计。',cancel:'可随时取消自动续费，已付款周期内仍可使用。题包仍可单独购买。',buy:'App 设置 → 账户与订阅',trial:'新设备可自行选择领取 72 小时免费体验，每日 400 次。引导可选择稍后领取，之后在设置 → 账户与订阅领取。领取时替换初始赠送的未用部分，已购余额保留。免费体验与 Plus 独立计额，先用免费体验，再用 Plus，最后用题包。'},
-    ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日 400 回の解答。解説・失敗は追加消費なし。北京時間 00:00 リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。問題パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72 時間・毎日 400 回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
-    en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Question packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
+    zh: {title:'NotchSPI Plus',period:'每月自动续费',benefit:'每日 400 次成功求解，解释与失败不额外扣次。北京时间 00:00 重置，不累计。',cancel:'可随时取消自动续费，已付款周期内仍可使用。次数包仍可单独购买。',buy:'App 设置 → 账户与订阅',trial:'新设备可自行选择领取 72 小时免费体验，每日 400 次。引导可选择稍后领取，之后在设置 → 账户与订阅领取。领取时替换初始赠送的未用部分，已购余额保留。免费体验与 Plus 独立计额，先用免费体验，再用 Plus，最后用次数包。'},
+    ja: {title:'NotchSPI Plus',period:'毎月自動更新',benefit:'毎日 400 回の解答。解説・失敗は追加消費なし。北京時間 00:00 リセット、繰り越しなし。',cancel:'いつでも自動更新を停止でき、支払済み期間は利用可能。回数パックも単独で購入できます。',buy:'アプリ設定 → アカウントとプラン',trial:'新規デバイスは好きな時に72 時間・毎日 400 回の無料体験を開始できます。ガイドでスキップ後も設定のアカウント画面から受け取れます。初回無料残高の未使用分と置き換わり、購入済み残高は保持。無料体験、Plus、購入パックの順に各枠を使います。'},
+    en: {title:'NotchSPI Plus',period:'Renews monthly',benefit:'400 successful solves daily. No extra count for explanations or failures. Resets at 00:00 Beijing time; no rollover.',cancel:'Cancel renewal anytime and keep access through the paid period. Credit packs remain available separately.',buy:'App Settings → Account & plan',trial:'New devices can choose when to claim a 72-hour trial with 400 solves daily. Choose Claim later in setup, then claim from Settings → Account & plan. Claiming replaces unused initial free credits; purchased credits remain. Trial and Plus allowances are separate, used before purchased credits in that order.'},
   }[input.lang];
   const plusCard = plusEnabled ? `<article class="concept-plan plus-plan" aria-label="${plusCopy.title}"><span class="plan-badge">${c.daily}</span><h3>Plus</h3><p>${c.plusSub}</p><div class="price-line">CNY <span class="price">${amount(PLUS.priceCents,PLUS.currency)}</span> / ${c.month}</div><ul>${c.plusFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#purchase" data-purchase="plus">${c.plusCTA}${input.lang==='zh'?'':' →'}</a></article>` : '';
   const trialCard = trialEnabled ? `<article class="concept-plan trial-plan"><h3>${s.freeCard.name}</h3><p>${c.trialSub}</p><div class="price-line"><span class="price">${e(formatMoney(0,input.currency))}</span></div><ul>${c.trialFeatures.map(t=>`<li>${check}${t}</li>`).join('')}</ul><a class="button" href="#downloads">${symbol('arrow.down.to.line')} ${c.trialCTA}</a></article>` : '';

@@ -157,8 +157,8 @@ export function personalityStatusText(primary, { language = "en", contextWasClea
   const parts = [(personalityStatuses[primary] ?? personalityStatuses.noValidChoices)[index]];
   if (contextWasCleared && primary !== "contextCleared") parts.push(personalityStatuses.contextCleared[index]);
   if (Number.isSafeInteger(questionsRemaining) && questionsRemaining >= 0) {
-    parts.push([`剩余 ${questionsRemaining} 题`, `残り${questionsRemaining}問`,
-      questionsRemaining === 1 ? "1 question left" : `${questionsRemaining} questions left`][index]);
+    parts.push([`剩余 ${questionsRemaining} 次`, `残り${questionsRemaining}回`,
+      questionsRemaining === 1 ? "1 credit left" : `${questionsRemaining} credits left`][index]);
   }
   if (quotaRunningLow) parts.push(["额度即将用完", "残りわずか", "Running low"][index]);
   if (copied) parts.push(["已复制", "コピー済み", "Copied"][index]);

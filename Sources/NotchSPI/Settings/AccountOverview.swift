@@ -29,14 +29,14 @@ struct AccountOverview {
         if free > 0 { next = trial?.status == .active ? L10n.t("免费体验", "無料体験", "free trial") : L10n.t("免费赠送额度", "無料枠", "free grant") }
         else if plus > 0 { next = "Plus" }
         else if other > 0 { next = L10n.t("其他可用余额", "その他の残高", "other credits") }
-        else if paid > 0 && allowPurchased { next = L10n.t("已购题包", "購入パック", "purchased packs") }
+        else if paid > 0 && allowPurchased { next = L10n.t("已购次数包", "購入パック", "purchased packs") }
         else { next = "" }
         canSolve = !next.isEmpty
         heading = canSolve ? L10n.t("下一题使用：", "次の回答：", "Next answer uses: ") + next
-            : paid > 0 && !allowPurchased ? L10n.t("题包已保护，暂不自动使用", "パックの自動利用はオフ", "Pack spending is paused")
-            : L10n.t("当前额度已用完", "利用枠を使い切りました", "No questions available right now")
+            : paid > 0 && !allowPurchased ? L10n.t("次数包已保护，暂不自动使用", "パックの自動利用はオフ", "Pack spending is paused")
+            : L10n.t("当前额度已用完", "利用枠を使い切りました", "No credits available right now")
         var lines = [L10n.t("免费剩余 \(free) 次 · Plus 今日 \(plus) 次", "無料 \(free) 回 · Plus 本日 \(plus) 回", "Free: \(free) · Plus today: \(plus)"),
-                     L10n.t("长期题包 \(paid) 题 · 其他余额 \(other) 题", "購入パック \(paid) 問 · その他 \(other) 問", "Lasting packs: \(paid) · Other credits: \(other)")]
+                     L10n.t("长期次数包 \(paid) 次 · 其他余额 \(other) 次", "購入パック \(paid) 回 · その他 \(other) 回", "Lasting packs: \(paid) · Other credits: \(other)")]
         if trial?.status == .eligible {
             lines.append(L10n.t("3 天体验尚未开始；领取后开始 72 小时计时。", "3日間の体験は未開始。受け取った時点から72時間。", "Your 3-day trial starts its 72-hour timer only when claimed."))
         } else if trial?.status == .active, let end = trial?.expirationLabel {

@@ -60,30 +60,30 @@ interface PageStrings {
 
 const STRINGS: Record<PageLang, PageStrings> = {
   zh: {
-    title: '充值题数',
-    subtitle: '每按一次快捷键答一题，消耗 1 题额度。失败不扣题。',
-    perQuestion: '每题约',
-    questionsUnit: (n) => `${n} 题`,
-    popular: '推荐题包',
+    title: '充值次数',
+    subtitle: '成功获得可用答案扣 1 次，失败不扣。',
+    perQuestion: '每次约',
+    questionsUnit: (n) => `${n} 次`,
+    popular: '推荐次数包',
     buy: '购买',
     unavailable: '暂未开放',
     unavailableNote: '支付渠道即将开通，敬请期待。',
     stubWarn: '⚠️ 开发用支付桩：点击即直接入账，不涉及真实支付。生产环境请配置 Stripe。',
     processing: '处理中…',
     successPrefix: '已到账！当前剩余 ',
-    successSuffix: ' 题。回到 App 即可继续使用。',
+    successSuffix: ' 次。回到 App 即可继续使用。',
     failPrefix: '失败：',
     networkErr: '网络错误：',
     device: '设备',
-    security: '题数只与本设备绑定，无需注册账号。支付由 Stripe 安全处理。',
+    security: '次数只与本设备绑定，无需注册账号。支付由 Stripe 安全处理。',
     paidBanner: '已从支付页面返回。请回 App 核对余额；此跳转不代表已付款或已到账，确认前请勿重复购买。',
     canceledBanner: '已返回购买页。如取消或付款失败，请先核对原订单；此页面不能确认是否扣款。',
   },
   ja: {
-    title: '質問数をチャージ',
-    subtitle: 'ショートカット 1 回につき 1 問分を消費します。失敗時は消費されません。',
-    perQuestion: '1問あたり約',
-    questionsUnit: (n) => `${n}問`,
+    title: '回数をチャージ',
+    subtitle: '利用可能な回答 1 件につき 1 回分を消費します。失敗時は消費されません。',
+    perQuestion: '1回あたり約',
+    questionsUnit: (n) => `${n}回`,
     popular: 'おすすめ',
     buy: '購入',
     unavailable: '近日公開',
@@ -91,19 +91,19 @@ const STRINGS: Record<PageLang, PageStrings> = {
     stubWarn: '⚠️ 開発用スタブ：クリックすると即時チャージされます（実際の決済なし）。',
     processing: '処理中…',
     successPrefix: 'チャージ完了！残り ',
-    successSuffix: ' 問。アプリに戻ってお使いください。',
+    successSuffix: ' 回。アプリに戻ってお使いください。',
     failPrefix: '失敗：',
     networkErr: 'ネットワークエラー：',
     device: 'デバイス',
-    security: '質問数はこのデバイスにのみ紐づきます。アカウント登録は不要。決済は Stripe が安全に処理します。',
+    security: '回数はこのデバイスにのみ紐づきます。アカウント登録は不要。決済は Stripe が安全に処理します。',
     paidBanner: '決済画面から戻りました。アプリで残高を確認してください。この移動だけでは決済・反映は確定しません。再購入はお控えください。',
     canceledBanner: '購入画面に戻りました。キャンセル・失敗時も元の注文を確認してください。この画面だけでは未決済を確認できません。',
   },
   en: {
-    title: 'Top Up Questions',
-    subtitle: 'Each hotkey press answers one question and costs 1 credit. Failures are never charged.',
+    title: 'Top Up Credits',
+    subtitle: 'Each usable answer costs 1 credit. Failures are never charged.',
     perQuestion: 'about',
-    questionsUnit: (n) => `${n} questions`,
+    questionsUnit: (n) => `${n} credits`,
     popular: 'Recommended',
     buy: 'Buy',
     unavailable: 'Coming soon',
@@ -111,7 +111,7 @@ const STRINGS: Record<PageLang, PageStrings> = {
     stubWarn: '⚠️ Development stub: clicking credits instantly, no real payment involved.',
     processing: 'Processing…',
     successPrefix: 'Done! You now have ',
-    successSuffix: ' questions. Head back to the app.',
+    successSuffix: ' credits. Head back to the app.',
     failPrefix: 'Failed: ',
     networkErr: 'Network error: ',
     device: 'Device',
@@ -128,7 +128,7 @@ export function formatMoney(cents: number, currency: string): string {
   return `${symbol}${Number.isInteger(value) ? value : value.toFixed(2)}`;
 }
 
-/** Localized product name for a pack, e.g. "NotchSPI · 300 题" (shown on Stripe Checkout too). */
+/** Localized product name for a pack, e.g. "NotchSPI · 300 次" (shown on Stripe Checkout too). */
 export function packDisplayName(pack: QuestionPack, lang: PageLang): string {
   return `NotchSPI · ${STRINGS[lang].questionsUnit(pack.questions)}`;
 }

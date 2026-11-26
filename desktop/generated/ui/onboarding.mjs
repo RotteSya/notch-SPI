@@ -248,9 +248,9 @@ export function onboardingCopy(step, language = "en", trial = null) {
             "400 solves per day, resetting at 00:00 Beijing time. Failures do not count.",
           ]
         : [
-            "已购买的题数仍可继续使用。",
-            "購入済みの問題数は引き続き使えます。",
-            "Your purchased questions are still available.",
+            "已购买的次数仍可继续使用。",
+            "購入済みの回数は引き続き使えます。",
+            "Your purchased credits are still available.",
           ])[i],
       action: ["开始使用", "使い始める", "Start using NotchSPI"][i],
     };

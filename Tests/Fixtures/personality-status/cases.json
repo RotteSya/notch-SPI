@@ -307,7 +307,7 @@
     "questionsRemaining": 3,
     "quotaRunningLow": true,
     "copied": false,
-    "text": "连续题上下文未保存 · 连续题上下文已清空 · 剩余 3 题 · 额度即将用完"
+    "text": "连续题上下文未保存 · 连续题上下文已清空 · 剩余 3 次 · 额度即将用完"
   },
   {
     "id": "suffixes-ja",
@@ -317,7 +317,7 @@
     "questionsRemaining": 3,
     "quotaRunningLow": true,
     "copied": false,
-    "text": "連続質問のコンテキストを保存できませんでした · 連続質問のコンテキストを消去しました · 残り3問 · 残りわずか"
+    "text": "連続質問のコンテキストを保存できませんでした · 連続質問のコンテキストを消去しました · 残り3回 · 残りわずか"
   },
   {
     "id": "suffixes-en",
@@ -327,7 +327,7 @@
     "questionsRemaining": 3,
     "quotaRunningLow": true,
     "copied": false,
-    "text": "Questionnaire context wasn't saved · Questionnaire context cleared · 3 questions left · Running low"
+    "text": "Questionnaire context wasn't saved · Questionnaire context cleared · 3 credits left · Running low"
   },
   {
     "id": "no-duplicate-clear",
@@ -337,6 +337,6 @@
     "questionsRemaining": 1,
     "quotaRunningLow": false,
     "copied": true,
-    "text": "Questionnaire context cleared · 1 question left · Copied"
+    "text": "Questionnaire context cleared · 1 credit left · Copied"
   }
 ]

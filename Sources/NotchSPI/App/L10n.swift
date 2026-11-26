@@ -145,12 +145,12 @@ enum L10n {
 
     /// Localized unit for balances and grants.
     static func questions(_ n: Int) -> String {
-        t("\(n) 题", "\(n)問", n == 1 ? "1 question" : "\(n) questions")
+        t("\(n) 次", "\(n)回", n == 1 ? "1 answer" : "\(n) answers")
     }
 
     /// Localized remaining-balance label.
     static func questionsLeft(_ n: Int) -> String {
-        t("剩余 \(n) 题", "残り\(n)問", n == 1 ? "1 question left" : "\(n) questions left")
+        t("剩余 \(n) 次", "残り\(n)回", n == 1 ? "1 credit left" : "\(n) credits left")
     }
 
     static var quotaUnknown: String { t("额度未同步", "残高未同期", "Quota not synced") }
@@ -218,8 +218,8 @@ enum L10n {
         t("自动模式已停止", "自動モードを停止しました", "Auto mode stopped")
     }
     static func statusAutoCapReached(_ cap: Int) -> String {
-        t("已连答 \(cap) 题，自动模式结束", "\(cap)問に達したため自動モードを終了",
-          "Reached \(cap) questions — auto mode ended")
+        t("已连答 \(cap) 次，自动模式结束", "\(cap)回に達したため自動モードを終了",
+          "Reached \(cap) answers — auto mode ended")
     }
     static var statusAutoStoppedError: String {
         t("出错，自动模式已停止", "エラーのため自動モードを停止", "Auto mode stopped after an error")

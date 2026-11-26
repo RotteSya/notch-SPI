@@ -65,7 +65,7 @@ final class SettingsBalanceStrip: NSView {
     private var values: [NSTextField] = []
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let titles = [L10n.t("免费额度", "無料枠", "Free"), L10n.t("Plus 今日", "Plus 本日", "Plus today"), L10n.t("长期题包", "購入パック", "Purchased"), L10n.t("其他余额", "その他", "Other")]
+        let titles = [L10n.t("免费额度", "無料枠", "Free"), L10n.t("Plus 今日", "Plus 本日", "Plus today"), L10n.t("长期次数包", "購入パック", "Purchased"), L10n.t("其他余额", "その他", "Other")]
         for (index, title) in titles.enumerated() {
             let x = CGFloat(index) * 129
             let value = NSTextField(labelWithString: "—")

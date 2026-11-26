@@ -388,14 +388,14 @@ final class ServiceRoutingTests: XCTestCase {
 final class OfficialAPITests: XCTestCase {
     func testLocalizedMessageMapsKnownCodesAndFallsBack() {
         withLanguage(.zhHans) {
-            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("题数已用完"))
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("次数已用完"))
             XCTAssertTrue(OfficialAPI.localizedMessage(code: "invalid_token", fallback: "x").contains("凭证"))
         }
         withLanguage(.ja) {
             XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("使い切りました"))
         }
         withLanguage(.en) {
-            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("out of questions"))
+            XCTAssertTrue(OfficialAPI.localizedMessage(code: "insufficient_quota", fallback: "x").contains("out of credits"))
         }
         // Unknown codes surface the server's own message untouched.
         XCTAssertEqual(OfficialAPI.localizedMessage(code: "weird_new_code", fallback: "server says"), "server says")
@@ -582,18 +582,18 @@ final class L10nTests: XCTestCase {
 
     func testQuotaFormattingPerLanguage() {
         withLanguage(.zhHans) {
-            XCTAssertEqual(L10n.questions(180), "180 题")
-            XCTAssertEqual(L10n.questionsLeft(3), "剩余 3 题")
+            XCTAssertEqual(L10n.questions(180), "180 次")
+            XCTAssertEqual(L10n.questionsLeft(3), "剩余 3 次")
         }
         withLanguage(.ja) {
-            XCTAssertEqual(L10n.questions(180), "180問")
-            XCTAssertEqual(L10n.questionsLeft(3), "残り3問")
+            XCTAssertEqual(L10n.questions(180), "180回")
+            XCTAssertEqual(L10n.questionsLeft(3), "残り3回")
         }
         withLanguage(.en) {
-            XCTAssertEqual(L10n.questions(180), "180 questions")
-            XCTAssertEqual(L10n.questions(1), "1 question")
-            XCTAssertEqual(L10n.questionsLeft(1), "1 question left")
-            XCTAssertEqual(L10n.questionsLeft(3), "3 questions left")
+            XCTAssertEqual(L10n.questions(180), "180 answers")
+            XCTAssertEqual(L10n.questions(1), "1 answer")
+            XCTAssertEqual(L10n.questionsLeft(1), "1 credit left")
+            XCTAssertEqual(L10n.questionsLeft(3), "3 credits left")
         }
     }
 

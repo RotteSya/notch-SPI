@@ -890,7 +890,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         claimButton.prominent = true
         button(resetButton, L10n.t("重置服务凭证", "認証情報をリセット", "Reset credential"), #selector(resetTapped), claimButton.frame)
         resetButton.isHidden = true
-        spendPacks.title = L10n.t("每日额度用完后，允许使用已购题包", "毎日の枠の終了後、購入パックを使う", "Allow purchased packs after daily allowances run out")
+        spendPacks.title = L10n.t("每日额度用完后，允许使用已购次数包", "毎日の枠の終了後、購入パックを使う", "Allow purchased packs after daily allowances run out")
         spendPacks.frame = NSRect(x: 36, y: 666, width: 568, height: 30)
         spendPacks.target = self; spendPacks.action = #selector(spendPacksChanged)
         statusLabel.frame = NSRect(x: 36, y: 202, width: 568, height: 32)
@@ -898,7 +898,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         document.addSubview(subscription.view)
 
         document.addSubview(SettingsSectionRule(number: "03", title: L10n.t("额外用量", "追加の利用枠", "Additional usage"), frame: NSRect(x: 36, y: 558, width: 568, height: 28)))
-        let packsTitle = rowLabel(L10n.t("一次性题包", "追加パック", "One-time question packs"))
+        let packsTitle = rowLabel(L10n.t("一次性次数包", "追加パック", "One-time credit packs"))
         let packsHint = captionLabel(L10n.t("按需补充 · 余额长期有效 · 不自动续费", "必要な分だけ追加・有効期限なし・自動更新なし", "Top up as needed. No expiry. No automatic renewal."))
         packsHint.frame = NSRect(x: 36, y: 596, width: 568, height: 22)
         document.addSubview(packsHint)
@@ -911,7 +911,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         document.addSubview(spendPacks)
 
         legacyQuotaNote = L10n.t(
-            "免费体验、Plus、题包按顺序使用。成功获得可用答案计 1 次，失败不扣次。每日额度按北京时间 00:00 重置，不累计。",
+            "免费体验、Plus、次数包按顺序使用。成功获得可用答案计 1 次，失败不扣次。每日额度按北京时间 00:00 重置，不累计。",
             "無料体験、Plus、購入パックの順に使用。回答成功時のみ1回消費。毎日北京時間00:00にリセットし、繰り越しはありません。",
             "Trial, Plus, then purchased credits are used in order. Only usable answers count. Daily allowances reset at midnight Beijing time, with no rollover.")
         quotaNote.stringValue = legacyQuotaNote
@@ -992,17 +992,17 @@ private final class AccountPageController: NSViewController, SettingsPage {
         #if DEBUG
         if let n = Self.qaBalance {
             ring.setBalance(n, animated: true)
-            usageLabel.stringValue = L10n.t("累计已答 \(OfficialAPI.totalQuestions) 题",
-                                            "これまでに\(OfficialAPI.totalQuestions)問回答",
-                                            "\(OfficialAPI.totalQuestions) questions answered so far")
-            quotaLabel.stringValue = L10n.t("题包剩余 \(n) 题", "パック残高：\(n)問", "\(n) purchased questions remaining")
+            usageLabel.stringValue = L10n.t("累计成功查题 \(OfficialAPI.totalQuestions) 次",
+                                            "これまでの成功回答 \(OfficialAPI.totalQuestions) 回",
+                                            "\(OfficialAPI.totalQuestions) successful answers so far")
+            quotaLabel.stringValue = L10n.t("次数包剩余 \(n) 次", "パック残高：\(n)回", "\(n) purchased credits remaining")
             packsButton.removeAllItems()
-            packsButton.addItem(withTitle: L10n.t("100 题 · ¥19", "100問 · ¥19", "100 questions · CNY 19"))
+            packsButton.addItem(withTitle: L10n.t("100 次 · ¥19", "100回 · ¥19", "100 credits · CNY 19"))
             deviceLabel.stringValue = L10n.t("设备 ID：", "デバイスID：", "Device ID: ") + "nspi-••••••••Q4"
             claimButton.isHidden = true
             resetButton.isHidden = true
             copyCodeButton.isHidden = false
-            topUpButton.title = L10n.t("购买所选题包", "選択したパックを購入", "Buy selected pack")
+            topUpButton.title = L10n.t("购买所选次数包", "選択したパックを購入", "Buy selected pack")
             topUpButton.isEnabled = true
             refreshButton.isEnabled = true
             return
@@ -1015,9 +1015,9 @@ private final class AccountPageController: NSViewController, SettingsPage {
         // number nobody can spend.
         let balance = (registered && !rejected) ? OfficialAPI.balanceQuestions : nil
         ring.setBalance(balance, animated: true)
-        usageLabel.stringValue = L10n.t("累计已答 \(OfficialAPI.totalQuestions) 题",
-                                        "これまでに\(OfficialAPI.totalQuestions)問回答",
-                                        "\(OfficialAPI.totalQuestions) questions answered so far")
+        usageLabel.stringValue = L10n.t("累计成功查题 \(OfficialAPI.totalQuestions) 次",
+                                        "これまでの成功回答 \(OfficialAPI.totalQuestions) 回",
+                                        "\(OfficialAPI.totalQuestions) successful answers so far")
         let tk = OfficialAPI.accumulateUsage(OfficialAPI.totalInputTokens, OfficialAPI.totalOutputTokens)
         tokensLabel.stringValue = tk > 0 ? "· \(tk) tokens" : ""
         deviceLabel.stringValue = registered
@@ -1043,12 +1043,12 @@ private final class AccountPageController: NSViewController, SettingsPage {
             let exponent = formatter.maximumFractionDigits
             let value = Decimal(pack.amountMinor) / pow(Decimal(10), exponent)
             let price = formatter.string(from: NSDecimalNumber(decimal: value)) ?? "—"
-            packsButton.addItem(withTitle: (pack.names?[OfficialAPI.topUpLang].map { $0 + " · " } ?? "") + L10n.t("\(pack.questions) 题", "\(pack.questions) 問", "\(pack.questions) questions") + " · " + price)
+            packsButton.addItem(withTitle: (pack.names?[OfficialAPI.topUpLang].map { $0 + " · " } ?? "") + L10n.t("\(pack.questions) 次", "\(pack.questions) 回", "\(pack.questions) credits") + " · " + price)
         }
         if let id = pending?.packID ?? previousID, let index = packIDs.firstIndex(of: id) { packsButton.selectItem(at: index) }
         else if packs.count > 1 { packsButton.selectItem(at: 1) }
         packsButton.isEnabled = !busy && pending == nil
-        topUpButton.title = pending == nil ? L10n.t("购买所选题包", "選択したパックを購入", "Buy selected pack") : L10n.t("继续原订单", "元の注文を再開", "Resume order")
+        topUpButton.title = pending == nil ? L10n.t("购买所选次数包", "選択したパックを購入", "Buy selected pack") : L10n.t("继续原订单", "元の注文を再開", "Resume order")
         copyCodeButton.title = pending == nil ? L10n.t("保存账户恢复码", "復元コードを保存", "Save recovery code") : L10n.t("复制订单号", "注文番号をコピー", "Copy order ID")
         refreshButton.title = pending == nil ? L10n.refresh : L10n.t("查询到账", "反映を確認", "Check payment")
         topUpButton.isEnabled = registered && !rejected && !busy && payments?.purchaseSessions == true && !packs.isEmpty
@@ -1057,7 +1057,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         let breakdown = OfficialAPI.accountState.value("quotaBreakdown") as? [String: Int]
         quotaLabel.stringValue = ""
         if let initial, registered && !rejected {
-            quotaLabel.stringValue = L10n.t("首次已获 \(initial) 题", "初回付与 \(initial) 問", "Initial grant: \(initial)")
+            quotaLabel.stringValue = L10n.t("首次已获 \(initial) 次", "初回付与 \(initial) 回", "Initial grant: \(initial)")
             if let free = breakdown?["trial"], let paid = breakdown?["paid"] {
                 quotaLabel.stringValue += L10n.t(" · 免费剩余 \(free) · 付费剩余 \(paid)", " · 無料残高 \(free) · 購入残高 \(paid)", " · Free left: \(free) · Paid left: \(paid)")
             }
@@ -1073,13 +1073,13 @@ private final class AccountPageController: NSViewController, SettingsPage {
                 quotaLabel.stringValue = L10n.t("3 天免费体验已结束", "3日間の無料体験は終了しました", "Your 3-day free trial has ended")
             }
             if trial.status != .ineligible {
-                quotaNote.stringValue = L10n.t("免费体验从领取起持续 72 小时，每天 400 次，北京时间 00:00 重置，不累计。成功解答计 1 次，失败不计。免费额度用完或体验到期后可继续使用已购题数，题包不自动续费。", "無料体験は開始から72時間。毎日400回、北京時間00:00にリセット、繰り越しなし。成功した回答のみ1回と数えます。無料枠の終了後は購入済み残高を利用でき、パックは自動更新されません。", "The trial lasts 72 hours from claiming, with 400 solves per Beijing day and no rollover. Successful answers count once; failures don’t. Purchased credits remain available after the daily limit or trial ends. Packs don’t auto-renew.")
+                quotaNote.stringValue = L10n.t("免费体验从领取起持续 72 小时，每天 400 次，北京时间 00:00 重置，不累计。成功解答计 1 次，失败不计。免费额度用完或体验到期后可继续使用已购次数，次数包不自动续费。", "無料体験は開始から72時間。毎日400回、北京時間00:00にリセット、繰り越しなし。成功した回答のみ1回と数えます。無料枠の終了後は購入済み残高を利用でき、パックは自動更新されません。", "The trial lasts 72 hours from claiming, with 400 solves per Beijing day and no rollover. Successful answers count once; failures don’t. Purchased credits remain available after the daily limit or trial ends. Packs don’t auto-renew.")
             }
         }
         // Surface the rejection without clobbering a transient status message already on screen.
         if rejected && statusLabel.stringValue.isEmpty {
             statusLabel.stringValue = L10n.t(
-                "本机服务凭证已失效。若只是临时网络/服务波动，请先点「刷新」重试；确认失效后再「重置服务凭证」（不影响已购买的题数入账记录）。",
+                "本机服务凭证已失效。若只是临时网络/服务波动，请先点「刷新」重试；确认失效后再「重置服务凭证」（不影响已购买的次数入账记录）。",
                 "このデバイスの認証情報が無効になりました。一時的な不具合の場合はまず「更新」を試し、無効が確実な場合のみ「認証情報をリセット」してください(購入済みの記録には影響しません)。",
                 "This device's credential was rejected. If it's just a temporary hiccup, hit Refresh first; only Reset once you're sure — your purchase records are unaffected.")
         }
@@ -1105,8 +1105,8 @@ private final class AccountPageController: NSViewController, SettingsPage {
         } else if OfficialAPI.freeTrial?.status == .active && !external {
             usageLabel.stringValue = L10n.t("notchSPI 体验进行中", "notchSPI を体験中", "Your notchSPI trial")
         }
-        quotaNote.stringValue = L10n.t("使用顺序：免费额度 → Plus → 其他余额 → 已购题包。只有成功获得可用答案才计次；解释和失败不额外扣次。题包不自动续费，长期有效。", "無料枠 → Plus → その他の残高 → 購入パックの順。回答成功時のみ消費。解説・失敗は追加消費なし。パックは自動更新・期限なし。", "Order: free allowance → Plus → other credits → purchased packs. Only usable answers count; explanations and failures cost no extra. Packs do not expire or auto-renew.")
-        if !Settings.shared.allowPurchasedCredits { quotaNote.stringValue += L10n.t(" 当前已关闭题包自动使用。", " パック自動利用はオフです。", " Pack spending is currently off.") }
+        quotaNote.stringValue = L10n.t("使用顺序：免费额度 → Plus → 其他余额 → 已购次数包。只有成功获得可用答案才计次；解释和失败不额外扣次。次数包不自动续费，长期有效。", "無料枠 → Plus → その他の残高 → 購入パックの順。回答成功時のみ消費。解説・失敗は追加消費なし。パックは自動更新・期限なし。", "Order: free allowance → Plus → other credits → purchased packs. Only usable answers count; explanations and failures cost no extra. Packs do not expire or auto-renew.")
+        if !Settings.shared.allowPurchasedCredits { quotaNote.stringValue += L10n.t(" 当前已关闭次数包自动使用。", " パック自動利用はオフです。", " Pack spending is currently off.") }
         spendPacks.state = Settings.shared.allowPurchasedCredits ? .on : .off
         spendPacks.isEnabled = !external && !busy
         if Self.qaBalance != nil { copyCodeButton.title = L10n.t("保存账户恢复码", "復元コードを保存", "Save recovery code") }
@@ -1116,8 +1116,8 @@ private final class AccountPageController: NSViewController, SettingsPage {
         Settings.shared.allowPurchasedCredits = spendPacks.state == .on
         renderOverview()
         statusLabel.stringValue = spendPacks.state == .off
-            ? L10n.t("已暂停使用题包。每日额度恢复后可继续，也可随时重新开启此选项。", "パックを保護しました。毎日の枠のリセットを待つか、この設定をオンにしてください。", "Pack spending is paused. Wait for daily allowances to reset, or turn this option back on.")
-            : L10n.t("每日权益用完后将自动使用题包，每次成功解答扣 1 题。", "毎日の枠の終了後、回答成功ごとにパックを1問消費します。", "After daily allowances, each successful answer uses one purchased question.")
+            ? L10n.t("已暂停使用次数包。每日额度恢复后可继续，也可随时重新开启此选项。", "パックを保護しました。毎日の枠のリセットを待つか、この設定をオンにしてください。", "Pack spending is paused. Wait for daily allowances to reset, or turn this option back on.")
+            : L10n.t("每日权益用完后将自动使用次数包，每次成功解答扣 1 次。", "毎日の枠の終了後、回答成功ごとにパックを1回分消費します。", "After daily allowances, each successful answer uses one purchased credit.")
     }
 
     @objc private func restoreAccountTapped() {
@@ -1209,10 +1209,10 @@ private final class AccountPageController: NSViewController, SettingsPage {
             guard OfficialAPI.accountState.matches(account) else { return }
             if case .failure(let error) = result { showPurchaseError(error); return }
             recovery.save(nil, for: account)
-            statusLabel.stringValue = L10n.t("\(progress.questions) 题已到账。", "\(progress.questions)問が反映されました。", "\(progress.questions) questions credited.")
+            statusLabel.stringValue = L10n.t("\(progress.questions) 次已到账。", "\(progress.questions)回分が反映されました。", "\(progress.questions) credits added.")
         case .expired:
             recovery.save(nil, for: account)
-            statusLabel.stringValue = L10n.t("原订单已过期且未付款，可重新选择题包。", "元の注文は未決済で期限切れです。パックを選び直せます。", "The unpaid order expired. You can select a pack again.")
+            statusLabel.stringValue = L10n.t("原订单已过期且未付款，可重新选择次数包。", "元の注文は未決済で期限切れです。パックを選び直せます。", "The unpaid order expired. You can select a pack again.")
         case .unpaid:
             statusLabel.stringValue = L10n.t("原订单尚未付款。取消或失败后可继续同一付款页。", "元の注文は未決済です。キャンセル・失敗後も同じ決済を再開できます。", "Order is unpaid. Resume the same checkout after cancellation or failure.")
             if resume, let url = progress.checkoutURL, !NSWorkspace.shared.open(url) { showPurchaseError(OfficialAccountFailure.invalidResponse) }
@@ -1324,7 +1324,7 @@ private final class AccountPageController: NSViewController, SettingsPage {
         alert.messageText = L10n.t("重置服务凭证？", "認証情報をリセットしますか？",
                                    "Reset service credential?")
         alert.informativeText = L10n.t(
-            "仅在确认本机凭证确实失效时才重置。重置会丢弃当前设备码并领取一份新的免费额度；如果只是临时网络或服务波动，请改点「刷新」。已购买题包或 Plus 请先复制设备码联系客服再重置。重置本机凭证不会取消 Plus 自动续费。",
+            "仅在确认本机凭证确实失效时才重置。重置会丢弃当前设备码并领取一份新的免费额度；如果只是临时网络或服务波动，请改点「刷新」。已购买次数包或 Plus 请先复制设备码联系客服再重置。重置本机凭证不会取消 Plus 自动续费。",
             "認証情報が確実に無効な場合のみリセットしてください。現在のデバイスコードを破棄して新しい無料枠を取得します。一時的な不具合の場合は「更新」をお使いください。購入済みパックや Plus がある場合は、先にデバイスコードをコピーしてサポートにご連絡ください。認証情報のリセットでは Plus の自動更新は停止しません。",
             "Only reset if you're sure the credential is truly invalid. This discards the current device code and claims a fresh free allowance. If it's a temporary hiccup, use Refresh instead. If you have purchased credits or Plus, copy the device code and contact support before resetting. Resetting this credential does not cancel Plus renewal.")
         alert.addButton(withTitle: L10n.t("重置并重新领取", "リセットして再取得", "Reset & re-claim"))
@@ -1356,7 +1356,7 @@ final class QuotaRingView: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
     override func accessibilityLabel() -> String? {
         guard let balance else { return L10n.t("剩余额度尚未获取", "残りの利用枠は未取得です", "Remaining quota unavailable") }
-        return L10n.t("\(balance) 题可用", "\(balance)問利用可能", "\(balance) questions left")
+        return L10n.t("\(balance) 次可用", "\(balance)回利用可能", "\(balance) credits left")
     }
 
     /// The progress ring: a conic gradient sheet masked to a round-capped arc whose strokeEnd is
@@ -1478,7 +1478,7 @@ final class QuotaRingView: NSView {
         let n = numberText as NSString
         let ns = n.size(withAttributes: numberAttrs)
         n.draw(at: NSPoint(x: center.x - ns.width / 2, y: center.y - ns.height / 2 + 7), withAttributes: numberAttrs)
-        let unit = L10n.t("题可用", "問利用可能", "questions left") as NSString
+        let unit = L10n.t("次可用", "回利用可能", "credits left") as NSString
         let us = unit.size(withAttributes: unitAttrs)
         unit.draw(at: NSPoint(x: center.x - us.width / 2, y: center.y - ns.height / 2 - us.height + 4), withAttributes: unitAttrs)
     }
@@ -1582,7 +1582,7 @@ private final class AdvancedPageController: NSViewController, SettingsPage, NSTe
         y += 44
 
         let descs: [String: String] = [
-            ServiceMode.official: L10n.t("默认。开箱即用，按题数额度计费。", "デフォルト。設定不要、質問数制。", "Default. Zero setup, question-quota billing."),
+            ServiceMode.official: L10n.t("默认。开箱即用，按次数计费。", "デフォルト。設定不要、回数制。", "Default. Zero setup, credit-based billing."),
             ServiceMode.customKey: L10n.t("用你自己的第三方 API Key 直连，费用走你的账户。", "自分の外部 API キーで直接接続。", "Use your own third-party API key; costs go to your account."),
             ServiceMode.cli: L10n.t("驱动本机已登录的 codex / claude 命令行。", "ローカルの codex / claude CLI を利用。", "Drive the locally installed codex / claude CLIs."),
         ]

@@ -39,7 +39,7 @@ for(const [name,make] of stores){
         const id='cs_'+pack.id;await store.attachPurchaseCheckout(session.sessionId,id);
         const stored=(await store.getPurchaseSessionForAccount(device.token,input.purchaseId))!;
         const html=renderPurchase(stored,session.secret,packNames(packs,pack.id).zh);
-        assert.ok(html.includes(packNames(packs,pack.id).zh));assert.ok(html.includes(pack.questions+' 题'));assert.ok(html.includes('不自动续费'));
+        assert.ok(html.includes(packNames(packs,pack.id).zh));assert.ok(html.includes(pack.questions+' 次'));assert.ok(html.includes('不自动续费'));
         const snapshot=checkoutSnapshot({id,mode:'payment',payment_status:'paid',amount_total:pack.amountCents,currency:'jpy',payment_intent:'pi_'+pack.id,metadata:{purchase_session_id:session.sessionId,pack_id:pack.id}});
         assert.equal((await purchaseProgress(store,stored,active,async()=>({snapshot,status:'complete'}))).state,'credited');
       }

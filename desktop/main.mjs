@@ -1589,7 +1589,7 @@ async function start() {
                   shelfText: document.querySelector('.shelf')?.textContent };
               })()`);
               const expected = qa === "personality-error" ? "Screenshot or choices unreadable"
-                : "Some questions need the previous-question context · Questionnaire context cleared · 3 questions left · Running low";
+                : "Some questions need the previous-question context · Questionnaire context cleared · 3 credits left · Running low";
               if (view.text !== expected || !view.visible || view.copy || view.shelfText.split(expected).length !== 2) {
                 console.error("Personality notice rendering or copy eligibility failed");
                 app.exit(1);

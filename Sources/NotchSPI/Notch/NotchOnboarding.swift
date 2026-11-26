@@ -205,7 +205,7 @@ final class NotchOnboardingView: NSView {
             }
             if trial == .ineligible || trial == .expired {
                 return Copy(title: trial == .expired ? t("免费体验已结束。", "無料体験が終了しました。", "Your free trial has ended.") : t("当前账户无法领取。", "このアカウントは対象外です。", "This account isn’t eligible."),
-                    body: trial == .expired ? t("感谢体验。已购买的题数仍然可以继续使用。", "ご利用ありがとうございました。購入済みの問題数は引き続き使えます。", "Thanks for trying NotchSPI. Your purchased questions are still available.") : t("免费体验面向新注册用户。你可以继续使用当前账户。", "無料体験は新規登録の方が対象です。現在のアカウントは引き続きご利用いただけます。", "The free trial is for newly registered users. You can continue using your current account."),
+                    body: trial == .expired ? t("感谢体验。已购买的次数仍然可以继续使用。", "ご利用ありがとうございました。購入済みの回数は引き続き使えます。", "Thanks for trying NotchSPI. Your purchased credits are still available.") : t("免费体验面向新注册用户。你可以继续使用当前账户。", "無料体験は新規登録の方が対象です。現在のアカウントは引き続きご利用いただけます。", "The free trial is for newly registered users. You can continue using your current account."),
                     action: t("开始使用", "使い始める", "Start using NotchSPI"))
             }
             return Copy(title: t("领取 3 天免费体验。", "3日間の無料体験をどうぞ。", "Enjoy 3 days on us."),

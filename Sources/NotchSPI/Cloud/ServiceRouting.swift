@@ -101,7 +101,7 @@ enum QuotaGate {
         // and will answer 402 if the account really is empty.
         if let balance = balanceQuestions, balance <= 0 {
             return .deny(L10n.t(
-                "当前没有可用额度。请在设置 →「账户与订阅」查看体验、每日额度和题包。",
+                "当前没有可用额度。请在设置 →「账户与订阅」查看体验、每日额度和次数包。",
                 "現在利用できる枠がありません。設定→「アカウントとプラン」で体験・毎日の枠・パックをご確認ください。",
                 "No allowance is available right now. Check your trial, daily allowances, and packs in Settings → Account & plan."))
         }

@@ -1192,7 +1192,7 @@ final class NotchController: NSObject {
                 item.target = self; menu.addItem(item)
             }
             if model.recoveryAvailable && !model.recoveryAttempted {
-                let item = NSMenuItem(title: L10n.t("恢复本次答案 · 不另扣题", "今回の回答を復元・追加消費なし", "Recover this answer · no additional charge"),
+                let item = NSMenuItem(title: L10n.t("恢复本次答案 · 不另扣次", "今回の回答を復元・追加消費なし", "Recover this answer · no additional charge"),
                                       action: #selector(recoverAnswer), keyEquivalent: "")
                 item.target = self; menu.addItem(item)
             }
@@ -1411,7 +1411,7 @@ final class NotchController: NSObject {
         }
         switch run.channel {
         case .official:
-            model.statusText = L10n.t("正在生成解释 · 不另扣题", "解説を生成中・追加消費なし", "Generating explanation · no additional question charge")
+            model.statusText = L10n.t("正在生成解释 · 不另扣次", "解説を生成中・追加消費なし", "Generating explanation · no additional charge")
             officialTask = OfficialAPI.run(imagePaths: capture.imagePaths, prompt: prompt, resultProtocol: run.resultProtocol,
                             captureID: UUID(), screenQuery: run.screenQuery,
                             auxiliary: .init(parentID: capture.captureID, operation: "explain", finalAnswer: answer,
@@ -1452,7 +1452,7 @@ final class NotchController: NSObject {
         model.recoveryAttempted = true; model.recoveryAvailable = false
         model.explanationAvailable = false
         model.status = .running
-        model.statusText = L10n.t("正在恢复本次答案 · 不另扣题", "回答を復元中・追加消費なし", "Recovering this answer · no additional charge")
+        model.statusText = L10n.t("正在恢复本次答案 · 不另扣次", "回答を復元中・追加消費なし", "Recovering this answer · no additional charge")
         var filter = ObjectiveResultStreamFilter()
         let recoveryID = UUID()
         var receipt: OfficialUsageReceipt?
@@ -1485,7 +1485,7 @@ final class NotchController: NSObject {
                     }
                     self.model.status = .idle
                     self.model.statusText = result.state == .review ? self.objectiveReviewMessage(result.result?.reason)
-                        : L10n.t("答案已恢复 · 未追加扣题", "回答を復元しました・追加消費なし", "Answer recovered · no additional charge")
+                        : L10n.t("答案已恢复 · 未追加扣次", "回答を復元しました・追加消費なし", "Answer recovered · no additional charge")
                 } else {
                     self.model.status = .error
                     self.model.statusText = message.isEmpty
@@ -1512,9 +1512,9 @@ final class NotchController: NSObject {
                 self.model.recoveryAvailable = status.canRecover && !self.model.recoveryAttempted
                 self.model.statusText = status.questionsCharged == 1
                     ? self.model.recoveryAvailable
-                        ? L10n.t("本次已结算。可从设置菜单恢复答案，不另扣题。", "決済済みです。メニューから追加消費なしで回答を復元できます。", "This request settled. Recover the answer from the menu without another charge.")
+                        ? L10n.t("本次已结算。可从设置菜单恢复答案，不另扣次。", "決済済みです。メニューから追加消費なしで回答を復元できます。", "This request settled. Recover the answer from the menu without another charge.")
                         : L10n.t("本次已结算。恢复不可用，请联系支持核对。", "決済済みです。復元できないためサポートにお問い合わせください。", "This request settled. Recovery is unavailable; contact support for review.")
-                    : L10n.t("本次未扣题。请调整输入后重试。", "今回は消費されていません。入力を調整してください。", "This request was not charged. Adjust the input and retry.")
+                    : L10n.t("本次未扣次。请调整输入后重试。", "今回は消費されていません。入力を調整してください。", "This request was not charged. Adjust the input and retry.")
             } else {
                 self.model.statusText = L10n.t("正在核对本次额度，请刷新账户。", "今回の残高を確認しています。アカウントを更新してください。", "Reconciling this request's quota. Refresh Account.")
             }

@@ -172,7 +172,7 @@ function menuHTML() {
     if (['single','multiple','personality'].includes(key)) return item('capture', `${t(key)}<span class="menu-shortcut">${shortcut(key)}</span>`, key);
     if (key === 'effort') return '<div class="menu-caption">'+tr('思考强度','思考の強さ','Reasoning effort')+'</div>';
     if (product.reasoningEfforts.includes(key)) return item('quickReasoning', `<span class="menu-check">${state.settings.reasoning === key ? '✓' : ''}</span>${t(key)}`, key, `role="menuitemradio" aria-checked="${state.settings.reasoning === key}"`);
-    if (key === 'balance') return item('settings', balance == null ? tr('额度待同步','残高を同期','Sync credits') : tr(`剩余 ${balance} 题`,`残り ${balance} 問`,`${balance} questions left`), 'account');
+    if (key === 'balance') return item('settings', balance == null ? tr('额度待同步','残高を同期','Sync credits') : tr(`剩余 ${balance} 次`,`残り ${balance} 回`,`${balance} credits left`), 'account');
     if (key === 'topUp') return item('settings', tr('充值…','チャージ…','Top up…'), 'account');
     if (key === 'target') return choices('target', tr('截图目标：','撮影対象：','Capture target: ') + (menuTargets.find(x=>x.id===state.settings.target)?.name || (state.settings.target==='screen'?t('screen'):state.settings.target)), [{id:'screen',name:t('screen')},...menuTargets.filter(x=>x.id!=='screen'&&!x.id.startsWith('screen:'))].map(x=>item('quickTarget',`<span class="menu-check">${state.settings.target===x.id?'✓':''}</span>${escape(x.name)}`,x.id)).join(''));
     if (key === 'personas') return choices('personas',tr('切换人物像','人物像を切替','Switch persona'),state.settings.personas.map(x=>item('quickPersona',`<span class="menu-check">${state.settings.persona.id===x.id?'✓':''}</span>${escape(x.name||t('personaUntitled'))}`,x.id)).join(''));
@@ -629,7 +629,7 @@ function settings(force = false) {
       "autoCap",
       select(
         "autoCap",
-        product.autoCaps.map((n) => [n, n === -1 ? t("unlimited") : state.settings.language === "zh" ? `${n} 题` : state.settings.language === "ja" ? `${n} 問` : `${n} questions`]),
+        product.autoCaps.map((n) => [n, n === -1 ? t("unlimited") : state.settings.language === "zh" ? `${n} 次` : state.settings.language === "ja" ? `${n} 回` : `${n} answers`]),
       ),
     )}<p class="muted">${t("capHint")}</p>${check("autoCopy")}</div><h2>${t("presentation")}</h2><div class="group">${row("answerSize", `<input id="answerSize" name="answerSize" type="range" min="11" max="19" step="1" value="${state.settings.answerSize}"><span class="value">${state.settings.answerSize} pt</span>`)}<p class="answer-preview" style="font-size:${state.settings.answerSize+4}px !important">${t("answer")} A = −30</p>${check("showReasoning")}${check("keepExpanded")}${row("collapseDelay", `<input id="collapseDelay" name="collapseDelay" type="range" min="2" max="30" value="${state.settings.collapseDelay}" ${state.settings.keepExpanded ? "disabled" : ""}><span class="value">${state.settings.collapseDelay} ${t("secondsUnit")}</span>`)}</div><h2>${t("preferences")}</h2><div class="group">${row(
       "languageMode",
