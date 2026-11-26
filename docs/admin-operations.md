@@ -26,6 +26,8 @@ Mac `MainSettingsWindow.copyCodeTapped` 和 Windows 恢复流程使用原设备�
 
 人工区间从确认时刻起覆盖到延长后的截止时间；已有未到期人工区间保留其原起点。它独立于付款，因此支付取消不会擦除已赠送的区间。已付款但未来开始的周期，只有与当前可用区间相接或重叠时才延长有效截止时间；存在空档则不合并，单独的未来付款不会提前开通。客户端与后台到期筛选使用同一连续覆盖口径。`plus_subscriptions` 与 `plus_paid_invoices` 不被人工操作写入，`topups` 也不记录人工 PLUS 收入。
 
+2026-11-26 历史清理：赠送功能上线前，曾有 3 条人工 PLUS 直接手写进 `plus_subscriptions`（`intent_id` 为 `manual_plus_*`，设备 101、105、110），使付费人数虚高，并覆盖了设备 101 的 Stripe 订阅关联。经用户授权，先建 Neon 分支 `backup-before-plus-manual-migration-20261126`，再在单个事务内处理：101 按 Stripe 记录恢复订阅关联（付费至 12-04），赠送的 30 天改记人工区间 12-04→2027-01-03，有效期不变；105 删除该行，人工区间（已过期）移入 `admin_plus_entitlements`；110 的人工区间（已过期）同样移入，保留其未完成付款页记录，只清空付费周期。三次变更以 `kind=plus_legacy_migration` 记入 `admin_operations`。此后 `plus_subscriptions` 带约束 `plus_paid_requires_subscription`：有付费周期就必须有 Stripe 订阅号。新库随建表生效；既有 Postgres 库由启动 schema 以 `NOT VALID` 补加，只校验之后的写入，不会因历史行阻断启动。测试：`server/test/plus-schema.test.ts`。
+
 `ADMIN_PLUS_GRANTS_ENABLED` 默认 `0`，只是上线开关，规则已经确认。关闭开关阻止新发放，仍保持既有人工权益生效。生产启用需另行授权，不能因本地测试已经开启而推断生产已开启。
 
 ## 一致性、审计与客户端

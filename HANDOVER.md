@@ -89,7 +89,7 @@ npm --prefix desktop run check
 - `INV-QBANK-002`：转写与复核不改题数余额和账本。覆盖 question-bank-transcription/review。
 - `INV-QBANK-003`：复核只在管理员确认后发生。覆盖 question-bank-review。
 
-[兼容账本](docs/compatibility.md) 定义旧账户、Keychain、热键、协议和迁移的保留条件。Plus 自然月续费；关闭新购时仍保留已付权益、webhook、门户及取消能力，不回退到不识别 Plus 的服务，不恢复数据库覆盖付款。
+[兼容账本](docs/compatibility.md) 定义旧账户、Keychain、热键、协议和迁移的保留条件。Plus 自然月续费；关闭新购时仍保留已付权益、webhook、门户及取消能力，不回退到不识别 Plus 的服务，不恢复数据库覆盖付款。人工 Plus 只走后台赠送（`admin_plus_entitlements`），不得手写 `plus_subscriptions`；数据库约束 `plus_paid_requires_subscription` 拒绝没有 Stripe 订阅号的付费周期，见[后台运营](docs/admin-operations.md)。
 
 ## 验证与交付
 

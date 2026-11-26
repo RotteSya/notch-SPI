@@ -136,6 +136,13 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS registration_key_hash TEXT;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS registration_key_version TEXT;
 ALTER TABLE product_events ADD COLUMN IF NOT EXISTS extensions TEXT;
 ${BILLING_SCHEMA}
+-- Existing databases predate the table-level CHECK. NOT VALID guards every later write without
+-- letting an old row fail schema setup; legacy manual rows were moved out on 2026-11-26.
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='plus_paid_requires_subscription' AND conrelid='plus_subscriptions'::regclass) THEN
+  ALTER TABLE plus_subscriptions ADD CONSTRAINT plus_paid_requires_subscription CHECK(paid_from IS NULL OR subscription_id IS NOT NULL) NOT VALID;
+ END IF;
+END $$;
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS trial_expires_at TEXT;
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS refund_frozen INTEGER NOT NULL DEFAULT 0 CHECK(refund_frozen IN (0,1));
 ALTER TABLE quota_lots ADD COLUMN IF NOT EXISTS refund_revoked BIGINT NOT NULL DEFAULT 0 CHECK(refund_revoked>=0);
