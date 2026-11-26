@@ -184,6 +184,13 @@ cp -a "$retirement/payload/." tmp/intel-reliability-20261112/
 - 工作树4→3：常驻main、`output/release-320-20261119/intel`（分支 `codex/release-3-2-intel`，6f61033，含v3.3.0-intel-build47及其后的文案回移）、Windows诊断。退役 `output/question-bank-v1-m1fix`（检出 `codex/release-3-3-channels`，6ea7ffc，已是main祖先）：跟踪文件干净，以非强制 `git worktree remove` 移除；其中615个本机验证/开发产物先移入证据目录的 `question-bank-v1-m1fix/payload/output`，`.build` 与三份依赖目录未保全（三个npm锁与main逐字节相同，体积见 `sizes-kib.txt`）。
 - 本地分支9→5：以 `git branch -d` 删除 `codex/release-3-3-channels`（6ea7ffc）、`question-bank-v1`（d6c22a1）、`question-bank-v1-m1fix`（75daf6a），均为main祖先；以 `git branch -D` 删除 `codex/release-3-3-prepare`（1fd1cff），其唯一提交的改动行与main上的776b349相同，仅因变基越过e44be54而不是祖先。保留main、两个 `archive/`、Intel及Windows诊断。恢复用 `git branch <名> <refs-before.txt中的完整HEAD>`；恢复工作树另按退役日志复制payload。
 - 远端5→3：经用户确认删除 `question-bank-v1-m1fix`（75daf6a）与 `fix/batch-silent-observation-20261122`（5aae984），均已是main祖先，无未合并的PR；删除以预期提交为条件，保留main、Intel及Windows诊断。前后引用与删除日志见证据目录的 `remote-before.txt`、`remote-after.txt`、`remote-deletion.log`；恢复用 `git push origin <完整HEAD>:refs/heads/<名>`，属另一次远端写入。标签不变。
+- 外层目录并入：Git根的上级目录原有 `output/`、`.tmp/`、`release-worktrees/` 三个无版本控制目录（共6,620个文件，约207M），经用户确认整体移入本机 `output/outer-consolidation-20261126/` 下的 `output`、`tmp`、`release-worktrees`，只移动、未删除；移动前后文件清单逐项相同，`path-map.json` 记录映射、遗留悬空链接和恢复方法。[2026-11-20 现状核对与清理](#2026-11-20-现状核对与清理)中“外层”三目录按该映射查阅。其中11-06账户101的Plus赠送回滚脚本已被同日的人工Plus数据修复取代，旁置说明文件标明不得执行。
+
+## 2026-11-26 旧提示词检查器退役
+
+[归档](2026-11-26-latency-legacy-checker-retired.tar.gz)按原始字节保存 `scripts/check-latency-legacy-prompt.mjs` 与仅由它消费的 `docs/latency-actual-prompt-2026-10-30.json`，[清单](2026-11-26-latency-legacy-checker-retired.json)含压缩包和每个文件的SHA-256，基点8b18e7c。退役依据：`shared/prompts.json` 在10-30实验之后变更，检查器按设计以基线漂移失败，旧提示词实验不可再按原配置运行；经用户确认归档。未改写冻结基线，未调用模型。
+
+`docs/experiments/` 下两份legacy配置未归档：质量运行器 `scripts/run-latency-prompt-quality.mjs` 及其属于CI的离线测试仍读取它们。读取原文用 `tar -xOzf docs/history/2026-11-26-latency-legacy-checker-retired.tar.gz <清单内路径>`；恢复即把两文件放回原路径，并撤回[延迟参考](../latency.md)与索引中的对应条目。
 
 ## 本地治理记录原文
 

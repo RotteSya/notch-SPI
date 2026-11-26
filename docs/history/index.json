@@ -1569,5 +1569,21 @@
     "replacement": "docs/windows/manual-acceptance.md",
     "reason": "旧候选身份与原始验收说明按字节归档；当前路径为候选无关清单。",
     "archive": "docs/history/2026-11-09-windows-acceptance-retired.tar.gz"
+  },
+  {
+    "path_at_baseline": "scripts/check-latency-legacy-prompt.mjs",
+    "baseline_commit": "8b18e7c07bf0edee68ab4020db6c15d898b8bf80",
+    "status": "historical",
+    "replacement": "docs/latency.md",
+    "reason": "10-30旧提示词实验的离线检查器；shared/prompts.json此后变更，检查按设计以基线漂移失败，实验不可再按原配置运行。",
+    "archive": "docs/history/2026-11-26-latency-legacy-checker-retired.tar.gz"
+  },
+  {
+    "path_at_baseline": "docs/latency-actual-prompt-2026-10-30.json",
+    "baseline_commit": "8b18e7c07bf0edee68ab4020db6c15d898b8bf80",
+    "status": "historical",
+    "replacement": "docs/latency.md",
+    "reason": "仅由上述检查器消费的旧提示词摘要快照，随检查器按字节归档。",
+    "archive": "docs/history/2026-11-26-latency-legacy-checker-retired.tar.gz"
   }
 ]

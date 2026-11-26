@@ -1,0 +1,20 @@
+{
+  "archive": "2026-11-26-latency-legacy-checker-retired.tar.gz",
+  "sha256": "f35afa0b849c0ef8d52d65ef70c5f13d112b88dbb6d7ff91d26d8c0055aa9258",
+  "base_commit": "8b18e7c07bf0edee68ab4020db6c15d898b8bf80",
+  "status": "historical_not_current_instructions",
+  "files": [
+    {
+      "path": "scripts/check-latency-legacy-prompt.mjs",
+      "bytes": 1670,
+      "sha256": "da6dea6ef56c9d45f3872ea984a8bf480b0970a3295933ce3e6c4d8b38853ac1",
+      "replacement": "docs/latency.md"
+    },
+    {
+      "path": "docs/latency-actual-prompt-2026-10-30.json",
+      "bytes": 516,
+      "sha256": "554e8a9895c1cf90b136b378d8921d03866bff32505bd5518230f783ee7b8173",
+      "replacement": "docs/latency.md"
+    }
+  ]
+}
