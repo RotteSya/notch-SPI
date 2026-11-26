@@ -46,7 +46,7 @@ export async function retrieveStripeFinance(key:string,order:FinanceOrder):Promi
     return {id:reference(c.id,'(?:ch|py)'),paymentIntentId:c.payment_intent===null?null:reference(c.payment_intent,'pi'),currency:currency(c.currency),capturedMinor:minor(c.amount_captured),paid:c.paid,transactionId:balance(c.balance_transaction)};
   }),refunds:refunds.map(r=>{
     if(r.object!=='refund')throw new Error('Invalid Stripe refund');
-    return {id:reference(r.id,'re'),paymentIntentId:r.payment_intent===null?null:reference(r.payment_intent,'pi'),chargeId:reference(r.charge,'(?:ch|py)'),amountCents:Number(minor(r.amount)),currency:currency(r.currency),
+    return {id:reference(r.id,'(?:re|pyr)'),paymentIntentId:r.payment_intent===null?null:reference(r.payment_intent,'pi'),chargeId:reference(r.charge,'(?:ch|py)'),amountCents:Number(minor(r.amount)),currency:currency(r.currency),
       status:r.status as FinanceRefund['status'],transactionId:balance(r.balance_transaction),failureTransactionId:balance(r.failure_balance_transaction??null)};
   }),disputes:disputes.map(d=>{
     if(d.object!=='dispute'||!Array.isArray(d.balance_transactions)||d.balance_transactions.length>10)throw new Error('Invalid Stripe dispute');

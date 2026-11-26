@@ -21,7 +21,7 @@ export interface PaymentFinance {
   defer(claim:FinanceClaim):Promise<void>;
   inspect(reference:string):Promise<{job:FinanceJob|null;revision:FinanceRevision|null}>;
 }
-export const financeResource=(s:unknown):s is string=>typeof s==='string'&&/^(?:cs|pi|ch|py|re|du|dp)_[A-Za-z0-9_]{1,160}$/.test(s);
+export const financeResource=(s:unknown):s is string=>typeof s==='string'&&/^(?:cs|pi|ch|py|re|pyr|du|dp)_[A-Za-z0-9_]{1,160}$/.test(s);
 export function validateFinanceNotice(notice:FinanceNotice) {
   validateEvent(notice.event);
   if(!Array.isArray(notice.resources)||!notice.resources.length||notice.resources.length>4||notice.resources.some(r=>!financeResource(r))||!notice.resources.includes(notice.event.resourceId))throw new Error('Invalid finance notice');
@@ -110,5 +110,12 @@ export async function reconcilePaymentFinance(store:PaymentFinance,reference:str
       if(rechecks.length)await ledger.queueRefunds(rechecks);
     }
     return await store.finish(claim,snapshot);
-  }catch{await store.defer(claim);throw new Error('Payment finance reconciliation unavailable');}
+  }catch(cause){await store.defer(claim);throw new Error('Payment finance reconciliation unavailable',{cause});}
+}
+/** Log-safe failure category. Only fixed letters-and-spaces messages pass, so parser, network or
+ * database text that may carry payload fragments, resource ids or credentials is never emitted. */
+export function financeFailureReason(error:unknown):string{
+  const cause=error instanceof Error&&'cause' in error?error.cause:error;
+  const message=cause instanceof Error?cause.message:'';
+  return /^[A-Za-z][A-Za-z ]{0,79}$/.test(message)?message:'unclassified';
 }

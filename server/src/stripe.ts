@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { QuestionPack } from './pricing.ts';
 import type { PaymentProvider, TopUpPageInput, PageLang } from './payments.ts';
 import { renderTopUpPage, packDisplayName } from './payments.ts';
-import { validateRefund, type RefundSnapshot, type RefundStatus, type PaymentEvent, type PaymentLedger } from './payment-ledger.ts';
+import { validateRefund, refundResource, type RefundSnapshot, type RefundStatus, type PaymentEvent, type PaymentLedger } from './payment-ledger.ts';
 import {checkoutSnapshot,type CheckoutSnapshot} from './checkout-reconciliation.ts';
 
 // Hosted Stripe Checkout uses a form-encoded POST, signed webhook verification and bounded
@@ -150,7 +150,7 @@ export function stripeReference(value: unknown): string | null {
   return null;
 }
 export async function retrieveStripeRefund(secretKey:string,id:string):Promise<RefundSnapshot> {
-  if(!/^re_[A-Za-z0-9_]{1,160}$/.test(id)) throw new Error('Invalid refund id');
+  if(!refundResource(id)) throw new Error('Invalid refund id');
   const response=await fetch('https://api.stripe.com/v1/refunds/'+encodeURIComponent(id),{
     headers:{Authorization:'Bearer '+secretKey},signal:AbortSignal.timeout(8_000),redirect:'error',
   });

@@ -1,6 +1,6 @@
 import { isLinked, refundPolicy, sameEvent, sameOrder, sameRefundIdentity, validDecision, validateEvent, validateOrder, validateRefund,
   type PaymentEvent, type PaidOrderInput, type PaymentOrder, type PaymentLedger, type PaymentReport,
-  type RefundClaim, type RefundDecision, type RefundSnapshot, type RefundPolicy } from './payment-ledger.ts';
+  type RefundClaim, type RefundDecision, type RefundSnapshot, type RefundPolicy, refundResource } from './payment-ledger.ts';
 import type { ReportOrder, ReportRefund } from './reporting.ts';
 import type {StoredPurchaseSession} from './db.ts';
 import {validatePurchaseOrder} from './purchase-session.ts';
@@ -83,11 +83,11 @@ export class MemoryPaymentLedger implements PaymentLedger {
   }
   async queueRefunds(events:PaymentEvent[]):Promise<void>{
     if(events.length>100)throw new Error('Too many refund rechecks');
-    for(const event of events){validateEvent(event);if(!/^re_[A-Za-z0-9_]{1,160}$/.test(event.resourceId))throw new Error('Invalid refund id');}
+    for(const event of events){validateEvent(event);if(!refundResource(event.resourceId))throw new Error('Invalid refund id');}
     for(const event of events)this.receipt(event);
   }
   async claimRefund(event:PaymentEvent):Promise<RefundClaim|null> {
-    if(!/^re_[A-Za-z0-9_]{1,160}$/.test(event.resourceId)) throw new Error('Invalid refund id');
+    if(!refundResource(event.resourceId)) throw new Error('Invalid refund id');
     const receipt=this.receipt(event); if(receipt.done) return null;
     const generation=(this.generations.get(event.resourceId)??0n)+1n;
     this.generations.set(event.resourceId,generation); receipt.generation=String(generation);

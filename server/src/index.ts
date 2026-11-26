@@ -1,6 +1,6 @@
 import {reconcileCheckout} from './checkout-service.ts';
 import {retrieveStripeFinance} from './stripe-finance.ts';
-import {reconcilePaymentFinance,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
+import {reconcilePaymentFinance,financeFailureReason,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
 import type {CheckoutSnapshot} from './checkout-reconciliation.ts';
 import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
@@ -103,7 +103,7 @@ export async function buildApp(overrides: { plusStripe?: import('./plus-stripe.t
       }));
       const readFinance=overrides.readStripeFinance??((order:FinanceOrder)=>retrieveStripeFinance(config.stripeSecretKey,order));
       await Promise.all((await store.finance.pending(undefined,3)).map(async reference=>{
-        try{await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments);}catch{app.log.error('payment finance reconciliation failed');}
+        try{await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments);}catch(error){app.log.error({event:'finance_reconcile_failed',reason:financeFailureReason(error)},'payment finance reconciliation failed');}
       }));
     })().catch(()=>app.log.error('payment recovery failed')).finally(()=>{paymentRecovery=null;});
   }, 15 * 60_000);
