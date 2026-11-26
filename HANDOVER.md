@@ -7,8 +7,8 @@
 
 - Mac 原生：Apple Silicon / macOS 14+，AppKit/Carbon；截图与题组、官方/自定义 API/本机 CLI 三通道、流式答案、公式、Ghost、最近查题、中日英界面。见[客户端行为](docs/client-behavior.md)。
 - Windows：本仓库 Electron 实现及共享规则；Windows 10 2004+ 交互桌面。源码实现、Mac Electron smoke、Windows 实机验收是不同证据，见[平台入口](docs/windows/README.md)。
-- 源码版本读取 `VERSION.env`，Swift 下限读取 `Package.swift`。本次核对主线为 3.2.0 build 44；3.2.0 双架构发布及验收边界见[兼容账本](docs/compatibility.md)。3.0 build 27 的[发布记录](docs/release-3.0-execution-2026-10-20.md)仅为历史证据。
-- Intel 由独立源码维护，不在主树 arm64 构建中；3.2.0 Intel build 45（分支 `codex/release-3-2-intel`）支持 macOS 12.3+。Intel 须与 Apple Silicon 同版本发布并含其全部改动，仅保留 macOS 12.3/x86_64 兼容必需的差异；其余差异逐条告知用户，不得自判不适用。Catalina build 29（10.15.7+）及旧 Intel build 28 为冻结历史版本，不能用主树重做；来源及实机边界见[兼容账本](docs/compatibility.md)。
+- 源码版本读取 `VERSION.env`，Swift 下限读取 `Package.swift`。本次核对主线为 3.3.0 build 46；3.3.0 双架构发布及验收边界见[兼容账本](docs/compatibility.md)。3.0 build 27 的[发布记录](docs/release-3.0-execution-2026-10-20.md)仅为历史证据。
+- Intel 由独立源码维护，不在主树 arm64 构建中；3.3.0 Intel build 47（分支仍名 `codex/release-3-2-intel`）支持 macOS 12.3+。Intel 须与 Apple Silicon 同版本发布并含其全部改动，仅保留 macOS 12.3/x86_64 兼容必需的差异；其余差异逐条告知用户，不得自判不适用。Catalina build 29（10.15.7+）及旧 Intel build 28 为冻结历史版本，不能用主树重做；来源及实机边界见[兼容账本](docs/compatibility.md)。
 - 旧月票 QA 原型、本地题库入口已退役；正式 Plus、题包、体验及旧账户兼容保留。旧用户题库文件不清理，QA 工具见[边界](docs/prototypes.md)。
 
 ## 五分钟本地启动

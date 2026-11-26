@@ -19,7 +19,7 @@
 | 项目 | macOS 基准 | Windows 初始差异 → 本轮结果、代码 | 验收方法/本地结果 | Windows 与最终验收 |
 |---|---|---|---|---|
 | 版本/回退 | VERSION.env 3.1/30 | 设置硬编码3.0 → 生成版本；独立候选保持旧包。`ui/app.mjs`、package脚本 | 设置显示与包内 provenance、ASAR、ZIP核验 | 启动/系统属性待验 |
-| 面板布局 | `Notch/NotchDesign.swift`、NotchGeometry：600 pt、48 pt标题、20 pt内边距 | 现有共享几何继续使用。`core/surface.mjs`、`ui/app.mjs`/style | 共享fixtures、daily/settings smoke | 100/125/150/200% DPI与屏幕边缘待验 |
+| 面板布局 | `Notch/NotchDesign.swift`、NotchGeometry：600 pt、48 pt标题、20 pt内边距 | 现有共享几何继续使用。`ui/surface.mjs`、`ui/app.mjs`/style | 共享fixtures、daily/settings smoke | 100/125/150/200% DPI与屏幕边缘待验 |
 | 字体/颜色 | 系统字体、NotchPalette、Appearance | 系统字体回退、明暗色；服务字段改为原生字号/等宽模型输入 | zh/ja/en；同850×620逻辑尺寸、DPR2截图 | Segoe/CJK字形、字体光栅仍不同，未接受 |
 | 材质/阴影 | 原生面板绘制、侧栏系统材质 | 面板共享surface/light-field；侧栏CSS | 本机原生与Electron截图；色值/几何测试 | CSS侧栏与NSVisualEffect并非同一材质；DWM效果待比对，未接受 |
 | 收放/中断 | 320 ms、共享曲线、从当前帧反向 | 现有morph保留，新增真实渲染帧采样 | 关闭及100 ms后反向，记录时间/x/y/宽高/透明度；终态通过 | 60/120/144 Hz、掉帧/中断与减少动效实机待验 |

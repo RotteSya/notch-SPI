@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, codex/product-update-2-12]
+    branches: [main]
   pull_request:
 
 permissions:
