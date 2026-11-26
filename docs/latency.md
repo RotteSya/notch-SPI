@@ -30,6 +30,6 @@ node scripts/report-capture-latency.mjs --target-ms 6000 --single-limit-ms 10000
 
 `complete_answer_timing_targets_met_in_sample` 要求所选绘制点均值不超过目标、最大值不超过单题上限，且没有失败或缺失。它只判断计时资格，仍需核对冻结计划、全部正常题答案正确完整和独立质量记录。首段文字、完整响应和完整答案绘制分别汇总；日志没有首事件时不会推算该时间。超过时限的比例以有完整绘制的样本为分母，同时报告失败、缺失及全部触发中未在目标内完成的比例；两个P95字段均在少于20个完整样本时留空。
 
-离线测试注入 mock provider，覆盖质量、计量、截断、失败停止、许可重用拒绝和调用次数边界，属于完整 verify/CI。候选检查器按需要显式运行；不要为了通过预检擅自重写冻结基线或批准旧 permit。
+离线测试注入 mock provider，覆盖质量、计量、截断、失败停止、许可重用拒绝和调用次数边界，属于完整 verify/CI。候选检查器 `scripts/check-latency-prompt-candidate.mjs`、`scripts/check-latency-legacy-prompt.mjs` 只读源码与候选配置、不调用模型，不属于 verify/CI，按需要显式运行；前者2026-11-26通过，后者因 `shared/prompts.json` 已在该实验之后变更而按设计以基线漂移失败，表示旧提示词实验不可再按原配置运行。不要为了通过预检擅自重写冻结基线或批准旧 permit。
 
 真实模型、请求上限、推理强度、图片和生产配置的变更必须有对应授权。直接供应商诊断不等于官方扣题或端到端验收；样本有限时不报告稳定 P95，不把不合格答案计为“可用答案”。

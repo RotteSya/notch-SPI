@@ -71,3 +71,13 @@ node --test scripts/fixtures/model-comparison.test.mjs scripts/fixtures/model-co
 立即停止：授权/材料/身份漂移、返回模型或档位不符、账号/计费拒绝、usage越界或冲突、预算不足；3次连续技术失败或累计3次未知usage也停。评分淘汰建议在结果复核中应用，不默默改变同批输入。保留所有attempt和未执行项，不把未执行当成功或零费用。
 
 真实执行目录固定 `output/model-comparison-paid-20261117`，一次性许可标记另存 `output/model-comparison-20261117.permit-consumed.json`。无reset/resume/run-ID/额度/账本覆盖参数；第二次启动即拒绝，即使删除或清空账本。中断后不自动补跑，必须先核销旧记录；不能换run ID规避本轮封顶。标记是本地程序防误操作，不声称能抵抗人为同时删除全部审计文件或篡改源码。
+
+## 后续 SPI 与推理强度预筛工具
+
+本节只登记脚本归属，依据脚本自身的头部说明与常量，不是执行单，也不构成新的调用授权。
+
+- `scripts/prepare-spi-screening.py`：离线材料准备，使用本机已有的 Pillow，禁用网络与子进程；从本机 `output/spi-ja-review-20261117` 读取复核结果，向 `output/spi-screening-20261117` 渲染输入，默认只报告，加 `--write` 才写入，已存在的冻结材料不覆盖。
+- `scripts/run-spi-screening.mjs`：固定16题活动 `spi-screening-20261117`，默认 dry-run 不解析凭据或传输；`scripts/continue-spi-screening.mjs` 是同一活动经授权后的补完，不新建账本、上限或 run ID。
+- `scripts/run-cab-effort-screening.mjs`：固定四图、四配置实验，dry-run 无凭据与传输；`scripts/report-cab-effort-screening.mjs` 只做离线汇总。
+
+输入与结果都在本机 `output/` 下，未纳入 Git，仅凭克隆无法重现。离线回归在 `scripts/fixtures/` 的 spi-screening、spi-screening-supplement、cab-effort-screening 三个测试中。

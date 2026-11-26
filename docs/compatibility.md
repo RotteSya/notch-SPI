@@ -2,7 +2,7 @@
 
 删除任一兼容路径需要同时满足：最低支持版本已经写明、生产证据证明旧版本流量归零、并且至少跨过两个正式版本。2026-10-16 的本地审计没有这些证据，因此下列路径全部保留。
 
-源码版本在 `VERSION.env`。Mac 3.0 / build 27 的发布记录见 [发布执行记录](release-3.0-execution-2026-10-20.md)；本账本保留从 2.17 / build 24 升级的兼容基线。Bundle ID、偏好域和 Keychain service 都是 `com.rottesya.notchspi`。屏幕录制授权由 macOS 管理，应用不迁移 TCC。
+源码版本在 `VERSION.env`。Mac 3.0 / build 27 的发布记录见 [发布执行记录](release-3.0-execution-2026-10-20.md)；本账本保留从 2.17 / build 24 升级的兼容基线。Bundle ID、偏好域和 Keychain service 都是 `com.rottesya.notchspi`。屏幕录制授权由 macOS 管理，应用不迁移 TCC。`scripts/verify-upgrade-identity.py <已发布.app> <候选.app>` 只读比对两包的 Bundle ID、Developer ID 团队、designated requirement、可执行名、最低系统版本及既有 URL scheme；它是手动工具，不由 verify、CI 或发布入口运行，也不替代原位升级后的系统权限验收。
 
 | id | protected_data_or_client | implementation | regression_tests | removal_conditions | status |
 | --- | --- | --- | --- | --- | --- |
