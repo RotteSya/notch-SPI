@@ -4,6 +4,7 @@
 
 `./scripts/package.sh release --unsigned` 使用现有锁定 Swift checkout，禁止自动解析或更新依赖；缺少 checkout 时停止，不自动下载。
 每次 release 构建输出 `dist/candidates/<candidateID>/NotchSPI<version>-mac.dmg`，保留既有 `dist/NotchSPI.dmg` 和其他候选。
+DMG 窗口样式：隐藏的 `.background/background.tiff`（由 `swift scripts/dmg-background.swift` 生成，尺寸与 package.sh 中的图标坐标对应）和卷图标，由 Finder 写入 `.DS_Store`。首次打包需允许终端控制 Finder；签名 release 布局失败即停止，`--unsigned`（含 CI）仅警告并退回普通窗口。打包前须先推出已挂载的 NotchSPI 卷。
 QA 仍使用 `dist-qa/NotchSPI.app`，兼容 `run-local.sh`；QA 是可覆盖的本地启动目录，不作为历史交付归档。
 
 构建开始前记录整个非忽略源码集合的提交、内容摘要、dirty 状态、构建主机及 CI 标识，写入 App 的 `Contents/Resources/build-provenance.json`。

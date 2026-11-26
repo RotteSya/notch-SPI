@@ -180,11 +180,90 @@ fi
 
 echo "==> Staging DMG contents"
 ln -s /Applications "$STAGING/Applications"
+# Hidden window background; the layout itself is applied by Finder below.
+mkdir "$STAGING/.background"
+cp Resources/dmg/background.tiff "$STAGING/.background/background.tiff"
+
+# Lay out the installer window (660×400 background from scripts/dmg-background.swift).
+# Finder writes the result into the volume's .DS_Store, so the volume must be writable here.
+layout_dmg() {
+  local rw="$1" mount="/Volumes/$APP_NAME" attach_out device status=0
+  attach_out="$(hdiutil attach -readwrite -noverify -noautoopen "$rw")" || return 1
+  device="$(awk '/Apple_HFS/ {print $1}' <<<"$attach_out")"
+  if [[ -z "$device" || ! -d "$mount/$APP_NAME.app" ]]; then
+    echo "package: layout volume did not mount at $mount" >&2
+    [[ -n "$device" ]] && hdiutil detach "$device" -quiet
+    return 1
+  fi
+  perl -e 'alarm shift; exec @ARGV' 120 osascript - "$APP_NAME" <<'OSA' || status=1
+on run argv
+  set diskName to item 1 of argv
+  with timeout of 90 seconds
+    tell application "Finder"
+      tell disk diskName
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set pathbar visible of container window to false
+        set the bounds of container window to {200, 120, 860, 552}
+        set opts to the icon view options of container window
+        set arrangement of opts to not arranged
+        set icon size of opts to 128
+        set text size of opts to 13
+        set background picture of opts to file ".background:background.tiff"
+        set position of item (diskName & ".app") of container window to {170, 205}
+        set position of item "Applications" of container window to {490, 205}
+        close
+        open
+        update without registering applications
+        delay 1
+        close
+      end tell
+    end tell
+  end timeout
+end run
+OSA
+  if [[ "$status" == 0 ]]; then
+    local waited=0
+    while [[ ! -f "$mount/.DS_Store" && "$waited" -lt 10 ]]; do sleep 1; waited=$((waited + 1)); done
+    [[ -f "$mount/.DS_Store" ]] || { echo "package: Finder did not write the window layout" >&2; status=1; }
+  fi
+  # hdiutil -srcfolder drops .VolumeIcon.icns, so add the volume icon on the mounted volume.
+  if SETFILE="$(xcrun -f SetFile 2>/dev/null)"; then
+    cp "Resources/$ICON_FILE" "$mount/.VolumeIcon.icns" && "$SETFILE" -a C "$mount" || true
+  else
+    echo "package: SetFile not found; DMG keeps the default volume icon" >&2
+  fi
+  rm -rf "$mount/.fseventsd"
+  sync
+  hdiutil detach "$device" -quiet || hdiutil detach "$device" -force -quiet || status=1
+  return "$status"
+}
 
 echo "==> Creating DMG"
 # Pin the distribution filesystem instead of inheriting the host's APFS default.
-# The read-only installer volume needs only the app and Applications link.
-hdiutil create -volname "$APP_NAME" -fs HFS+ -srcfolder "$STAGING" -ov -format UDZO "$OUT/$DMG_NAME" >/dev/null
+# The read-only installer volume holds the app, the Applications link and the hidden window styling.
+if [[ -e "/Volumes/$APP_NAME" ]]; then
+  echo "package: /Volumes/$APP_NAME is already mounted; eject it first so the window layout targets the new DMG" >&2
+  exit 1
+fi
+RW_DMG="$OUT/layout-rw.dmg"
+RW_MB=$(( $(du -sm "$STAGING" | cut -f1) + 20 ))
+hdiutil create -volname "$APP_NAME" -fs HFS+ -srcfolder "$STAGING" -size "${RW_MB}m" -ov -format UDRW "$RW_DMG" >/dev/null
+echo "==> Laying out installer window"
+if ! layout_dmg "$RW_DMG"; then
+  if [[ "$UNSIGNED" == 1 || -z "$SIGN_ID" ]]; then
+    echo "package: warning: window layout failed; this unsigned DMG opens as a plain Finder window" >&2
+  else
+    rm -f "$RW_DMG"
+    echo "package: window layout failed; refusing to ship a release DMG without it." >&2
+    echo "    Allow your terminal to control Finder (System Settings → Privacy & Security → Automation) and retry." >&2
+    exit 1
+  fi
+fi
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT/$DMG_NAME" >/dev/null
+rm -f "$RW_DMG"
 echo "==> Verifying DMG integrity"
 hdiutil verify "$OUT/$DMG_NAME"
 
