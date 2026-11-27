@@ -163,7 +163,9 @@ for(const [name,make] of factories){
   // Production, 2026-11-26: the first refund was a WeChat Pay one. Its pyr_ id was rejected by the
   // signed webhook (400) and by the finance read, so the refund never reached the ledger.
   test(`${name}: pyr refunds of py payments pass signed webhooks, revoke the grant and reconcile finance`,async()=>{
-    const store=await make(),app=Fastify({logger:false}),provider=new MockProvider();
+    // Capture the classified cause of any unexpected 5xx, so a failure names its own source.
+    const records:Array<Record<string,unknown>>=[],failures=()=>JSON.stringify(records.filter(r=>r.event==='request_failed'||r.event==='finance_reconcile_failed'));
+    const store=await make(),app=Fastify({logger:{level:'warn',stream:{write(line:string){records.push(JSON.parse(line));}}}}),provider=new MockProvider();
     const refund={id:'pyr_finance',chargeId:'py_finance',paymentIntentId:'pi_finance',amountCents:1000,currency:'USD'};let status:'pending'|'succeeded'='pending';
     const provided=()=>{const s=financeSnapshot();s.charges[0]!.id='py_finance';s.transactions[0]!.sourceId='py_finance';
       s.refunds=[{...refund,status,transactionId:'txn_refund',failureTransactionId:null}];
@@ -173,16 +175,21 @@ for(const [name,make] of factories){
       registerRoutes(app,{config:{...config,adminToken:'finance_test_admin',cronSecret:'finance_test_cron',stripeSecretKey:'test_only',stripeWebhookSecret:'finance_test_webhook'},store,storeKind:name as 'memory'|'sqlite'|'postgres',
         provider,objectiveProvider:provider,providerDegraded:null,objectiveProviderDegraded:null,payment:new StripePaymentProvider(),readStripeFinance:async()=>provided(),
         readStripeRefund:async id=>{assert.equal(id,'pyr_finance');return {...refund,status};}});
-      const deliver=async(id:string,type:string,resource=refund.id)=>{
-        const payload=JSON.stringify({id,type,created:Math.floor(Date.now()/1000),data:{object:{id:resource,object:'refund',amount:1000,currency:'usd',charge:'py_finance',payment_intent:'pi_finance',status}}});
+      // Stripe redelivers an event with the same bytes; only the signature header is fresh. The body is
+      // therefore built once per event: a body rebuilt from the clock on each delivery is a different
+      // event under the same id whenever two deliveries straddle a second.
+      const notification=(id:string,type:string,resource=refund.id)=>JSON.stringify({id,type,created:1_767_225_600,
+        data:{object:{id:resource,object:'refund',amount:1000,currency:'usd',charge:'py_finance',payment_intent:'pi_finance',status}}});
+      const deliver=async(payload:string)=>{
         const ts=Math.floor(Date.now()/1000),signature='t='+ts+',v1='+createHmac('sha256','finance_test_webhook').update(ts+'.'+payload).digest('hex');
         return (await app.inject({method:'POST',url:'/webhooks/stripe',headers:{'content-type':'application/json','stripe-signature':signature},payload})).statusCode;};
-      assert.equal(await deliver('evt_pyr_unknown','refund.created','pyx_finance'),400);
-      assert.equal(await deliver('evt_pyr_created','refund.created'),200);
-      status='succeeded';
-      for(let i=0;i<2;i++)assert.equal(await deliver('evt_pyr_updated','refund.updated'),200);
+      assert.equal(await deliver(notification('evt_pyr_unknown','refund.created','pyx_finance')),400);
+      assert.equal(await deliver(notification('evt_pyr_created','refund.created')),200,failures());
+      status='succeeded';const updated=notification('evt_pyr_updated','refund.updated');
+      for(let i=0;i<2;i++)assert.equal(await deliver(updated),200,failures());
+      assert.notEqual(await deliver(updated.replace('"created":1767225600','"created":1767225601')),200,'a changed body under a delivered event id is not a redelivery');records.length=0;
       assert.equal((await store.billing.quota(d.token))?.balanceQuestions,0);assert.equal((await store.payments.pendingRefunds()).length,0);
-      const reap=await app.inject({url:'/api/internal/reap',headers:{authorization:'Bearer finance_test_cron'}});assert.equal(reap.statusCode,200);
+      const reap=await app.inject({url:'/api/internal/reap',headers:{authorization:'Bearer finance_test_cron'}});assert.equal(reap.statusCode,200,failures());
       assert.equal(reap.json().finance_failed,0);assert.equal(reap.json().finance_reconciled,1);assert.equal(reap.json().refunds_failed,0);
       const {job,revision}=await store.finance.inspect('cs_finance');assert.equal(job?.status,'verified');assert.equal(revision?.dirty,false);
       assert.equal(revision?.snapshot.refunds[0]!.id,'pyr_finance');assert.equal(revision?.snapshot.refunds[0]!.status,'succeeded');

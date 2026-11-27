@@ -471,7 +471,10 @@ async function start() {
     changed: emit,
     protection: !development && !qa && !smoke,
     exclusion,
-    ...(motionSmoke ? { reducedMotion: () => false } : {}),
+    // The smoke stretches the flight so its captures can run while the flight is still in the air
+    // on a loaded runner: every capture first waits for the exclusion settle that the flight's own
+    // overlay `show` arms, and a cold compositor can delay that past a 680 ms flight.
+    ...(motionSmoke ? { reducedMotion: () => false, timeScale: 4 } : {}),
   });
   win.setAlwaysOnTop(true, "screen-saver");
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -1342,8 +1345,11 @@ async function start() {
       throw new Error("Flight did not start on the real desktop");
     if (started.frames.some(frame => frame.reduced))
       throw new Error("Full-motion smoke unexpectedly selected reduced motion");
+    const flight = started.frames[0], landing = flight.start + flight.duration;
+    // Read the painted overlay at the same point of the flight as an unstretched one read it
+    // (100 ms of 680 ms): the card's look, including its background alpha, follows progress.
     const painting = (async () => {
-      await wait(100);
+      await wait(Math.max(0, flight.start + flight.duration * (100 / 680) - Date.now()));
       return flights.evidence(directory, "flight-moving");
     })();
     const captureContinuity = [];
@@ -1353,19 +1359,23 @@ async function start() {
       if (!win.isVisible() || (current.frames.length && current.overlays.some(w => !w.visible)))
         hiddenDuringCapture = true;
     }, 5);
+    const sample = () => captureWithOverlays(async () => {
+      const before = flights.diagnostics.frames[0];
+      const beforeTime = Date.now();
+      assertFlightSample(flight, before, beforeTime);
+      await wait(60); // Keep captures overlapping while the real window paints.
+      const after = flights.diagnostics.frames[0];
+      const afterTime = Date.now();
+      captureContinuity.push({ before: before?.start, after: after?.start, beforeTime, afterTime, visible: win.isVisible() });
+      assertFlightSample(flight, after, afterTime);
+    });
     try {
+      // Sample for as long as this flight is in the air, not at fixed offsets from its start:
+      // each capture waits for the exclusion to settle, so fixed offsets all collapse onto that
+      // one moment, and miss the flight entirely when the moment comes late.
       const continuity = [0, 40, 80, 120].map(async delay => {
         await wait(delay);
-        await captureWithOverlays(async () => {
-          const before = flights.diagnostics.frames[0];
-          const beforeTime = Date.now();
-          assertFlightSample(started.frames[0], before, beforeTime);
-          await wait(60); // Keep captures overlapping while the real window paints.
-          const after = flights.diagnostics.frames[0];
-          const afterTime = Date.now();
-          captureContinuity.push({ before: before?.start, after: after?.start, beforeTime, afterTime, visible: win.isVisible() });
-          assertFlightSample(started.frames[0], after, afterTime);
-        });
+        while (Date.now() < landing && flights.diagnostics.frames[0]?.start === flight.start) await sample();
       });
       if (pixelCheck) continuity.push((async () => {
         await wait(80);
@@ -1388,7 +1398,8 @@ async function start() {
     await fs.writeFile(path.join(directory, "painted.json"), JSON.stringify(painted, null, 2));
     if (!painted.some((p) => p.visible && p.ink > 100))
       throw new Error("Flight overlay has no visible painted image");
-    await wait(750);
+    // Check release a fixed margin past the landing (the old fixed 750 ms wait left at least this).
+    await wait(Math.max(0, landing - Date.now()) + 270);
     if (
       flights.ids.length ||
       flights.diagnostics.overlays.some((w) => w.visible)

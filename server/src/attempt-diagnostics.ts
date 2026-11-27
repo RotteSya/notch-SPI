@@ -23,6 +23,8 @@ export class AttemptTrace {
   upstreamRequestId?: string;
   usageReceived = false;
   usageValidated = false;
+  /** Milliseconds on the same high-resolution clock that finish() records as durationMs. */
+  elapsed(): number { return performance.now() - this.started; }
   mark(stage: ProviderTimingStage | 'firstProgress') {
     if(stage==='upstreamUsage') this.usageReceived=true;
     this.stages[stage] ??= Math.round(performance.now() - this.started);
