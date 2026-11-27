@@ -616,9 +616,13 @@ export class CaptureService {
               signal.addEventListener('abort',cancelAttempt,{once:true});
               if(signal.aborted)cancelAttempt();
             });
-            const startup=new Promise<never>((_,reject)=>{firstTimer=setTimeout(()=>{
+            // libuv schedules timers on a whole-millisecond clock, so a timer can fire up to ~1 ms before
+            // performance.now() reaches its delay. The limit is decided on the trace's own clock: an early
+            // wake-up re-arms for the remainder, and a provider is never cut off before its full limit.
+            const startup=new Promise<never>((_,reject)=>{const arm=(ms:number)=>{firstTimer=setTimeout(()=>{
+              const left=firstProgressMs-trace.elapsed();if(left>0){arm(Math.ceil(left));return;}
               startupExpired=true;timedOut=true;reject(new TransientProviderError(408,0));attemptAbort.abort();
-            },firstProgressMs);});
+            },ms);};arm(firstProgressMs);});
             try{const result=await Promise.race([provider.stream(meteredInput,chunk=>{
             if(callClosed||!accepting||signal.aborted) return;
             if(chunk.length)trace.mark('firstProgress');
