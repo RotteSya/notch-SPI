@@ -76,8 +76,12 @@ final class HotkeyRecorderControl: NSControl {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     private var promptText: String { L10n.t("按下快捷键…", "キーを押す…", "Press keys…") }
-    private var promptFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
-    private var capFont: NSFont { .systemFont(ofSize: capSize * 0.46, weight: .medium) }
+    // Created once and held for the control's lifetime instead of vended on every draw. CoreText
+    // copies each attribute value while typesetting (TAttributes::ApplyFont uses
+    // initWithDictionary:copyItems:), and CI once saw one of those copies come back nil here.
+    private let promptFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+    private let comboFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+    private lazy var capFont = NSFont.systemFont(ofSize: capSize * 0.46, weight: .medium)
 
     /// Per-cap widths: modifier glyphs are square, a text key ("Space", "F5") grows to fit.
     private func capWidths(_ keys: [String]) -> [CGFloat] {
@@ -122,10 +126,13 @@ final class HotkeyRecorderControl: NSControl {
         let surface = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5)
         NSColor.labelColor.withAlphaComponent(hovering ? 0.065 : 0.025).setFill(); surface.fill()
         (isConflicted ? NSColor.systemRed : NSColor.separatorColor).setStroke(); surface.lineWidth = 0.5; surface.stroke()
-        let text = (isRecording ? promptText : KeycapChipView.caps(from: combo).joined(separator: "  ")) as NSString
-        let attrs: [NSAttributedString.Key: Any] = [.font: isRecording ? promptFont : NSFont.monospacedSystemFont(ofSize: 13, weight: .medium), .foregroundColor: isConflicted ? NSColor.systemRed : NSColor.labelColor]
-        let size = text.size(withAttributes: attrs)
-        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attrs)
+        // Measure and draw one attributed string whose colour is resolved for this draw's appearance,
+        // so the typesetter copies only concrete, immutable values.
+        let ink = (isConflicted ? NSColor.systemRed : NSColor.labelColor).usingColorSpace(.sRGB) ?? .textColor
+        let text = NSAttributedString(string: isRecording ? promptText : KeycapChipView.caps(from: combo).joined(separator: "  "),
+                                      attributes: [.font: isRecording ? promptFont : comboFont, .foregroundColor: ink])
+        let size = text.size()
+        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
         if window?.firstResponder === self || isRecording {
             NSColor.keyboardFocusIndicatorColor.setStroke(); surface.lineWidth = 2; surface.stroke()
         }
