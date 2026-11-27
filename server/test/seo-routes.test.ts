@@ -16,6 +16,10 @@ process.env.PLUS_ENABLED = '0';
 const {buildApp} = await import('../src/index.ts');
 const {SITE_ORIGIN, renderSiteRobots, renderSiteSitemap} = await import('../src/site-seo.ts');
 const {demoScript, siteCSP} = await import('../src/site-demo.ts');
+const {designCopy, siteCSS} = await import('../src/site-design.ts');
+const {continuationCSS} = await import('../src/site-continuation.ts');
+const {polishCSS} = await import('../src/site-polish.ts');
+const {companyCSS} = await import('../src/site-companies.ts');
 let app:FastifyInstance;
 before(async () => { app = await buildApp(); });
 after(async () => { await app.close(); });
@@ -40,11 +44,11 @@ for (const path of ['/', '/spi', '/reading-practice']) {
         assert.match(head, /noindex,follow/);
       } else {
         assert.doesNotMatch(head, /noindex/);
-        const study = html.match(/<section[^>]*id="study"[\s\S]*?<\/section>/)?.[0];
-        assert.ok(study, 'the study content is present in initial HTML');
-        assert.ok(html.indexOf(study) < html.indexOf('id="legal-drawer"'));
-        assert.ok(study.includes(`/spi?lang=${lang}`) || path === '/spi');
       }
+      assert.doesNotMatch(html, /id="study"|study-section|study-answer/);
+      assert.ok(html.includes(`<p class="eyebrow">${designCopy[lang as 'zh'|'ja'|'en'].eyebrow}</p>`));
+      assert.equal(html.match(/<style>([\s\S]*?)<\/style>/)?.[1], siteCSS+continuationCSS+polishCSS+companyCSS,
+        'technical SEO must not alter the original visual styles');
       assert.equal(response.headers['content-security-policy'], siteCSP);
       assert.ok(siteCSP.includes('sha256-' + createHash('sha256').update(demoScript).digest('base64')));
       assert.doesNotMatch(html, /class="concept-plan plus-plan"|class="concept-plan trial-plan"/);
