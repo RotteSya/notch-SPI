@@ -41,6 +41,7 @@ import { createFixedWindowLimiter, clientIp } from './rateLimit.ts';
 import { validateProductEvent } from './telemetry.ts';
 import { validateEvent, paymentReportWire, type PaymentEvent, type RefundSnapshot } from './payment-ledger.ts';
 import { parseObservationPreference, parseObservationCoverage, coverageDeferralSeconds, type ObservationState, type ObservationCoverage } from './observation.ts';
+import { summarizeFailure } from './failure-summary.ts';
 
 export interface AppContext {
   plusStripe?: import('./plus-stripe.ts').PlusStripe;
@@ -1116,12 +1117,16 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
 
   // Uniform error body: {"error":{"message":"…","code":"…"}} with the right status code.
-  app.setErrorHandler((err: unknown, _req, reply) => {
+  app.setErrorHandler((err: unknown, req, reply) => {
     if (err instanceof ApiError) {
       return reply.code(err.statusCode).send(errorBody(err.message, err.code));
     }
     const e = err as { statusCode?: number; message?: string };
     const statusCode = typeof e.statusCode === 'number' ? e.statusCode : 500;
+    // A custom handler replaces Fastify's own 5xx logging; without this line an unexpected failure
+    // leaves only "request completed" with a status, and the cause cannot be recovered later.
+    if (statusCode >= 500) req.log.error({ event: 'request_failed', route: req.routeOptions.url ?? 'unmatched',
+      failure: summarizeFailure(err) }, 'request failed');
     if (statusCode === 413) return reply.code(413).send(errorBody('请求数据过大，请减少内容后重试。', 'payload_too_large'));
     const message = statusCode === 500 ? '服务器内部错误' : (e.message ?? '请求错误');
     return reply.code(statusCode).send(errorBody(message, statusCode === 500 ? 'internal' : 'bad_request'));

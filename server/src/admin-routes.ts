@@ -4,6 +4,7 @@ import type {AppContext} from './routes.ts';
 import {ApiError} from './http.ts';
 import {adminFilter,type AdminDevice} from './admin-store.ts';
 import {plusEntitlement,PLUS} from './plus.ts';
+import {summarizeFailure} from './failure-summary.ts';
 
 export function publicDevice(d:AdminDevice){
   const entitlement=plusEntitlement(d.paid,d.manual);
@@ -21,7 +22,7 @@ export function registerAdminRoutes(app:FastifyInstance,ctx:AppContext,requireAd
       if(error instanceof ApiError)return reply.code(error.statusCode).send({error:{code:error.code,message:error.message}});
       const code=(error as {statusCode?:number}).statusCode;
       if(code===400||code===413)return reply.code(code).send({error:{code:'bad_request',message:'请求格式或大小无效'}});
-      req.log.error('admin operation failed');return reply.code(500).send({error:{code:'internal',message:'保存或读取失败，请保留当前操作并重试'}});
+      req.log.error({event:'request_failed',route:req.routeOptions.url??'unmatched',failure:summarizeFailure(error)},'admin operation failed');return reply.code(500).send({error:{code:'internal',message:'保存或读取失败，请保留当前操作并重试'}});
     });
     scope.post('/admin/ops/lookup',{bodyLimit:2048},async(req)=>{
       const body=req.body as Record<string,unknown>|null,code=typeof body?.recovery_code==='string'?body.recovery_code.trim():'';
