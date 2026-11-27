@@ -65,8 +65,10 @@ export function validateOrder(order: PaidOrderInput): void {
       (order.chargeId !== null && !/^(?:ch|py)_[A-Za-z0-9_]{1,160}$/.test(order.chargeId))) throw new Error('Invalid paid order');
   if(order.purchaseSessionId!==undefined&&!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(order.purchaseSessionId))throw new Error('Invalid paid purchase session');
 }
+/** Stripe names card refunds re_ and refunds of py_ payments (WeChat Pay and other non-card methods) pyr_. */
+export const refundResource=(s:unknown):s is string=>typeof s==='string'&&/^(?:re|pyr)_[A-Za-z0-9_]{1,160}$/.test(s);
 export function validateRefund(refund: RefundSnapshot): void {
-  if (!/^re_[A-Za-z0-9_]{1,160}$/.test(refund.id) ||
+  if (!refundResource(refund.id) ||
       !Number.isSafeInteger(refund.amountCents) || refund.amountCents <= 0 || !/^[A-Z]{3}$/.test(refund.currency) ||
       !['pending','requires_action','succeeded','failed','canceled'].includes(refund.status) ||
       (!refund.paymentIntentId && !refund.chargeId) ||

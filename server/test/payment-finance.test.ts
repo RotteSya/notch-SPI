@@ -13,7 +13,7 @@ import {tmpdir} from 'node:os';
 import {MemoryStore} from '../src/db-memory.ts';
 import {SqliteStore} from '../src/db-sqlite.ts';
 import type {Store} from '../src/db.ts';
-import {financeTotals,validateFinanceSnapshot,reconcilePaymentFinance,type FinanceOrder} from '../src/payment-finance.ts';
+import {financeTotals,validateFinanceSnapshot,reconcilePaymentFinance,financeFailureReason,type FinanceOrder} from '../src/payment-finance.ts';
 import {aggregateCohorts,aggregateEconomics} from '../src/reporting.ts';
 import {reconcileStripeRefund} from '../src/stripe.ts';
 import {financeBase,financeAt,financeSnapshot,disputedSnapshot,balanceTransaction} from './helpers/finance-fixture.ts';
@@ -160,6 +160,35 @@ for(const [name,make] of factories){
       const reconcile=await app.inject({method:'POST',url:'/admin/payments/finance/reconcile',headers:admin,payload:{reference:'cs_finance'}});assert.equal(reconcile.statusCode,200);assert.equal(reconcile.json().applied,true);assert.equal(reconcile.json().revision.dirty,false);assert.equal(reads,2);
     }finally{await app.close();await store.close();}
   });
+  // Production, 2026-11-26: the first refund was a WeChat Pay one. Its pyr_ id was rejected by the
+  // signed webhook (400) and by the finance read, so the refund never reached the ledger.
+  test(`${name}: pyr refunds of py payments pass signed webhooks, revoke the grant and reconcile finance`,async()=>{
+    const store=await make(),app=Fastify({logger:false}),provider=new MockProvider();
+    const refund={id:'pyr_finance',chargeId:'py_finance',paymentIntentId:'pi_finance',amountCents:1000,currency:'USD'};let status:'pending'|'succeeded'='pending';
+    const provided=()=>{const s=financeSnapshot();s.charges[0]!.id='py_finance';s.transactions[0]!.sourceId='py_finance';
+      s.refunds=[{...refund,status,transactionId:'txn_refund',failureTransactionId:null}];
+      s.transactions.push(balanceTransaction({id:'txn_refund',sourceId:'pyr_finance',category:'refund',amountMinor:'-1000',feeMinor:'0',netMinor:'-1000'}));return s;};
+    try{const d=await pay(store);
+      app.removeContentTypeParser('application/json');app.addContentTypeParser('application/json',{parseAs:'buffer'},(req,body,done)=>{(req as typeof req&{rawBody?:Buffer}).rawBody=body as Buffer;try{done(null,JSON.parse(String(body)));}catch{done(new Error('invalid JSON'));}});
+      registerRoutes(app,{config:{...config,adminToken:'finance_test_admin',cronSecret:'finance_test_cron',stripeSecretKey:'test_only',stripeWebhookSecret:'finance_test_webhook'},store,storeKind:name as 'memory'|'sqlite'|'postgres',
+        provider,objectiveProvider:provider,providerDegraded:null,objectiveProviderDegraded:null,payment:new StripePaymentProvider(),readStripeFinance:async()=>provided(),
+        readStripeRefund:async id=>{assert.equal(id,'pyr_finance');return {...refund,status};}});
+      const deliver=async(id:string,type:string,resource=refund.id)=>{
+        const payload=JSON.stringify({id,type,created:Math.floor(Date.now()/1000),data:{object:{id:resource,object:'refund',amount:1000,currency:'usd',charge:'py_finance',payment_intent:'pi_finance',status}}});
+        const ts=Math.floor(Date.now()/1000),signature='t='+ts+',v1='+createHmac('sha256','finance_test_webhook').update(ts+'.'+payload).digest('hex');
+        return (await app.inject({method:'POST',url:'/webhooks/stripe',headers:{'content-type':'application/json','stripe-signature':signature},payload})).statusCode;};
+      assert.equal(await deliver('evt_pyr_unknown','refund.created','pyx_finance'),400);
+      assert.equal(await deliver('evt_pyr_created','refund.created'),200);
+      status='succeeded';
+      for(let i=0;i<2;i++)assert.equal(await deliver('evt_pyr_updated','refund.updated'),200);
+      assert.equal((await store.billing.quota(d.token))?.balanceQuestions,0);assert.equal((await store.payments.pendingRefunds()).length,0);
+      const reap=await app.inject({url:'/api/internal/reap',headers:{authorization:'Bearer finance_test_cron'}});assert.equal(reap.statusCode,200);
+      assert.equal(reap.json().finance_failed,0);assert.equal(reap.json().finance_reconciled,1);assert.equal(reap.json().refunds_failed,0);
+      const {job,revision}=await store.finance.inspect('cs_finance');assert.equal(job?.status,'verified');assert.equal(revision?.dirty,false);
+      assert.equal(revision?.snapshot.refunds[0]!.id,'pyr_finance');assert.equal(revision?.snapshot.refunds[0]!.status,'succeeded');
+      assert.equal((await store.payments.pendingRefunds()).length,0);
+    }finally{await app.close();await store.close();}
+  });
   test(`${name}: finance resource sets beyond one SQL bind batch preserve every unique fee`,async t=>{
     t.mock.timers.enable({apis:['Date'],now:financeBase});const store=await make();
     try{await pay(store);const s=financeSnapshot();
@@ -179,4 +208,14 @@ test('SQLite finance revisions and pending notices survive closing and reopening
     const database=new DatabaseSync(path);database.prepare('UPDATE finance_revisions SET digest=?').run('0'.repeat(64));database.close();
     await assert.rejects(store.finance.inspect('cs_finance'),/integrity failure/);await assert.rejects(store.reporting.snapshot(query()),/integrity failure/);
   }finally{await store.close();await rm(dir,{recursive:true,force:true});}
+});
+test('finance failures expose a fixed category and never parser, network or resource text',async()=>{
+  const failing={claim:async()=>({order,generation:'1',watermark:'0',startedAt:financeAt(0),leaseUntil:financeAt(1)}),defer:async()=>{}} as unknown as Parameters<typeof reconcilePaymentFinance>[0];
+  const reason=async(thrown:unknown)=>{try{await reconcilePaymentFinance(failing,'cs_finance',async()=>{throw thrown;});}catch(error){
+    assert.equal((error as Error).message,'Payment finance reconciliation unavailable');return financeFailureReason(error);}assert.fail('expected failure');};
+  assert.equal(await reason(new Error('Invalid Stripe resource id')),'Invalid Stripe resource id');
+  assert.equal(await reason(new Error('Finance captured amount mismatch')),'Finance captured amount mismatch');
+  for(const leaked of [new SyntaxError('Unexpected token \'<\', "<html>private" is not valid JSON'),new Error('refund pyr_1Private rejected'),new Error('key sk_live_private'),
+    new Error('x'.repeat(81)),new Error(''),'Invalid Stripe resource id',null])assert.equal(await reason(leaked),'unclassified');
+  assert.equal(financeFailureReason(new Error('Invalid finance resource set')),'Invalid finance resource set');
 });

@@ -64,3 +64,19 @@ test('Stripe finance reconciles py charges, linked refunds and disputes without 
   for(const invalid of ['py_','py_../other','pm_transport','py_transport?redirect=x']){chargeID=invalid;await assert.rejects(retrieveStripeFinance('test_credential_only',order));}
   chargeID='py_other';await assert.rejects(retrieveStripeFinance('test_credential_only',{...order,paymentIntentId:null,chargeId:'py_transport'}),/binding mismatch/);
 });
+
+// Production, 2026-11-26: Stripe names the refund of a py_ (WeChat Pay) payment pyr_, not re_.
+test('Stripe finance accepts pyr refunds of py charges and still rejects unknown refund prefixes',async t=>{
+  let refundID='pyr_transport';
+  t.mock.method(globalThis,'fetch',async(raw:unknown)=>{const url=new URL(String(raw));
+    if(url.pathname==='/v1/charges')return Response.json(list([{...charge(),id:'py_transport',balance_transaction:transaction('txn_transport',1000,30,'charge','py_transport')}]));
+    if(url.pathname==='/v1/disputes')return Response.json(list([]));
+    return Response.json(list([{id:refundID,object:'refund',amount:1000,currency:'usd',status:'succeeded',charge:'py_transport',payment_intent:'pi_transport',
+      destination_details:{type:'wechat_pay',wechat_pay:{}},balance_transaction:transaction('txn_refund',-1000,0,'refund',refundID),failure_balance_transaction:null}]));
+  });
+  const snapshot=await retrieveStripeFinance('test_credential_only',order);
+  assert.equal(snapshot.refunds[0]!.id,'pyr_transport');assert.equal(snapshot.refunds[0]!.chargeId,'py_transport');
+  assert.equal(snapshot.transactions.find(t=>t.id==='txn_refund')!.sourceId,'pyr_transport');
+  assert.equal(financeTotals(snapshot,'USD').feesComplete,true);assert.doesNotMatch(JSON.stringify(snapshot),/wechat|destination/i);
+  for(const invalid of ['pyr_','pyr_../other','pyx_transport','rf_transport','pyr_transport?redirect=x']){refundID=invalid;await assert.rejects(retrieveStripeFinance('test_credential_only',order));}
+});

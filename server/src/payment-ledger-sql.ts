@@ -6,7 +6,7 @@ import {validatePurchaseOrder} from './purchase-session.ts';
 import {SQLCheckoutQueue,CHECKOUT_SCHEMA} from './checkout-sql.ts';
 import { applyLotPolicy, refundPolicy, sameOrder, sameRefundIdentity, validDecision, validateEvent, validateOrder,
   validateRefund, type PaymentEvent, type PaidOrderInput, type PaymentOrder, type PaymentLedger,
-  type PaymentReport, type RefundClaim, type RefundDecision, type RefundLot, type RefundSnapshot } from './payment-ledger.ts';
+  type PaymentReport, type RefundClaim, type RefundDecision, type RefundLot, type RefundSnapshot, refundResource } from './payment-ledger.ts';
 
 export const PAYMENT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS payment_processing_lock (id INTEGER PRIMARY KEY CHECK(id=1));
@@ -145,11 +145,11 @@ export class SQLPaymentLedger implements PaymentLedger {
   }
   queueRefunds(events:PaymentEvent[]):Promise<void>{
     if(events.length>100)throw new Error('Too many refund rechecks');
-    for(const event of events){validateEvent(event);if(!/^re_[A-Za-z0-9_]{1,160}$/.test(event.resourceId))throw new Error('Invalid refund id');}
+    for(const event of events){validateEvent(event);if(!refundResource(event.resourceId))throw new Error('Invalid refund id');}
     return this.run((function*():Transaction<void>{yield* lockPayments();for(const event of events)yield* receipt(event);})());
   }
   claimRefund(event: PaymentEvent): Promise<RefundClaim | null> {
-    if (!/^re_[A-Za-z0-9_]{1,160}$/.test(event.resourceId)) throw new Error('Invalid refund id');
+    if (!refundResource(event.resourceId)) throw new Error('Invalid refund id');
     return this.run((function* (): Transaction<RefundClaim | null> {
       yield* lockPayments(); const row=yield* receipt(event);
       if(row.processing_state==='processed') return null;

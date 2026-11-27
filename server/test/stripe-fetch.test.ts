@@ -41,6 +41,12 @@ test('refund retrieval rejects malformed or mismatched resources without applyin
     body={id:'re_transport',amount:800,currency:'cny',status:['succeeded'],charge:'ch_transport'};
     await assert.rejects(retrieveStripeRefund('test_transport_credential','re_transport'),/Invalid refund/);
     await assert.rejects(retrieveStripeRefund('test_transport_credential','../../secrets'),/Invalid refund id/);
+    // Refunds of py_ payments (WeChat Pay and other non-card methods) are named pyr_.
+    body={id:'pyr_transport',amount:800,currency:'cny',status:'succeeded',charge:'py_transport',payment_intent:'pi_transport'};
+    assert.deepEqual(await retrieveStripeRefund('test_transport_credential','pyr_transport'),{id:'pyr_transport',paymentIntentId:'pi_transport',chargeId:'py_transport',amountCents:800,currency:'CNY',status:'succeeded'});
+    const count=request.mock.calls.length;
+    for(const invalid of ['pyr_','pyr_../secrets','pyx_transport','pyr_transport?x=1'])await assert.rejects(retrieveStripeRefund('test_transport_credential',invalid),/Invalid refund id/);
+    assert.equal(request.mock.calls.length,count);
   }finally{request.mock.restore();}
 });
 test('checkout retries retain their idempotency key and do not expose provider errors or unsafe URLs',async()=>{

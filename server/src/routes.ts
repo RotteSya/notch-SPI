@@ -30,7 +30,7 @@ import {reconcileCheckout} from './checkout-service.ts';
 import {purchaseProgress} from './purchase-progress.ts';
 import {retrieveStripeCheckoutProgress,type CheckoutProgress} from './stripe.ts';
 import {retrieveStripeFinance} from './stripe-finance.ts';
-import {reconcilePaymentFinance,financeResource,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
+import {reconcilePaymentFinance,financeFailureReason,financeResource,type FinanceOrder,type FinanceSnapshot} from './payment-finance.ts';
 import { siteCSP } from './site-demo.ts';
 import { renderLandingPage, resolveSiteLang } from './site.ts';
 import { renderAdminPage, ADMIN_PAGE_CSP } from './admin.ts';
@@ -187,7 +187,8 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     let financeReconciled=0,financeFailed=0;
     if(stripeLive&&Date.now()-started<20_000)await Promise.all((await store.finance.pending(undefined,3)).map(async reference=>{
-      try{if(await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments))financeReconciled++;}catch{financeFailed++;}
+      try{if(await reconcilePaymentFinance(store.finance,reference,readFinance,false,store.payments))financeReconciled++;}
+      catch(error){financeFailed++;req.log.error({event:'finance_reconcile_failed',reason:financeFailureReason(error)},'payment finance reconciliation failed');}
     }));
     const eventsPruned=await store.pruneProductEvents(new Date(Date.parse(now)-90*86_400_000).toISOString());
     // Question-bank work starts only once this reply is written, as tracked request work, so the
@@ -817,7 +818,7 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
       return reply.send({received:true});
     }
     // charge.refunded is an aggregate notification, not a second cash-refund fact.
-    // Each re_ resource is reconciled separately through refund.* notifications.
+    // Each refund resource (re_ or pyr_) is reconciled separately through refund.* notifications.
     if(/^charge\.dispute\.(?:created|updated|closed|funds_withdrawn|funds_reinstated)$/.test(event.type)) {
       const amount=object?.amount;
       if(!Number.isSafeInteger(amount)||typeof amount!=='number'||amount<0||! /^[a-z]{3}$/i.test(str(object?.currency))) throw new ApiError(400,'争议事件格式无效');
