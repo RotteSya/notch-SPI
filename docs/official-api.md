@@ -13,6 +13,8 @@
 | audience | method | path |
 | --- | --- | --- |
 | public | GET | / |
+| public | GET | /robots.txt |
+| public | GET | /sitemap.xml |
 | public | GET | /media/:name |
 | public | GET | /healthz |
 | internal | GET | /readyz |

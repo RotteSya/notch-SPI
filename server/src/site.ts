@@ -1,3 +1,5 @@
+import {renderSiteHead} from './site-seo.ts';
+import {studyIntro, renderStudySection, studyCSS} from './site-study.ts';
 import {companySection, companyCSS} from './site-companies.ts';
 import {chipMenuImage, chipInfoImage} from './site-chip-assets.ts';
 import {polishCSS} from './site-polish.ts';
@@ -312,17 +314,16 @@ export function renderLandingPage(input: SiteInput): string {
   const faqDetail=(q:string,a:string,open=false)=>`<details${open?' open':''}><summary>${e(q)}</summary><p>${e(a)}</p></details>`;
   const faqItems=faqDetail(c.captureQ,input.lang==='zh'?'不会。':ui.protectBody)+faqDetail(c.scopeQ,c.scopeA)+faqDetail(s.faqs[5]!.q,s.faqs[5]!.a)+faqDetail(s.faqs[2]!.q,s.faqs[2]!.a)+faqDetail(c.cancelQ,c.cancelA);
   const extraFAQ=[s.faqs[1]!,s.faqs[3]!,s.faqs[4]!,s.faqs[0]!].map(f=>faqDetail(f.q,f.a)).join('');
-  const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
 <html lang="${input.lang==='zh'?'zh-CN':input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" sizes="32x32" href="/media/notchspi-ghost-favicon.png?v=right-20261117">
-<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}${continuationCSS}${polishCSS}${companyCSS}</style></head><body${entry ? '' : ' class="homepage"'}>
+${renderSiteHead(input)}<meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" sizes="32x32" href="/media/notchspi-ghost-favicon.png?v=right-20261117">
+<style>${siteCSS}${continuationCSS}${polishCSS}${companyCSS}${studyCSS}</style></head><body${entry ? '' : ' class="homepage"'}>
 <a class="skip" href="#main">${d.skip}</a>
 <div class="theater"><header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>
 <nav class="languages" aria-label="Language">${langLink('zh','中文')}${langLink('ja','日本語')}${langLink('en','EN')}</nav>${download('small')}</header>
 </div><main id="main"><div class="hero-band"><div class="wrap"><section class="hero${entry ? '' : ' hero-home'}" aria-labelledby="hero-title"><div class="hero-copy">
-<p class="eyebrow">${d.eyebrow}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}${input.lang==='en'?' ':''}<br><span>${e(d.accent)}</span>`}</h1>
+<p class="eyebrow">${e(input.entry==='reading_practice'?d.eyebrow:studyIntro(input.lang))}</p><h1 id="hero-title">${entry?e(entry.title):`${e(d.title)}${input.lang==='en'?' ':''}<br><span>${e(d.accent)}</span>`}</h1>
 <p class="sub">${e(entry?.description??d.sub)}</p>${chipDownloads('downloads')}
 ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title">${e(entry.scopeTitle)}</h2><p>${e(entry.scope)}</p><p>${e(entry.journey)}</p><p>${e(entry.attribution)}</p></aside>`:''}
 </div><div class="demo" id="demo"${entry ? '' : ' data-static="true"'}>${entry ? `<fieldset><legend>${d.demoLabel}${input.lang==='en'?': ':'：'}${d.demoTitle}</legend><div class="stage-controls">${['question','capture','answer'].map((stage,i)=>`<label><input type="radio" id="demo-${stage}" name="demo-stage" value="${stage}" aria-controls="demo-screen"${i===2?' checked':''}><b aria-hidden="true">0${i+1}</b><span>${d.stages[i]}</span></label>`).join('')}</div>` : '<div class="demo-content">'}
@@ -333,6 +334,7 @@ ${entry?`<aside class="scope" aria-labelledby="scope-title"><h2 id="scope-title"
 <div class="flying-capture" aria-hidden="true"><div class="snapshot-label">${d.problemTag}</div><p>${d.question}</p><div class="snapshot-options">${d.options.map(o=>`<span>${o}</span>`).join('')}</div></div><div class="desktop-note">${d.hint}<small>${d.hintSub}</small></div><div class="shortcut" aria-label="Command Shift 1"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>1</kbd></div></div>
 ${entry ? '</fieldset>' : '</div>'}</div></section></div></div>
 ${input.entry ? '' : companySection(input.lang)}
+${renderStudySection(input.lang,input.entry)}
 <div class="continuation"><div class="wrap">${protectionSection(input.lang)}${featureSection(input.lang,!entry)}</div>
 <section id="pricing" class="pricing-band" aria-labelledby="pricing-title"><div class="wrap"><div class="pricing-header"><h2 id="pricing-title">${input.lang==='ja'?'<span class="phrase">まず体験。</span><wbr><span class="phrase">使う量で選ぶ。</span>':c.pricing}</h2></div>
 <div class="concept-plans">${trialCard}${plusCard}${packCard}</div>

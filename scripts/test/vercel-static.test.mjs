@@ -47,6 +47,7 @@ test('Vercel accepts only the reviewed website media and robots, with identical 
     'media/multi-mode-poster.jpg', 'media/multi-mode.mp4',
     'media/notchspi-ghost-favicon.png', 'media/notchspi-ghost-logo.png',
     'media/single-mode-poster.jpg', 'media/single-mode.mp4', 'robots.txt',
+    'sitemap.xml',
   ]);
 });
 
@@ -59,7 +60,7 @@ for (const name of ['.env', 'src/config.ts', 'test/api.test.ts', 'media/unreview
   });
 }
 
-for (const name of ['robots.txt', 'media/single-mode.mp4', 'media/notchspi-ghost-favicon.png', 'media/notchspi-ghost-logo.png']) {
+for (const name of ['robots.txt', 'sitemap.xml', 'media/single-mode.mp4', 'media/notchspi-ghost-favicon.png', 'media/notchspi-ghost-logo.png']) {
   test(`Vercel rejects missing or altered reviewed bytes: ${name}`, async t => {
     const directory = await fixture(t), target = join(directory, name);
     await writeFile(target, 'altered');

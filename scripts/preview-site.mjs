@@ -3,6 +3,7 @@ import {siteMedia} from '../server/src/site-media.ts';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {renderLandingPage, resolveSiteLang} from '../server/src/site.ts';
+import {renderSiteRobots, renderSiteSitemap} from '../server/src/site-seo.ts';
 import {siteCSP} from '../server/src/site-demo.ts';
 import {DEFAULT_PACKS_JSON, parsePacks} from '../server/src/pricing.ts';
 const port = Number(process.env.SITE_PREVIEW_PORT || 4173);
@@ -13,6 +14,13 @@ const server = createServer((req, res) => {
     res.writeHead(media.status,media.headers);
     if (req.method === 'HEAD' || !media.body) {media.body?.destroy();res.end();}
     else media.body.pipe(res);
+    return;
+  }
+  if (url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml') {
+    const sitemap = url.pathname === '/sitemap.xml';
+    res.writeHead(200, {'Content-Type':sitemap?'application/xml; charset=utf-8':'text/plain; charset=utf-8',
+      'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+    res.end(req.method === 'HEAD' ? undefined : sitemap ? renderSiteSitemap() : renderSiteRobots());
     return;
   }
   if (url.pathname === '/dl' || url.pathname === '/dl/intel') {

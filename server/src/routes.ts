@@ -1,3 +1,4 @@
+import {renderSiteRobots, renderSiteSitemap} from './site-seo.ts';
 import {releaseDownload} from './release-download.ts';
 import {budgetStatus} from './budget-policy.ts';
 import {registerAdminRoutes} from './admin-routes.ts';
@@ -215,6 +216,14 @@ export function registerRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (!media) return reply.code(404).send();
     return reply.code(media.status).headers(media.headers).send(media.body);
   });
+  // Public, credential-free SEO documents match the reviewed Vercel static files.
+  for (const [path, type, render] of [
+    ['/robots.txt', 'text/plain; charset=utf-8', renderSiteRobots],
+    ['/sitemap.xml', 'application/xml; charset=utf-8', renderSiteSitemap],
+  ] as const) app.get(path, (_req, reply) => reply
+    .header('Cache-Control', 'public, max-age=300')
+    .header('X-Content-Type-Options', 'nosniff')
+    .type(type).send(render()));
   for(const [path,entry] of [['/',undefined],['/spi','spi'],['/reading-practice','reading_practice']] as const)app.get(path, async (req, reply) => {
     const q = (req.query ?? {}) as { lang?: unknown };
     const lang = resolveSiteLang(str(q.lang), str(req.headers['accept-language']));

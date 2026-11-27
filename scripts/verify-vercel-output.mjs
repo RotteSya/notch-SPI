@@ -59,6 +59,7 @@ export async function verifyStaticOutput(directory) {
     'media/single-mode-poster.jpg',
     'media/single-mode.mp4',
     'robots.txt',
+    'sitemap.xml',
   ];
   const actual = await files(directory);
   assert.deepEqual(actual.map(file => relative(directory, file.path).split('\\').join('/')), expected,

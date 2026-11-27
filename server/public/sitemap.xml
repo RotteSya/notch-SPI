@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://notchspi-api.vercel.app/?lang=zh</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/?lang=ja" />
+  </url>
+  <url>
+    <loc>https://notchspi-api.vercel.app/?lang=ja</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/?lang=ja" />
+  </url>
+  <url>
+    <loc>https://notchspi-api.vercel.app/?lang=en</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/?lang=ja" />
+  </url>
+  <url>
+    <loc>https://notchspi-api.vercel.app/spi?lang=zh</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/spi?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/spi?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+  </url>
+  <url>
+    <loc>https://notchspi-api.vercel.app/spi?lang=ja</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/spi?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/spi?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+  </url>
+  <url>
+    <loc>https://notchspi-api.vercel.app/spi?lang=en</loc>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://notchspi-api.vercel.app/spi?lang=zh" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://notchspi-api.vercel.app/spi?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://notchspi-api.vercel.app/spi?lang=ja" />
+  </url>
+</urlset>

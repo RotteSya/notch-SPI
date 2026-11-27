@@ -59,3 +59,21 @@ site、site-demo、v3-site 和 intel-download 测试覆盖页面、CSP、媒体 
 保留企业品牌带、检测说明及导航顺序。首页使用静态答案场景，删除三段阶段控件及占位；真实单图视频解释操作流程，多图/自动/性格测试三种模式紧凑排列，性格测试以三步流程说明替换最近查题卡片，不再重复折叠展示。首页多图卡片使用用户提供的真机录像，不提供图片放大入口；单图、多图与自动模式视频不显示下方说明，静音循环行内播放且隐藏播放器控件；进入可视区域时自动播放，完全离开时暂停，返回时从原进度继续；页面隐藏或减少动态效果偏好开启时暂停。首页内容直接显示，不再做章节渐显；入口页原有阶段交互保留。三语修复英文标题分隔与日文价格标题短语换行，页脚增强对比，价格、下载、支付与登录行为不变。
 
 多图录像来源：用户提供 `CleanShot 2026-11-16 at 22.54.34.mp4`（原件保留于本机 Screenshot 目录），6.62 秒、3024×1964、无音轨。网页副本 `server/public/media/multi-mode.mp4` 使用 H.264/CRF22、1920×1246、faststart，保持完整时长与画面；封面 `multi-mode-poster.jpg` 取第 2 秒。三语首页共用同一录像，静音自动循环播放，媒体白名单与静态交付清单同步登记。
+
+## SEO / AEO（2026-11-27）
+
+本轮目标为在日本留学、准备日本就职的中国留学生。官网规范 origin 固定为用户确认的 `https://notchspi-api.vercel.app`，由 `site-seo.ts` 管理；不从请求 Host、内部地址或支付配置推断。保留既有日语默认和 `Accept-Language` 协商，中文内容优先匹配目标用户；每条规范地址显式使用 `?lang=zh|ja|en`。每语言自引用 canonical，并相互声明 `zh-Hans`、`ja`、`en` 与指向显式日语地址的 `x-default`。
+
+首页和 `/spi` 是当前索引页面，站点地图只包含其六种规范语言 URL。`/reading-practice` 仍为未公开学习入口，保持实际开放状态说明，使用 `noindex,follow` 并排除出站点地图；正式开放后需同步索引策略与测试。后台、API、购买和充值路径继续维持既有爬虫限制。未改变 AI 爬虫的特定许可或引入训练爬虫专用放行规则。
+
+`site-study.ts` 提供初始 HTML 中可见的产品定位、学习问答及原创速度示例，入口不再只依赖法律抽屉。正文采用直接回答和清楚的小标题，供普通访客及答案引擎抽取；不声称保证正确、录用效果或未经评测的题型支持。软件 JSON-LD 只描述可见的真实产品信息，不编造评分、评论、免费价格或 Windows 正式支持。分享卡片复用已有 Mac 操作视频封面；本轮没有新增图片、付费媒体或依赖。
+
+`/robots.txt` 与 `/sitemap.xml` 同时由 Fastify、隔离预览和 Vercel 静态文件提供，生成函数、静态文件及精确静态交付名单由测试检查一致。修改 origin、页面集合或语言策略时，需同步重新生成两份文件：
+
+```sh
+node --input-type=module -e "import {writeFileSync} from 'node:fs'; import {renderSiteRobots,renderSiteSitemap} from './server/src/site-seo.ts'; writeFileSync('server/public/robots.txt',renderSiteRobots()); writeFileSync('server/public/sitemap.xml',renderSiteSitemap());"
+```
+
+参考实现原则来自 [Google 多语言页面指引](https://developers.google.com/search/docs/specialty/international/localized-versions) 和 [站点地图指引](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap)。sitemap 和结构化信息不是收录、排名或 AI 引用的保证。后续收录与流量需用已验证的 Search Console 和分析工具观察；本次不配置账户、不提交索引请求。
+
+该改动只作为独立 PR 交付，不合并、不部署。已知公开官网与当前 main 存在功能、版本及隐私说明差异；生产发布前必须核对实际源码身份，并仅迁移经过确认的官网改动，不把整个 main 当作可直接发布的生产基线。
