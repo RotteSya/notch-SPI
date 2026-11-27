@@ -1345,8 +1345,11 @@ async function start() {
       throw new Error("Flight did not start on the real desktop");
     if (started.frames.some(frame => frame.reduced))
       throw new Error("Full-motion smoke unexpectedly selected reduced motion");
+    const flight = started.frames[0], landing = flight.start + flight.duration;
+    // Read the painted overlay at the same point of the flight as an unstretched one read it
+    // (100 ms of 680 ms): the card's look, including its background alpha, follows progress.
     const painting = (async () => {
-      await wait(100);
+      await wait(Math.max(0, flight.start + flight.duration * (100 / 680) - Date.now()));
       return flights.evidence(directory, "flight-moving");
     })();
     const captureContinuity = [];
@@ -1356,7 +1359,6 @@ async function start() {
       if (!win.isVisible() || (current.frames.length && current.overlays.some(w => !w.visible)))
         hiddenDuringCapture = true;
     }, 5);
-    const flight = started.frames[0], landing = flight.start + flight.duration;
     const sample = () => captureWithOverlays(async () => {
       const before = flights.diagnostics.frames[0];
       const beforeTime = Date.now();
