@@ -22,52 +22,52 @@ const PAGE_PATH: Record<SitePage, string> = {
 const PAGE_COPY: Record<SitePage, Record<PageLang, PageCopy>> = {
   home: {
     zh: {
-      title: '日本留学生 SPI 备考｜Mac AI 学习助手 · NotchSPI',
-      description: '面向在日中国留学生的 Mac AI 学习助手，辅助日本就职 SPI 备考。支持截图提问、题组与最近查题，中日英界面可切换。Apple Silicon 需 macOS 14+，Intel 兼容版需 macOS 12.3+。了解功能与下载要求，AI 回答请自行核对。',
+      title: '日本留学生 SPI 查题｜Mac AI 截图查题工具 · NotchSPI',
+      description: '面向在日中国留学生的 Mac AI 截图查题工具，用于 SPI 等考试过程中截图提问、查看 AI 答案。支持题组、最近查题和中日英界面。Apple Silicon 需 macOS 14+，Intel 兼容版需 macOS 12.3+。使用须遵守考试规则，AI 回答需自行核对。',
     },
     ja: {
-      title: 'Mac の AI 学習アシスタント・SPI 対策 | NotchSPI',
-      description: 'NotchSPI は Mac 向けの AI 学習アシスタント。スクリーンショットから質問し、複数の画像をまとめて、最近の問題を振り返れます。SPI 対策の自主学習に。Apple Silicon は macOS 14 以降、Intel 互換版は 12.3 以降。機能とダウンロード要件をご確認ください。',
+      title: 'SPI 試験中の画像質問・Mac AI ツール | NotchSPI',
+      description: 'NotchSPI は SPI などの試験中にスクリーンショットから質問し、AI の回答を確認する Mac 向けツールです。複数画像のまとめ質問、最近の質問、日本語・中国語・英語の UI に対応。Apple Silicon は macOS 14 以降、Intel 互換版は 12.3 以降。利用は試験規則に従い、回答は自分で確認してください。',
     },
     en: {
-      title: 'Mac AI Study Assistant for SPI Prep | NotchSPI',
-      description: "Prepare for Japan's SPI with NotchSPI, a Mac AI study assistant. Ask from screenshots, group questions and review recent answers. Explore features and Mac downloads.",
+      title: 'Mac AI Screenshot Lookup for SPI Tests | NotchSPI',
+      description: "Look up answers to Japan's SPI questions from screenshots during tests on Mac with NotchSPI. Check AI answers yourself and follow the test provider's rules. Explore features and downloads.",
     },
   },
   spi: {
     zh: {
-      title: '日本就职 SPI 备考｜中国留学生 Mac AI 学习助手 · NotchSPI',
-      description: '为在日中国留学生准备日本就职 SPI 提供 Mac AI 学习辅助。通过截图提问、合并题组和回看最近查题整理练习过程。中日英界面可切换；Apple Silicon 支持 macOS 14+，Intel 兼容版支持 macOS 12.3+。查看 SPI 备考用法，答案与思路需自行核对。',
+      title: '日本就职 SPI 考试中查题｜Mac AI 截图查题工具 · NotchSPI',
+      description: 'NotchSPI 面向在日中国留学生，用于日本就职 SPI 考试过程中截图查题、查看 AI 答案。支持单图提问、合并题组和回看最近查题，中日英界面可切换。查看 Mac 功能与下载要求；使用须遵守考试规则，答案与思路需自行核对。',
     },
     ja: {
-      title: 'SPI 対策を Mac でサポート | NotchSPI',
-      description: '日本での就職に向けた SPI の自主学習を、Mac の AI アシスタントで補助。スクリーンショットから質問し、複数の画像をまとめて、最近の問題を復習できます。日本語・中国語・英語の UI に対応。SPI 学習での使い方と Mac の動作環境を確認し、回答は自分で検証してください。',
+      title: 'SPI 試験中にスクリーンショットで質問 | NotchSPI',
+      description: '日本の就職 SPI 試験中に、Mac でスクリーンショットから質問し AI の回答を確認するための NotchSPI。単一画像・複数画像の質問、最近の質問、日本語・中国語・英語の UI に対応。Mac の機能と動作環境をご確認ください。利用は試験規則に従い、回答は自分で検証してください。',
     },
     en: {
-      title: 'SPI Preparation in Japan on Mac | NotchSPI',
-      description: "Study for Japan's SPI recruitment test on Mac with screenshot questions and recent-answer review. See how NotchSPI supports self-study; check AI answers yourself.",
+      title: 'SPI Test Answer Lookup on Mac | NotchSPI',
+      description: 'Use NotchSPI to ask screenshot questions and view AI answers during SPI tests on Mac. Group images or revisit recent questions. Follow the exam rules and verify answers yourself.',
     },
   },
   reading_practice: {
     zh: {
-      title: '日本留学生阅读练习（尚未开放）｜Mac AI 学习助手 · NotchSPI',
-      description: 'NotchSPI 阅读练习入口目前仅供内部准备，尚未向公众开放。现有 Mac 学习功能与下载要求请查看首页；日本就职 SPI 自主备考请查看 SPI 入口。此页面不代表阅读练习功能已正式发布。',
+      title: '日本留学生阅读练习（尚未开放）｜NotchSPI',
+      description: 'NotchSPI 阅读练习入口目前仅供内部准备，尚未向公众开放。现有 Mac 截图查题功能与下载要求请查看首页，SPI 考试中查题功能请查看 SPI 入口。此页面不代表阅读练习功能已正式发布。',
     },
     ja: {
       title: '読解練習（未公開）| NotchSPI',
-      description: 'NotchSPI の読解練習入口は内部準備用で、一般公開前です。現在の Mac 向け学習機能と動作環境はホーム、SPI の自主学習については SPI ページをご覧ください。この入口は読解練習機能の正式提供を示すものではありません。',
+      description: 'NotchSPI の読解練習入口は内部準備用で、一般公開前です。現在の Mac 向け画像質問機能と動作環境はホーム、SPI 試験中の画像質問については SPI ページをご覧ください。この入口は読解練習機能の正式提供を示すものではありません。',
     },
     en: {
       title: 'Reading Practice (Not Yet Available) | NotchSPI',
-      description: 'The NotchSPI reading-practice entry is for internal preparation and is not publicly available. Visit the home or SPI page for current Mac features and downloads.',
+      description: 'The NotchSPI reading-practice entry is for internal preparation and is not publicly available. Visit the home or SPI page for current Mac screenshot-question features and downloads.',
     },
   },
 };
 
 const PRODUCT_DESCRIPTION: Record<PageLang, string> = {
-  zh: 'NotchSPI 是 Mac AI 学习助手，支持截图提问、题组与最近查题，提供中日英界面，可辅助 SPI 自主备考。AI 回答需要自行核对。',
-  ja: 'NotchSPI は Mac 向けの AI 学習アシスタント。スクリーンショットからの質問、複数画像のまとめ質問、最近の問題の振り返り、日本語・中国語・英語の UI を備え、SPI の自主学習を補助します。AI の回答は自分で確認してください。',
-  en: 'NotchSPI is a Mac AI study assistant with screenshot questions, question groups, recent-question review and Chinese, Japanese and English interfaces. It supports SPI self-study; verify AI answers yourself.',
+  zh: 'NotchSPI 是用于 SPI 等考试过程中截图查题、查看 AI 答案的 Mac 工具，支持截图提问、题组与最近查题，提供中日英界面。使用须遵守考试规则，AI 回答需要自行核对。',
+  ja: 'NotchSPI は SPI などの試験中にスクリーンショットから質問し、AI の回答を確認する Mac 向けツールです。複数画像のまとめ質問、最近の質問、日本語・中国語・英語の UI を備えます。利用は試験規則に従い、AI の回答は自分で確認してください。',
+  en: 'NotchSPI is a Mac tool for asking screenshot questions and viewing AI answers during SPI tests, with question groups, recent questions and Chinese, Japanese and English interfaces. Follow the exam rules and verify AI answers yourself.',
 };
 
 const IMAGE_ALT: Record<PageLang, string> = {
@@ -96,7 +96,7 @@ export function renderSiteHead(input: {lang: PageLang; entry?: 'spi' | 'reading_
     name: 'NotchSPI',
     url: canonical,
     description: PRODUCT_DESCRIPTION[lang],
-    applicationCategory: 'EducationalApplication',
+    applicationCategory: 'UtilitiesApplication',
     operatingSystem: 'macOS 14+ (Apple Silicon); macOS 12.3+ (Intel)',
     inLanguage: LANGUAGES.map(language => HREFLANG[language]),
     image: OG_IMAGE,

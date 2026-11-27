@@ -8,6 +8,9 @@ const ENTRIES = [undefined, 'spi', 'reading_practice'] as const;
 const HREFLANG = {zh: 'zh-Hans', ja: 'ja', en: 'en'};
 const LOCALE = {zh: 'zh_CN', ja: 'ja_JP', en: 'en_US'};
 const IMAGE = `${ORIGIN}/media/single-mode-poster.jpg`;
+const PREP_POSITIONING = /备考|学习助手|自主学|学習アシスタント|自主学習|SPI 対策|study assistant|self-study|SPI prep|SPI preparation|prepare for|study for/i;
+const EXAM_POSITIONING = {zh: /考试过程中/, ja: /試験中/, en: /during (?:SPI )?tests/};
+const EXAM_RULES = {zh: /遵守考试规则/, ja: /試験規則に従い/, en: /(?:follow the (?:test provider's|exam) rules)/i};
 const PRIVATE_LOCATION = /private|localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|https?:\/\/(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/i;
 
 function unescapeHtml(value: string): string {
@@ -63,9 +66,14 @@ for (const entry of ENTRIES) {
       assert.ok(description.length > 50);
       assert.notEqual(description, title);
       assert.doesNotMatch(description, /objective_v1|treatment|control|cohort|manifest|attestation|评测|評価データ/);
+      assert.doesNotMatch(head, PREP_POSITIONING, 'metadata must not misrepresent the product as exam preparation');
       if (lang === 'zh' && entry !== 'reading_practice') {
-        for (const keyword of ['日本', '留学生', 'SPI', 'Mac', 'AI', '学习助手']) assert.ok(title.includes(keyword));
+        for (const keyword of ['日本', 'SPI', 'Mac', 'AI', '截图查题']) assert.ok(title.includes(keyword));
         assert.ok(description.includes('在日中国留学生'));
+      }
+      if (entry !== 'reading_practice') {
+        assert.match(description, EXAM_POSITIONING[lang]);
+        assert.match(description, EXAM_RULES[lang]);
       }
       if (entry === 'reading_practice') {
         assert.match(description, /尚未向公众开放|一般公開前|not publicly available/);
@@ -100,17 +108,20 @@ for (const entry of ENTRIES) {
       assert.equal(application['@type'], 'SoftwareApplication');
       assert.equal(application.name, 'NotchSPI');
       assert.equal(application.url, canonical);
-      assert.equal(application.applicationCategory, 'EducationalApplication');
+      assert.equal(application.applicationCategory, 'UtilitiesApplication');
       assert.equal(application.operatingSystem, 'macOS 14+ (Apple Silicon); macOS 12.3+ (Intel)');
       assert.equal(application.image, IMAGE);
       assert.deepEqual(application.inLanguage, ['zh-Hans', 'ja', 'en']);
       assert.ok(application.description.includes('NotchSPI'));
       assert.ok(application.description.length > 30);
+      assert.match(application.description, EXAM_POSITIONING[lang]);
+      assert.match(application.description, EXAM_RULES[lang]);
       assert.equal(application.offers, undefined);
       assert.equal(application.aggregateRating, undefined);
       assert.equal(application.review, undefined);
       assert.equal(application.rating, undefined);
       assert.doesNotMatch(head, /Windows|guaranteed correct|保证答对|必ず正解|保证中文解释|中文解释保证/);
+      assert.doesNotMatch(head, /undetectable|不会被检测|検出されない|guaranteed pass|保证通过|必ず合格|all exams allow|所有考试都允许/i);
       assert.doesNotMatch(head, PRIVATE_LOCATION);
       assert.doesNotMatch(head, /Content-Security-Policy|<style\b|<head\b|<html\b/i);
       assert.equal((head.match(/<script\b/g) ?? []).length, 1, 'no executable script added');
