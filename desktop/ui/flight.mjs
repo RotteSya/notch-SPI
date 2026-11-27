@@ -33,8 +33,9 @@ function paint() {
         Math.max(
           0,
           (now - f.start) /
-            ((f.reduced ? flightStyle.reducedDuration : flightStyle.duration) *
-              1000),
+            (f.duration ??
+              (f.reduced ? flightStyle.reducedDuration : flightStyle.duration) *
+                1000),
         ),
       );
     const v = flightSample(

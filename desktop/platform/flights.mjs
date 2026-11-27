@@ -9,13 +9,14 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { FlightQueue } from "../core/flights.mjs";
 export function createFlights({ root, host, changed, protection, exclusion, observe = () => {}, failed = () => {},
-  reducedMotion = () => systemPreferences.getAnimationSettings().prefersReducedMotion }) {
+  reducedMotion = () => systemPreferences.getAnimationSettings().prefersReducedMotion, timeScale = 1 }) {
   const overlays = new Map();
   let suspended = 0;
   let targets = [],
     lastSignature = "",
     payloadRevision = 0;
   const queue = new FlightQueue({
+    timeScale,
     changed: () => {
       lastSignature = "";
       changed();

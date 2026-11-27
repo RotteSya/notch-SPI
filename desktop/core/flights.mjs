@@ -1,12 +1,16 @@
 import { fit, flightStyle } from "../generated/ui/flight.mjs";
 // Geometry-only lifecycle; adapters own windows and clocks. No capture/request ownership.
+// timeScale stretches every flight (and its queue lifetime) uniformly; only the motion smoke
+// changes it, so that its captures can be taken while a flight is known to be in the air.
 export class FlightQueue {
-  constructor({ now = Date.now, changed = () => {} } = {}) {
+  constructor({ now = Date.now, changed = () => {}, timeScale = 1 } = {}) {
     this.now = now;
     this.changed = changed;
+    this.timeScale = timeScale;
     this.items = new Map();
   }
   add(image, reduced = false) {
+    const still = reduced || !image.sourceBounds;
     this.items.set(image.id, {
       id: image.id,
       image: "data:image/jpeg;base64," + image.base64,
@@ -14,7 +18,9 @@ export class FlightQueue {
       source: image.sourceBounds ? fit(image, image.sourceBounds) : null,
       queued: this.now(),
       start: null,
-      reduced: reduced || !image.sourceBounds,
+      reduced: still,
+      // Milliseconds. The renderer and the motion evidence read the same value.
+      duration: (still ? flightStyle.reducedDuration : flightStyle.duration) * 1000 * this.timeScale,
       destination: null,
     });
     this.changed();
@@ -36,12 +42,9 @@ export class FlightQueue {
   tick() {
     let changed = false;
     for (const [id, item] of this.items) {
-      const duration =
-        (item.reduced ? flightStyle.reducedDuration : flightStyle.duration) *
-        1000;
       if (
-        (item.start != null && this.now() - item.start >= duration) ||
-        this.now() - item.queued > 1500
+        (item.start != null && this.now() - item.start >= item.duration) ||
+        this.now() - item.queued > 1500 * this.timeScale
       ) {
         this.items.delete(id);
         changed = true;
