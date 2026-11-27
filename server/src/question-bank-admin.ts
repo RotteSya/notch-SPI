@@ -8,6 +8,7 @@ import { reservation, reviewRequest } from './question-bank-worker.ts';
 import { captureCost } from './capture-service.ts';
 import { reviewProviderConfigurationError } from './config.ts';
 import { budgetCeiling, type BudgetInspection } from './budget-policy.ts';
+import { summarizeFailure } from './failure-summary.ts';
 import {
   byOccurrences, MARK_VERDICTS, questionBankCardViews, questionBankMarkSummary, questionBankStats, reviewBudgetFit,
   type QuestionBankCardView, type QuestionBankFootprint, type QuestionBankMarkKind, type QuestionBankSample, type QuestionBankVerdict,
@@ -137,7 +138,7 @@ export function registerQuestionBankAdmin(app: FastifyInstance, ctx: AppContext,
       if (error instanceof ApiError) return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } });
       const code = (error as { statusCode?: number }).statusCode;
       if (code === 400 || code === 413) return reply.code(code).send({ error: { code: 'bad_request', message: '请求格式或大小无效' } });
-      req.log.error('question bank admin operation failed');
+      req.log.error({ event: 'request_failed', route: req.routeOptions.url ?? 'unmatched', failure: summarizeFailure(error) }, 'question bank admin operation failed');
       return reply.code(500).send({ error: { code: 'internal', message: '保存或读取失败，请保留当前操作并重试' } });
     });
 
