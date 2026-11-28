@@ -83,6 +83,9 @@ final class OnboardingJourneyTests: XCTestCase {
         let language = L10n.setting, single = Settings.shared.captureCombo, multi = Settings.shared.contextCombo
         let controller = NotchController(activateServices: false)
         defer {
+            // prepareForTermination leaves the settings window to the app's own quit; a test that opens
+            // it must close it, or a key, layer-backed window keeps drawing through every later test.
+            controller.qaSettingsWindow?.close()
             controller.prepareForTermination()
             L10n.setting = language; Settings.shared.captureCombo = single; Settings.shared.contextCombo = multi
             HotKeyCenter.shared.unregisterAll()
