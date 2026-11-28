@@ -1,4 +1,4 @@
-import {test,mock} from 'node:test';
+import {test as nodeTest,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {join,resolve} from 'node:path';
@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {randomUUID,createHash} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+// The vault requires a POSIX owner-only (0700, same uid) directory and refuses everywhere else, so on Windows every case would only observe that refusal.
+const test=(name:string,fn:()=>void)=>nodeTest(name,{skip:process.platform==='win32'&&'feedback vault enforces POSIX owner-only permissions'},fn);
 // The production operator utility is plain Node JavaScript; exercise its runtime boundaries.
 const {FeedbackVault}=await import(new URL('../../scripts/lib/feedback-vault.mjs',import.meta.url).href);
 const digest=(data:Buffer)=>createHash('sha256').update(data).digest('hex');

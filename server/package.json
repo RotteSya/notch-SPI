@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/index.ts",
     "dev": "node --watch src/index.ts",
-    "test": "node --test 'test/*.test.ts'",
+    "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 import Fastify from 'fastify';
 import {SqliteStore} from '../src/db-sqlite.ts';
 import {hashToken, type Store} from '../src/db.ts';
@@ -214,7 +215,7 @@ for (const kind of implementations) {
 }
 
 test('sqlite: operator CLI validates and resumes an explicit isolated destination across processes', async () => {
-  const f = await fixture('sqlite'), cli = new URL('../../scripts/migrate-quota.mjs', import.meta.url).pathname;
+  const f = await fixture('sqlite'), cli = fileURLToPath(new URL('../../scripts/migrate-quota.mjs', import.meta.url));
   const run = async (...args: string[]) => JSON.parse((await exec(process.execPath, [cli, ...args, '--sqlite', f.path])).stdout);
   try {
     assert.equal((await run('pause', '--release', release)).result.state, 'paused');

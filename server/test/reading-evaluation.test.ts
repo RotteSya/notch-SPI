@@ -88,12 +88,14 @@ async function fixture(t:{after:(fn:()=>unknown)=>void},behavior:Behavior={},cou
     pricing_source:'https://example.invalid/test-only',currency_evidence:'synthetic',bounds_evidence:'synthetic',verified_at:at(),expires_at:future(),
     ...(behavior.explanationOutputBound===undefined?{}:{explanation_output_token_upper:behavior.explanationOutputBound})};
   const budget=new EvaluationBudget(join(dir,'budget.sqlite3'),{schema_version:1,campaign_id:'test-only',currency:'CNY',limit_micros:100_000_000},bound,candidate.model,base);
-  t.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));budget.close();await rm(dir,{recursive:true,force:true});});
+  // Handles opened later inside dir must close before rm: Windows refuses to unlink an open SQLite file.
+  const deferred:Array<()=>unknown>=[],defer=(fn:()=>unknown)=>{deferred.push(fn);};
+  t.after(async()=>{for(const fn of deferred.reverse())await fn();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));budget.close();await rm(dir,{recursive:true,force:true});});
   const output=join(dir,'run');
   let accessAttempts=0;
   const run=async(options:{resumeFrom?:string;outputDir?:string;budget?:EvaluationBudget}={})=>runReadingEvaluation({evaluationAccess:async()=>{accessAttempts++;return behavior.protected?await openEvaluationAccess(base,'synthetic-access'):undefined;},corpus:await loadReadingCorpus(source.path,'executor'),candidate,budget,executor:'executor',deviceToken:'synthetic-test-token',outputDir:output,...options,
     candidateBytes:json(candidate),candidateEvidenceBytes:evidence});
-  return {dir,source,requests,budget,bound,candidate,evidence,output,run,accessAttempts:()=>accessAttempts};
+  return {dir,source,requests,budget,bound,candidate,evidence,output,run,defer,accessAttempts:()=>accessAttempts};
 }
 async function reviewFiles(dir:string,archive:Awaited<ReturnType<typeof loadReadingArchive>>) {
   const answer={schema_version:1,reviewer:'independent-reviewer',reviewed_at:at(),subject_sha256:archive.completion.review_subject_sha256,
@@ -255,7 +257,12 @@ test('reading corpus rejects external processing denial, expiry, split overlap a
   }
   const split=json({schema_version:1,dataset_id:f.source.manifest.dataset_id,development_families:['family-0'],holdout_families:f.source.manifest.cases.map(c=>c.family_id)});
   f.source.manifest.family_split.sha256=bytesSHA(split);await writeFile(join(f.dir,'split.json'),split);await f.source.save();await assert.rejects(loadReadingCorpus(f.source.path,'executor'),/overlaps/);
-  const other=await corpusFixture(f.dir);await writeFile(join(f.dir,'other.png'),pngBytes);await rm(join(f.dir,'image.png'));await symlink(join(f.dir,'other.png'),join(f.dir,'image.png'));
+  const other=await corpusFixture(f.dir);await writeFile(join(f.dir,'other.png'),pngBytes);await rm(join(f.dir,'image.png'));
+  try {await symlink(join(f.dir,'other.png'),join(f.dir,'image.png'));}
+  catch(error) {// Windows needs Developer Mode or elevation to create symbolic links.
+    if(process.platform==='win32'&&(error as NodeJS.ErrnoException).code==='EPERM'){t.diagnostic('symlink case skipped: symbolic links not permitted for this Windows user');return;}
+    throw error;
+  }
   await assert.rejects(loadReadingCorpus(other.path,'executor'),/unavailable/);
 });
 
@@ -309,8 +316,10 @@ test('reading runner freezes full order, invokes explanation immediately, and re
   }
   const archive=await loadReadingArchive(f.output);assert.ok(archive.draft.cases.every(c=>c.answer_correct));assert.equal(archive.explanations.length,4);
   assert.equal(archive.cost_bounds[0]!.reserved_cny_micros,8000);assert.equal(archive.cost_bounds[1]!.reserved_cny_micros,8000);
-  assert.equal((await stat(join(f.output,'quality-draft.json'))).mode&0o777,0o600);
-  assert.equal((await stat(f.output)).mode&0o777,0o700);
+  if(process.platform!=='win32') {// Windows exposes no POSIX permission bits.
+    assert.equal((await stat(join(f.output,'quality-draft.json'))).mode&0o777,0o600);
+    assert.equal((await stat(f.output)).mode&0o777,0o700);
+  }
   const reviews=await reviewFiles(f.dir,archive),prepared=await prepareReadingQuality(f.output,reviews.answerPath,reviews.explanationPath);
   assert.equal(prepared.provenance.explanations.assessment,'insufficient_evidence');assert.equal(prepared.provenance.release_ready,false);
   assert.equal(prepared.report.assessment,'insufficient_evidence');
@@ -417,7 +426,7 @@ for(const kind of ['memory','sqlite'] as const) {
     const candidate={...f.candidate,base_url:base},evidence=json({synthetic:true,candidate:'test-only'});
     const bound:EvaluationCallBound={schema_version:1,model:'test-model',base_url:base,billing_currency:'CNY',input_micros_per_million:1_000_000,output_micros_per_million:1_000_000,
       input_token_upper:1000,output_token_upper:1000,cny_micros_per_currency_unit:1_000_000,pricing_source:'https://example.invalid/test-only',currency_evidence:'synthetic',bounds_evidence:'synthetic',verified_at:at(),expires_at:future()};
-    const budget=new EvaluationBudget(join(f.dir,'real-routes.sqlite3'),{schema_version:1,campaign_id:'test-only-real-routes',currency:'CNY',limit_micros:100_000_000},bound,candidate.model,base);t.after(()=>budget.close());
+    const budget=new EvaluationBudget(join(f.dir,'real-routes.sqlite3'),{schema_version:1,campaign_id:'test-only-real-routes',currency:'CNY',limit_micros:100_000_000},bound,candidate.model,base);f.defer(()=>budget.close());
     const completion=await runReadingEvaluation({corpus:await loadReadingCorpus(f.source.path,'executor'),candidate,budget,executor:'executor',deviceToken:token,outputDir:f.output,candidateBytes:json(candidate),candidateEvidenceBytes:evidence});
     assert.equal(completion.complete,true);assert.equal(solves,5);assert.equal(explanations,3);assert.equal(completion.rejection_checks,2);
     assert.equal((await store.billing.attempts(token)).length,8);assert.equal((await store.billing.quota(token))?.balanceQuestions,27);assert.equal((await store.billing.quota(token))?.heldQuestions,0);
@@ -455,7 +464,7 @@ test('reading continuation preserves paid bytes, prices and selection across a l
   db.prepare('UPDATE evaluation_campaigns SET limit_micros=27000000 WHERE id=?').run('test-only');db.close();
   const nextBudget=new EvaluationBudget(join(f.dir,'budget.sqlite3'),{schema_version:1,campaign_id:'test-only',currency:'CNY',limit_micros:27_000_000},
     {...f.bound,explanation_output_token_upper:500,verified_at:at()},f.candidate.model,f.candidate.base_url);
-  t.after(()=>nextBudget.close());
+  f.defer(()=>nextBudget.close());
   const output=join(f.dir,'continued'),complete=await f.run({resumeFrom:f.output,outputDir:output,budget:nextBudget});
   assert.equal(complete.complete,true);assert.equal(complete.answer_cases,4);assert.equal(complete.explanation_calls,4);
   const archive=await loadReadingArchive(output),index=JSON.parse(await readFile(join(output,'results.json'),'utf8'));
