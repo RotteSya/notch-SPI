@@ -53,7 +53,7 @@ enum ScreenCapture {
             if case .app(let bundleID) = target {
                 let pids = Set(NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).map(\.processIdentifier))
                 let windows = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [NSDictionary] ?? []
-                let candidates: [(window: WindowIdentity, area: CGFloat, visible: Bool)] = windows.compactMap { w in
+                let candidates: [(window: WindowIdentity, visible: Bool)] = windows.compactMap { w in
                     guard let pid = w[kCGWindowOwnerPID] as? pid_t, pids.contains(pid),
                           pid != ProcessInfo.processInfo.processIdentifier,
                           w[kCGWindowLayer] as? Int == 0,
@@ -61,12 +61,29 @@ enum ScreenCapture {
                           let bounds = w[kCGWindowBounds] as? NSDictionary,
                           let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
                           rect.width >= 80, rect.height >= 60 else { return nil }
-                    return (.init(id: id, processID: pid, frame: rect), rect.width * rect.height, w[kCGWindowIsOnscreen] as? Bool ?? false)
+                    return (.init(id: id, processID: pid, frame: rect), w[kCGWindowIsOnscreen] as? Bool ?? false)
                 }
-                window = candidates.first(where: { $0.visible })?.window ?? candidates.max(by: { $0.area < $1.area })?.window
+                window = preferredWindow(among: candidates)
             } else { window = nil }
             return Context(displayID: CGMainDisplayID(), primaryHeight: CGDisplayBounds(CGMainDisplayID()).height,
                     foreground: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown", window: window)
+        }
+        /// `candidates` are front to back. The frontmost visible window wins, except a
+        /// full-screen app's toolbar: AppKit keeps it in its own thin window in front of the
+        /// content window, and capturing that one squeezes the whole page into the toolbar's
+        /// frame. Such a strip spans the same width as the taller window it sits on.
+        static func preferredWindow(among candidates: [(window: WindowIdentity, visible: Bool)]) -> WindowIdentity? {
+            let visible = candidates.filter(\.visible).map(\.window)
+            func isToolbarStrip(_ strip: WindowIdentity) -> Bool {
+                visible.contains { content in
+                    content.processID == strip.processID && content.id != strip.id
+                        && content.frame.minX == strip.frame.minX && content.frame.width == strip.frame.width
+                        && strip.frame.height * 4 < content.frame.height
+                        && strip.frame.insetBy(dx: 0, dy: -1).intersects(content.frame)
+                }
+            }
+            return visible.first(where: { !isToolbarStrip($0) })
+                ?? candidates.map(\.window).max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
         }
         /// Selection is always frozen from a fresh WindowServer listing, never cache order.
         func canReuseWindow(id: CGWindowID, processID: pid_t, frame: CGRect) -> Bool {
