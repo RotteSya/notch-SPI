@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
 
 for (const candidate of [false, true]) {
 test(`workerd runs the ${candidate ? 'candidate' : 'production'} handler and refuses public HTTP invocation`, { timeout: 55_000 }, async () => {
-  const source = await build({ entryPoints: [new URL(candidate ? '../src/candidate.ts' : '../src/index.ts', import.meta.url).pathname],
+  const source = await build({ entryPoints: [fileURLToPath(new URL(candidate ? '../src/candidate.ts' : '../src/index.ts', import.meta.url))],
     bundle: true, write: false, format: 'esm', platform: 'browser' });
   const secret = 'isolated-runtime-test-credential-0123456789';
   const bypass = '0123456789abcdefghijklmnopqrstuv';

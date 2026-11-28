@@ -5,6 +5,7 @@ import {join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import http from 'node:http';import https from 'node:https';import net from 'node:net';
 import {syncBuiltinESMExports} from 'node:module';
+import {fileURLToPath} from 'node:url';
 let networkAttempts=0;
 const denied=()=>{networkAttempts++;throw new Error('Real networking is forbidden');};
 globalThis.fetch=denied;http.request=http.get=https.request=https.get=denied;
@@ -120,7 +121,7 @@ test('one-use fixed permit prevents restart, altered run identity and deleted/em
   assert.ok(existsSync(join(root,CONSUMED_PATH)));assert.equal(dir,join(root,PAID_DIRECTORY));
 });
 test('real execution rejects pending approval and forbidden cap/run/ledger flags',async()=>{
-  const root=resolve(new URL('../..',import.meta.url).pathname);
+  const root=resolve(fileURLToPath(new URL('../..',import.meta.url)));
   await assert.rejects(main(['--live','--authorization',AUTHORIZATION_PATH],root),/not authorized/);
   for(const arg of ['--run-id','--reset','--resume','--budget','--ledger'])await assert.rejects(main([arg,'new'],root),/no run\/cap\/ledger overrides/);
   assert.equal(existsSync(join(root,CONSUMED_PATH)),false);

@@ -14,6 +14,7 @@ import type {Store} from '../src/db.ts';
 import {StubPaymentProvider} from '../src/payments.ts';
 import {TransientProviderError,type Provider} from '../src/providers/types.ts';
 import {pngBase64} from './helpers/images.ts';
+import {fileURLToPath} from 'node:url';
 const ready='FINAL: B\nNSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"ready","answer":"B","reason":"none"}';
 for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgres']:[])]){
  async function fixture(stream:Provider['stream'],budget=100_000_000){
@@ -191,7 +192,7 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
  if(kind==='postgres')test('PostgreSQL: killed worker is automatically replaced once, unknown cost retained and late owner fenced',{timeout:25000},async()=>{
   const {spawn}=await import('node:child_process');let calls=0;
   const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
-  const child=spawn(process.execPath,[new URL('./helpers/crash-worker.ts',import.meta.url).pathname],{env:{PATH:process.env.PATH!,USER:process.env.USER!,TEST_POSTGRES_URL:f.connectionURL!},stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.execPath,[fileURLToPath(new URL('./helpers/crash-worker.ts',import.meta.url))],{env:{PATH:process.env.PATH!,USER:process.env.USER!,TEST_POSTGRES_URL:f.connectionURL!},stdio:['ignore','pipe','pipe']});
   let workerError=''; child.stderr.on('data',d=>{workerError+=String(d);});
   try{
    const port=await new Promise<number>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Worker failed to start')),10000);
