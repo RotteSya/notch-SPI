@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {constants} from 'node:fs';
-import {open,realpath} from 'node:fs/promises';
+import {lstat,open,realpath} from 'node:fs/promises';
 import {dirname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {imageDigests,SCREEN_QUERY_VERSION,validateScope} from '../../server/src/screen-query.ts';
 import {composeScreenQuery} from '../../server/src/screen-query.ts';
@@ -113,8 +113,14 @@ export function parseReadingManifest(value:unknown):ReadingManifest {
 
 /** Bounded descriptor read; source paths cannot escape through an absolute path or symlink. */
 export async function readEvidenceFile(path:string,limit:number):Promise<Buffer> {
-  const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK).catch(()=>invalid('Evidence file unavailable'));
+  // Windows has no O_NOFOLLOW (the constant is undefined, so OR-ing it is a silent no-op): refuse a link
+  // by lstat, then require the opened descriptor to be that same file so a swap in between is rejected.
+  const noFollow=constants.O_NOFOLLOW as number|undefined;
+  const linked=noFollow===undefined?await lstat(path,{bigint:true}).catch(()=>invalid('Evidence file unavailable')):null;
+  if(linked?.isSymbolicLink())return invalid('Evidence file unavailable');
+  const handle=await open(path,constants.O_RDONLY|(noFollow??0)|(constants.O_NONBLOCK??0)).catch(()=>invalid('Evidence file unavailable'));
   try {
+    if(linked) {const opened=await handle.stat({bigint:true});if(opened.ino!==linked.ino||opened.dev!==linked.dev)return invalid('Evidence file unavailable');}
     const info=await handle.stat();if(!info.isFile()||info.size>limit)return invalid('Evidence file type or size invalid');
     const chunks:Buffer[]=[];let length=0;
     while(true) {
