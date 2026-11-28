@@ -1,3 +1,4 @@
+import {renderSiteHead} from './site-seo.ts';
 import {companySection, companyCSS} from './site-companies.ts';
 import {chipMenuImage, chipInfoImage} from './site-chip-assets.ts';
 import {polishCSS} from './site-polish.ts';
@@ -312,11 +313,10 @@ export function renderLandingPage(input: SiteInput): string {
   const faqDetail=(q:string,a:string,open=false)=>`<details${open?' open':''}><summary>${e(q)}</summary><p>${e(a)}</p></details>`;
   const faqItems=faqDetail(c.captureQ,input.lang==='zh'?'不会。':ui.protectBody)+faqDetail(c.scopeQ,c.scopeA)+faqDetail(s.faqs[5]!.q,s.faqs[5]!.a)+faqDetail(s.faqs[2]!.q,s.faqs[2]!.a)+faqDetail(c.cancelQ,c.cancelA);
   const extraFAQ=[s.faqs[1]!,s.faqs[3]!,s.faqs[4]!,s.faqs[0]!].map(f=>faqDetail(f.q,f.a)).join('');
-  const title=entry?.title??`${d.title} ${d.accent}`, description=entry?`${entry.description} ${entry.scope}`:d.sub;
   return `<!doctype html>
 <html lang="${input.lang==='zh'?'zh-CN':input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NotchSPI — ${e(title)}</title><meta name="description" content="${e(description)}"><meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" sizes="32x32" href="/media/notchspi-ghost-favicon.png?v=right-20261117">
-<meta property="og:title" content="NotchSPI — ${e(title)}"><meta property="og:description" content="${e(description)}"><style>${siteCSS}${continuationCSS}${polishCSS}${companyCSS}</style></head><body${entry ? '' : ' class="homepage"'}>
+${renderSiteHead(input)}<meta name="theme-color" content="#090c11"><link rel="icon" type="image/png" sizes="32x32" href="/media/notchspi-ghost-favicon.png?v=right-20261117">
+<style>${siteCSS}${continuationCSS}${polishCSS}${companyCSS}</style></head><body${entry ? '' : ' class="homepage"'}>
 <a class="skip" href="#main">${d.skip}</a>
 <div class="theater"><header class="header wrap"><a class="brand" href="/?lang=${input.lang}" aria-label="NotchSPI">${ghost}NotchSPI</a>
 <nav class="mainnav" aria-label="${d.experience}"><a href="#how">${d.experience}</a><a href="#pricing">${d.pricing}</a><a href="#faq">${d.faq}</a></nav>

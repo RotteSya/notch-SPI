@@ -385,11 +385,15 @@
       "sources": [
         "server/src/site.ts",
         "server/src/site-media.ts",
-        "server/src/site-companies.ts"
+        "server/src/site-companies.ts",
+        "server/src/site-seo.ts"
       ],
       "checks": [
         "server/test/site.test.ts",
-        "server/test/v3-site.test.ts"
+        "server/test/v3-site.test.ts",
+        "server/test/site-seo.test.ts",
+        "server/test/seo-routes.test.ts",
+        "scripts/test/vercel-static.test.mjs"
       ]
     },
     {

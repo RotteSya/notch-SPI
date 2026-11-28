@@ -4,3 +4,4 @@ Disallow: /api/
 Disallow: /v1/
 Disallow: /purchase
 Disallow: /topup
+Sitemap: https://notchspi-api.vercel.app/sitemap.xml
