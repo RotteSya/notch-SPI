@@ -15,7 +15,7 @@ import { BudgetAdmissionError, isRecoveredAnswerFor, RequestKeys, type AccountSn
 import { requireAccount } from './auth.ts';
 import { ApiError, beginSSE, SSE_DONE, type StreamEvent } from './http.ts';
 import type { CaptureRequest, Usage, Provider } from './providers/types.ts';
-import { composeObjectiveResult, normalizeObjectiveAnswer, objectiveResultIsBillable } from './objective-result.ts';
+import { composeObjectiveResult, normalizeObjectiveAnswer, OBJECTIVE_RESULT_MARKER, objectiveResultIsBillable } from './objective-result.ts';
 import { composeScreenQuery, imageDigests, officialScreenPrompt, PROFILE_IDS, SCREEN_QUERY_VERSION, validateScope } from './screen-query.ts';
 import { estimateModelCostMicros } from './telemetry.ts';
 
@@ -713,6 +713,10 @@ export class CaptureService {
         outputTokens:usage?.outputTokens??null,visibleCharacters:deliveredChars,
         settlementStatus:committed.settlementStatus},'answer generation failed');
       if(recoverable&&committed.usableResult&&committed.sealedAnswer){send({type:'delta',text:raw});this.timings.get(req)?.mark('firstDeltaSent');}
+      // A retake is never sealed, but the client shows its reason (cropped, unreadable, missing
+      // context) as the retake guidance. Send only the validated V1 line, never other model text.
+      else if(recoverable&&terminalState==='retake'&&objective.result){const {kind,reason}=objective.result;
+        send({type:'delta',text:OBJECTIVE_RESULT_MARKER+' '+JSON.stringify({v:1,kind,state:'retake',answer:null,reason})});}
       if(truncated) send({type:'error',error:{code:'model_output_limit',message:'本题生成长度达到上限，未获得完整答案，本次未扣次。请缩小到一个小问后重试。'}});
       else if(timedOut && !charge) send({type:'error',error:{code:'upstream_timeout',message:'本题生成超时，未获得完整答案，本次未扣次。请稍后重试。'}});
       else if(result?.reason) send({type:'error',error:{code:result.reason,message:'请调整题目范围或重新截图'}});

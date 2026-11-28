@@ -59,6 +59,19 @@ for(const kind of ['memory','sqlite',...(process.env.TEST_POSTGRES_URL?['postgre
    assert.equal((await f.store.billing.inspectBudget()).windows[0]!.spent,1000);
   }finally{await f.close();}
  });
+ test(`${kind}: a deferred retake still tells the client why to capture again, without charging`,async()=>{
+  // The client renders the retake reason from the V1 line; a stream without it reads as a broken transfer.
+  const f=await fixture(async(_r,delta)=>{delta('The stem is cut off at the bottom.\nNSPI_RESULT_V1: {"answer":null,"reason":"cropped","kind":"single_choice","state":"retake","v":1}');return {inputTokens:50,outputTokens:50};});
+  try{const r=await f.apps[0]!.inject({method:'POST',url:'/v1/captures',headers:{authorization:'Bearer '+f.users[0]!.token},payload:{capture_id:randomUUID(),delivery_recovery_v1:true,images_base64:[pngBase64],image_media_type:'image/png',system:'Answer correctly',task:'Choose B',result_protocol:'objective_v1'}});
+   const events=r.body.split('\n').filter(line=>line.startsWith('data: ')).map(line=>line.slice(6));
+   assert.equal(events.at(-1),'[DONE]');
+   const [delta,usage,...rest]=events.slice(0,-1).map(event=>JSON.parse(event));
+   assert.deepEqual(delta,{type:'delta',text:'NSPI_RESULT_V1: {"v":1,"kind":"single_choice","state":"retake","answer":null,"reason":"cropped"}'});
+   assert.equal(usage.type,'usage');assert.equal(usage.terminal_state,'retake');assert.equal(usage.settlement_status,'released');assert.equal(usage.questions_charged,0);
+   assert.deepEqual(rest,[]);
+   assert.equal((await f.store.billing.quota(f.users[0]!.token))!.balanceQuestions,100);
+  }finally{await f.close();}
+ });
  test(`${kind}: durable completion recovers after every final settlement call loses its connection`,async()=>{
   let calls=0;const f=await fixture(async(_r,delta)=>{calls++;delta(ready);return {inputTokens:50,outputTokens:50};});
   const original=f.store.billing.finishWithCapture.bind(f.store.billing);
